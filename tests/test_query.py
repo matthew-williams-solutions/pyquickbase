@@ -332,6 +332,17 @@ def test_unexpected_date_formats_stay_as_returned() -> None:
     assert record["Date Created"] is None
 
 
+def test_empty_dates_are_none() -> None:
+    payload = page_payload()
+    payload["data"][0]["9"]["value"] = ""
+    payload["data"][0]["1"]["value"] = ""
+    payload["data"][0]["6"]["value"] = ""
+    record = Page.from_api(payload).records[0]
+    assert record["Due Date"] is None
+    assert record["Date Created"] is None
+    assert record["Title"] == ""
+
+
 def test_page_position() -> None:
     page = Page.from_api(page_payload(skip=1))
     assert (page.skip, page.next_skip, page.total, page.has_more) == (1, 2, 3, True)

@@ -8,12 +8,14 @@ from ._retry import RetryPolicy
 from ._sync._client import Quickbase
 from ._sync._resources import App, RecordIterator, Table
 from ._version import __version__
+from ._writes import RowError, WriteResult
 from .errors import (
     APIError,
     AuthenticationError,
     BadRequestError,
     ConfigurationError,
     InvalidResponseError,
+    InvalidValueError,
     NetworkError,
     NotFoundError,
     PermissionDeniedError,
@@ -25,6 +27,7 @@ from .errors import (
     ServerError,
     UnknownFieldError,
     UnknownTableError,
+    WriteError,
 )
 
 __all__ = [
@@ -41,6 +44,7 @@ __all__ = [
     "F",
     "Field",
     "InvalidResponseError",
+    "InvalidValueError",
     "NetworkError",
     "NotFoundError",
     "Page",
@@ -55,12 +59,15 @@ __all__ = [
     "Relationship",
     "RequestTimeoutError",
     "RetryPolicy",
+    "RowError",
     "ServerError",
     "Table",
     "TableInfo",
     "UnknownFieldError",
     "UnknownTableError",
     "WhereCondition",
+    "WriteError",
+    "WriteResult",
     "__version__",
     "parse_where",
 ]

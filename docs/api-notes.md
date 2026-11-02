@@ -58,6 +58,30 @@ record whether the quotes were left alone, written as `\'`, or written as `''`. 
 found needs a brace, so `F` rejects braces in values. The string validator can't tell a breakout
 from a genuine second condition, so use `F` for any text you don't control.
 
+## Writes
+
+Tested on 2026-11-02 against temporary tables in a sandbox app.
+
+| Behavior | Result |
+|---|---|
+| A row fails | The request still succeeds, other rows are written, and `metadata.lineErrors` maps the row number, starting from 1, to its messages |
+| `{"value": null}` | **Silently ignored**, leaving the old value |
+| `{"value": ""}` | Clears text, date, timestamp, numeric, choice, and checkbox fields |
+| Row with an existing Record ID# | Updates it, or reports it in `unchangedRecordIds` if nothing changed |
+| Row with a missing Record ID#, with or without `mergeFieldId` | Row error, and no record is created |
+| `mergeFieldId` on a unique field, value doesn't match | **Creates a record** |
+| `mergeFieldId` on a non-unique field, or a row without the merge field | 400 for the whole request |
+| Unknown field, formula field, built-in field | Row error |
+| A value outside a field's choices | Accepted when `allowNewChoices` is on, otherwise a row error |
+| Empty `data` | 400 |
+| `DELETE /records` without `where` or with a blank one | 400 |
+| `DELETE /records` with a malformed `where` | **`numberDeleted: 0`, no error** |
+| `DELETE /records` with a lowercase operator | **Acts like `CT`**, so it can delete more than intended |
+| `DELETE /fields` with `{"fieldIds": [...]}` | Partial failures are listed in `errors` beside `deletedFieldIds` |
+| `POST /fields` with `unique` or `required` | 400. Set them afterward with `POST /fields/{id}` |
+| Reading a cleared date or timestamp | Returns `""`, and a cleared numeric returns null |
+| Checkbox queries | `{id.EX.'true'}`, `{id.EX.'1'}`, and `{id.TV.'true'}` match the same records |
+
 ## Unverified
 
 Check these against a sandbox app before the feature that needs them ships.
@@ -66,9 +90,8 @@ Check these against a sandbox app before the feature that needs them ships.
 |---|---|
 | Format and units of `retry-after` on a real 429 (both seconds and dates are handled) | Transport |
 | Can a query return fewer than `top` records before the end? The test table was too small to show it, so advance by `numRecords` | Paging |
-| How checkbox values should be written in a query (`F` sends `true` and `false`) | Query builder |
-| Shape of the 207 upsert response and `lineErrors`; request size limits | Upsert |
-| What happens when `mergeFieldId` doesn't match, including for Record ID#? | Upsert, MCP updates |
 | Which endpoints have different rate limits? | Transport |
+| Request size limits, which decide whether the default batch of 1,000 rows is always safe | Writes |
+| The HTTP status of a partly failed write, assumed to be 207 (any 2xx is handled the same) | Writes |
 | Correct API host for EU realms (pass `base_url` if it differs) | Realm handling |
 | Temporary token format | Temporary tokens |

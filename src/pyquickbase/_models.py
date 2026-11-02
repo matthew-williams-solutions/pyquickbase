@@ -159,6 +159,8 @@ class FieldIndex:
 
 def _convert(value: Any, field_type: str) -> Any:
     """Turn dates and timestamps into Python objects, leaving anything unexpected unchanged."""
+    if value == "" and field_type in ("date", "timestamp"):
+        return None  # how Quickbase returns an empty date
     if isinstance(value, str):
         try:
             if field_type == "date":
@@ -174,7 +176,7 @@ class Record(Mapping[str | int, Any]):
     """One record. Read values by field label or ID: `record["Status"]` or `record[7]`.
 
     Iterating yields labels, so `dict(record)` gives `{label: value}`. Date fields are `date`
-    objects and timestamp fields are timezone-aware `datetime` objects.
+    objects and timestamp fields are timezone-aware `datetime` objects, or None when empty.
     """
 
     __slots__ = ("_labels", "_values")

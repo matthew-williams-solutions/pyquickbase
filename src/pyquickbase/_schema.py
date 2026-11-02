@@ -25,6 +25,11 @@ class SchemaCache:
         with self._lock:
             self._entries[key] = (time.monotonic(), value)
 
+    def delete(self, *keys: str) -> None:
+        with self._lock:
+            for key in keys:
+                self._entries.pop(key, None)
+
     def clear(self) -> None:
         with self._lock:
             self._entries.clear()

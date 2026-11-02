@@ -3,8 +3,7 @@
 An unofficial, typed Python SDK for the [Quickbase](https://www.quickbase.com/) API, with matching
 sync and async clients.
 
-> **Status: early alpha.** Reading data works, but writing isn't built yet, and anything may change
-> before 1.0. This project is not affiliated with or endorsed by Quickbase, Inc.
+> **Status: early alpha.** Anything may change before 1.0. This project is not affiliated with or endorsed by Quickbase, Inc.
 
 ## What works today
 
@@ -16,11 +15,13 @@ sync and async clients.
 - Automatic retries for rate limits, honoring `Retry-After`, and for connection failures
 - Specific exceptions that include Quickbase's error message and request ID
 - Tokens kept out of `repr`s, exceptions, and logs, and never sent to other hosts or over plain HTTP
+- Creating, updating, and deleting records, with errors reported for each failed row
+- Creating and changing tables, fields, and relationships
 - `qb.request()` for calling any Quickbase endpoint directly
 
 ## Coming next
 
-Creating, updating, and deleting records, with per-record error reporting.
+Reports, formulas, file attachments, temporary tokens, and generated typed tables.
 
 ## Usage
 
@@ -85,6 +86,53 @@ matches, `has_more`, and `next_skip`.
 
 Table and field metadata is cached for five minutes. Set `schema_ttl` on the client to change this,
 or call `qb.clear_schema_cache()` after changing a table.
+
+## Writing records
+
+Rows are dictionaries keyed by field label or ID. Python dates, timezone-aware datetimes, and
+`Decimal` values are converted for you, and `None` clears a field.
+
+| Method | What it does |
+|---|---|
+| `table.insert(rows)` | Creates records, and never changes existing ones |
+| `table.update(rows)` | Changes records. Each row needs a `Record ID#`, and a missing record is an error |
+| `table.upsert(rows, merge_on="Code")` | Updates the record whose unique field matches, or creates one |
+| `table.delete(where)` | Deletes matching records and returns the count. `where` is required |
+
+```python
+from pyquickbase import F, WriteError
+
+result = tasks.insert([{"Title": "Pour slab", "Status": "Not Started", "Due Date": date.today()}])
+print(result.created_ids)
+
+tasks.update([{"Record ID#": 7, "Status": "Done", "Notes": None}])
+tasks.delete(F("Status") == "Cancelled")
+
+try:
+    tasks.insert(rows)
+except WriteError as error:
+    print(error.result.created_ids)  # these were written
+    for failed in error.result.errors:
+        print(rows[failed.index], failed.messages)
+```
+
+Quickbase writes the rows it can and reports the rest, so a `WriteError` doesn't mean nothing changed.
+Large writes are split into batches of 1,000 rows, which you can change with `batch_size`. Check
+`error.result` before trying again.
+
+## Changing the schema
+
+```python
+projects = app.create_table("Projects", single_record_name="Project")
+projects.create_field("Name", "text")
+projects.create_field("Status", "text-multiple-choice", choices=["Active", "Done"])
+projects.create_field("Code", "text", unique=True)
+
+tasks.create_relationship(projects, foreign_key_label="Project", lookup_fields=["Name"])
+tasks.update_field("Notes", label="Comments")
+tasks.delete_fields("Old Field")
+tasks.drop(confirm="Tasks")  # deletes the table and its records
+```
 
 ## Handling errors
 

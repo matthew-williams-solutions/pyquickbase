@@ -1,5 +1,7 @@
 """Exceptions raised by pyquickbase. Everything here derives from `QuickbaseError`."""
 
+from typing import Any
+
 
 class QuickbaseError(Exception):
     """Base class for every error raised by this library."""
@@ -27,6 +29,22 @@ class ReadOnlyError(QuickbaseError):
 
 class QueryError(QuickbaseError, ValueError):
     """A query can't be sent as written. Nothing was sent to Quickbase."""
+
+
+class InvalidValueError(QuickbaseError, ValueError):
+    """A write can't be sent as written. Nothing was sent to Quickbase."""
+
+
+class WriteError(QuickbaseError):
+    """Part of a write failed, and the rest may have been applied.
+
+    `result` is a `WriteResult` with the records that were written and the rows that failed, when
+    Quickbase reported them.
+    """
+
+    def __init__(self, summary: str, *, result: Any = None) -> None:
+        super().__init__(summary)
+        self.result = result
 
 
 class UnknownTableError(QuickbaseError, LookupError):

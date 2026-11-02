@@ -2,14 +2,37 @@
 """Apps and tables: labels instead of IDs, cached schema, and automatic paging."""
 
 import difflib
-from collections.abc import Callable, Iterator, Sequence
-from typing import Any, Self
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from functools import partial
+from typing import Any, Self, TypeVar
 
-from .._models import RECORD_ID_FIELD, AppInfo, Field, Page, Record, Relationship, TableInfo, parse
-from .._query import Expression, FieldRef, build_query_body
+from .._models import (
+    RECORD_ID_FIELD,
+    AppInfo,
+    Field,
+    FieldIndex,
+    Page,
+    Record,
+    Relationship,
+    TableInfo,
+    parse,
+)
+from .._query import Expression, FieldRef, build_query_body, compile_where
 from .._schema import SchemaCache
-from ..errors import InvalidResponseError, QueryError, UnknownFieldError, UnknownTableError
+from .._writes import RowInput, WriteResult, build_rows, refuse_field, require_field
+from ..errors import (
+    InvalidResponseError,
+    InvalidValueError,
+    QueryError,
+    QuickbaseError,
+    UnknownFieldError,
+    UnknownTableError,
+    WriteError,
+)
 from ._transport import Transport
+
+T = TypeVar("T")
+DEFAULT_BATCH_SIZE = 1000
 
 
 def _require_positive(name: str, value: int) -> None:
@@ -52,6 +75,25 @@ class App:
         )
         self._cache.set(key, tables)
         return list(tables)
+
+    def create_table(
+        self,
+        name: str,
+        *,
+        description: str | None = None,
+        single_record_name: str | None = None,
+        plural_record_name: str | None = None,
+    ) -> "Table":
+        """Create a table and return it."""
+        optional = {
+            "description": description,
+            "singleRecordName": single_record_name,
+            "pluralRecordName": plural_record_name,
+        }
+        body = {"name": name, **{k: v for k, v in optional.items() if v is not None}}
+        payload = self._transport.request("POST", "/tables", params={"appId": self._id}, json=body)
+        self._cache.delete(f"tables:{self._id}")
+        return self.table(parse(lambda data: TableInfo.from_api(data).id, payload, "table"))
 
     def table(self, name_or_id: str) -> "Table":
         """Get a table in this app by name or ID. It's checked when first used."""
@@ -179,6 +221,13 @@ class Table:
         rows = [Relationship.from_api(row) for row in payload["relationships"]]
         return rows, payload["metadata"]["totalRelationships"]
 
+    def _with_fields(self, build: Callable[[list[Field]], T]) -> T:
+        try:
+            return build(self.fields())
+        except UnknownFieldError:
+            # The field may be newer than the cache, so look once more before giving up.
+            return build(self.fields(refresh=True))
+
     def _query_body(
         self,
         where: Expression | str | None,
@@ -186,13 +235,11 @@ class Table:
         order_by: FieldRef | Sequence[FieldRef] | None,
     ) -> dict[str, Any]:
         table_id = (self.info()).id
-        try:
-            fields = self.fields()
-            return build_query_body(table_id, fields, where=where, select=select, order_by=order_by)
-        except UnknownFieldError:
-            # The field may be newer than the cache, so look once more before giving up.
-            fields = self.fields(refresh=True)
-            return build_query_body(table_id, fields, where=where, select=select, order_by=order_by)
+        return self._with_fields(
+            lambda fields: build_query_body(
+                table_id, fields, where=where, select=select, order_by=order_by
+            )
+        )
 
     def _fetch_page(self, body: dict[str, Any], top: int, skip: int) -> Page:
         payload = self._transport.request(
@@ -247,6 +294,213 @@ class Table:
         """Count the matching records without fetching them."""
         body = self._query_body(where, None, None)
         return (self._fetch_page({**body, "select": [RECORD_ID_FIELD]}, 1, 0)).total
+
+    def _write(
+        self, rows: list[dict[str, Any]], merge_field_id: int | None, batch_size: int
+    ) -> WriteResult:
+        table_id = (self.info()).id
+        result = WriteResult()
+        for start in range(0, len(rows), batch_size):
+            body: dict[str, Any] = {"to": table_id, "data": rows[start : start + batch_size]}
+            if merge_field_id is not None:
+                body["mergeFieldId"] = merge_field_id
+            try:
+                payload = self._transport.request("POST", "/records", json=body)
+            except QuickbaseError as exc:
+                if start == 0:
+                    raise
+                raise WriteError(
+                    f"Writing stopped at row {start}, after earlier rows were written: {exc}",
+                    result=result,
+                ) from exc
+            result = parse(partial(result.merged, offset=start), payload, "write")
+        if result.errors:
+            raise WriteError(result.summary(), result=result)
+        return result
+
+    def insert(
+        self, rows: Iterable[RowInput], *, batch_size: int = DEFAULT_BATCH_SIZE
+    ) -> WriteResult:
+        """Create records from `{label or ID: value}` rows. This never changes existing records.
+
+        Raises `WriteError` if any row fails. Other rows are still written, and are listed in
+        the error's `result`. A value of `None` leaves the field empty.
+        """
+        _require_positive("batch_size", batch_size)
+        given = list(rows)
+        built = self._with_fields(lambda fields: build_rows(given, FieldIndex(fields)))
+        refuse_field(built, RECORD_ID_FIELD, "which insert() can't do. Use update() instead")
+        return self._write(built, None, batch_size)
+
+    def update(
+        self, rows: Iterable[RowInput], *, batch_size: int = DEFAULT_BATCH_SIZE
+    ) -> WriteResult:
+        """Change existing records. Each row must set `Record ID#`.
+
+        A record that doesn't exist is an error rather than being created.
+        Fields left out of a row keep their values, and a value of `None` clears the field.
+        Raises `WriteError` if any row fails. Other rows are still written.
+        """
+        _require_positive("batch_size", batch_size)
+        given = list(rows)
+        built = self._with_fields(lambda fields: build_rows(given, FieldIndex(fields)))
+        require_field(built, RECORD_ID_FIELD, "so update() can't tell which record to change")
+        return self._write(built, RECORD_ID_FIELD, batch_size)
+
+    def upsert(
+        self,
+        rows: Iterable[RowInput],
+        *,
+        merge_on: FieldRef,
+        batch_size: int = DEFAULT_BATCH_SIZE,
+    ) -> WriteResult:
+        """Update the record whose unique `merge_on` field matches, or create one if none does.
+
+        Raises `WriteError` if any row fails. Other rows are still written.
+        """
+        _require_positive("batch_size", batch_size)
+        given = list(rows)
+
+        def build(fields: list[Field]) -> tuple[list[dict[str, Any]], int]:
+            index = FieldIndex(fields)
+            return build_rows(given, index), index.resolve(merge_on).id
+
+        built, merge_field_id = self._with_fields(build)
+        require_field(built, merge_field_id, "the merge_on field")
+        return self._write(built, merge_field_id, batch_size)
+
+    def delete(self, where: Expression | str) -> int:
+        """Delete the matching records and return how many were deleted.
+
+        `where` is required and is checked first. Quickbase would otherwise treat a lowercase
+        operator as "contains" and delete far more than you meant.
+        """
+        table_id = (self.info()).id
+        clause = self._with_fields(lambda fields: compile_where(where, FieldIndex(fields)))
+        payload = self._transport.request(
+            "DELETE", "/records", json={"from": table_id, "where": clause}
+        )
+        return parse(lambda data: int(data["numberDeleted"]), payload, "delete")
+
+    def _forget_fields(self, table_id: str) -> None:
+        self._cache.delete(f"fields:{table_id}", f"relationships:{table_id}")
+
+    def create_field(
+        self,
+        label: str,
+        field_type: str,
+        *,
+        choices: Sequence[str] | None = None,
+        required: bool | None = None,
+        unique: bool | None = None,
+        properties: Mapping[str, Any] | None = None,
+    ) -> Field:
+        """Create a field and return it. `field_type` is Quickbase's, such as `text` or `date`.
+
+        Quickbase sets `required` and `unique` in a second request, so if that one fails the field
+        exists without them.
+        """
+        table_id = (self.info()).id
+        merged = dict(properties or {})
+        if choices is not None:
+            merged["choices"] = list(choices)
+        body: dict[str, Any] = {"label": label, "fieldType": field_type}
+        if merged:
+            body["properties"] = merged
+        payload = self._transport.request(
+            "POST", "/fields", params={"tableId": table_id}, json=body
+        )
+        self._forget_fields(table_id)
+        field = parse(Field.from_api, payload, "field")
+        if required is None and unique is None:
+            return field
+        return self.update_field(field.id, required=required, unique=unique)
+
+    def update_field(
+        self,
+        field: FieldRef,
+        *,
+        label: str | None = None,
+        required: bool | None = None,
+        unique: bool | None = None,
+        properties: Mapping[str, Any] | None = None,
+    ) -> Field:
+        """Change a field's settings and return it. Anything left as None stays as it is."""
+        table_id = (self.info()).id
+        field_id = self._with_fields(lambda fields: FieldIndex(fields).resolve(field).id)
+        optional = {
+            "label": label,
+            "required": required,
+            "unique": unique,
+            "properties": properties,
+        }
+        body = {k: v for k, v in optional.items() if v is not None}
+        if not body:
+            raise InvalidValueError("update_field() needs at least one setting to change.")
+        payload = self._transport.request(
+            "POST", f"/fields/{field_id}", params={"tableId": table_id}, json=body
+        )
+        self._forget_fields(table_id)
+        return parse(Field.from_api, payload, "field")
+
+    def delete_fields(self, fields: FieldRef | Sequence[FieldRef]) -> None:
+        """Delete fields and their data. Raises `WriteError` if any couldn't be deleted."""
+        table_id = (self.info()).id
+        refs = [fields] if isinstance(fields, str | int) else list(fields)
+        if not refs:
+            raise InvalidValueError("delete_fields() needs at least one field.")
+        field_ids = self.resolve_field_ids(refs)
+        payload = self._transport.request(
+            "DELETE", "/fields", params={"tableId": table_id}, json={"fieldIds": field_ids}
+        )
+        self._forget_fields(table_id)
+        errors = parse(lambda data: list(data.get("errors") or ()), payload, "delete fields")
+        if errors:
+            raise WriteError(f"Some fields weren't deleted: {'; '.join(map(str, errors))}")
+
+    def create_relationship(
+        self,
+        parent: "Table",
+        *,
+        foreign_key_label: str,
+        lookup_fields: Sequence[FieldRef] = (),
+    ) -> Relationship:
+        """Make this table a child of `parent`, with a new foreign key field on this table.
+
+        `lookup_fields` are fields of the parent to show on this table.
+        """
+        table_id = (self.info()).id
+        parent_id = (parent.info()).id
+        lookup_ids = parent.resolve_field_ids(lookup_fields)
+        payload = self._transport.request(
+            "POST",
+            f"/tables/{table_id}/relationship",
+            json={
+                "parentTableId": parent_id,
+                "foreignKeyField": {"label": foreign_key_label},
+                "lookupFieldIds": lookup_ids,
+            },
+        )
+        self._forget_fields(table_id)
+        self._forget_fields(parent_id)
+        return parse(Relationship.from_api, payload, "relationship")
+
+    def resolve_field_ids(self, fields: Sequence[FieldRef]) -> list[int]:
+        """Turn field labels or IDs into IDs. Raises `UnknownFieldError` if one doesn't exist."""
+        return self._with_fields(
+            lambda known: [FieldIndex(known).resolve(ref).id for ref in fields]
+        )
+
+    def drop(self, *, confirm: str) -> None:
+        """Delete this table and all its records. `confirm` must be the table's exact name."""
+        info = self.info()
+        if confirm != info.name:
+            raise InvalidValueError(
+                f"Not dropping table {info.name!r}: confirm must be its exact name."
+            )
+        self._transport.request("DELETE", f"/tables/{info.id}", params={"appId": self._app.id})
+        self._forget_fields(info.id)
+        self._cache.delete(f"tables:{self._app.id}")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._ref!r}, app={self._app.id!r})"
