@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A [playground](https://matthew-williams-solutions.github.io/pyquickbase/playground/) on the docs site,
+  which runs the SDK in the browser against simulated data, with nothing to install.
+
 ## [1.0.0rc1] - 2026-11-02
 
 ### Added

@@ -12,6 +12,10 @@ dist/
 site/
 *.egg-info/
 
+# Docs playground: created by scripts/build_playground.py
+docs/playground-app/vendor/
+docs/playground-app/playground-data.json
+
 # Tool caches
 .coverage
 .coverage.*
