@@ -13,7 +13,7 @@ You need three things from Quickbase:
 ## Install
 
 ```bash
-pip install pyquickbase==0.1.0a1
+pip install pyquickbase==0.2.0a1
 ```
 
 ## Read some records
