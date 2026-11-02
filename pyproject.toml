@@ -9,7 +9,7 @@ authors = [{ name = "Matthew Williams" }]
 requires-python = ">=3.11"
 keywords = ["quickbase", "api", "sdk", "client", "async"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Framework :: AnyIO",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3 :: Only",

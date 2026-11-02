@@ -5,7 +5,7 @@ sync and async clients.
 
 **[Read the documentation](https://matthew-williams-solutions.github.io/pyquickbase/)**
 
-> **Status: early alpha.** Anything may change before 1.0. This project is not affiliated with or endorsed by Quickbase, Inc.
+> **Status: release candidate.** Small changes are still possible before 1.0. This project is not affiliated with or endorsed by Quickbase, Inc.
 
 ## What works today
 
@@ -28,10 +28,10 @@ sync and async clients.
 ## Usage
 
 ```bash
-pip install pyquickbase==0.2.0a1
+pip install pyquickbase==1.0.0rc1
 ```
 
-This is an alpha release, so pin the exact version.
+This is a release candidate, so pin the exact version.
 
 ```python
 from datetime import date

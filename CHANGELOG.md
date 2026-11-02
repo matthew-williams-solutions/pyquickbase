@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0rc1] - 2026-11-02
+
 ### Added
 
 - A stability and versioning policy, which applies from 1.0.

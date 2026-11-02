@@ -6,11 +6,11 @@ to keep are explained in the guides, not here.
 
 ## Before 1.0
 
-- Release `1.0.0rc1`.
+- Install `1.0.0rc1` from PyPI and try it live on a scratch table.
 - In the 1.0 release commit:
-  - Change the classifier in `pyproject.toml` from Alpha to Production/Stable.
-  - Remove the alpha warnings from `README.md` and `docs/index.md`, and the advice to pin the exact
-    version. If the pins go too, update `test_install_pins_match_the_version`.
+  - Change the classifier in `pyproject.toml` from Beta to Production/Stable.
+  - Remove the release candidate warnings from `README.md` and `docs/index.md`, and the advice to pin
+    the exact version. If the pins go too, update `test_install_pins_match_the_version`.
   - If codegen's output has changed, refresh `tests/fixtures/generated_tables.py` one last time.
 
 ## After 1.0

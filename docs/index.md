@@ -3,9 +3,9 @@
 An unofficial, typed Python SDK for the [Quickbase](https://www.quickbase.com/) API, with matching
 sync and async clients.
 
-!!! warning "Alpha"
-    This project is in early alpha, so anything may change before 1.0. Pin the exact version you
-    install. It isn't affiliated with or endorsed by Quickbase, Inc.
+!!! warning "Release candidate"
+    This is a release candidate, so small changes are still possible before 1.0. Pin the exact version
+    you install. It isn't affiliated with or endorsed by Quickbase, Inc.
 
 ```python
 from datetime import date
@@ -39,7 +39,7 @@ writing `null` to a field does nothing. This SDK turns those into errors or corr
 ## Install
 
 ```bash
-pip install pyquickbase==0.2.0a1
+pip install pyquickbase==1.0.0rc1
 ```
 
 It needs Python 3.11 or newer. Next, see [Getting started](getting-started.md).
