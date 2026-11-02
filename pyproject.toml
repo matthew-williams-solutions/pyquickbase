@@ -1,0 +1,79 @@
+[project]
+name = "pyquickbase"
+dynamic = ["version"]
+description = "An unofficial, typed Python SDK for the Quickbase API, with sync and async clients."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Matthew Williams" }]
+requires-python = ">=3.11"
+keywords = ["quickbase", "api", "sdk", "client", "async"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: AnyIO",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
+]
+dependencies = [
+    "anyio>=4.0,<5",
+    "httpx>=0.27,<1",
+]
+
+[project.urls]
+Repository = "https://github.com/matthew-williams-solutions/pyquickbase"
+Issues = "https://github.com/matthew-williams-solutions/pyquickbase/issues"
+Changelog = "https://github.com/matthew-williams-solutions/pyquickbase/blob/main/CHANGELOG.md"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.390",
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+    "trio>=0.27",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/pyquickbase/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pyquickbase"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib --strict-markers"
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+branch = true
+source = ["pyquickbase"]
+
+[tool.coverage.report]
+fail_under = 95
+show_missing = true
+exclude_also = ["if TYPE_CHECKING:"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "PT", "RUF", "T20"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*" = ["T20"]
+"tests/*" = ["SIM117"]  # generated sync tests can't merge what async tests must nest
+
+[tool.pyright]
+include = ["src", "scripts"]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"
