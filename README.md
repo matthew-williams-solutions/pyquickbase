@@ -26,7 +26,7 @@ sync and async clients.
 
 ## Coming next
 
-Temporary tokens and generated typed tables.
+Generated typed tables.
 
 ## Usage
 

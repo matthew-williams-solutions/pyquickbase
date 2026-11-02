@@ -198,6 +198,38 @@ Tested on 2026-11-02 with short bursts from 12 threads against temporary tables.
 | 429 body | `{"error": "Quota has been exceeded"}`, **not the usual `message` and `description`** |
 | When it started | After roughly 170 to 185 responses in 4 to 6 seconds, for both `/formula/run` and `/records/query`. That's more than the documented 100 per 10 seconds, so don't rely on the number. These bursts don't show a difference between the two endpoints |
 
+## Temporary tokens
+
+**The SDK doesn't support temporary tokens.** These findings are kept for when that's revisited.
+
+Tested on 2026-11-02 against temporary tables in a sandbox app, with tokens fetched from a logged-in
+browser's console, because a script can't get one.
+
+| Behavior | Result |
+|---|---|
+| `GET /auth/temporary/{table or app ID}` from a script | **400, `Domain not allowed`, with or without credentials.** The check runs before authentication |
+| The same request from a page on the realm | Works, using the browser's session (`credentials: "include"`). Returns `temporaryAuthorization` |
+| Format | An opaque string of 137 characters, with letters, digits, and `.` or `=` |
+| Header | `Authorization: QB-TEMP-TOKEN <token>` |
+| Lifetime | The token stopped working 266 seconds after being pasted into the test. It was fetched shortly before that, so this fits the documented 5 minutes without confirming it |
+| Expired, or out of scope | Both return 401, `Invalid Authorization.`, so they can't be told apart |
+| A malformed token, or a user token with this header | 400, `Invalid Authorization` |
+| A temporary token with `QB-USER-TOKEN` | 401, `User token is invalid` |
+| Requesting another token with one | 400, `Domain not allowed` |
+
+| Request | Table-scoped token | App-scoped token |
+|---|---|---|
+| Records in its table: query, write | **200, including writes** | 401 |
+| Fields and reports of its table, running a report or formula | 200 | 401 |
+| Another table: query, write, fields | 401 | 401 |
+| `GET /tables` and `GET /apps/{id}` | **401** | 200 |
+| **A formula that reads another table** | **200, and returns that table's data** | 401 |
+
+Tokens are scoped narrowly, and an app-scoped token doesn't reach its tables' contents. **Table scope
+doesn't contain a formula**: `GetRecord()` read a table the token couldn't otherwise reach. Uploads,
+downloads, and file deletes weren't tested with a temporary token, and neither were tokens from users
+with fewer permissions.
+
 ## Unverified
 
 Check these against a sandbox app before the feature that needs them ships.
@@ -208,7 +240,6 @@ Check these against a sandbox app before the feature that needs them ships.
 | Which endpoints have different rate limits? | Transport |
 | Whether a formula can read a table in another app | Formulas |
 | Correct API host for EU realms (pass `base_url` if it differs) | Realm handling |
-| Temporary token format | Temporary tokens |
 | Table reports with a formula column, or with Record ID# as a column | Reports |
 | Whether pages of a report are stable when its sort has ties | Reports |
 | Whether a report's `top`-less run returns every record in a large table | Reports |
@@ -229,3 +260,4 @@ Choices made in the SDK that are worth another look before 1.0.
 | `record["Attachment"]` returns Quickbase's raw dictionary | Kept simple for the first version | A typed value with versions, which could leave out uploader emails |
 | Quickbase's formula error messages can contain HTML, which errors pass on unchanged | Errors keep Quickbase's message intact | Strip HTML from error messages, in case they're displayed |
 | `FormulaResult.value` leaves dates, timestamps, and durations as display text | They depend on app settings, and timestamps have no time zone | Parse them using the app's settings, if a safe way appears |
+| Temporary tokens aren't supported | Their main use is browser code pages, a script can't get one, and the SDK's table lookup needs `GET /tables`, which a table-scoped token can't call | After 1.0, a `temporary_token` client option that treats `app.table()` as an ID and skips that lookup, for a backend acting for a logged-in user |
