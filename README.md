@@ -25,7 +25,11 @@ Reports, formulas, file attachments, temporary tokens, and generated typed table
 
 ## Usage
 
-The package isn't on PyPI yet. To try it, install from a clone with `uv sync`.
+```bash
+pip install pyquickbase==0.1.0a1
+```
+
+This is an alpha release, so pin the exact version.
 
 ```python
 from datetime import date

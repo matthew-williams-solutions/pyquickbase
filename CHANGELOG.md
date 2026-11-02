@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0a1] - 2026-11-02
+
+First alpha release.
+
 ### Added
 
 - `Quickbase` and `AsyncQuickbase` clients with `request()` for calling any endpoint.
