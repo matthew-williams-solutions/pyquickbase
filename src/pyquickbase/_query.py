@@ -27,6 +27,8 @@ _CONDITION = re.compile(
 )
 _JOIN = re.compile(r"(?:AND|OR)\b")
 _ESCAPE = re.compile(r"\\(.)")
+_LIST_WORD = re.compile(r"\b(?:OR|AND)\b")
+_FIELD_REFERENCE = re.compile(r"(?:^|\s)_fid_", re.IGNORECASE)
 _WHERE_HELP = (
     "Each condition must be {fieldId.OPERATOR.'value'} in its own braces, joined outside the "
     "braces with AND or OR in uppercase. Write an apostrophe in a value as \\'."
@@ -36,8 +38,13 @@ _WHERE_HELP = (
 def format_value(value: Any) -> str:
     """Render a Python value for use between the quotes of a condition.
 
-    Backslashes and quotes are escaped. Braces are rejected because Quickbase can't search for
-    them, and because every way we've found to break out of a value relies on one.
+    Backslashes and quotes are escaped. Quickbase reads some text inside quotes as query syntax,
+    with no way to escape it, so a value from someone else could otherwise match other records:
+
+    - Braces can end the condition, and Quickbase can't search for them, so they're rejected.
+    - `_FID_6` compares with field 6, so it matches every record on field 6 itself. It's rejected.
+    - An uppercase `OR` or `AND` standing alone splits the value, so `a OR b` matches `a` and `b`
+      but not `a OR b`. Comparisons ignore case, so in lowercase they find the literal text.
     """
     if value is None:
         return ""
@@ -54,7 +61,10 @@ def format_value(value: Any) -> str:
     if isinstance(value, str):
         if "{" in value or "}" in value:
             raise QueryError("Quickbase can't search for values containing { or }.")
-        return value.replace("\\", "\\\\").replace("'", "\\'")
+        if _FIELD_REFERENCE.search(value):
+            raise QueryError("Quickbase reads a value like _FID_6 as a field, not as text.")
+        lowered = _LIST_WORD.sub(lambda word: word[0].lower(), value)
+        return lowered.replace("\\", "\\\\").replace("'", "\\'")
     raise QueryError(f"Can't use a value of type {type(value).__name__} in a query.")
 
 

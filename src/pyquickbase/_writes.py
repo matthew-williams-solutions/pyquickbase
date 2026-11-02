@@ -78,6 +78,15 @@ def require_file_field(item: Field) -> None:
         raise InvalidValueError(f"Field {item.label!r} isn't a file attachment field.")
 
 
+def refuse_blank_rows(rows: Sequence[Mapping[str, Mapping[str, Any]]]) -> None:
+    """Refuse rows with no values, which Quickbase can skip silently, shifting `created_ids`."""
+    for index, row in enumerate(rows):
+        if all(cell["value"] in ("", []) for cell in row.values()):
+            raise InvalidValueError(
+                f"Row {index} has no values, and Quickbase can silently skip a row like this."
+            )
+
+
 def split_batches(rows: Sequence[Mapping[str, Any]], batch_size: int) -> Iterator[tuple[int, int]]:
     """Yield `(start, end)` ranges of rows that fit in one request.
 

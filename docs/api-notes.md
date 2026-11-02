@@ -27,6 +27,7 @@ against a real app before depending on it. Questions we haven't answered yet are
 | With no `select`, only fields in the table's default set return, and Record ID# may not be one | Live API, 2026-11-02 |
 | Timestamps return as `2026-10-21T11:49:56Z`, dates as `2026-10-18` | Live API, 2026-11-02 |
 | A nonexistent app or table returns 401 with a valid token, not 404 | Live API, 2026-11-02 |
+| `GET /tables/{id}/relationships` lists only relationships where the table is the child. A parent table returns none | Live API, 2026-11-02 |
 | Creating a table with a name already in the app, ignoring case, returns 400, `Invalid input` | Live API, 2026-11-02 |
 
 A bad realm or app can return 400 rather than 401 or 404, even with an invalid token, so don't
@@ -56,9 +57,24 @@ plausible result instead of an error.
 | `{` or `}` | 400, `Criteria is invalid.`, so values containing braces can't be searched for |
 
 **A value can break out of its clause.** With `zz'}OR{3.GT.'0` as the value, the query matched every
-record whether the quotes were left alone, written as `\'`, or written as `''`. Every breakout we
-found needs a brace, so `F` rejects braces in values. The string validator can't tell a breakout
-from a genuine second condition, so use `F` for any text you don't control.
+record whether the quotes were left alone, written as `\'`, or written as `''`. So `F` rejects braces
+in values. The string validator can't tell a breakout from a genuine second condition, so use `F` for
+any text you don't control.
+
+**A quoted value can still be query syntax**, with no way to escape it. Tested on 2026-11-02:
+
+| Value | Result |
+|---|---|
+| `a OR b` | **Matches `a` and `b`, and not a stored `a OR b`.** Also with `EX`, `CT`, `SW`, `TV`, and their opposites, on text, numeric, and date fields |
+| `x AND y` | Matches nothing, not even a stored `x AND y` |
+| `OR` or `AND` alone, `x OR`, `OR y` | The word is dropped: `x OR` matches `x`, and `OR` alone matches nothing |
+| What splits a value | **Only uppercase `OR` and `AND` between spaces or tabs.** `Or`, `x,OR,y`, `x-OR-y`, `xOR y`, and a line break or non-breaking space around it don't |
+| The same words in lowercase | Literal text. Comparisons ignore case, so `x or y` finds a stored `x OR y`, including on multi-select fields. This is what `F` sends |
+| `_FID_6`, in any case | **Compares with field 6, so on field 6 it matches every record.** `DELETE /records` with `{6.EX.'_FID_6'}` deleted every record. `F` rejects these |
+| `_FID_6x`, `_FID_06`, `_FID_ 6`, `_FID_6 x` | The same. A leading space or other text before `_FID_` makes it literal. Backslashes don't help |
+| `_ask1_` | 400, `Incomplete reports not supported`. `_ASK1_` is literal |
+| `_curuser_`, on a text field | Literal |
+| `TRUE`, `NULL`, `today`, `*`, `%`, `_` on a text field | Literal |
 
 ## Writes
 
@@ -74,6 +90,7 @@ Tested on 2026-11-02 against temporary tables in a sandbox app.
 | `mergeFieldId` on a unique field, value doesn't match | **Creates a record** |
 | `mergeFieldId` on a non-unique field, or a row without the merge field | 400 for the whole request |
 | Unknown field, formula field, built-in field | Row error |
+| A batch where every row sets the same one field, and a row's value is empty | **That row is silently skipped, with no error**, so `createdRecordIds` no longer lines up with the rows. A batch of one row, or using two or more fields, creates it. `insert()` and `upsert()` refuse these rows |
 | A value outside a field's choices | Accepted when `allowNewChoices` is on, otherwise a row error |
 | The row error for an invalid choice | `The field with ID '7' has an invalid choice.` Confirmed again in a three-row import: 207, `raise_for_status()` passes, and the other two rows are saved |
 | Empty `data` | 400 |

@@ -48,6 +48,7 @@ from .._writes import (
     build_rows,
     field_properties,
     merge_write_result,
+    refuse_blank_rows,
     refuse_field,
     require_field,
     require_file_field,
@@ -247,7 +248,7 @@ class AsyncTable:
         return list(fields)
 
     async def relationships(self, *, refresh: bool = False) -> list[Relationship]:
-        """List the relationships this table is part of, as either parent or child."""
+        """List the relationships in which this table is the child. A parent table lists none."""
         table_id = (await self.info()).id
         key = f"relationships:{table_id}"
         cached = None if refresh else self._cache.get(key)
@@ -391,12 +392,14 @@ class AsyncTable:
         """Create records from `{label or ID: value}` rows. This never changes existing records.
 
         Raises `WriteError` if any row fails. Other rows are still written, and are listed in
-        the error's `result`. A value of `None` leaves the field empty.
+        the error's `result`. A value of `None` leaves the field empty, but a row needs at least
+        one real value, because Quickbase can silently skip a row without one.
         """
         _require_positive("batch_size", batch_size)
         given = list(rows)
         built = await self._with_fields(lambda fields: build_rows(given, FieldIndex(fields)))
         refuse_field(built, RECORD_ID_FIELD, "which insert() can't do. Use update() instead")
+        refuse_blank_rows(built)
         return await self._write(built, None, batch_size)
 
     async def update(
@@ -434,6 +437,7 @@ class AsyncTable:
 
         built, merge_field_id = await self._with_fields(build)
         require_field(built, merge_field_id, "the merge_on field")
+        refuse_blank_rows(built)
         return await self._write(built, merge_field_id, batch_size)
 
     async def delete(self, where: Expression | str) -> int:

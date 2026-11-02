@@ -403,3 +403,28 @@ def test_schema_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     disabled = SchemaCache(0)
     disabled.set("a", 1)
     assert disabled.get("a") is None
+
+
+@pytest.mark.parametrize(
+    ("value", "sent"),
+    [
+        ("a OR b", "a or b"),
+        ("a AND b", "a and b"),
+        ("OR", "or"),
+        ("a\tOR\tb OR c", "a\tor\tb or c"),
+        ("a Or b", "a Or b"),
+        ("ORANGE SAND", "ORANGE SAND"),
+        ("x_FID_6", "x_FID_6"),
+    ],
+)
+def test_words_quickbase_treats_as_syntax_are_sent_as_text(value: str, sent: str) -> None:
+    assert format_value(value) == sent
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["_FID_6", "_fid_6", "_Fid_6", "_FID_6x", "_FID_ 6", "a OR _FID_6", " _FID_6", "\t_fid_1"],
+)
+def test_field_references_in_values_are_refused(value: str) -> None:
+    with pytest.raises(QueryError, match="_FID_6 as a field"):
+        format_value(value)

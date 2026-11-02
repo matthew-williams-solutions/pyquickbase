@@ -19,6 +19,7 @@ from pyquickbase._schema import SchemaCache
 from pyquickbase._writes import (
     build_rows,
     merge_write_result,
+    refuse_blank_rows,
     refuse_field,
     require_field,
     to_api_value,
@@ -138,3 +139,14 @@ def test_schema_cache_delete() -> None:
     cache.delete("a", "missing")
     assert cache.get("a") is None
     assert cache.get("b") == 2
+
+
+@pytest.mark.parametrize("value", ["", None, []])
+def test_a_row_with_no_values_is_refused(value: Any) -> None:
+    rows = build_rows([{"Title": "x"}, {"Title": value}], INDEX)
+    with pytest.raises(InvalidValueError, match="Row 1 has no values"):
+        refuse_blank_rows(rows)
+
+
+def test_a_row_with_one_value_is_fine() -> None:
+    refuse_blank_rows(build_rows([{"Title": "", "Due": date(2027, 1, 1)}, {"Title": "x"}], INDEX))

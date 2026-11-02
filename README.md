@@ -74,8 +74,9 @@ Build conditions with `F`, combining them with `&` and `|` and wrapping each in 
 | `F("Status").is_in(["Done", "Blocked"])` | Any of the values |
 | `F("Tags").op("HAS", "x")` | Any other Quickbase operator |
 
-Use `F` for any text you don't control. It escapes quotes and rejects values containing `{` or `}`,
-which Quickbase can't search for and which could otherwise change the meaning of the query.
+Use `F` for any text you don't control. Quickbase reads some text as query syntax even inside quotes,
+so `F` escapes quotes, refuses values containing `{` or `}` or like `_FID_6`, and sends a standalone
+`OR` or `AND` in lowercase so that it's matched as text.
 
 You can also pass a Quickbase query string as `where`, using field IDs:
 `"({7.EX.'Done'}OR{7.EX.'Blocked'})AND{9.BF.'today'}"`. The SDK raises `QueryError` before sending a

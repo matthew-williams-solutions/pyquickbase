@@ -513,3 +513,25 @@ def test_missing_environment_is_explained(
 def test_the_command_needs_a_subcommand() -> None:
     with pytest.raises(SystemExit):
         main([])
+
+
+def test_generated_files_are_utf8_whatever_the_locale(tmp_path: Path) -> None:
+    # Python before 3.15 uses the locale's encoding by default, which on Windows can't hold labels
+    # like these, and source files are read back as UTF-8.
+    output = tmp_path / "tables.py"
+    source = render([(table(), [*BUILT_IN, field(6, "Déjà 日本語")])])
+    code = (
+        "import pathlib, sys\n"
+        "from pyquickbase._cli import _write\n"
+        f"source = {source!a}\n"
+        "path = pathlib.Path(sys.argv[1])\n"
+        "_write(path, source)\n"
+        "_write(path, source)\n"
+    )
+    env = {"PATH": "", "LC_ALL": "C", "PYTHONUTF8": "0", "PYTHONCOERCECLOCALE": "0"}
+    run = subprocess.run(
+        [sys.executable, "-c", code, str(output)], env=env, capture_output=True, text=True
+    )
+    assert run.returncode == 0, run.stderr[-300:]
+    assert output.read_bytes().decode("utf-8") == source
+    compile(output.read_bytes(), "tables.py", "exec")

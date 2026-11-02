@@ -76,6 +76,10 @@ except WriteError as error:
         print(rows[failed.index], failed.messages)
 ```
 
+A row needs at least one real value, so `insert()` and `upsert()` raise `InvalidValueError` for a row
+where every value is empty. Quickbase can skip such a row without saying so, which also shifts
+`created_ids` against your rows.
+
 Large writes are split into batches of 1,000 rows, which you can change with `batch_size`. If a later
 batch fails outright, `WriteError` is raised with the results so far. Check `error.result` before
 trying again, so you don't write the same rows twice.

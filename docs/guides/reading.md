@@ -18,7 +18,7 @@ tasks = app.table("Tasks")
 print(app.info().name)
 print([table.name for table in app.tables()])
 print([(field.id, field.label, field.type) for field in tasks.fields()])
-print(tasks.relationships())
+print(tasks.relationships())  # Only those where this table is the child
 ```
 
 Metadata is cached for five minutes. Set `schema_ttl` on the client to change that, or call
@@ -52,11 +52,18 @@ print(tasks.count(where))
 Using `and`, `or`, or a chained comparison like `1 < F("x") < 5` raises `QueryError`, because
 Python would otherwise silently drop part of the condition.
 
-A `datetime` needs a timezone, and values containing `{` or `}` are refused. Quickbase can't search
-for braces, and they could otherwise change what a query means.
+A `datetime` needs a timezone. Some text would otherwise change what a query means, because Quickbase
+reads it as query syntax even inside quotes, so `F` handles it for you:
+
+- Values containing `{` or `}` are refused, because Quickbase can't search for them.
+- Values like `_FID_6` are refused, because Quickbase compares them with that field, so
+  `F("Code") == "_FID_7"` could match every record. These can't be searched for either.
+- An uppercase `OR` or `AND` standing alone is sent in lowercase, because `a OR b` would otherwise match
+  `a` and `b` rather than that text. Comparisons ignore case, so this still finds it.
 
 !!! tip "Use `F` for text you don't control"
-    `F` escapes values, so user input can't change the query.
+    `F` escapes values, so user input can't change the query. A query string gets none of this
+    protection: there, `{6.EX.'a OR b'}` means `a` or `b`.
 
 ### Hand-written query strings
 

@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- `F` no longer lets a value act as query syntax, which could match, or delete, records it shouldn't.
+  `_FID_6` compares with field 6, so `F("Title") == "_FID_6"` matched every record, and it now raises
+  `QueryError`. `a OR b` matched `a` and `b` rather than that text, and now matches that text.
+
+### Fixed
+
+- `insert()` and `upsert()` now raise `InvalidValueError` for a row with no values, because Quickbase
+  can silently skip it, which also shifts `created_ids` against your rows.
+- `pyquickbase codegen` now always reads and writes UTF-8, so labels like `日本語` no longer fail or
+  produce a broken file on Windows.
+- `table.relationships()` documents that it lists only relationships where the table is the child.
+
 ### Added
 
 - A [playground](https://matthew-williams-solutions.github.io/pyquickbase/playground/) on the docs site,

@@ -6,6 +6,8 @@ to keep are explained in the guides, not here.
 
 ## Before 1.0
 
+- Release `1.0.0rc2`, with the query safety fixes. `1.0.0rc1` and earlier let a value in `F` act as
+  query syntax.
 - In the 1.0 release commit:
   - Change the classifier in `pyproject.toml` from Beta to Production/Stable.
   - Remove the release candidate warnings from `README.md` and `docs/index.md`, and the advice to pin
@@ -53,6 +55,12 @@ the result to `docs/api-notes.md`.
 - Do pages stay stable with ties above 1,200 records, or while records are added or removed?
 - Does a run without `top` return every record above 1,200 records? The SDK always sends `top`, so this
   only affects `qb.request()`.
+
+**Queries, continued**
+
+- What does `_curuser_` match on a user field? On a text field it's literal, but a value from someone
+  else could match the token owner's records on a user field. Other relative values on date fields, such
+  as `today`, may behave the same way.
 
 **Fields and files**
 

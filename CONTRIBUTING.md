@@ -14,6 +14,20 @@ uv run pytest --cov
 
 Tests use mocked HTTP and need no Quickbase account.
 
+## Live tests
+
+`tests/_async/live`, `tests/_sync/live`, and `tests/live` use a real Quickbase app, and only run when
+asked for. Use a sandbox app. They create tables named `ZZ Live ...`, drop exactly those afterward, and
+fail if the record count of any other table changed.
+
+```bash
+QB_LIVE=1 QB_REALM=... QB_USER_TOKEN=... QB_APP_ID=... uv run pytest tests/_async/live tests/_sync/live tests/live
+```
+
+To test a published release instead of this checkout, install it in a separate environment and set
+`QB_LIVE_VERSION` to its version. Running a report adds to its usage count, so these tests only run
+reports on the tables they create.
+
 ## Docs
 
 Preview the docs site with `uv run --group docs mkdocs serve`. Every public name needs an entry in
