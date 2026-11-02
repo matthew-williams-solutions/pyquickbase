@@ -2,7 +2,17 @@
 
 from ._async._client import AsyncQuickbase
 from ._async._resources import AsyncApp, AsyncRecordIterator, AsyncReport, AsyncTable
-from ._models import AppInfo, Field, FileDownload, Page, Record, Relationship, ReportInfo, TableInfo
+from ._models import (
+    AppInfo,
+    Field,
+    FileDownload,
+    FormulaResult,
+    Page,
+    Record,
+    Relationship,
+    ReportInfo,
+    TableInfo,
+)
 from ._query import F, WhereCondition, parse_where
 from ._retry import RetryPolicy
 from ._sync._client import Quickbase
@@ -48,6 +58,7 @@ __all__ = [
     "Field",
     "FileDownload",
     "FileUpload",
+    "FormulaResult",
     "InvalidResponseError",
     "InvalidValueError",
     "NetworkError",

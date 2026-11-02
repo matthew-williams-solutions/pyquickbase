@@ -14,9 +14,14 @@ All notable changes to this project are documented here. The format follows
   can be read as records.
 - File attachments: `FileUpload` for writes, plus `table.download_file()` and
   `table.delete_file_version()`.
+- Formulas: `table.run_formula()`, which returns a `FormulaResult`, `formula=` on `create_field()` and
+  `update_field()`, and `Field.formula`.
 
 ### Changed
 
+- `read_only` and `allowed_writes` clients now allow running formulas, with `POST /formula/run`.
+- A blank formula now raises `InvalidValueError` on `create_field()` and `update_field()`, including
+  through `properties`, because Quickbase accepts it on a formula field and empties the field's values.
 - A file attachment field now accepts only a `FileUpload`, and raises `InvalidValueError` for anything
   else, including `None` and hand-built dictionaries, because Quickbase silently accepts those and
   keeps or loses the file.
@@ -30,6 +35,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- A rate limit error now includes Quickbase's message, which arrives in a different format.
 - A README example that was missing an import.
 
 ## [0.1.0a1] - 2026-11-02

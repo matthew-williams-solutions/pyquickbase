@@ -145,15 +145,68 @@ MB files in one request returned 413, and two 15 MB files succeeded. It applies 
 1,500 rows of 30,000 characters returned 413 and wrote nothing. The largest file that fits was
 31,457,208 bytes. Downloads worked up to that size.
 
+## Formulas
+
+Tested on 2026-11-02 against temporary tables in a sandbox app.
+
+| Behavior | Result |
+|---|---|
+| `POST /formula/run` | Takes `formula` and `from`, and `rid` if the formula uses fields. Returns `result`, `resultType`, and `fieldTypeApplied` |
+| `result` | **Always a string**, whatever the type |
+| `resultType` values seen | `text`, `number`, `bool`, `date`, `date/time`, `timeofday`, `duration`, `textlist`, `user`, `null` |
+| Booleans | **`"1"` and `"0"`**, so `"0"` is a truthy string in Python |
+| Numbers | Rounded for display: `1/3` returns `"0.3333333"` |
+| Dates and timestamps | **Display text in the app's format, with no time zone:** `03-04-2026` and `03-03-2026 09:06 PM`, where the stored time was `2026-03-04T05:06:07Z`. A query returns the same field as ISO 8601 |
+| Durations | Display text: `Days(3)` returns `"72:00"` |
+| Empty values | `""`, for any type |
+| A blank formula | `""` returns 400. **Whitespace returns 200 with an empty `null` result** |
+| A formula using a field, with no `rid` | 400 |
+| Missing record | 404, even for a formula that uses no fields |
+| Missing `from` | 400 |
+| Unknown table | 401 |
+| A syntax error, unknown field or function, type mismatch, or `1/0` | 400. **Some messages include HTML**, such as a `javascript:` link |
+| Function and field name case | Ignored: `today()` and `[title]` work |
+| `fieldTypeApplied` | `false` in every test. Sending `fieldType` or `resultType` changed nothing, and we don't know what sets it |
+| **Other tables** | **A formula can read other tables** with `GetRecord()` and `GetRecords()`, whatever `from` says |
+| Other information | `AppID()`, `URLRoot()`, and `UserToEmail(User())` return the app ID, realm, and the token owner's email |
+| Side effects | No record changed, including `Date Modified`, after about 60 runs |
+| Formula length | A 1,000,000-character formula worked |
+
+**Formula fields.** `POST /fields` with `properties.formula` creates one, with `mode: "formula"`. Unlike
+many other mistakes, these are checked:
+
+| Behavior | Result |
+|---|---|
+| A syntax error, unknown field, or result type that doesn't match the field | 400. A failed update keeps the old formula |
+| Updating the formula | Values change right away, and other properties are kept |
+| **Updating to an empty formula** | **200, and the field's values become empty** |
+| Creating with an empty formula, or adding a formula to a plain field | 400, `Field must be of formula mode.` |
+| Renaming a field a formula uses | Quickbase updates the formula's text |
+| Writing to a formula field | Row error |
+| Field types that took a formula | `text`, `numeric`, `date`, `checkbox`, `duration`, `timeofday`, `currency`, `percent`, `rating`, `url`, `email`, and `datetime` |
+| **A timestamp formula** | **`timestamp` returns 400, `[formula] property is not supported`. `datetime` works, and the field then reports its type as `timestamp`** |
+| `text-multi-line` | 400, `[formula] property is not supported` |
+| Reading formula fields in a query | Full precision, unlike a formula run: `1/3` returns `0.3333333333333333`. A duration returns milliseconds, and a time of day `11:34:49.896` |
+
+## Rate limits
+
+Tested on 2026-11-02 with short bursts from 12 threads against temporary tables.
+
+| Behavior | Result |
+|---|---|
+| `retry-after` on a real 429 | **Whole seconds**, such as `9` or `10`. After waiting that long, the next request succeeded |
+| 429 body | `{"error": "Quota has been exceeded"}`, **not the usual `message` and `description`** |
+| When it started | After roughly 170 to 185 responses in 4 to 6 seconds, for both `/formula/run` and `/records/query`. That's more than the documented 100 per 10 seconds, so don't rely on the number. These bursts don't show a difference between the two endpoints |
+
 ## Unverified
 
 Check these against a sandbox app before the feature that needs them ships.
 
 | Question | Needed for |
 |---|---|
-| Format and units of `retry-after` on a real 429 (both seconds and dates are handled) | Transport |
 | Can a query return fewer than `top` records before the end? The test table was too small to show it, so advance by `numRecords` | Paging |
 | Which endpoints have different rate limits? | Transport |
+| Whether a formula can read a table in another app | Formulas |
 | Correct API host for EU realms (pass `base_url` if it differs) | Realm handling |
 | Temporary token format | Temporary tokens |
 | Table reports with a formula column, or with Record ID# as a column | Reports |
@@ -174,3 +227,5 @@ Choices made in the SDK that are worth another look before 1.0.
 | `timeout` is set per client, so a large upload on a slow connection may need a larger one for every request | The transport has one timeout | A per-call timeout for uploads and downloads |
 | Files are held in memory as bytes and base64 while being sent | The API takes base64 inside JSON, so there's nothing to stream | Probably none, unless Quickbase adds another upload route |
 | `record["Attachment"]` returns Quickbase's raw dictionary | Kept simple for the first version | A typed value with versions, which could leave out uploader emails |
+| Quickbase's formula error messages can contain HTML, which errors pass on unchanged | Errors keep Quickbase's message intact | Strip HTML from error messages, in case they're displayed |
+| `FormulaResult.value` leaves dates, timestamps, and durations as display text | They depend on app settings, and timestamps have no time zone | Parse them using the app's settings, if a safe way appears |

@@ -17,7 +17,7 @@ ENV_TOKEN = "QB_USER_TOKEN"
 
 _HOSTNAME = re.compile(r"[a-z0-9-]+(\.[a-z0-9-]+)+")
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
-_READ_ONLY_POSTS = {"/records/query"}
+_READ_ONLY_POSTS = {"/records/query", "/formula/run"}
 _REPORT_RUN = re.compile(r"/reports/[0-9]+/run")
 
 

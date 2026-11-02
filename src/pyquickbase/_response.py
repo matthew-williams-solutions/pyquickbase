@@ -37,7 +37,11 @@ def _error_details(response: httpx.Response) -> tuple[str | None, str | None]:
     if not isinstance(body, dict):
         return None, None
     details: dict[str, Any] = body  # pyright: ignore[reportUnknownVariableType]
-    message, description = details.get("message"), details.get("description")
+    # A 429 from the rate limiter has only `error`.
+    message, description = (
+        details.get("message") or details.get("error"),
+        details.get("description"),
+    )
     return (
         message[:_MAX_DETAIL_CHARS] if isinstance(message, str) and message else None,
         description[:_MAX_DETAIL_CHARS] if isinstance(description, str) and description else None,

@@ -16,7 +16,7 @@ projects.create_field("Code", "text", unique=True)
 `currency`. For anything else, pass `properties`, which are sent as they are.
 
 ```python
-projects.create_field("Score", "numeric", properties={"formula": "1 + 1"})
+projects.create_field("Score", "numeric", formula="1 + 1")
 ```
 
 Quickbase sets `required` and `unique` in a second request, so if that one fails, the field exists

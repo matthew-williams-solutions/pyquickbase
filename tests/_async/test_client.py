@@ -314,6 +314,13 @@ async def test_from_env_names_missing_variables(monkeypatch: pytest.MonkeyPatch)
         ("PUT", "/records/query"),
         ("PATCH", "/apps/abc"),
         ("HEAD", "/apps/abc"),
+        ("POST", "/formula"),
+        ("POST", "/formula/run/"),
+        ("POST", "/formula/run/x"),
+        ("POST", "/formula/run/../../records"),
+        ("POST", "/FORMULA/run"),
+        ("DELETE", "/formula/run"),
+        ("PUT", "/formula/run"),
         ("POST", "/reports"),
         ("POST", "/reports/1"),
         ("POST", "/reports/run"),
@@ -348,7 +355,12 @@ async def test_read_only_client_never_sends_anything_else(method: str, path: str
 
 @pytest.mark.parametrize(
     ("method", "path"),
-    [("GET", "/apps/abc"), ("POST", "/records/query"), ("POST", "/reports/12/run")],
+    [
+        ("GET", "/apps/abc"),
+        ("POST", "/records/query"),
+        ("POST", "/reports/12/run"),
+        ("POST", "/formula/run"),
+    ],
 )
 async def test_read_only_client_allows_reads(method: str, path: str) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
@@ -392,3 +404,15 @@ async def test_empty_allowed_writes_is_read_only() -> None:
 async def test_read_only_and_allowed_writes_conflict() -> None:
     with pytest.raises(ConfigurationError, match="not both"):
         make_client(lambda request: httpx.Response(200), read_only=True, allowed_writes=[])
+
+
+async def test_rate_limit_error_includes_the_message_from_its_different_format() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            429, json={"error": "Quota has been exceeded"}, headers={"retry-after": "9"}
+        )
+
+    async with make_client(handler, retry=RetryPolicy(max_retries=0)) as qb:
+        with pytest.raises(RateLimitError, match="Quota has been exceeded") as caught:
+            await qb.request("GET", "/apps/abc")
+    assert caught.value.retry_after == 9

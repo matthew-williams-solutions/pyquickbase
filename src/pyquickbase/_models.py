@@ -6,6 +6,7 @@ import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any, TypeVar
 from urllib.parse import unquote
 
@@ -77,7 +78,10 @@ class TableInfo:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Field:
-    """A field's metadata. `mode` is `formula`, `lookup`, `summary`, or None for plain fields."""
+    """A field's metadata. `mode` is `formula`, `lookup`, `summary`, or None for plain fields.
+
+    `formula` is the formula's text, or None if the field doesn't have one.
+    """
 
     id: int
     label: str
@@ -88,6 +92,7 @@ class Field:
     appears_by_default: bool
     choices: tuple[str, ...]
     allow_new_choices: bool
+    formula: str | None = None
     raw: Mapping[str, Any] = field(repr=False, compare=False)
 
     @classmethod
@@ -103,6 +108,7 @@ class Field:
             appears_by_default=bool(data.get("appearsByDefault")),
             choices=tuple(properties.get("choices") or ()),
             allow_new_choices=bool(properties.get("allowNewChoices")),
+            formula=properties.get("formula") or None,
             raw=data,
         )
 
@@ -312,6 +318,41 @@ class FileDownload:
     def __repr__(self) -> str:
         # File contents may be sensitive and reprs end up in logs, so show only the shape.
         return f"FileDownload({self.name!r}, {len(self.data)} bytes)"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FormulaResult:
+    """The result of `table.run_formula()`.
+
+    `text` is exactly what Quickbase sent, which is always a string, and `type` is Quickbase's name
+    for its type, such as `number`, `bool`, or `date`.
+    """
+
+    text: str = field(repr=False)
+    type: str
+
+    @classmethod
+    def from_api(cls, data: Mapping[str, Any]) -> "FormulaResult":
+        return cls(text=data["result"], type=data["resultType"])
+
+    @property
+    def value(self) -> Any:
+        """The result as a Python value, converted only where that's safe.
+
+        A `bool` becomes `True` or `False`, and a `number` becomes a `Decimal`, or None if either
+        is empty. A `null` becomes None. Anything else stays as text, including dates and
+        timestamps, because they use the app's display format and have no time zone.
+        """
+        if self.type == "null":
+            return None
+        if self.type == "bool" and self.text in ("", "0", "1"):
+            return None if not self.text else self.text == "1"
+        if self.type == "number":
+            try:
+                return Decimal(self.text) if self.text else None
+            except InvalidOperation:
+                return self.text
+        return self.text
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

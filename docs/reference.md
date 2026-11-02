@@ -61,6 +61,8 @@ and `AsyncRecordIterator` have the same methods, which you `await`.
 
 ::: pyquickbase.FileDownload
 
+::: pyquickbase.FormulaResult
+
 ::: pyquickbase.AppInfo
 
 ::: pyquickbase.TableInfo

@@ -56,6 +56,22 @@ def require_id(name: str, value: int) -> None:
         raise InvalidValueError(f"{name} must be a positive integer, got {value!r}.")
 
 
+def require_formula(formula: str) -> None:
+    """Refuse a blank formula. Quickbase returns an empty result, and blanks a field's values."""
+    if not isinstance(formula, str) or not formula.strip():  # pyright: ignore[reportUnnecessaryIsInstance]
+        raise InvalidValueError("A formula can't be blank.")
+
+
+def field_properties(properties: Mapping[str, Any] | None, formula: str | None) -> dict[str, Any]:
+    """Merge a field's properties and formula, refusing a blank formula however it was given."""
+    merged = dict(properties or {})
+    if formula is not None:
+        merged["formula"] = formula
+    if "formula" in merged:
+        require_formula(merged["formula"])
+    return merged
+
+
 def require_file_field(item: Field) -> None:
     if item.type != FILE_FIELD_TYPE:
         raise InvalidValueError(f"Field {item.label!r} isn't a file attachment field.")

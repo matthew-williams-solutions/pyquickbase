@@ -33,6 +33,7 @@ nav:
       - Reading records: guides/reading.md
       - Writing records: guides/writing.md
       - File attachments: guides/files.md
+      - Formulas: guides/formulas.md
       - Changing the schema: guides/schema.md
       - Handling errors: guides/errors.md
       - Configuring clients: guides/clients.md

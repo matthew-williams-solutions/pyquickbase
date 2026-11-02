@@ -21,11 +21,12 @@ sync and async clients.
 - Creating and changing tables, fields, and relationships
 - Running table reports, with automatic paging
 - Uploading, downloading, and deleting file attachments
+- Running formulas, and creating formula fields
 - `qb.request()` for calling any Quickbase endpoint directly
 
 ## Coming next
 
-Formulas, temporary tokens, and generated typed tables.
+Temporary tokens and generated typed tables.
 
 ## Usage
 
@@ -169,9 +170,9 @@ Quickbase may already have applied it, so check the data before trying again.
 ## Limiting what a client can do
 
 Pass `read_only=True` to guarantee a client can't change data. It only sends GET requests, record
-queries, and report runs, including through `qb.request()`, and raises `ReadOnlyError` for anything else
-without contacting Quickbase. Running a report adds to its usage count in Quickbase, but changes no
-records.
+queries, report runs, and formula runs, including through `qb.request()`, and raises `ReadOnlyError`
+for anything else without contacting Quickbase. Running a report adds to its usage count in Quickbase,
+but changes no records.
 
 To allow specific writes and nothing else, pass `allowed_writes={("POST", "/records")}` instead.
 

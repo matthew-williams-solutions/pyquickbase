@@ -12,6 +12,7 @@ from .._models import (
     Field,
     FieldIndex,
     FileDownload,
+    FormulaResult,
     Page,
     Record,
     Relationship,
@@ -28,9 +29,11 @@ from .._writes import (
     RowInput,
     WriteResult,
     build_rows,
+    field_properties,
     refuse_field,
     require_field,
     require_file_field,
+    require_formula,
     require_id,
     split_batches,
 )
@@ -415,6 +418,21 @@ class Table:
         )
         return parse(lambda data: int(data["numberDeleted"]), payload, "delete")
 
+    def run_formula(self, formula: str, *, record_id: int | None = None) -> FormulaResult:
+        """Run a formula against this table, without saving it.
+
+        `record_id` is required if the formula uses fields. Don't run formula text you don't
+        control: a formula can read other tables, whichever table you run it on.
+        """
+        require_formula(formula)
+        if record_id is not None:
+            require_id("record_id", record_id)
+        body: dict[str, Any] = {"formula": formula, "from": (self.info()).id}
+        if record_id is not None:
+            body["rid"] = record_id
+        payload = self._transport.request("POST", "/formula/run", json=body)
+        return parse(FormulaResult.from_api, payload, "formula")
+
     def _file_path(self, record_id: int, field: FieldRef, version: int) -> str:
         require_id("record_id", record_id)
         table_id = (self.info()).id
@@ -462,14 +480,16 @@ class Table:
         required: bool | None = None,
         unique: bool | None = None,
         properties: Mapping[str, Any] | None = None,
+        formula: str | None = None,
     ) -> Field:
         """Create a field and return it. `field_type` is Quickbase's, such as `text` or `date`.
 
+        `formula` makes it a formula field, and `field_type` must match the formula's result.
         Quickbase sets `required` and `unique` in a second request, so if that one fails the field
         exists without them.
         """
+        merged = field_properties(properties, formula)
         table_id = (self.info()).id
-        merged = dict(properties or {})
         if choices is not None:
             merged["choices"] = list(choices)
         body: dict[str, Any] = {"label": label, "fieldType": field_type}
@@ -492,15 +512,21 @@ class Table:
         required: bool | None = None,
         unique: bool | None = None,
         properties: Mapping[str, Any] | None = None,
+        formula: str | None = None,
     ) -> Field:
-        """Change a field's settings and return it. Anything left as None stays as it is."""
+        """Change a field's settings and return it. Anything left as None stays as it is.
+
+        `formula` only works on a formula field, and can't be blank, because Quickbase would accept
+        that and empty the field's values.
+        """
+        merged = field_properties(properties, formula)
         table_id = (self.info()).id
         field_id = self._with_fields(lambda fields: FieldIndex(fields).resolve(field).id)
         optional = {
             "label": label,
             "required": required,
             "unique": unique,
-            "properties": properties,
+            "properties": merged or None,
         }
         body = {k: v for k, v in optional.items() if v is not None}
         if not body:
