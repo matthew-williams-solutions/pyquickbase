@@ -2,6 +2,7 @@
 
 import platform
 import re
+from collections.abc import Collection
 from urllib.parse import urlsplit
 
 import httpx
@@ -54,10 +55,24 @@ def build_url(base_url: str, path: str) -> str:
     return f"{base_url}{path}"
 
 
-def check_read_only(method: str, path: str) -> None:
-    """Allow only requests known to be reads. Queries are POSTs, so method alone isn't enough."""
-    if method != "GET" and not (method == "POST" and path in _READ_ONLY_POSTS):
-        raise ReadOnlyError(f"This client is read-only, so it won't send {method} {path}.")
+def normalize_allowed_writes(
+    read_only: bool, allowed_writes: Collection[tuple[str, str]] | None
+) -> frozenset[tuple[str, str]] | None:
+    """Return the writes a client may send, or None if it may send anything."""
+    if read_only and allowed_writes is not None:
+        raise ConfigurationError("Use read_only or allowed_writes, not both.")
+    if allowed_writes is not None:
+        return frozenset((method.upper(), path) for method, path in allowed_writes)
+    return frozenset() if read_only else None
+
+
+def check_allowed(method: str, path: str, allowed_writes: frozenset[tuple[str, str]]) -> None:
+    """Allow only known reads and listed writes. Queries are POSTs, so method alone isn't enough."""
+    if method == "GET" or (method == "POST" and path in _READ_ONLY_POSTS):
+        return
+    if (method, path) not in allowed_writes:
+        limit = "limited to reads and specific writes" if allowed_writes else "read-only"
+        raise ReadOnlyError(f"This client is {limit}, so it won't send {method} {path}.")
 
 
 def build_user_agent(prefix: str | None) -> str:

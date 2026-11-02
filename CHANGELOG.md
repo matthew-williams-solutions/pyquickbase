@@ -17,6 +17,7 @@ All notable changes to this project are documented here. The format follows
 - `table.query()` for automatic paging, plus `query_page()` and `count()`.
 - `Record`, with access by label or ID and date and timestamp conversion.
 - `read_only=True` on the clients, which refuses any request that could change data.
+- `allowed_writes` on the clients, which limits them to reads plus the writes you list.
 - `parse_where()` for inspecting a hand-written `where` string.
 - `table.insert()`, `update()`, `upsert()`, and `delete()`, with per-row error reporting in `WriteError`.
 - `app.create_table()`, `table.create_field()`, `update_field()`, `delete_fields()`,

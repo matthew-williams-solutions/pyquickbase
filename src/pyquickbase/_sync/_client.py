@@ -2,7 +2,7 @@
 """The async Quickbase client."""
 
 import re
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from types import TracebackType
 from typing import Any, Self
 
@@ -13,6 +13,7 @@ from .._config import (
     DEFAULT_BASE_URL,
     DEFAULT_TIMEOUT,
     build_user_agent,
+    normalize_allowed_writes,
     normalize_realm,
     read_env,
     validate_base_url,
@@ -43,6 +44,8 @@ class Quickbase:
         schema_ttl: Seconds to cache app, table, and field metadata. Use 0 to disable caching.
         read_only: Refuse any request that could change data, raising `ReadOnlyError`. Only GET
             requests and record queries are sent, including through `request()`.
+        allowed_writes: Like `read_only`, but also allow these `(method, path)` pairs, such as
+            `{("POST", "/records")}`. Paths must match exactly.
     """
 
     def __init__(
@@ -57,6 +60,7 @@ class Quickbase:
         http_client: httpx.Client | None = None,
         schema_ttl: float = DEFAULT_SCHEMA_TTL,
         read_only: bool = False,
+        allowed_writes: Collection[tuple[str, str]] | None = None,
     ) -> None:
         self._realm = normalize_realm(realm)
         self._transport = Transport(
@@ -67,7 +71,7 @@ class Quickbase:
             timeout=timeout,
             user_agent=build_user_agent(user_agent),
             http_client=http_client,
-            read_only=read_only,
+            allowed_writes=normalize_allowed_writes(read_only, allowed_writes),
         )
         self._schema = SchemaCache(schema_ttl)
 
@@ -82,6 +86,7 @@ class Quickbase:
         http_client: httpx.Client | None = None,
         schema_ttl: float = DEFAULT_SCHEMA_TTL,
         read_only: bool = False,
+        allowed_writes: Collection[tuple[str, str]] | None = None,
     ) -> Self:
         """Create a client from the `QB_REALM` and `QB_USER_TOKEN` environment variables."""
         realm, token = read_env()
@@ -95,6 +100,7 @@ class Quickbase:
             http_client=http_client,
             schema_ttl=schema_ttl,
             read_only=read_only,
+            allowed_writes=allowed_writes,
         )
 
     @property

@@ -157,11 +157,13 @@ Quickbase answers with a 401, not a 404, for an app or table that doesn't exist,
 Only rate limits and connection failures are retried. A timed-out write isn't retried because
 Quickbase may already have applied it, so check the data before trying again.
 
-## Read-only clients
+## Limiting what a client can do
 
 Pass `read_only=True` to guarantee a client can't change data. It only sends GET requests and record
 queries, including through `qb.request()`, and raises `ReadOnlyError` for anything else without
 contacting Quickbase.
+
+To allow specific writes and nothing else, pass `allowed_writes={("POST", "/records")}` instead.
 
 ## Customizing
 

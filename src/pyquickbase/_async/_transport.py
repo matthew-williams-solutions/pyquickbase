@@ -6,7 +6,7 @@ from typing import Any
 import anyio
 import httpx
 
-from .._config import build_url, check_read_only
+from .._config import build_url, check_allowed
 from .._response import error_from_response, error_from_transport, parse_response
 from .._retry import RetryPolicy, parse_retry_after
 
@@ -22,9 +22,9 @@ class AsyncTransport:
         timeout: float,
         user_agent: str,
         http_client: httpx.AsyncClient | None,
-        read_only: bool = False,
+        allowed_writes: frozenset[tuple[str, str]] | None = None,
     ) -> None:
-        self._read_only = read_only
+        self._allowed_writes = allowed_writes
         self._auth = auth
         self._base_url = base_url
         self._retry = retry
@@ -42,8 +42,8 @@ class AsyncTransport:
     ) -> Any:
         method = method.upper()
         url = build_url(self._base_url, path)
-        if self._read_only:
-            check_read_only(method, path)
+        if self._allowed_writes is not None:
+            check_allowed(method, path, self._allowed_writes)
         attempt = 0
         while True:
             try:
