@@ -6,7 +6,6 @@ to keep are explained in the guides, not here.
 
 ## Before 1.0
 
-- Install `1.0.0rc1` from PyPI and try it live on a scratch table.
 - In the 1.0 release commit:
   - Change the classifier in `pyproject.toml` from Beta to Production/Stable.
   - Remove the release candidate warnings from `README.md` and `docs/index.md`, and the advice to pin
