@@ -1,12 +1,17 @@
 """Typed views of Quickbase metadata and records. No network access."""
 
 import difflib
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, TypeVar
 
-from .errors import InvalidResponseError, UnknownFieldError
+from .errors import (
+    InvalidResponseError,
+    UnknownFieldError,
+    UnknownReportError,
+    UnsupportedReportError,
+)
 
 RECORD_ID_FIELD = 3
 
@@ -124,6 +129,69 @@ class Relationship:
         )
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ReportInfo:
+    """A report's metadata. `type` is `table`, `summary`, `chart`, or another Quickbase type.
+
+    `incomplete` is true when Quickbase can't run the report through the API, as with one that asks
+    the user for a value. `raw` holds everything Quickbase returned.
+    """
+
+    id: str
+    name: str
+    type: str
+    description: str
+    incomplete: bool
+    raw: Mapping[str, Any] = field(repr=False, compare=False)
+
+    @classmethod
+    def from_api(cls, data: Mapping[str, Any]) -> "ReportInfo":
+        return cls(
+            id=data["id"],
+            name=data["name"],
+            type=data["type"],
+            description=data.get("description") or "",
+            incomplete=bool(data.get("incomplete")),
+            raw=data,
+        )
+
+
+def find_report(reports: Sequence[ReportInfo], ref: str) -> ReportInfo | None:
+    """Find a report by ID, then by name. Names can repeat, and guessing could run the wrong one."""
+    found = next((item for item in reports if item.id == ref), None)
+    if found is not None:
+        return found
+    matches = [item for item in reports if item.name == ref]
+    if len(matches) > 1:
+        ids = [item.id for item in matches]
+        raise UnknownReportError(f"Several reports are named {ref!r}. Use an ID: {ids}.")
+    return matches[0] if matches else None
+
+
+def unknown_report_message(reports: Sequence[ReportInfo], ref: str) -> str:
+    close = difflib.get_close_matches(ref, dict.fromkeys(item.name for item in reports), n=3)
+    hint = f" Did you mean {' or '.join(repr(name) for name in close)}?" if close else ""
+    return f"This table has no report {ref!r}.{hint}"
+
+
+def require_table_report(report: ReportInfo) -> None:
+    """Refuse reports whose rows aren't records.
+
+    Other types return the same response shape, but with field IDs that are column positions, so
+    a total in the second column would read as Record ID#. Only `type` tells them apart.
+    """
+    if report.type != "table":
+        raise UnsupportedReportError(
+            f"Report {report.name!r} is a {report.type} report, and only table reports can be read "
+            "as records. Use qb.request() for the raw response."
+        )
+    if report.incomplete:
+        raise UnsupportedReportError(
+            f"Quickbase can't run report {report.name!r} through the API because it's incomplete, "
+            "as happens when a report asks the user for a value."
+        )
+
+
 class FieldIndex:
     """Find a table's fields by label or ID."""
 
@@ -187,8 +255,15 @@ class Record(Mapping[str | int, Any]):
 
     @property
     def id(self) -> int:
-        """The Record ID#, which queries always select."""
-        return self._values[RECORD_ID_FIELD]
+        """The Record ID#. Queries always select it, but a report may not include it.
+
+        Raises:
+            KeyError: The record came from a report without a Record ID# column.
+        """
+        try:
+            return self._values[RECORD_ID_FIELD]
+        except KeyError:
+            raise KeyError("This record has no Record ID#, so its report left it out.") from None
 
     def __getitem__(self, key: str | int) -> Any:
         field_id = self._labels[key] if isinstance(key, str) else key

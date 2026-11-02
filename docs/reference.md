@@ -4,14 +4,16 @@ Everything listed here is public. Modules starting with `_` are private and may 
 
 ## Clients
 
-`Quickbase` is documented in full here. `AsyncQuickbase`, `AsyncApp`, `AsyncTable`, and
-`AsyncRecordIterator` have the same methods, which you `await`.
+`Quickbase` is documented in full here. `AsyncQuickbase`, `AsyncApp`, `AsyncTable`, `AsyncReport`,
+and `AsyncRecordIterator` have the same methods, which you `await`.
 
 ::: pyquickbase.Quickbase
 
 ::: pyquickbase.App
 
 ::: pyquickbase.Table
+
+::: pyquickbase.Report
 
 ::: pyquickbase.RecordIterator
 
@@ -24,6 +26,10 @@ Everything listed here is public. Modules starting with `_` are private and may 
       members: false
 
 ::: pyquickbase.AsyncTable
+    options:
+      members: false
+
+::: pyquickbase.AsyncReport
     options:
       members: false
 
@@ -59,6 +65,8 @@ Everything listed here is public. Modules starting with `_` are private and may 
 
 ::: pyquickbase.Relationship
 
+::: pyquickbase.ReportInfo
+
 ## Exceptions
 
 ::: pyquickbase.QuickbaseError
@@ -72,6 +80,10 @@ Everything listed here is public. Modules starting with `_` are private and may 
 ::: pyquickbase.UnknownTableError
 
 ::: pyquickbase.UnknownFieldError
+
+::: pyquickbase.UnknownReportError
+
+::: pyquickbase.UnsupportedReportError
 
 ::: pyquickbase.ReadOnlyError
 

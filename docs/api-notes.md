@@ -82,6 +82,33 @@ Tested on 2026-11-02 against temporary tables in a sandbox app.
 | Reading a cleared date or timestamp | Returns `""`, and a cleared numeric returns null |
 | Checkbox queries | `{id.EX.'true'}`, `{id.EX.'1'}`, and `{id.TV.'true'}` match the same records |
 
+## Reports
+
+Tested on 2026-11-02 against a temporary table in a sandbox app, with table, ask-the-user, summary,
+and chart reports built in the UI. The API can't create reports.
+
+| Behavior | Result |
+|---|---|
+| `GET /reports?tableId=` | A list of the same objects as `GET /reports/{id}?tableId=`: `id`, `name`, `type`, `description`, `query`, `properties`, `incomplete`, `usedCount`, and `usedLast` once used |
+| Report IDs | Numeric strings, **unique only within a table**. A new table gets `1` (List All) and `2` (List Changes) |
+| Report names | **Can repeat within a table** |
+| `POST /reports/{id}/run?tableId=` | Needs no body. Returns `fields`, `data`, and `metadata`, as a query does |
+| `top` and `skip` | Must be query parameters. **In the body they're silently ignored, and every record returns** |
+| `top` omitted | Returned every record in a 12-record table |
+| `top` of 0 or less, or a negative `skip` | 400, although a query accepts `top: 0` |
+| `skip` past the end | No records, no error |
+| A report ID with leading zeros, such as `01` | Runs the same report |
+| Missing `tableId` | 400 |
+| Unknown table | 401 for an ID that never existed, 404 for a dropped table |
+| Unknown or non-numeric report ID | 404 |
+| The report's filter, sort, and columns | Applied. Rows hold only the report's columns |
+| A report whose columns leave out Record ID#, including the default `List All` | Rows have no field 3 |
+| Running a report | **Adds 1 to `usedCount`, even when the run fails.** A GET doesn't, and records aren't modified |
+| Ask-the-user report | `incomplete: true`, and running it returns 400, `Incomplete reports not supported` |
+| Summary and chart reports | **Same response shape as a table report, but `fields` IDs are column positions starting at 2.** The second column has ID 3, the Record ID# field in a table report, so nothing in the response tells them apart. Only `type` on the report does |
+| Chart category values | Dates return as text, `01-01-2026`, not `yyyy-MM-dd` |
+| Renaming a column in a report | The UI doesn't offer this |
+
 ## Unverified
 
 Check these against a sandbox app before the feature that needs them ships.
@@ -95,3 +122,6 @@ Check these against a sandbox app before the feature that needs them ships.
 | The HTTP status of a partly failed write, assumed to be 207 (any 2xx is handled the same) | Writes |
 | Correct API host for EU realms (pass `base_url` if it differs) | Realm handling |
 | Temporary token format | Temporary tokens |
+| Table reports with a formula column, or with Record ID# as a column | Reports |
+| Whether pages of a report are stable when its sort has ties | Reports |
+| Whether a report's `top`-less run returns every record in a large table | Reports |

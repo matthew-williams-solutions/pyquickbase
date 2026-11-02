@@ -125,3 +125,39 @@ print(dict(task))
 Date fields come back as `date` objects and timestamp fields as timezone-aware `datetime` objects, or
 `None` when empty. Other values are as Quickbase returns them, so a user field is a dictionary and
 a numeric field is a `float`.
+
+## Running reports
+
+Find a report on its table by name or ID. Like tables, it's checked when first used. The API can't
+create reports, so build them in Quickbase.
+
+```python
+print([(report.id, report.name, report.type) for report in tasks.reports()])
+
+for row in tasks.report("Open tasks").run(limit=50):
+    print(row["Title"])
+
+page = tasks.report("12").run_page(top=100, skip=0)
+print(len(page.records), page.total, page.has_more)
+```
+
+The report decides the filter, sort, and columns:
+
+- **Record ID# may be missing.** `record.id` raises `KeyError` if the report doesn't include that
+  column, and the default `List All` report doesn't.
+- **Pages may not be stable.** `query()` adds Record ID# as the last sort key to keep pages stable,
+  but a report's sort can't be changed. If that matters, prefer `query()`.
+- **Report IDs are only unique within a table.** Different tables reuse the same IDs, so always get a
+  report from its own table.
+- **Names can repeat.** A repeated name raises `UnknownReportError`, which lists the IDs to choose
+  from. An ID takes priority over a name.
+
+Only table reports can be read as records. Summary, chart, and ask-the-user reports raise
+`UnsupportedReportError` before anything runs. Summary and chart results number their columns by
+position, so a total would otherwise read as a Record ID#. To get their raw results, use
+`qb.request("POST", f"/reports/{report_id}/run", params={"tableId": table_id})`. Quickbase can't run
+ask-the-user reports through the API.
+
+Running a report adds to its usage count in Quickbase, even if the run fails, but changes no records.
+Report details come from the same cache as other metadata, so `usedCount` in `raw` can be out of
+date.

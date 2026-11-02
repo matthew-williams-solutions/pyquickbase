@@ -55,6 +55,14 @@ class UnknownFieldError(QuickbaseError, LookupError):
     """The table has no field with that label or ID."""
 
 
+class UnknownReportError(QuickbaseError, LookupError):
+    """The table has no report with that name or ID, or several reports share the name."""
+
+
+class UnsupportedReportError(QuickbaseError):
+    """The report can't be read as records, such as a summary or chart report."""
+
+
 class APIError(QuickbaseError):
     """Quickbase answered with an unsuccessful status code.
 

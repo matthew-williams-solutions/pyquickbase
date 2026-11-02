@@ -26,6 +26,8 @@ These mean nothing was sent to Quickbase.
 | `InvalidValueError` | A row or value that can't be written |
 | `UnknownTableError` | No table with that name or ID in this app |
 | `UnknownFieldError` | No field with that label or ID in this table |
+| `UnknownReportError` | No report with that name or ID on this table, or several with that name |
+| `UnsupportedReportError` | A report that can't be read as records, such as a summary or chart |
 | `ReadOnlyError` | The client isn't allowed to send this request |
 
 ## Errors from Quickbase

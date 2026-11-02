@@ -14,8 +14,12 @@ from .._models import (
     Page,
     Record,
     Relationship,
+    ReportInfo,
     TableInfo,
+    find_report,
     parse,
+    require_table_report,
+    unknown_report_message,
 )
 from .._query import Expression, FieldRef, build_query_body, compile_where
 from .._schema import SchemaCache
@@ -26,6 +30,7 @@ from ..errors import (
     QueryError,
     QuickbaseError,
     UnknownFieldError,
+    UnknownReportError,
     UnknownTableError,
     WriteError,
 )
@@ -220,6 +225,24 @@ class Table:
     def _parse_relationships(payload: Any) -> tuple[list[Relationship], int]:
         rows = [Relationship.from_api(row) for row in payload["relationships"]]
         return rows, payload["metadata"]["totalRelationships"]
+
+    def reports(self, *, refresh: bool = False) -> list[ReportInfo]:
+        """List the table's reports, from the cache unless `refresh` is set."""
+        table_id = (self.info()).id
+        key = f"reports:{table_id}"
+        cached = None if refresh else self._cache.get(key)
+        if cached is not None:
+            return list(cached)
+        payload = self._transport.request("GET", "/reports", params={"tableId": table_id})
+        reports = parse(
+            lambda rows: tuple(ReportInfo.from_api(row) for row in rows), payload, "reports"
+        )
+        self._cache.set(key, reports)
+        return list(reports)
+
+    def report(self, name_or_id: str) -> "Report":
+        """Get a report on this table by name or ID. It's checked when first used."""
+        return Report(self._transport, self, name_or_id)
 
     def _with_fields(self, build: Callable[[list[Field]], T]) -> T:
         try:
@@ -500,7 +523,74 @@ class Table:
             )
         self._transport.request("DELETE", f"/tables/{info.id}", params={"appId": self._app.id})
         self._forget_fields(info.id)
-        self._cache.delete(f"tables:{self._app.id}")
+        self._cache.delete(f"tables:{self._app.id}", f"reports:{info.id}")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._ref!r}, app={self._app.id!r})"
+
+
+class Report:
+    """A report on a table. Create one with `table.report("Open tasks")`."""
+
+    def __init__(self, transport: Transport, table: Table, ref: str) -> None:
+        self._transport = transport
+        self._table = table
+        self._ref = ref
+
+    def info(self) -> ReportInfo:
+        """Get the report's metadata, from the table's cached list of reports.
+
+        Raises `UnknownReportError` if the table has no such report, or if several share the name.
+        An ID takes priority over a name.
+        """
+        reports = self._table.reports()
+        found = find_report(reports, self._ref)
+        if found is None:
+            # The report may be newer than the cache, so look once more before giving up.
+            reports = self._table.reports(refresh=True)
+            found = find_report(reports, self._ref)
+        if found is None:
+            raise UnknownReportError(unknown_report_message(reports, self._ref))
+        return found
+
+    def _load_target(self) -> dict[str, Any]:
+        info = self.info()
+        require_table_report(info)
+        return {"id": info.id, "tableId": (self._table.info()).id}
+
+    def _fetch_page(self, target: dict[str, Any], top: int, skip: int) -> Page:
+        # Quickbase silently ignores top and skip in the body and returns every record.
+        payload = self._transport.request(
+            "POST",
+            f"/reports/{target['id']}/run",
+            params={"tableId": target["tableId"], "top": top, "skip": skip},
+        )
+        return parse(Page.from_api, payload, "report")
+
+    def run_page(self, *, top: int = 100, skip: int = 0) -> Page:
+        """Fetch one page of the report's records. See `run`."""
+        _require_positive("top", top)
+        if skip < 0:
+            raise QueryError("skip can't be negative.")
+        return self._fetch_page(self._load_target(), top, skip)
+
+    def run(self, *, page_size: int = 1000, limit: int | None = None) -> RecordIterator:
+        """Iterate over the report's records, fetching further pages as needed.
+
+        Records hold only the report's columns, so `record.id` raises `KeyError` if Record ID#
+        isn't one of them. Each run adds to the report's usage count in Quickbase.
+
+        Raises `UnsupportedReportError` for anything but a complete table report, including summary,
+        chart, and ask-the-user reports. Their raw results are available through `qb.request()`.
+
+        Args:
+            page_size: Records to request per call to Quickbase.
+            limit: Stop after this many records.
+        """
+        _require_positive("page_size", page_size)
+        if limit is not None:
+            _require_positive("limit", limit)
+        return RecordIterator(self._load_target, self._fetch_page, page_size, limit)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self._ref!r}, table={self._table!r})"

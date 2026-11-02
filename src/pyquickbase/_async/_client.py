@@ -42,7 +42,8 @@ class AsyncQuickbase:
             or custom transports. You remain responsible for closing it.
         schema_ttl: Seconds to cache app, table, and field metadata. Use 0 to disable caching.
         read_only: Refuse any request that could change data, raising `ReadOnlyError`. Only GET
-            requests and record queries are sent, including through `request()`.
+            requests, record queries, and report runs are sent, including through `request()`.
+            Running a report adds to its usage count in Quickbase, but changes no records.
         allowed_writes: Like `read_only`, but also allow these `(method, path)` pairs, such as
             `{("POST", "/records")}`. Paths must match exactly.
     """

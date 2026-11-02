@@ -18,6 +18,7 @@ ENV_TOKEN = "QB_USER_TOKEN"
 _HOSTNAME = re.compile(r"[a-z0-9-]+(\.[a-z0-9-]+)+")
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 _READ_ONLY_POSTS = {"/records/query"}
+_REPORT_RUN = re.compile(r"/reports/[0-9]+/run")
 
 
 def normalize_realm(realm: str) -> str:
@@ -68,7 +69,9 @@ def normalize_allowed_writes(
 
 def check_allowed(method: str, path: str, allowed_writes: frozenset[tuple[str, str]]) -> None:
     """Allow only known reads and listed writes. Queries are POSTs, so method alone isn't enough."""
-    if method == "GET" or (method == "POST" and path in _READ_ONLY_POSTS):
+    if method == "GET" or (
+        method == "POST" and (path in _READ_ONLY_POSTS or _REPORT_RUN.fullmatch(path))
+    ):
         return
     if (method, path) not in allowed_writes:
         limit = "limited to reads and specific writes" if allowed_writes else "read-only"

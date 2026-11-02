@@ -314,6 +314,23 @@ async def test_from_env_names_missing_variables(monkeypatch: pytest.MonkeyPatch)
         ("PUT", "/records/query"),
         ("PATCH", "/apps/abc"),
         ("HEAD", "/apps/abc"),
+        ("POST", "/reports"),
+        ("POST", "/reports/1"),
+        ("POST", "/reports/run"),
+        ("POST", "/reports//run"),
+        ("POST", "/reports/abc/run"),
+        ("POST", "/reports/-1/run"),
+        ("POST", "/reports/1/run/"),
+        ("POST", "/reports/1/run/x"),
+        ("POST", "/reports/1/run/../../records"),
+        ("POST", "/reports/../run"),
+        ("POST", "/reports/%31/run"),
+        ("POST", "/reports/1/run\n"),
+        ("POST", "/reports/\u0661/run"),
+        ("POST", "/REPORTS/1/run"),
+        ("POST", "/x/reports/1/run"),
+        ("DELETE", "/reports/1/run"),
+        ("PUT", "/reports/1/run"),
     ],
 )
 async def test_read_only_client_never_sends_anything_else(method: str, path: str) -> None:
@@ -329,7 +346,10 @@ async def test_read_only_client_never_sends_anything_else(method: str, path: str
     assert seen == []
 
 
-@pytest.mark.parametrize(("method", "path"), [("GET", "/apps/abc"), ("POST", "/records/query")])
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [("GET", "/apps/abc"), ("POST", "/records/query"), ("POST", "/reports/12/run")],
+)
 async def test_read_only_client_allows_reads(method: str, path: str) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"ok": True})
@@ -349,7 +369,12 @@ async def test_allowed_writes_permit_only_exact_matches() -> None:
         await qb.request("POST", "/records", json={})
         await qb.request("POST", "/records/query", json={})
         await qb.request("GET", "/apps/abc")
-        for method, path in (("DELETE", "/records"), ("POST", "/tables"), ("POST", "/records/")):
+        for method, path in (
+            ("DELETE", "/records"),
+            ("POST", "/tables"),
+            ("POST", "/records/"),
+            ("POST", "/reports/1/run/"),
+        ):
             with pytest.raises(ReadOnlyError, match="specific writes"):
                 await qb.request(method, path, json={})
     assert seen == ["POST /v1/records", "POST /v1/records/query", "GET /v1/apps/abc"]

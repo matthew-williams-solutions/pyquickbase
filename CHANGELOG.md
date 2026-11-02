@@ -9,6 +9,17 @@ All notable changes to this project are documented here. The format follows
 ### Added
 
 - A documentation site.
+- Reports: `table.reports()`, `table.report()`, and `Report` with `run()`, `run_page()`, and
+  `info()`, plus `ReportInfo`, `UnknownReportError`, and `UnsupportedReportError`. Only table reports
+  can be read as records.
+
+### Changed
+
+- `read_only` and `allowed_writes` clients now allow running reports, with
+  `POST /reports/{id}/run`. This adds to the report's usage count in Quickbase, but changes no
+  records.
+- `Record.id` now explains what's missing when a report's records have no Record ID#. It still
+  raises `KeyError`.
 
 ### Fixed
 
