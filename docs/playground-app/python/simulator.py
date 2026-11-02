@@ -1,6 +1,7 @@
 """A simulated Quickbase API, so the docs playground needs no account, token, or server.
 
-It runs inside the visitor's browser and holds a small sample app. It only covers reading so far.
+It runs inside the visitor's browser and holds a small sample app. It covers reading and adding
+records so far.
 Its quirks copy what's recorded in docs/api-notes.md, including the mistakes Quickbase accepts,
 because those are what the SDK protects against.
 """
@@ -330,7 +331,7 @@ class SimulatedQuickbase:
                     "keyFieldId": RECORD_ID,
                 },
                 "fields": _TASK_FIELDS,
-                "rows": _TASK_ROWS,
+                "rows": [dict(row) for row in _TASK_ROWS],
             },
             PROJECTS_ID: {
                 "info": {
@@ -340,7 +341,7 @@ class SimulatedQuickbase:
                     "keyFieldId": RECORD_ID,
                 },
                 "fields": _PROJECT_FIELDS,
-                "rows": _PROJECT_ROWS,
+                "rows": [dict(row) for row in _PROJECT_ROWS],
             },
         }
         self._reports: dict[str, list[dict[str, Any]]] = {
@@ -368,13 +369,21 @@ class SimulatedQuickbase:
         except _ApiError as error:
             payload = {"message": error.message, "description": error.description}
             return httpx.Response(error.status, json=payload, headers={"qb-api-ray": "simulated"})
-        return httpx.Response(200, json=payload, headers={"qb-api-ray": "simulated"})
+        # Quickbase saves the rows it can, so a row error still counts as a success status.
+        partial = path == "/records" and payload["metadata"].get("lineErrors")
+        return httpx.Response(
+            207 if partial else 200, json=payload, headers={"qb-api-ray": "simulated"}
+        )
 
     def _route(self, request: httpx.Request, path: str) -> Any:
         params = request.url.params
         route = (request.method, path)
         if route == ("POST", "/records/query"):
             return self._query(json.loads(request.content))
+        if route == ("POST", "/records") and "mergeFieldId" not in (
+            body := json.loads(request.content)
+        ):
+            return self._insert(body)
         if route == ("GET", "/tables"):
             self._app(params.get("appId"))
             return [table["info"] for table in self._tables.values()]
@@ -394,7 +403,7 @@ class SimulatedQuickbase:
         raise _ApiError(
             403,
             f"The playground doesn't simulate {request.method} {path} yet.",
-            "It covers reading records, schema, and table reports so far.",
+            "It covers reading records, schema, table reports, and adding records so far.",
         )
 
     def _app(self, app_id: str | None) -> dict[str, Any]:
@@ -480,6 +489,36 @@ class SimulatedQuickbase:
             result["metadata"]["top"] = top
         return result
 
+    def _insert(self, body: dict[str, Any]) -> dict[str, Any]:
+        table = self._table(body.get("to"))
+        if not body.get("data"):
+            raise _ApiError(400, "Missing data.")
+        fields = {field["id"]: field for field in table["fields"]}
+        created: list[int] = []
+        errors: dict[str, list[str]] = {}
+        for line, row in enumerate(body["data"], start=1):
+            messages = [
+                message
+                for key, cell in row.items()
+                if (message := _write_problem(fields.get(int(key)), key, cell["value"]))
+            ]
+            if messages:
+                errors[str(line)] = messages
+                continue
+            record_id = max(existing[RECORD_ID] for existing in table["rows"]) + 1
+            values = {int(key): cell["value"] for key, cell in row.items()}
+            table["rows"].append({**values, RECORD_ID: record_id})
+            created.append(record_id)
+        metadata: dict[str, Any] = {
+            "createdRecordIds": created,
+            "updatedRecordIds": [],
+            "unchangedRecordIds": [],
+            "totalNumberOfRecordsProcessed": len(body["data"]),
+        }
+        if errors:
+            metadata["lineErrors"] = errors
+        return {"data": [], "metadata": metadata}
+
     def _run_report(self, report_id: str, params: httpx.QueryParams) -> dict[str, Any]:
         table = self._table(params.get("tableId"))
         reports = self._reports[params["tableId"]]
@@ -499,6 +538,18 @@ class SimulatedQuickbase:
             return _summary_by_status(table, skip)
         query = report["query"]
         return self._select(table, query["filter"], query["fields"], query["sortBy"], top, skip)
+
+
+def _write_problem(field: dict[str, Any] | None, key: str, value: Any) -> str | None:
+    """Return Quickbase's row error for a value, or None if it can be written."""
+    if field is None:
+        return f'Field with ID "{key}" not found.'
+    choices = field["properties"].get("choices")
+    if choices and not field["properties"].get("allowNewChoices", True) and value not in choices:
+        return f"The field with ID '{key}' has an invalid choice."  # Quickbase's words.
+    if field["fieldType"] == "numeric" and not isinstance(value, int | float | None):
+        return f'Incompatible value for field with ID "{key}".'
+    return None
 
 
 def _sorted(rows: list[Row], field: dict[str, Any], *, descending: bool) -> list[Row]:

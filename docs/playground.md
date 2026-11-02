@@ -15,7 +15,6 @@ Try pyquickbase in your browser, with nothing to install. No account or token is
     Nothing is sent to Quickbase, and reloading the page starts over.
 
     The simulator copies the behavior recorded in the [API notes](api-notes.md), but it isn't
-    Quickbase, so test your own code against your own app. It covers reading records, schema, and
-    table reports so far. Writes, files, and formulas return a `PermissionDeniedError`.
+    Quickbase, so test your own code against your own app. XX
 
 To use your own data, [install the SDK](getting-started.md).
