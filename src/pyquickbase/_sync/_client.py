@@ -1,6 +1,7 @@
 # Generated from the async code by scripts/generate_sync.py. Do not edit.
 """The async Quickbase client."""
 
+import re
 from collections.abc import Mapping
 from types import TracebackType
 from typing import Any, Self
@@ -18,7 +19,13 @@ from .._config import (
     validate_token,
 )
 from .._retry import RetryPolicy
+from .._schema import SchemaCache
+from ..errors import ConfigurationError
+from ._resources import App
 from ._transport import Transport
+
+DEFAULT_SCHEMA_TTL = 300.0
+_APP_ID = re.compile(r"[A-Za-z0-9]+")
 
 
 class Quickbase:
@@ -33,6 +40,7 @@ class Quickbase:
         user_agent: Identifies your application, placed before the SDK's own User-Agent.
         http_client: Your own configured httpx client, for proxies, custom TLS, event hooks,
             or custom transports. You remain responsible for closing it.
+        schema_ttl: Seconds to cache app, table, and field metadata. Use 0 to disable caching.
     """
 
     def __init__(
@@ -45,6 +53,7 @@ class Quickbase:
         timeout: float = DEFAULT_TIMEOUT,
         user_agent: str | None = None,
         http_client: httpx.Client | None = None,
+        schema_ttl: float = DEFAULT_SCHEMA_TTL,
     ) -> None:
         self._realm = normalize_realm(realm)
         self._transport = Transport(
@@ -56,6 +65,7 @@ class Quickbase:
             user_agent=build_user_agent(user_agent),
             http_client=http_client,
         )
+        self._schema = SchemaCache(schema_ttl)
 
     @classmethod
     def from_env(
@@ -66,6 +76,7 @@ class Quickbase:
         timeout: float = DEFAULT_TIMEOUT,
         user_agent: str | None = None,
         http_client: httpx.Client | None = None,
+        schema_ttl: float = DEFAULT_SCHEMA_TTL,
     ) -> Self:
         """Create a client from the `QB_REALM` and `QB_USER_TOKEN` environment variables."""
         realm, token = read_env()
@@ -77,12 +88,23 @@ class Quickbase:
             timeout=timeout,
             user_agent=user_agent,
             http_client=http_client,
+            schema_ttl=schema_ttl,
         )
 
     @property
     def realm(self) -> str:
         """The full realm hostname, such as `acme.quickbase.com`."""
         return self._realm
+
+    def app(self, app_id: str) -> App:
+        """Get an app by ID, the `bq...` part of its URL. This makes no network calls."""
+        if not _APP_ID.fullmatch(app_id):
+            raise ConfigurationError("An app ID contains only letters and numbers.")
+        return App(self._transport, self._schema, app_id)
+
+    def clear_schema_cache(self) -> None:
+        """Forget cached metadata, for example after changing a table's fields."""
+        self._schema.clear()
 
     def request(
         self,

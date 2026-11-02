@@ -18,7 +18,19 @@ class RequestTimeoutError(NetworkError):
 
 
 class InvalidResponseError(QuickbaseError):
-    """Quickbase reported success, but the response body was not valid JSON."""
+    """Quickbase reported success, but the response body wasn't in the expected format."""
+
+
+class QueryError(QuickbaseError, ValueError):
+    """A query can't be sent as written. Nothing was sent to Quickbase."""
+
+
+class UnknownTableError(QuickbaseError, LookupError):
+    """The app has no table with that name or ID."""
+
+
+class UnknownFieldError(QuickbaseError, LookupError):
+    """The table has no field with that label or ID."""
 
 
 class APIError(QuickbaseError):
