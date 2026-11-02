@@ -6,9 +6,6 @@ to keep are explained in the guides, not here.
 
 ## Before 1.0
 
-- Decide whether to test tokens with fewer permissions first. All testing so far used one token, and
-  hidden fields might read as "no longer exists" in a generated class's schema check. This needs a
-  token for a restricted role.
 - Release `1.0.0rc1`.
 - In the 1.0 release commit:
   - Change the classifier in `pyproject.toml` from Alpha to Production/Stable.
@@ -64,5 +61,9 @@ the result to `docs/api-notes.md`.
 
 - What's the API host for EU realms?
 - Can a formula read a table in another app?
+- How do roles with write access or record-level rules behave, and a report that sorts or filters on a
+  hidden field? Only a view-only role with hidden fields has been tested.
+- Can a restricted user's formula read a table their role has no access to? A role's hidden fields held
+  up, but this wasn't tested, because the role's other tables were the seeded ones.
 - Can renaming a table, or using the UI, give two tables the same name? If so, `app.table()` takes the
   first match, unlike fields and reports, which raise an error.

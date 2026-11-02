@@ -241,6 +241,29 @@ doesn't contain a formula**: `GetRecord()` read a table the token couldn't other
 downloads, and file deletes weren't tested with a temporary token, and neither were tokens from users
 with fewer permissions.
 
+## Restricted users
+
+Tested on 2026-11-02 against a temporary table in a sandbox app, with a second user's token. Its role
+could only view that table, had no access to the app's other tables, and had access `None` on one text
+field and one file field. A role with write access or record-level rules wasn't tested.
+
+| Behavior | Result |
+|---|---|
+| A token's permissions | Its user's, through their role |
+| `GET /fields` | **A hidden field is left out**, exactly as if it didn't exist, so a deleted field and a hidden one can't be told apart |
+| `GET /fields/{id}` for a hidden field | 500, `QuickBase is experiencing technical difficulties` |
+| `GET /tables` | Lists only tables the role can use |
+| `GET /apps/{id}` | 403, for this role |
+| `select` with a hidden field and a visible one | **200, and the hidden field is silently left out** |
+| `select` with only hidden fields | 400, `Report contains a restricted field` |
+| `where` or `sortBy` on a hidden field | 403, whether or not anything matches |
+| Running a table report with a hidden column | **200, and the column is silently left out.** A report with a hidden field in its sort or filter wasn't tested |
+| A file field's value, read with view access | Includes `creator`, with **the uploader's email address** |
+| Downloading from a visible file field | 200 |
+| Downloading from a hidden file field | 404, `No such field` |
+| A formula using a hidden field, directly or through `GetRecords()` | 403, including when `GetRecords()` only filters on it. A visible field works |
+| Insert, update, delete, upload, deleting a file version, creating a field | 403, `Insufficient permissions`, and nothing changed |
+
 ## Field types
 
 Tested on 2026-11-02 against temporary tables in a sandbox app. These decide the types in generated

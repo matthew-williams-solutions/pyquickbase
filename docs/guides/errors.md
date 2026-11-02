@@ -28,7 +28,7 @@ These mean nothing was sent to Quickbase.
 | `InvalidValueError` | A row, value, or file request that can't be sent |
 | `SchemaMismatchError` | A generated class no longer matches its table |
 | `UnknownTableError` | No table with that name or ID in this app |
-| `UnknownFieldError` | No field with that label or ID in this table |
+| `UnknownFieldError` | No field with that label or ID in this table, or the token's role can't see it |
 | `UnknownReportError` | No report with that name or ID on this table, or several with that name |
 | `UnsupportedReportError` | A report that can't be read as records, such as a summary or chart |
 | `ReadOnlyError` | The client isn't allowed to send this request |

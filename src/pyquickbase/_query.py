@@ -213,7 +213,9 @@ def _scan_where(text: str, fields: FieldIndex) -> list[WhereCondition]:
             try:
                 fields.resolve(int(match[1]))
             except UnknownFieldError:
-                raise _where_error(text, position, f"field {match[1]} doesn't exist") from None
+                raise _where_error(
+                    text, position, f"field {match[1]} doesn't exist, or this token can't see it"
+                ) from None
             if match[2] not in OPERATORS:
                 raise _where_error(
                     text, position, f"unknown operator '{match[2]}', operators must be uppercase"

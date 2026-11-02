@@ -283,7 +283,9 @@ def test_field_index() -> None:
         INDEX.resolve(99)
     with pytest.raises(UnknownFieldError, match="ID True"):
         INDEX.resolve(True)
-    with pytest.raises(UnknownFieldError, match=r"no field labeled 'zzzz'\.$"):
+    with pytest.raises(
+        UnknownFieldError, match=r"no field labeled 'zzzz', or this token can't see it\.$"
+    ):
         INDEX.resolve("zzzz")
     duplicates = FieldIndex([field(1, "Same"), field(2, "Same")])
     with pytest.raises(UnknownFieldError, match=r"Use an ID: \[1, 2\]"):

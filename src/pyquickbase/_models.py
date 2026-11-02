@@ -220,7 +220,9 @@ class FieldIndex:
             return self._resolve_label(ref)
         found = None if isinstance(ref, bool) else self._by_id.get(ref)
         if found is None:
-            raise UnknownFieldError(f"This table has no field with ID {ref!r}.")
+            raise UnknownFieldError(
+                f"This table has no field with ID {ref!r}, or this token can't see it."
+            )
         return found
 
     def _resolve_label(self, label: str) -> Field:
@@ -232,7 +234,9 @@ class FieldIndex:
             raise UnknownFieldError(f"Several fields are labeled {label!r}. Use an ID: {ids}.")
         close = difflib.get_close_matches(label, self._by_label, n=3)
         hint = f" Did you mean {' or '.join(repr(name) for name in close)}?" if close else ""
-        raise UnknownFieldError(f"This table has no field labeled {label!r}.{hint}")
+        raise UnknownFieldError(
+            f"This table has no field labeled {label!r}, or this token can't see it.{hint}"
+        )
 
 
 def _convert(value: Any, field_type: str) -> Any:

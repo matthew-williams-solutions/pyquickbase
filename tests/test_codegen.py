@@ -307,7 +307,7 @@ def test_schema_problems_lists_each_change() -> None:
     changed = [*BUILT_IN, field(7, "Amount", "text"), field(8, "Total", "numeric", "formula")]
     problems = schema_problems(tasks, changed)
     assert problems == [
-        "title (field 6) no longer exists",
+        "title (field 6) no longer exists, or this token can't see it",
         "amount was numeric and is now text",
         "total is now read-only",
     ]

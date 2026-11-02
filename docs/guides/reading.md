@@ -149,6 +149,8 @@ The report decides the filter, sort, and columns:
 - **Pages may not be stable.** `query()` adds Record ID# as the last sort key to keep pages stable,
   but a report's sort can't be changed. Ties stayed in Record ID# order in a 1,200-record test, but
   that isn't confirmed for larger tables or while records change. If it matters, prefer `query()`.
+- **Columns can be missing for restricted users.** A column the user's role can't see is left out with
+  no error, so `record["Salary"]` raises `KeyError` for them.
 - **Report IDs are only unique within a table.** Different tables reuse the same IDs, so always get a
   report from its own table.
 - **Names can repeat.** A repeated name raises `UnknownReportError`, which lists the IDs to choose

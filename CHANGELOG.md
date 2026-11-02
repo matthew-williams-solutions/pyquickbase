@@ -19,6 +19,8 @@ All notable changes to this project are documented here. The format follows
 - Generated names no longer depend on the Python version running `pyquickbase codegen`, so a label
   can't get a different name on a newer Python.
 - The error from `TypedRecord.from_record()` now mentions that a report may have left out a field.
+- `SchemaMismatchError` and `UnknownFieldError` now say a field may be hidden from the token, because
+  Quickbase leaves out fields a role can't see, as if they didn't exist.
 
 ### Removed
 
