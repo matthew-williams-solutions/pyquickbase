@@ -3,6 +3,8 @@
 An unofficial, typed Python SDK for the [Quickbase](https://www.quickbase.com/) API, with matching
 sync and async clients.
 
+**[Read the documentation](https://matthew-williams-solutions.github.io/pyquickbase/)**
+
 > **Status: early alpha.** Anything may change before 1.0. This project is not affiliated with or endorsed by Quickbase, Inc.
 
 ## What works today
@@ -104,6 +106,7 @@ Rows are dictionaries keyed by field label or ID. Python dates, timezone-aware d
 | `table.delete(where)` | Deletes matching records and returns the count. `where` is required |
 
 ```python
+from datetime import date
 from pyquickbase import F, WriteError
 
 result = tasks.insert([{"Title": "Pour slab", "Status": "Not Started", "Due Date": date.today()}])

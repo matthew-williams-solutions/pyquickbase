@@ -14,6 +14,11 @@ uv run pytest --cov
 
 Tests use mocked HTTP and need no Quickbase account.
 
+## Docs
+
+Preview the docs site with `uv run --group docs mkdocs serve`. Every public name needs an entry in
+`docs/reference.md`, and a test checks this.
+
 ## Sync and async code
 
 **Only edit the async code.** `src/pyquickbase/_sync/` and `tests/_sync/` are generated from their

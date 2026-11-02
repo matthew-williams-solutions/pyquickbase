@@ -1,0 +1,71 @@
+site_name: pyquickbase
+site_description: An unofficial, typed Python SDK for the Quickbase API, with sync and async clients.
+site_url: https://matthew-williams-solutions.github.io/pyquickbase/
+repo_url: https://github.com/matthew-williams-solutions/pyquickbase
+repo_name: matthew-williams-solutions/pyquickbase
+edit_uri: edit/main/docs/
+strict: true
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - content.tabs.link
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Guides:
+      - Reading records: guides/reading.md
+      - Writing records: guides/writing.md
+      - Changing the schema: guides/schema.md
+      - Handling errors: guides/errors.md
+      - Configuring clients: guides/clients.md
+  - API reference: reference.md
+  - Quickbase API notes: api-notes.md
+  - Changelog: changelog.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            filters: ["!^_"]
+            heading_level: 3
+            members_order: source
+            merge_init_into_class: true
+            separate_signature: true
+            show_root_full_path: false
+            show_root_heading: true
+            show_signature_annotations: true
+            show_source: false
+            signature_crossrefs: true
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets:
+      check_paths: true

@@ -25,6 +25,8 @@ jobs:
         run: uv run scripts/generate_sync.py --check
       - name: Build the package
         run: uv build
+      - name: Build the docs, failing on broken links
+        run: uv run --locked --group docs mkdocs build
 
   test:
     runs-on: ubuntu-latest

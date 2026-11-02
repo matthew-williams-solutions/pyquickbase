@@ -25,6 +25,7 @@ dependencies = [
 ]
 
 [project.urls]
+Documentation = "https://matthew-williams-solutions.github.io/pyquickbase/"
 Repository = "https://github.com/matthew-williams-solutions/pyquickbase"
 Issues = "https://github.com/matthew-williams-solutions/pyquickbase/issues"
 Changelog = "https://github.com/matthew-williams-solutions/pyquickbase/blob/main/CHANGELOG.md"
@@ -36,6 +37,12 @@ dev = [
     "pytest-cov>=6.0",
     "ruff>=0.8",
     "trio>=0.27",
+]
+
+docs = [
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.6,<10",
+    "mkdocstrings[python]>=0.30",
 ]
 
 [build-system]

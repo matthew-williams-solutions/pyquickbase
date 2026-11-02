@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A documentation site.
+
+### Fixed
+
+- A README example that was missing an import.
+
 ## [0.1.0a1] - 2026-11-02
 
 First alpha release.
