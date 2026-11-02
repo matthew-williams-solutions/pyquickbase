@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A stability and versioning policy, which applies from 1.0.
+
+### Removed
+
+- `from_api()` on `AppInfo`, `TableInfo`, `Field`, `Relationship`, `ReportInfo`, `FormulaResult`, and
+  `Page`, `FileDownload.from_response()`, `FileUpload.to_api()`, and `WriteResult.merged()` and
+  `summary()`. These were internal helpers, and they're now private so they can change freely.
+
 ## [0.2.0a1] - 2026-11-02
 
 ### Added

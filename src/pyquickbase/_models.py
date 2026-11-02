@@ -43,16 +43,16 @@ class AppInfo:
     date_format: str | None
     raw: Mapping[str, Any] = field(repr=False, compare=False)
 
-    @classmethod
-    def from_api(cls, data: Mapping[str, Any]) -> "AppInfo":
-        return cls(
-            id=data["id"],
-            name=data["name"],
-            description=data.get("description") or "",
-            time_zone=data.get("timeZone"),
-            date_format=data.get("dateFormat"),
-            raw=data,
-        )
+
+def app_info_from_api(data: Mapping[str, Any]) -> AppInfo:
+    return AppInfo(
+        id=data["id"],
+        name=data["name"],
+        description=data.get("description") or "",
+        time_zone=data.get("timeZone"),
+        date_format=data.get("dateFormat"),
+        raw=data,
+    )
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -65,15 +65,15 @@ class TableInfo:
     key_field_id: int | None
     raw: Mapping[str, Any] = field(repr=False, compare=False)
 
-    @classmethod
-    def from_api(cls, data: Mapping[str, Any]) -> "TableInfo":
-        return cls(
-            id=data["id"],
-            name=data["name"],
-            description=data.get("description") or "",
-            key_field_id=data.get("keyFieldId"),
-            raw=data,
-        )
+
+def table_info_from_api(data: Mapping[str, Any]) -> TableInfo:
+    return TableInfo(
+        id=data["id"],
+        name=data["name"],
+        description=data.get("description") or "",
+        key_field_id=data.get("keyFieldId"),
+        raw=data,
+    )
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -95,22 +95,22 @@ class Field:
     formula: str | None = None
     raw: Mapping[str, Any] = field(repr=False, compare=False)
 
-    @classmethod
-    def from_api(cls, data: Mapping[str, Any]) -> "Field":
-        properties: Mapping[str, Any] = data.get("properties") or {}
-        return cls(
-            id=data["id"],
-            label=data["label"],
-            type=data["fieldType"],
-            mode=data.get("mode") or None,
-            required=bool(data.get("required")),
-            unique=bool(data.get("unique")),
-            appears_by_default=bool(data.get("appearsByDefault")),
-            choices=tuple(properties.get("choices") or ()),
-            allow_new_choices=bool(properties.get("allowNewChoices")),
-            formula=properties.get("formula") or None,
-            raw=data,
-        )
+
+def field_from_api(data: Mapping[str, Any]) -> Field:
+    properties: Mapping[str, Any] = data.get("properties") or {}
+    return Field(
+        id=data["id"],
+        label=data["label"],
+        type=data["fieldType"],
+        mode=data.get("mode") or None,
+        required=bool(data.get("required")),
+        unique=bool(data.get("unique")),
+        appears_by_default=bool(data.get("appearsByDefault")),
+        choices=tuple(properties.get("choices") or ()),
+        allow_new_choices=bool(properties.get("allowNewChoices")),
+        formula=properties.get("formula") or None,
+        raw=data,
+    )
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -125,18 +125,18 @@ class Relationship:
     is_cross_app: bool
     raw: Mapping[str, Any] = field(repr=False, compare=False)
 
-    @classmethod
-    def from_api(cls, data: Mapping[str, Any]) -> "Relationship":
-        foreign_key: Mapping[str, Any] = data.get("foreignKeyField") or {}
-        return cls(
-            id=data["id"],
-            parent_table_id=data["parentTableId"],
-            child_table_id=data["childTableId"],
-            foreign_key_field_id=foreign_key.get("id"),
-            lookup_field_ids=tuple(item["id"] for item in data.get("lookupFields") or ()),
-            is_cross_app=bool(data.get("isCrossApp")),
-            raw=data,
-        )
+
+def relationship_from_api(data: Mapping[str, Any]) -> Relationship:
+    foreign_key: Mapping[str, Any] = data.get("foreignKeyField") or {}
+    return Relationship(
+        id=data["id"],
+        parent_table_id=data["parentTableId"],
+        child_table_id=data["childTableId"],
+        foreign_key_field_id=foreign_key.get("id"),
+        lookup_field_ids=tuple(item["id"] for item in data.get("lookupFields") or ()),
+        is_cross_app=bool(data.get("isCrossApp")),
+        raw=data,
+    )
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -154,16 +154,16 @@ class ReportInfo:
     incomplete: bool
     raw: Mapping[str, Any] = field(repr=False, compare=False)
 
-    @classmethod
-    def from_api(cls, data: Mapping[str, Any]) -> "ReportInfo":
-        return cls(
-            id=data["id"],
-            name=data["name"],
-            type=data["type"],
-            description=data.get("description") or "",
-            incomplete=bool(data.get("incomplete")),
-            raw=data,
-        )
+
+def report_info_from_api(data: Mapping[str, Any]) -> ReportInfo:
+    return ReportInfo(
+        id=data["id"],
+        name=data["name"],
+        type=data["type"],
+        description=data.get("description") or "",
+        incomplete=bool(data.get("incomplete")),
+        raw=data,
+    )
 
 
 def find_report(reports: Sequence[ReportInfo], ref: str) -> ReportInfo | None:
@@ -303,21 +303,21 @@ class FileDownload:
     data: bytes = field(repr=False)
     content_type: str | None
 
-    @classmethod
-    def from_response(cls, response: Any) -> "FileDownload":
-        """Quickbase sends the contents as base64, whatever `Content-Type` says."""
-        found = _DISPOSITION_NAME.search(response.headers["content-disposition"])
-        if found is None:
-            raise ValueError("No file name in the response.")
-        return cls(
-            name=unquote(found[1]),
-            data=base64.b64decode(response.content, validate=True),
-            content_type=response.headers.get("content-type"),
-        )
-
     def __repr__(self) -> str:
         # File contents may be sensitive and reprs end up in logs, so show only the shape.
         return f"FileDownload({self.name!r}, {len(self.data)} bytes)"
+
+
+def file_download_from_response(response: Any) -> FileDownload:
+    """Quickbase sends the contents as base64, whatever `Content-Type` says."""
+    found = _DISPOSITION_NAME.search(response.headers["content-disposition"])
+    if found is None:
+        raise ValueError("No file name in the response.")
+    return FileDownload(
+        name=unquote(found[1]),
+        data=base64.b64decode(response.content, validate=True),
+        content_type=response.headers.get("content-type"),
+    )
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -330,10 +330,6 @@ class FormulaResult:
 
     text: str = field(repr=False)
     type: str
-
-    @classmethod
-    def from_api(cls, data: Mapping[str, Any]) -> "FormulaResult":
-        return cls(text=data["result"], type=data["resultType"])
 
     @property
     def value(self) -> Any:
@@ -355,6 +351,10 @@ class FormulaResult:
         return self.text
 
 
+def formula_result_from_api(data: Mapping[str, Any]) -> FormulaResult:
+    return FormulaResult(text=data["result"], type=data["resultType"])
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Page:
     """One page of query results. `total` counts every match, not just this page."""
@@ -372,20 +372,20 @@ class Page:
         """The `skip` that fetches the following page."""
         return self.skip + len(self.records)
 
-    @classmethod
-    def from_api(cls, data: Mapping[str, Any]) -> "Page":
-        fields = data["fields"]
-        labels: dict[str, int] = {item["label"]: item["id"] for item in fields}
-        types: dict[int, str] = {item["id"]: item["type"] for item in fields}
-        records = tuple(
-            Record(
-                {
-                    int(field_id): _convert(cell["value"], types.get(int(field_id), ""))
-                    for field_id, cell in row.items()
-                },
-                labels,
-            )
-            for row in data["data"]
+
+def page_from_api(data: Mapping[str, Any]) -> Page:
+    fields = data["fields"]
+    labels: dict[str, int] = {item["label"]: item["id"] for item in fields}
+    types: dict[int, str] = {item["id"]: item["type"] for item in fields}
+    records = tuple(
+        Record(
+            {
+                int(field_id): _convert(cell["value"], types.get(int(field_id), ""))
+                for field_id, cell in row.items()
+            },
+            labels,
         )
-        metadata = data["metadata"]
-        return cls(records=records, total=metadata["totalRecords"], skip=metadata["skip"])
+        for row in data["data"]
+    )
+    metadata = data["metadata"]
+    return Page(records=records, total=metadata["totalRecords"], skip=metadata["skip"])

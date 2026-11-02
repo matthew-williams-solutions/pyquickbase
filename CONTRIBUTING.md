@@ -34,6 +34,13 @@ Anything exported from `pyquickbase/__init__.py` or defined in `errors.py` is pu
 starting with `_` are private and may change at any time. Update `CHANGELOG.md` for changes that
 users would notice.
 
+`docs/stability.md` says what 1.x promises, so check it before changing anything public. From 1.0, a
+breaking change needs a major version, and removing something needs a `DeprecationWarning` in a minor
+release first. Generated code must keep working on later 1.x versions, so treat what it relies on as
+public, even when the name is private. `tests/fixtures/generated_tables.py` is an old generated file
+that the tests run against the current code. From 1.0, don't regenerate it to make a test pass, because
+a failure there means you've broken users' files.
+
 ## Secrets
 
 Never commit real tokens, realm names, or customer data, including in test fixtures. Tokens must

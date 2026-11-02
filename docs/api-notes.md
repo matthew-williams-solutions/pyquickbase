@@ -103,6 +103,11 @@ and chart reports built in the UI. The API can't create reports.
 | Unknown or non-numeric report ID | 404 |
 | The report's filter, sort, and columns | Applied. Rows hold only the report's columns |
 | A report whose columns leave out Record ID#, including the default `List All` | Rows have no field 3 |
+| A table report with Record ID# as a column, even in second position | `fields` uses the real ID, 3, with type `recordid`, unlike a summary report's positions. All 1,200 rows matched a query's IDs |
+| A table report with a formula column | `fields` uses the formula field's real ID and its type, such as `numeric`. All 1,200 values matched a query |
+| A sort with ties, 400 records on each of 3 values | Ties came back in Record ID# order. Six full runs, with page sizes of 7, 37, 100, and 1,000, gave the same order, with nothing repeated or missing. Editing a tied record's other field didn't move it |
+| `top` omitted, in a 1,200-record table | Returned every record, and `metadata` has no `top` |
+| Changing a saved report's type | The UI doesn't offer this |
 | Running a report | **Adds 1 to `usedCount`, even when the run fails.** A GET doesn't, and records aren't modified |
 | Ask-the-user report | `incomplete: true`, and running it returns 400, `Incomplete reports not supported` |
 | Summary and chart reports | **Same response shape as a table report, but `fields` IDs are column positions starting at 2.** The second column has ID 3, the Record ID# field in a table report, so nothing in the response tells them apart. Only `type` on the report does |
@@ -279,9 +284,9 @@ Check these against a sandbox app before the feature that needs them ships.
 | Whether a formula can read a table in another app | Formulas |
 | Lookups that hold a value, for types other than text, numeric, and date, and field types only the UI can create | Generated classes |
 | Correct API host for EU realms (pass `base_url` if it differs) | Realm handling |
-| Table reports with a formula column, or with Record ID# as a column | Reports |
-| Whether pages of a report are stable when its sort has ties | Reports |
-| Whether a report's `top`-less run returns every record in a large table | Reports |
+| Whether a deleted report's ID can be reused. After deleting one report, a new summary report got ID 8, the highest so far, but the deleted report's own ID wasn't recorded, so this isn't confirmed | Reports |
+| Whether pages of a report stay stable with ties above 1,200 records, or while records are added or removed | Reports |
+| Whether a report's `top`-less run returns every record above 1,200 records. The SDK always sends `top`, so this only affects `qb.request()` | Reports |
 | Whether other endpoints or realms have a different request size limit | Writes |
 | File fields with other version settings, and limits on total storage | File attachments |
 | How reports and files behave for tokens with fewer permissions, since all testing used one token | Reports, file attachments |
@@ -292,11 +297,11 @@ Choices made in the SDK that are worth another look before 1.0.
 
 | Limit | Why it's there | Possible change |
 |---|---|---|
-| Report details are cached for `schema_ttl`, so a report changed in the UI can be checked against old details | Avoids an extra request for every page | Refresh before each run, or compare the run response |
+| Report details are cached for `schema_ttl`, so a report changed in the UI can be checked against old details. A saved report's type can't be changed in the UI, and nothing in a run's response shows the type | Avoids an extra request for every page | Refresh before each run |
 | Summary and chart reports can only be read through `qb.request()` | Their column IDs are positions, so they can't be records | A separate method returning `{label: value}` rows |
 | `timeout` is set per client, so a large upload on a slow connection may need a larger one for every request | The transport has one timeout | A per-call timeout for uploads and downloads |
 | Files are held in memory as bytes and base64 while being sent | The API takes base64 inside JSON, so there's nothing to stream | Probably none, unless Quickbase adds another upload route |
-| `record["Attachment"]` returns Quickbase's raw dictionary | Kept simple for the first version | A typed value with versions, which could leave out uploader emails |
+| `record["Attachment"]` returns Quickbase's raw dictionary, including uploader emails, and a user field works the same way | Decided for 1.0: these stay dictionaries | A dictionary subclass with typed access, which wouldn't break anyone |
 | Quickbase's formula error messages can contain HTML, which errors pass on unchanged | Errors keep Quickbase's message intact | Strip HTML from error messages, in case they're displayed |
 | `FormulaResult.value` leaves dates, timestamps, and durations as display text | They depend on app settings, and timestamps have no time zone | Parse them using the app's settings, if a safe way appears |
 | Temporary tokens aren't supported | Their main use is browser code pages, a script can't get one, and the SDK's table lookup needs `GET /tables`, which a table-scoped token can't call | After 1.0, a `temporary_token` client option that treats `app.table()` as an ID and skips that lookup, for a backend acting for a logged-in user |

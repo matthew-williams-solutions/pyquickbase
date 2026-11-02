@@ -103,6 +103,10 @@ class TypedRecord:
     """
 
     __slots__ = ()
+    # Generated files use these, `_row`, and positional `Column(...)`, and must keep working through
+    # 1.x, so any new `Column` field needs a default. tests/_async/test_generated_contract.py checks
+    # this.
+    # `_row` can't collide with a field, because generated attribute names never start with `_`.
     __table_id__: ClassVar[str]
     __columns__: ClassVar[tuple[Column, ...]]
 

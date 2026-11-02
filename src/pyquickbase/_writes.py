@@ -46,8 +46,9 @@ class FileUpload:
         # File contents may be sensitive and reprs end up in logs, so show only the shape.
         return f"FileUpload({self.name!r}, {len(self.data)} bytes)"
 
-    def to_api(self) -> dict[str, str]:
-        return {"fileName": self.name, "data": base64.b64encode(self.data).decode("ascii")}
+
+def file_upload_to_api(upload: FileUpload) -> dict[str, str]:
+    return {"fileName": upload.name, "data": base64.b64encode(upload.data).decode("ascii")}
 
 
 def require_id(name: str, value: int) -> None:
@@ -114,7 +115,7 @@ def _cell_value(item: Field, value: Any, row: int) -> Any:
     """Check file values here, since Quickbase accepts the mistakes and silently loses the file."""
     if item.type == FILE_FIELD_TYPE:
         if isinstance(value, FileUpload):
-            return value.to_api()
+            return file_upload_to_api(value)
         raise InvalidValueError(
             f"Row {row} sets file field {item.label!r} to something other than a FileUpload. "
             "To keep the field empty, leave it out. To remove a file, use delete_file_version()."
@@ -171,26 +172,28 @@ class WriteResult:
     unchanged_ids: tuple[int, ...] = ()
     errors: tuple[RowError, ...] = ()
 
-    def merged(self, payload: Mapping[str, Any], offset: int) -> "WriteResult":
-        """Add one request's response. `offset` is the position of its first row."""
-        metadata = payload["metadata"]
-        line_errors: Mapping[str, list[str]] = metadata.get("lineErrors") or {}
-        errors = tuple(
-            RowError(index=int(line) - 1 + offset, messages=tuple(messages))
-            for line, messages in line_errors.items()
-        )
-        return replace(
-            self,
-            created_ids=(*self.created_ids, *metadata["createdRecordIds"]),
-            updated_ids=(*self.updated_ids, *metadata["updatedRecordIds"]),
-            unchanged_ids=(*self.unchanged_ids, *metadata["unchangedRecordIds"]),
-            errors=(*self.errors, *errors),
-        )
 
-    def summary(self) -> str:
-        """Describe what failed. Quickbase's messages name field IDs rather than values."""
-        first = self.errors[0]
-        return (
-            f"{len(self.errors)} row(s) failed. The first is row {first.index}: "
-            f"{'; '.join(first.messages)} See `.result` for every row."
-        )
+def write_result_summary(result: WriteResult) -> str:
+    """Describe what failed. Quickbase's messages name field IDs rather than values."""
+    first = result.errors[0]
+    return (
+        f"{len(result.errors)} row(s) failed. The first is row {first.index}: "
+        f"{'; '.join(first.messages)} See `.result` for every row."
+    )
+
+
+def merge_write_result(result: WriteResult, payload: Mapping[str, Any], offset: int) -> WriteResult:
+    """Add one request's response. `offset` is the position of its first row."""
+    metadata = payload["metadata"]
+    line_errors: Mapping[str, list[str]] = metadata.get("lineErrors") or {}
+    errors = tuple(
+        RowError(index=int(line) - 1 + offset, messages=tuple(messages))
+        for line, messages in line_errors.items()
+    )
+    return replace(
+        result,
+        created_ids=(*result.created_ids, *metadata["createdRecordIds"]),
+        updated_ids=(*result.updated_ids, *metadata["updatedRecordIds"]),
+        unchanged_ids=(*result.unchanged_ids, *metadata["unchangedRecordIds"]),
+        errors=(*result.errors, *errors),
+    )

@@ -18,9 +18,17 @@ from .._models import (
     Relationship,
     ReportInfo,
     TableInfo,
+    app_info_from_api,
+    field_from_api,
+    file_download_from_response,
     find_report,
+    formula_result_from_api,
+    page_from_api,
     parse,
+    relationship_from_api,
+    report_info_from_api,
     require_table_report,
+    table_info_from_api,
     unknown_report_message,
 )
 from .._query import Expression, FieldRef, build_query_body, compile_where
@@ -40,12 +48,14 @@ from .._writes import (
     WriteResult,
     build_rows,
     field_properties,
+    merge_write_result,
     refuse_field,
     require_field,
     require_file_field,
     require_formula,
     require_id,
     split_batches,
+    write_result_summary,
 )
 from ..errors import (
     InvalidResponseError,
@@ -87,7 +97,7 @@ class App:
         if cached is not None:
             return cached
         payload = self._transport.request("GET", f"/apps/{self._id}")
-        info = parse(AppInfo.from_api, payload, "app")
+        info = parse(app_info_from_api, payload, "app")
         self._cache.set(key, info)
         return info
 
@@ -99,7 +109,7 @@ class App:
             return list(cached)
         payload = self._transport.request("GET", "/tables", params={"appId": self._id})
         tables = parse(
-            lambda rows: tuple(TableInfo.from_api(row) for row in rows), payload, "tables"
+            lambda rows: tuple(table_info_from_api(row) for row in rows), payload, "tables"
         )
         self._cache.set(key, tables)
         return list(tables)
@@ -121,7 +131,7 @@ class App:
         body = {"name": name, **{k: v for k, v in optional.items() if v is not None}}
         payload = self._transport.request("POST", "/tables", params={"appId": self._id}, json=body)
         self._cache.delete(f"tables:{self._id}")
-        return self.table(parse(lambda data: TableInfo.from_api(data).id, payload, "table"))
+        return self.table(parse(lambda data: table_info_from_api(data).id, payload, "table"))
 
     def table(self, name_or_id: str) -> "Table":
         """Get a table in this app by name or ID. It's checked when first used."""
@@ -229,7 +239,7 @@ class Table:
         if cached is not None:
             return list(cached)
         payload = self._transport.request("GET", "/fields", params={"tableId": table_id})
-        fields = parse(lambda rows: tuple(Field.from_api(row) for row in rows), payload, "fields")
+        fields = parse(lambda rows: tuple(field_from_api(row) for row in rows), payload, "fields")
         self._cache.set(key, fields)
         return list(fields)
 
@@ -254,7 +264,7 @@ class Table:
 
     @staticmethod
     def _parse_relationships(payload: Any) -> tuple[list[Relationship], int]:
-        rows = [Relationship.from_api(row) for row in payload["relationships"]]
+        rows = [relationship_from_api(row) for row in payload["relationships"]]
         return rows, payload["metadata"]["totalRelationships"]
 
     def reports(self, *, refresh: bool = False) -> list[ReportInfo]:
@@ -266,7 +276,7 @@ class Table:
             return list(cached)
         payload = self._transport.request("GET", "/reports", params={"tableId": table_id})
         reports = parse(
-            lambda rows: tuple(ReportInfo.from_api(row) for row in rows), payload, "reports"
+            lambda rows: tuple(report_info_from_api(row) for row in rows), payload, "reports"
         )
         self._cache.set(key, reports)
         return list(reports)
@@ -299,7 +309,7 @@ class Table:
         payload = self._transport.request(
             "POST", "/records/query", json={**body, "options": {"top": top, "skip": skip}}
         )
-        return parse(Page.from_api, payload, "records query")
+        return parse(page_from_api, payload, "records query")
 
     def query_page(
         self,
@@ -367,9 +377,9 @@ class Table:
                     f"Writing stopped at row {start}, after earlier rows were written: {exc}",
                     result=result,
                 ) from exc
-            result = parse(partial(result.merged, offset=start), payload, "write")
+            result = parse(partial(merge_write_result, result, offset=start), payload, "write")
         if result.errors:
-            raise WriteError(result.summary(), result=result)
+            raise WriteError(write_result_summary(result), result=result)
         return result
 
     def insert(
@@ -449,7 +459,7 @@ class Table:
         if record_id is not None:
             body["rid"] = record_id
         payload = self._transport.request("POST", "/formula/run", json=body)
-        return parse(FormulaResult.from_api, payload, "formula")
+        return parse(formula_result_from_api, payload, "formula")
 
     def _file_path(self, record_id: int, field: FieldRef, version: int) -> str:
         require_id("record_id", record_id)
@@ -476,7 +486,7 @@ class Table:
         # Version 0 means the latest to Quickbase.
         path = self._file_path(record_id, field, version or 0)
         response = self._transport.get_raw(path)
-        return parse(FileDownload.from_response, response, "file")
+        return parse(file_download_from_response, response, "file")
 
     def delete_file_version(self, record_id: int, field: FieldRef, *, version: int) -> None:
         """Delete one version of a file. Deleting the only version leaves the field empty.
@@ -517,7 +527,7 @@ class Table:
             "POST", "/fields", params={"tableId": table_id}, json=body
         )
         self._forget_fields(table_id)
-        field = parse(Field.from_api, payload, "field")
+        field = parse(field_from_api, payload, "field")
         if required is None and unique is None:
             return field
         return self.update_field(field.id, required=required, unique=unique)
@@ -553,7 +563,7 @@ class Table:
             "POST", f"/fields/{field_id}", params={"tableId": table_id}, json=body
         )
         self._forget_fields(table_id)
-        return parse(Field.from_api, payload, "field")
+        return parse(field_from_api, payload, "field")
 
     def delete_fields(self, fields: FieldRef | Sequence[FieldRef]) -> None:
         """Delete fields and their data. Raises `WriteError` if any couldn't be deleted."""
@@ -595,7 +605,7 @@ class Table:
         )
         self._forget_fields(table_id)
         self._forget_fields(parent_id)
-        return parse(Relationship.from_api, payload, "relationship")
+        return parse(relationship_from_api, payload, "relationship")
 
     def resolve_field_ids(self, fields: Sequence[FieldRef]) -> list[int]:
         """Turn field labels or IDs into IDs. Raises `UnknownFieldError` if one doesn't exist."""
@@ -654,7 +664,7 @@ class Report:
             f"/reports/{target['id']}/run",
             params={"tableId": target["tableId"], "top": top, "skip": skip},
         )
-        return parse(Page.from_api, payload, "report")
+        return parse(page_from_api, payload, "report")
 
     def run_page(self, *, top: int = 100, skip: int = 0) -> Page:
         """Fetch one page of the report's records. See `run`."""

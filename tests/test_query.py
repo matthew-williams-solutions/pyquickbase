@@ -11,19 +11,26 @@ from pyquickbase import (
     F,
     Field,
     InvalidResponseError,
-    Page,
     QueryError,
     UnknownFieldError,
     WhereCondition,
     parse_where,
 )
-from pyquickbase._models import AppInfo, FieldIndex, Relationship, TableInfo, parse
+from pyquickbase._models import (
+    FieldIndex,
+    app_info_from_api,
+    field_from_api,
+    page_from_api,
+    parse,
+    relationship_from_api,
+    table_info_from_api,
+)
 from pyquickbase._query import build_query_body, compile_where, format_value, validate_where
 from pyquickbase._schema import SchemaCache
 
 
 def field(field_id: int, label: str, field_type: str = "text", **extra: Any) -> Field:
-    return Field.from_api({"id": field_id, "label": label, "fieldType": field_type, **extra})
+    return field_from_api({"id": field_id, "label": label, "fieldType": field_type, **extra})
 
 
 FIELDS = [
@@ -305,7 +312,7 @@ def page_payload(**metadata: Any) -> dict[str, Any]:
 
 
 def test_record_access_and_conversion() -> None:
-    record = Page.from_api(page_payload()).records[0]
+    record = page_from_api(page_payload()).records[0]
     assert record.id == 1
     assert record["Title"] == record[6] == "Excavation"
     assert record["Due Date"] == date(2026, 10, 18)
@@ -319,7 +326,7 @@ def test_record_access_and_conversion() -> None:
 
 
 def test_record_repr_hides_values() -> None:
-    record = Page.from_api(page_payload()).records[0]
+    record = page_from_api(page_payload()).records[0]
     assert repr(record) == "Record(id=1, fields=4)"
 
 
@@ -327,7 +334,7 @@ def test_unexpected_date_formats_stay_as_returned() -> None:
     payload = page_payload()
     payload["data"][0]["9"]["value"] = "not a date"
     payload["data"][0]["1"]["value"] = None
-    record = Page.from_api(payload).records[0]
+    record = page_from_api(payload).records[0]
     assert record["Due Date"] == "not a date"
     assert record["Date Created"] is None
 
@@ -337,28 +344,28 @@ def test_empty_dates_are_none() -> None:
     payload["data"][0]["9"]["value"] = ""
     payload["data"][0]["1"]["value"] = ""
     payload["data"][0]["6"]["value"] = ""
-    record = Page.from_api(payload).records[0]
+    record = page_from_api(payload).records[0]
     assert record["Due Date"] is None
     assert record["Date Created"] is None
     assert record["Title"] == ""
 
 
 def test_page_position() -> None:
-    page = Page.from_api(page_payload(skip=1))
+    page = page_from_api(page_payload(skip=1))
     assert (page.skip, page.next_skip, page.total, page.has_more) == (1, 2, 3, True)
-    assert not Page.from_api(page_payload(skip=2)).has_more
+    assert not page_from_api(page_payload(skip=2)).has_more
 
 
 def test_model_parsing() -> None:
-    app = AppInfo.from_api({"id": "a", "name": "App", "timeZone": "UTC", "dateFormat": "YYYY"})
+    app = app_info_from_api({"id": "a", "name": "App", "timeZone": "UTC", "dateFormat": "YYYY"})
     assert (app.description, app.time_zone, app.date_format) == ("", "UTC", "YYYY")
-    table = TableInfo.from_api({"id": "t", "name": "T", "description": None, "keyFieldId": 3})
+    table = table_info_from_api({"id": "t", "name": "T", "description": None, "keyFieldId": 3})
     assert (table.description, table.key_field_id) == ("", 3)
-    assert TableInfo.from_api({"id": "t", "name": "T"}).key_field_id is None
+    assert table_info_from_api({"id": "t", "name": "T"}).key_field_id is None
     choice = field(7, "S", properties={"choices": ["A"], "allowNewChoices": True}, mode="lookup")
     assert (choice.choices, choice.allow_new_choices, choice.mode) == (("A",), True, "lookup")
     assert field(1, "P", mode="").mode is None
-    link = Relationship.from_api(
+    link = relationship_from_api(
         {
             "id": 12,
             "parentTableId": "p",
@@ -369,14 +376,14 @@ def test_model_parsing() -> None:
         }
     )
     assert (link.foreign_key_field_id, link.lookup_field_ids) == (12, (13,))
-    bare = Relationship.from_api({"id": 1, "parentTableId": "p", "childTableId": "c"})
+    bare = relationship_from_api({"id": 1, "parentTableId": "p", "childTableId": "c"})
     assert (bare.foreign_key_field_id, bare.lookup_field_ids) == (None, ())
 
 
 @pytest.mark.parametrize("payload", [None, {}, [1], {"fields": 5}])
 def test_parse_reports_unexpected_shapes(payload: Any) -> None:
     with pytest.raises(InvalidResponseError, match="unexpected records query"):
-        parse(Page.from_api, payload, "records query")
+        parse(page_from_api, payload, "records query")
 
 
 def test_schema_cache(monkeypatch: pytest.MonkeyPatch) -> None:

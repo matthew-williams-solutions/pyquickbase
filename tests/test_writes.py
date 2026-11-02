@@ -8,22 +8,28 @@ from typing import Any
 import pytest
 
 from pyquickbase import (
-    Field,
     InvalidValueError,
     RowError,
     UnknownFieldError,
     WriteError,
     WriteResult,
 )
-from pyquickbase._models import FieldIndex
+from pyquickbase._models import FieldIndex, field_from_api
 from pyquickbase._schema import SchemaCache
-from pyquickbase._writes import build_rows, refuse_field, require_field, to_api_value
+from pyquickbase._writes import (
+    build_rows,
+    merge_write_result,
+    refuse_field,
+    require_field,
+    to_api_value,
+    write_result_summary,
+)
 
 INDEX = FieldIndex(
     [
-        Field.from_api({"id": 3, "label": "Record ID#", "fieldType": "recordid"}),
-        Field.from_api({"id": 6, "label": "Title", "fieldType": "text"}),
-        Field.from_api({"id": 9, "label": "Due", "fieldType": "date"}),
+        field_from_api({"id": 3, "label": "Record ID#", "fieldType": "recordid"}),
+        field_from_api({"id": 6, "label": "Title", "fieldType": "text"}),
+        field_from_api({"id": 9, "label": "Due", "fieldType": "date"}),
     ]
 )
 
@@ -84,30 +90,29 @@ def test_required_and_refused_fields() -> None:
 
 
 def test_result_collects_batches_and_numbers_rows_from_zero() -> None:
-    result = (
-        WriteResult()
-        .merged(
-            {
-                "metadata": {
-                    "createdRecordIds": [1],
-                    "updatedRecordIds": [2],
-                    "unchangedRecordIds": [],
-                    "lineErrors": {"2": ["Bad value."]},
-                }
-            },
-            0,
-        )
-        .merged(
-            {
-                "metadata": {
-                    "createdRecordIds": [3],
-                    "updatedRecordIds": [],
-                    "unchangedRecordIds": [4],
-                    "lineErrors": {"1": ["Other.", "Second."]},
-                }
-            },
-            1000,
-        )
+    first = merge_write_result(
+        WriteResult(),
+        {
+            "metadata": {
+                "createdRecordIds": [1],
+                "updatedRecordIds": [2],
+                "unchangedRecordIds": [],
+                "lineErrors": {"2": ["Bad value."]},
+            }
+        },
+        0,
+    )
+    result = merge_write_result(
+        first,
+        {
+            "metadata": {
+                "createdRecordIds": [3],
+                "updatedRecordIds": [],
+                "unchangedRecordIds": [4],
+                "lineErrors": {"1": ["Other.", "Second."]},
+            }
+        },
+        1000,
     )
     assert result.created_ids == (1, 3)
     assert result.updated_ids == (2,)
@@ -116,7 +121,7 @@ def test_result_collects_batches_and_numbers_rows_from_zero() -> None:
         RowError(index=1, messages=("Bad value.",)),
         RowError(index=1000, messages=("Other.", "Second.")),
     )
-    assert "2 row(s) failed. The first is row 1: Bad value." in result.summary()
+    assert "2 row(s) failed. The first is row 1: Bad value." in write_result_summary(result)
 
 
 def test_write_error_survives_pickling() -> None:

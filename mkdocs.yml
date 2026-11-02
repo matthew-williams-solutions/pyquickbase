@@ -39,6 +39,7 @@ nav:
       - Handling errors: guides/errors.md
       - Configuring clients: guides/clients.md
   - API reference: reference.md
+  - Stability and versioning: stability.md
   - Quickbase API notes: api-notes.md
   - Changelog: changelog.md
 

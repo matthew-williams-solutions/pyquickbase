@@ -5,7 +5,8 @@ from typing import Any
 
 import pytest
 
-from pyquickbase import Field, FormulaResult, InvalidValueError
+from pyquickbase import FormulaResult, InvalidValueError
+from pyquickbase._models import field_from_api, formula_result_from_api
 from pyquickbase._writes import field_properties, require_formula
 
 
@@ -38,7 +39,7 @@ from pyquickbase._writes import field_properties, require_formula
     ],
 )
 def test_value_converts_only_where_its_safe(result_type: str, text: str, value: Any) -> None:
-    result = FormulaResult.from_api({"result": text, "resultType": result_type})
+    result = formula_result_from_api({"result": text, "resultType": result_type})
     assert (result.text, result.type) == (text, result_type)
     assert result.value == value
     assert type(result.value) is type(value)
@@ -75,6 +76,6 @@ def test_field_properties_refuses_a_blank_formula_however_its_sent(
 def test_field_exposes_its_formula() -> None:
     plain = {"id": 6, "label": "A", "fieldType": "text", "properties": {"formula": ""}}
     formula = {"id": 7, "label": "B", "fieldType": "numeric", "properties": {"formula": "1 + 1"}}
-    assert Field.from_api(plain).formula is None
-    assert Field.from_api(formula).formula == "1 + 1"
-    assert Field.from_api({"id": 8, "label": "C", "fieldType": "text"}).formula is None
+    assert field_from_api(plain).formula is None
+    assert field_from_api(formula).formula == "1 + 1"
+    assert field_from_api({"id": 8, "label": "C", "fieldType": "text"}).formula is None

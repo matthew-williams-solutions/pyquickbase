@@ -9,14 +9,13 @@ import httpx
 import pytest
 
 from pyquickbase import (
-    Field,
     QueryError,
     Quickbase,
     SchemaMismatchError,
-    TableInfo,
     WriteError,
 )
 from pyquickbase._codegen import render
+from pyquickbase._models import field_from_api, table_info_from_api
 
 APP = "bq1234567"
 TASKS = "bqtasks"
@@ -30,7 +29,7 @@ FIELDS = [
 
 def generated() -> Any:
     source = render(
-        [(TableInfo.from_api({"id": TASKS, "name": "Tasks"}), [Field.from_api(f) for f in FIELDS])]
+        [(table_info_from_api({"id": TASKS, "name": "Tasks"}), [field_from_api(f) for f in FIELDS])]
     )
     module = types.ModuleType("generated_for_typed")
     sys.modules[module.__name__] = module

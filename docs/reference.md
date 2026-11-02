@@ -1,6 +1,7 @@
 # API reference
 
-Everything listed here is public. Modules starting with `_` are private and may change at any time.
+Everything listed here is public, as described in [Stability and versioning](stability.md). Modules
+starting with `_` are private and may change at any time.
 
 ## Clients
 

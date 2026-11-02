@@ -6,14 +6,20 @@ from typing import Any
 
 import pytest
 
-from pyquickbase import Field, FileDownload, FileUpload, InvalidValueError
-from pyquickbase._models import FieldIndex
-from pyquickbase._writes import MAX_ROWS_BYTES, build_rows, require_id, split_batches
+from pyquickbase import FileDownload, FileUpload, InvalidValueError
+from pyquickbase._models import FieldIndex, field_from_api, file_download_from_response
+from pyquickbase._writes import (
+    MAX_ROWS_BYTES,
+    build_rows,
+    file_upload_to_api,
+    require_id,
+    split_batches,
+)
 
 INDEX = FieldIndex(
     [
-        Field.from_api({"id": 6, "label": "Title", "fieldType": "text"}),
-        Field.from_api({"id": 7, "label": "Attachment", "fieldType": "file"}),
+        field_from_api({"id": 6, "label": "Title", "fieldType": "text"}),
+        field_from_api({"id": 7, "label": "Attachment", "fieldType": "file"}),
     ]
 )
 
@@ -23,11 +29,11 @@ def test_upload_is_base64_encoded_for_every_byte_value() -> None:
     built = build_rows([{"Attachment": FileUpload("a.bin", data)}], INDEX)
     value = built[0]["7"]["value"]
     assert value["fileName"] == "a.bin"
-    assert FileDownload.from_response(_response(value["data"].encode())).data == data
+    assert file_download_from_response(_response(value["data"].encode())).data == data
 
 
 def test_empty_file_is_allowed() -> None:
-    assert FileUpload("empty.txt", b"").to_api() == {"fileName": "empty.txt", "data": ""}
+    assert file_upload_to_api(FileUpload("empty.txt", b"")) == {"fileName": "empty.txt", "data": ""}
 
 
 @pytest.mark.parametrize(
@@ -76,7 +82,7 @@ def _response(content: bytes, disposition: str = "attachment; filename*=utf-8''a
 
 
 def test_download_name_is_decoded_without_being_cleaned() -> None:
-    file = FileDownload.from_response(
+    file = file_download_from_response(
         _response(b"", "attachment; filename*=utf-8''..%2Fr%C3%A9.txt")
     )
     assert file.name == "../ré.txt"
@@ -91,7 +97,7 @@ def test_download_name_is_decoded_without_being_cleaned() -> None:
 )
 def test_download_refuses_a_malformed_response(response: Any) -> None:
     with pytest.raises(ValueError, match=r"base64|file name"):
-        FileDownload.from_response(response)
+        file_download_from_response(response)
 
 
 @pytest.mark.parametrize("value", [0, -1, True, "7", "1/../2", 1.5, None])

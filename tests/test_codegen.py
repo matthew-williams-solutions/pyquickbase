@@ -16,15 +16,16 @@ import pytest
 from pyquickbase import UNSET, Field, FileUpload, Record, SchemaMismatchError, TableInfo
 from pyquickbase._cli import main
 from pyquickbase._codegen import HEADER, render
+from pyquickbase._models import field_from_api, table_info_from_api
 from pyquickbase._typed import is_writable, order_refs, raise_for_problems, schema_problems
 
 
 def field(id: int, label: str, field_type: str = "text", mode: str = "") -> Field:
-    return Field.from_api({"id": id, "label": label, "fieldType": field_type, "mode": mode})
+    return field_from_api({"id": id, "label": label, "fieldType": field_type, "mode": mode})
 
 
 def table(name: str = "Tasks", id: str = "bqtasks") -> TableInfo:
-    return TableInfo.from_api({"id": id, "name": name})
+    return table_info_from_api({"id": id, "name": name})
 
 
 BUILT_IN = [
