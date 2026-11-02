@@ -44,6 +44,12 @@ qb = Quickbase(realm="acme", token="your_user_token", retry=policy)
 `max_retry_after` is the longest `Retry-After` the client will wait for. Past that, it raises
 `RateLimitError`. Use `max_retries=0` to disable retrying.
 
+## Using another API host
+
+`base_url` sets the API root, which is `https://api.quickbase.com/v1` by default. The right host for EU
+realms hasn't been confirmed, so pass `base_url` if yours differs. It must use HTTPS, except for
+loopback addresses.
+
 ## Proxies, TLS, and logging
 
 Pass your own [httpx](https://www.python-httpx.org/) client for proxies, custom TLS, event hooks, or

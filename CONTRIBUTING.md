@@ -46,5 +46,10 @@ a failure there means you've broken users' files.
 Never commit real tokens, realm names, or customer data, including in test fixtures. Tokens must
 never appear in exceptions, `repr`s, or logs.
 
-`docs/api-notes.md` tracks which Quickbase API behavior has been confirmed. Please update it if you
+## Notes and plans
+
+`docs/api-notes.md` holds what's been confirmed about the Quickbase API. Please update it if you
 confirm or disprove something.
+
+`ROADMAP.md` holds what's left to do, including anything untested and any limit we may want to change.
+Delete an item once it's done.

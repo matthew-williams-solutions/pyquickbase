@@ -162,4 +162,5 @@ ask-the-user reports through the API.
 
 Running a report adds to its usage count in Quickbase, even if the run fails, but changes no records.
 Report details come from the same cache as other metadata, so `usedCount` in `raw` can be out of
-date.
+date, and so can the details used to check that a report is a table report. Quickbase's UI doesn't let
+you change a saved report's type.

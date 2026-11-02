@@ -1,8 +1,9 @@
 # Quickbase API notes
 
 What this SDK relies on, and how far each point has been confirmed. Much of the developer portal
-renders in the browser and has no published spec that we've found, so check anything marked
-"unverified" against a real app before depending on it.
+renders in the browser and has no published spec that we've found, so check anything not listed here
+against a real app before depending on it. Questions we haven't answered yet are in the
+[roadmap](https://github.com/matthew-williams-solutions/pyquickbase/blob/main/ROADMAP.md#open-questions).
 
 ## Confirmed
 
@@ -206,7 +207,11 @@ Tested on 2026-11-02 with short bursts from 12 threads against temporary tables.
 
 ## Temporary tokens
 
-**The SDK doesn't support temporary tokens.** These findings are kept for when that's revisited.
+**The SDK doesn't support temporary tokens.** Their main use is browser code pages, a script can't get
+one, and the SDK's table lookup needs `GET /tables`, which a table-scoped token can't call. These
+findings are kept for when that's revisited. Supporting them would need a `temporary_token` client
+option that treats `app.table()` as an ID and skips that lookup, for a backend acting for a logged-in
+user.
 
 Tested on 2026-11-02 against temporary tables in a sandbox app, with tokens fetched from a logged-in
 browser's console, because a script can't get one.
@@ -273,39 +278,3 @@ A `datetime` field reports its type as `timestamp`.
 | Label uniqueness | Exact duplicates are refused, ignoring case, but `Due Date` and `Due-Date` can both exist |
 | Field IDs | Assigned in order, and address subfields use up IDs |
 | `GET /tables/{id}` | Returned an error without its `appId`, so use `GET /tables?appId=` |
-
-## Unverified
-
-Check these against a sandbox app before the feature that needs them ships.
-
-| Question | Needed for |
-|---|---|
-| Can a query return fewer than `top` records before the end? The test table was too small to show it, so advance by `numRecords` | Paging |
-| Which endpoints have different rate limits? | Transport |
-| Whether a formula can read a table in another app | Formulas |
-| Lookups that hold a value, for types other than text, numeric, and date, and field types only the UI can create | Generated classes |
-| Correct API host for EU realms (pass `base_url` if it differs) | Realm handling |
-| Whether renaming a table, or using the UI, can give two tables the same name. If so, `app.table()` takes the first match, unlike fields and reports, which raise an error | Realm handling |
-| Whether a deleted report's ID can be reused. After deleting one report, a new summary report got ID 8, the highest so far, but the deleted report's own ID wasn't recorded, so this isn't confirmed | Reports |
-| Whether pages of a report stay stable with ties above 1,200 records, or while records are added or removed | Reports |
-| Whether a report's `top`-less run returns every record above 1,200 records. The SDK always sends `top`, so this only affects `qb.request()` | Reports |
-| Whether other endpoints or realms have a different request size limit | Writes |
-| File fields with other version settings, and limits on total storage | File attachments |
-| How reports and files behave for tokens with fewer permissions, since all testing used one token | Reports, file attachments |
-
-## Known limits to revisit
-
-Choices made in the SDK that are worth another look before 1.0.
-
-| Limit | Why it's there | Possible change |
-|---|---|---|
-| Report details are cached for `schema_ttl`, so a report changed in the UI can be checked against old details. A saved report's type can't be changed in the UI, and nothing in a run's response shows the type | Avoids an extra request for every page | Refresh before each run |
-| Summary and chart reports can only be read through `qb.request()` | Their column IDs are positions, so they can't be records | A separate method returning `{label: value}` rows |
-| `timeout` is set per client, so a large upload on a slow connection may need a larger one for every request | The transport has one timeout | A per-call timeout for uploads and downloads |
-| Files are held in memory as bytes and base64 while being sent | The API takes base64 inside JSON, so there's nothing to stream | Probably none, unless Quickbase adds another upload route |
-| `record["Attachment"]` returns Quickbase's raw dictionary, including uploader emails, and a user field works the same way | Decided for 1.0: these stay dictionaries | A dictionary subclass with typed access, which wouldn't break anyone |
-| Quickbase's formula error messages can contain HTML, which errors pass on unchanged | Errors keep Quickbase's message intact | Strip HTML from error messages, in case they're displayed |
-| `FormulaResult.value` leaves dates, timestamps, and durations as display text | They depend on app settings, and timestamps have no time zone | A new property, if a safe way appears, because changing `value` would be breaking |
-| Temporary tokens aren't supported | Their main use is browser code pages, a script can't get one, and the SDK's table lookup needs `GET /tables`, which a table-scoped token can't call | After 1.0, a `temporary_token` client option that treats `app.table()` as an ID and skips that lookup, for a backend acting for a logged-in user |
-| `codegen` writes one class per table, with no way to rename one | Names come from labels, so renaming a label renames the attribute, and deleting a field can give its name to another | Keep names in a small config file, if this proves a problem |
-| A typed table checks its schema once, against cached metadata, so a later change isn't noticed | Avoids a request for every use, and `check_schema()` always looks again | A setting that checks again after a set time |

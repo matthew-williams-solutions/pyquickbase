@@ -1,0 +1,68 @@
+# Roadmap
+
+What's left to do. Delete an item once it's done: `CHANGELOG.md` and git history record what's
+finished, and `docs/api-notes.md` records what's been confirmed about Quickbase. Limits we've decided
+to keep are explained in the guides, not here.
+
+## Before 1.0
+
+- Decide whether to test tokens with fewer permissions first. All testing so far used one token, and
+  hidden fields might read as "no longer exists" in a generated class's schema check. This needs a
+  token for a restricted role.
+- Release `1.0.0rc1`.
+- In the 1.0 release commit:
+  - Change the classifier in `pyproject.toml` from Alpha to Production/Stable.
+  - Remove the alpha warnings from `README.md` and `docs/index.md`, and the advice to pin the exact
+    version. If the pins go too, update `test_install_pins_match_the_version`.
+  - If codegen's output has changed, refresh `tests/fixtures/generated_tables.py` one last time.
+
+## After 1.0
+
+Nothing here should break anyone.
+
+- Switch the docs from Material to Zensical, **by 2027-05-05**, when Material's maintenance ends. A
+  trial build of 0.0.74 worked, and its strict mode also catches broken anchors, which MkDocs doesn't.
+  Wait for 0.1.0, announced for 2026-11-05.
+- A method for summary and chart reports, returning `{label: value}` rows.
+- A per-call timeout for uploads and downloads.
+- A small config file to choose generated names.
+- `query_page()`, `select`, and `batch_size` on typed tables. `select` needs a design, because a
+  generated class requires every column.
+- A setting that repeats a typed table's schema check after a set time.
+- Typed access to file and user values, as a dictionary subclass, which could leave out uploader emails.
+- Export `FieldRef`, `OrderBy`, and `Expression`, which appear in public signatures.
+- Tie a `Row` to its class when the code runs. Only a type checker refuses a row from another class.
+
+## Open questions
+
+Nothing is waiting on these. Test one against a sandbox app before depending on the answer, then move
+the result to `docs/api-notes.md`.
+
+**Queries and limits**
+
+- Can a query return fewer than `top` records before the end? The SDK already advances by the number
+  returned.
+- Which endpoints have different rate limits?
+- Do other endpoints or realms have a different request size limit?
+
+**Reports**
+
+- Can a deleted report's ID be reused? A new report got ID 8, the highest so far, but the deleted
+  report's own ID wasn't recorded. If it can, cached report details could misread a total as a Record
+  ID#.
+- Do pages stay stable with ties above 1,200 records, or while records are added or removed?
+- Does a run without `top` return every record above 1,200 records? The SDK always sends `top`, so this
+  only affects `qb.request()`.
+
+**Fields and files**
+
+- What do lookups return for types other than text, numeric, and date, and what about field types only
+  the UI can create? These are `Any` and read-only in generated classes until confirmed.
+- How do file fields behave with other version settings, and are there limits on total storage?
+
+**Realms and apps**
+
+- What's the API host for EU realms?
+- Can a formula read a table in another app?
+- Can renaming a table, or using the UI, give two tables the same name? If so, `app.table()` takes the
+  first match, unlike fields and reports, which raise an error.
