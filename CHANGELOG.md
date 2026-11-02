@@ -10,6 +10,16 @@ All notable changes to this project are documented here. The format follows
 
 - A stability and versioning policy, which applies from 1.0.
 
+### Changed
+
+- `TypedTable.check_schema()` now always fetches the table's fields again, instead of doing nothing
+  after the first check. Other methods still check once, on first use, against cached metadata.
+- A generated class no longer fails when a field becomes writable. Otherwise, supporting a new field
+  type in a later version would break classes generated earlier.
+- Generated names no longer depend on the Python version running `pyquickbase codegen`, so a label
+  can't get a different name on a newer Python.
+- The error from `TypedRecord.from_record()` now mentions that a report may have left out a field.
+
 ### Removed
 
 - `from_api()` on `AppInfo`, `TableInfo`, `Field`, `Relationship`, `ReportInfo`, `FormulaResult`, and

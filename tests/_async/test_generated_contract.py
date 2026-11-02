@@ -26,6 +26,7 @@ from pyquickbase import (
     SchemaMismatchError,
     TypedField,
     TypedRecord,
+    _typed,
 )
 from pyquickbase._codegen import HEADER
 
@@ -218,6 +219,14 @@ async def test_writes() -> None:
     assert updated["mergeFieldId"] == 3
     assert upserted["mergeFieldId"] == 14
     assert deleted["where"] == "{10.EX.'true'}"
+
+
+async def test_a_newly_supported_field_type_doesnt_break_the_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(_typed, "WRITABLE_TYPES", {*_typed.WRITABLE_TYPES, "something-new"})
+    async with client(Server()) as qb:
+        await qb.app(APP).typed(Tasks).check_schema()
 
 
 async def test_a_changed_table_is_still_reported() -> None:

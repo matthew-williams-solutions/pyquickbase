@@ -4,7 +4,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, fields
 from typing import Any, ClassVar, Generic, Self, TypeVar
 
-from ._models import RECORD_ID_FIELD, Field, Record
+from ._models import Field, Record
 from ._query import F
 from .errors import InvalidResponseError, SchemaMismatchError
 
@@ -117,7 +117,8 @@ class TypedRecord:
             return cls(**{column.name: record[column.id] for column in cls.__columns__})
         except KeyError as exc:
             raise InvalidResponseError(
-                f"A {cls.__name__} record is missing a field, which your access may not include."
+                f"A {cls.__name__} record is missing a field. A report may have left it out, or "
+                "your access may not include it."
             ) from exc
 
     @classmethod
@@ -144,9 +145,10 @@ def schema_problems(model: type[TypedRecord], current: Iterable[Field]) -> list[
             problems.append(f"{column.name} (field {column.id}) no longer exists")
         elif field.type != column.field_type:
             problems.append(f"{column.name} was {column.field_type} and is now {field.type}")
-        elif is_writable(field) != column.writable and column.id != RECORD_ID_FIELD:
-            state = "writable" if is_writable(field) else "read-only"
-            problems.append(f"{column.name} is now {state}")
+        elif column.writable and not is_writable(field):
+            # Only this direction. A later SDK can confirm more writable types, which mustn't fail
+            # a class generated before that, and a class that won't write a field is still safe.
+            problems.append(f"{column.name} is now read-only")
     return problems
 
 

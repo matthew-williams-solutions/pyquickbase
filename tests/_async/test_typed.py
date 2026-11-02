@@ -176,10 +176,36 @@ async def test_schema_is_checked_once_on_first_use() -> None:
     server = Server()
     async with client(server) as qb:
         tasks = qb.app(APP).typed(Tasks)
+        await tasks.count()
+        await tasks.count()
+        assert [task async for task in tasks.query(limit=1)]
+    assert [r.url.path for r in server.requests].count("/v1/fields") == 1
+
+
+async def test_first_use_trusts_the_cache_and_misses_a_newer_change() -> None:
+    server = Server()
+    async with client(server) as qb:
+        await qb.app(APP).table("Tasks").fields()
+        server.fields = FIELDS[:1]
+        await qb.app(APP).typed(Tasks).count()
+
+
+async def test_check_schema_always_looks_again() -> None:
+    server = Server()
+    async with client(server) as qb:
+        tasks = qb.app(APP).typed(Tasks)
         await tasks.check_schema()
+        await tasks.check_schema()
+        assert [r.url.path for r in server.requests].count("/v1/fields") == 2
+        server.fields = FIELDS[:1]
+        with pytest.raises(SchemaMismatchError, match="no longer exists"):
+            await tasks.check_schema()
+        # A failed check isn't forgotten by later calls, which use the refreshed cache.
+        with pytest.raises(SchemaMismatchError, match="no longer exists"):
+            await tasks.count()
+        server.fields = list(FIELDS)
         await tasks.check_schema()
         await tasks.count()
-    assert [r.url.path for r in server.requests].count("/v1/fields") == 1
 
 
 @pytest.mark.parametrize(
@@ -190,9 +216,12 @@ async def test_schema_is_checked_once_on_first_use() -> None:
             [FIELDS[0], {**FIELDS[1], "fieldType": "numeric"}, FIELDS[2], FIELDS[3]],
             "title was text and is now numeric",
         ),
-        ([*FIELDS[:3], {**FIELDS[3], "mode": ""}], "total is now writable"),
+        (
+            [FIELDS[0], {**FIELDS[1], "mode": "formula"}, FIELDS[2], FIELDS[3]],
+            "title is now read-only",
+        ),
     ],
-    ids=["deleted", "type", "writable"],
+    ids=["deleted", "type", "read-only"],
 )
 async def test_a_changed_table_refuses_every_use(fields: list[Any], message: str) -> None:
     server = Server()
@@ -222,7 +251,7 @@ async def test_an_old_cache_doesnt_cause_a_false_alarm() -> None:
     async with client(server) as qb:
         await qb.app(APP).table("Tasks").fields()
         server.fields = list(FIELDS)
-        await qb.app(APP).typed(Tasks).check_schema()
+        await qb.app(APP).typed(Tasks).count()
 
 
 async def test_a_read_only_client_reads_but_cant_write() -> None:

@@ -144,9 +144,11 @@ print(len(page.records), page.total, page.has_more)
 The report decides the filter, sort, and columns:
 
 - **Record ID# may be missing.** `record.id` raises `KeyError` if the report doesn't include that
-  column, and the default `List All` report doesn't.
+  column, and the default `List All` report doesn't. To check first, use `3 in record`, because
+  `hasattr(record, "id")` raises `KeyError` too.
 - **Pages may not be stable.** `query()` adds Record ID# as the last sort key to keep pages stable,
-  but a report's sort can't be changed. If that matters, prefer `query()`.
+  but a report's sort can't be changed. Ties stayed in Record ID# order in a 1,200-record test, but
+  that isn't confirmed for larger tables or while records change. If it matters, prefer `query()`.
 - **Report IDs are only unique within a table.** Different tables reuse the same IDs, so always get a
   report from its own table.
 - **Names can repeat.** A repeated name raises `UnknownReportError`, which lists the IDs to choose

@@ -709,13 +709,22 @@ class TypedTable(Generic[R]):
         return self._table
 
     def check_schema(self) -> None:
-        """Raise `SchemaMismatchError` if the class no longer matches the table."""
+        """Raise `SchemaMismatchError` if the class no longer matches the table.
+
+        This always fetches the table's fields again. Other methods only check once, on first
+        use, against cached metadata, so a long-running process can call this to look again.
+        """
+        self._checked = False
+        fields = self._table.fields(refresh=True)
+        raise_for_problems(self._model, schema_problems(self._model, fields))
+        self._checked = True
+
+    def _check_once(self) -> None:
         if self._checked:
             return
         if schema_problems(self._model, self._table.fields()):
             # The cache may be older than the class, so look once more before giving up.
-            problems = schema_problems(self._model, self._table.fields(refresh=True))
-            raise_for_problems(self._model, problems)
+            self.check_schema()
         self._checked = True
 
     def query(
@@ -738,31 +747,31 @@ class TypedTable(Generic[R]):
             page_size=page_size,
             limit=limit,
         )
-        return TypedIterator(self, self._model, records)
+        return TypedIterator(self._check_once, self._model, records)
 
     def count(self, where: Expression | str | None = None) -> int:
         """Count the matching records without fetching them."""
-        self.check_schema()
+        self._check_once()
         return self._table.count(where)
 
     def insert(self, rows: Iterable[Row[R]]) -> WriteResult:
         """Create records from rows made with `Tasks.new()`. See `Table.insert`."""
-        self.check_schema()
+        self._check_once()
         return self._table.insert(cast(Iterable[RowInput], rows))
 
     def update(self, rows: Iterable[Row[R]]) -> WriteResult:
         """Change records from rows made with `Tasks.change()`. See `Table.update`."""
-        self.check_schema()
+        self._check_once()
         return self._table.update(cast(Iterable[RowInput], rows))
 
     def upsert(self, rows: Iterable[Row[R]], *, merge_on: TypedField) -> WriteResult:
         """Update the record whose unique `merge_on` field matches. See `Table.upsert`."""
-        self.check_schema()
+        self._check_once()
         return self._table.upsert(cast(Iterable[RowInput], rows), merge_on=merge_on.id)
 
     def delete(self, where: Expression | str) -> int:
         """Delete the matching records and return how many were deleted. See `Table.delete`."""
-        self.check_schema()
+        self._check_once()
         return self._table.delete(where)
 
     def __repr__(self) -> str:
@@ -772,8 +781,8 @@ class TypedTable(Generic[R]):
 class TypedIterator(Generic[R]):
     """Yields records from a query as instances of a generated class."""
 
-    def __init__(self, table: TypedTable[R], model: type[R], records: RecordIterator) -> None:
-        self._table = table
+    def __init__(self, check: Callable[[], Any], model: type[R], records: RecordIterator) -> None:
+        self._check = check
         self._model = model
         self._records = records
 
@@ -781,5 +790,5 @@ class TypedIterator(Generic[R]):
         return self
 
     def __next__(self) -> R:
-        self._table.check_schema()
+        self._check()
         return self._model.from_record(self._records.__next__())

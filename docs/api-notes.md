@@ -26,6 +26,7 @@ renders in the browser and has no published spec that we've found, so check anyt
 | With no `select`, only fields in the table's default set return, and Record ID# may not be one | Live API, 2026-11-02 |
 | Timestamps return as `2026-10-21T11:49:56Z`, dates as `2026-10-18` | Live API, 2026-11-02 |
 | A nonexistent app or table returns 401 with a valid token, not 404 | Live API, 2026-11-02 |
+| Creating a table with a name already in the app, ignoring case, returns 400, `Invalid input` | Live API, 2026-11-02 |
 
 A bad realm or app can return 400 rather than 401 or 404, even with an invalid token, so don't
 assume a 400 means the request body was wrong.
@@ -284,6 +285,7 @@ Check these against a sandbox app before the feature that needs them ships.
 | Whether a formula can read a table in another app | Formulas |
 | Lookups that hold a value, for types other than text, numeric, and date, and field types only the UI can create | Generated classes |
 | Correct API host for EU realms (pass `base_url` if it differs) | Realm handling |
+| Whether renaming a table, or using the UI, can give two tables the same name. If so, `app.table()` takes the first match, unlike fields and reports, which raise an error | Realm handling |
 | Whether a deleted report's ID can be reused. After deleting one report, a new summary report got ID 8, the highest so far, but the deleted report's own ID wasn't recorded, so this isn't confirmed | Reports |
 | Whether pages of a report stay stable with ties above 1,200 records, or while records are added or removed | Reports |
 | Whether a report's `top`-less run returns every record above 1,200 records. The SDK always sends `top`, so this only affects `qb.request()` | Reports |
@@ -303,6 +305,7 @@ Choices made in the SDK that are worth another look before 1.0.
 | Files are held in memory as bytes and base64 while being sent | The API takes base64 inside JSON, so there's nothing to stream | Probably none, unless Quickbase adds another upload route |
 | `record["Attachment"]` returns Quickbase's raw dictionary, including uploader emails, and a user field works the same way | Decided for 1.0: these stay dictionaries | A dictionary subclass with typed access, which wouldn't break anyone |
 | Quickbase's formula error messages can contain HTML, which errors pass on unchanged | Errors keep Quickbase's message intact | Strip HTML from error messages, in case they're displayed |
-| `FormulaResult.value` leaves dates, timestamps, and durations as display text | They depend on app settings, and timestamps have no time zone | Parse them using the app's settings, if a safe way appears |
+| `FormulaResult.value` leaves dates, timestamps, and durations as display text | They depend on app settings, and timestamps have no time zone | A new property, if a safe way appears, because changing `value` would be breaking |
 | Temporary tokens aren't supported | Their main use is browser code pages, a script can't get one, and the SDK's table lookup needs `GET /tables`, which a table-scoped token can't call | After 1.0, a `temporary_token` client option that treats `app.table()` as an ID and skips that lookup, for a backend acting for a logged-in user |
-| `codegen` writes one class per table, with no way to rename one | Names come from labels, so renaming a label renames the attribute | Keep names in a small config file, if this proves a problem |
+| `codegen` writes one class per table, with no way to rename one | Names come from labels, so renaming a label renames the attribute, and deleting a field can give its name to another | Keep names in a small config file, if this proves a problem |
+| A typed table checks its schema once, against cached metadata, so a later change isn't noticed | Avoids a request for every use, and `check_schema()` always looks again | A setting that checks again after a set time |

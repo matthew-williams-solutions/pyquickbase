@@ -53,6 +53,8 @@ selects all of its fields. A record's `repr` leaves out its values, because they
 | `file` | `dict[str, Any]`, as described in [File attachments](files.md) |
 | Anything else | `Any` |
 
+Numbers are `float`, as in `Record`, so currency values aren't exact decimals.
+
 ## Writing
 
 `Tasks.new()` builds a row for a new record, and `Tasks.change()` builds one for an existing record.
@@ -75,9 +77,13 @@ take a `FileUpload`.
 ## Keeping it up to date
 
 A generated class is compared with its table the first time it's used, and `SchemaMismatchError` lists
-what's different if a field was deleted, changed type, or became writable or read-only. Reads and writes
-stop rather than risk returning wrong types. Run the command again to fix it. Adding a field or renaming
-one doesn't cause an error, because the class uses field IDs.
+what's different if a field was deleted, changed type, or became read-only. Reads and writes stop rather
+than risk returning wrong types. Run the command again to fix it. Adding a field, renaming one, or a
+field becoming writable doesn't cause an error, because the class uses field IDs and is still safe.
+
+That first check uses cached metadata, 5 minutes old at most by default (see `schema_ttl`), and later
+changes aren't noticed. A long-running process can call `tasks.check_schema()` from time to time, which
+always fetches the fields again.
 
 To catch changes sooner, run this in CI. It changes nothing, and fails if the file is out of date.
 
@@ -100,3 +106,8 @@ turned into underscores, so a label can't inject code into the module.
 If two labels give the same name, such as `Due Date` and `Due-Date`, the field with the lowest ID keeps
 it and the other gets its ID added: `due_date_9`. A new field therefore never takes an existing field's
 name. Record ID# is always `id`. Renaming a label renames its attribute the next time you generate.
+
+**Names can move.** If the field holding a plain name is deleted, the next field with that name takes it
+when you generate again, so `due_date` can come to mean a different field with no error. Class names work
+the same way, and a clash between them is settled only among the tables you generate, so `--table` can
+change a class's name. Review the diff when you generate again, and use `--check` in CI.

@@ -1,6 +1,8 @@
 # Handling errors
 
-Everything raised by this library derives from `QuickbaseError`.
+Every exception this library defines derives from `QuickbaseError`. Reading a missing key from a
+`Record`, including `record.id` on a report row without Record ID#, raises Python's `KeyError`, as any
+mapping does.
 
 ```python
 from pyquickbase import AuthenticationError, QuickbaseError, RateLimitError
@@ -49,6 +51,10 @@ and `request_id`. Include `request_id` when reporting a problem to Quickbase sup
     Quickbase answers with a 401 rather than a 404 for an app or table that doesn't exist, so
     `AuthenticationError` can mean either a bad token or a wrong ID. A bad realm or app can also
     return a 400.
+
+!!! warning "Messages can contain HTML"
+    Quickbase's formula error messages can include HTML, such as a `javascript:` link, and errors
+    pass them on unchanged. Escape them before showing them in a web page.
 
 ## Other failures
 

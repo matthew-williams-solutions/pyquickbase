@@ -5,8 +5,6 @@ including text that would be code if pasted into a source file. So labels only e
 `repr()` string literals, and identifiers are built from an ASCII allowlist.
 """
 
-import builtins
-import keyword
 import re
 import unicodedata
 from collections.abc import Sequence
@@ -55,6 +53,40 @@ _WRITE_TYPES = {
     "multitext": "list[str] | None",
     "file": "FileUpload",
 }
+# Keywords and builtins as of Python 3.14, written out so that the Python running the command can't
+# change a generated name. Don't add to this: a new builtin can't harm a generated file, and a new
+# name here would rename attributes in users' code.
+_RESERVED_NAMES = frozenset(
+    {
+        "ArithmeticError", "AssertionError", "AttributeError", "BaseException",
+        "BaseExceptionGroup", "BlockingIOError", "BrokenPipeError", "BufferError", "BytesWarning",
+        "ChildProcessError", "ConnectionAbortedError", "ConnectionError", "ConnectionRefusedError",
+        "ConnectionResetError", "DeprecationWarning", "EOFError", "Ellipsis", "EncodingWarning",
+        "EnvironmentError", "Exception", "ExceptionGroup", "False", "FileExistsError",
+        "FileNotFoundError", "FloatingPointError", "FutureWarning", "GeneratorExit", "IOError",
+        "ImportError", "ImportWarning", "IndentationError", "IndexError", "InterruptedError",
+        "IsADirectoryError", "KeyError", "KeyboardInterrupt", "LookupError", "MemoryError",
+        "ModuleNotFoundError", "NameError", "None", "NotADirectoryError", "NotImplemented",
+        "NotImplementedError", "OSError", "OverflowError", "PendingDeprecationWarning",
+        "PermissionError", "ProcessLookupError", "PythonFinalizationError", "RecursionError",
+        "ReferenceError", "ResourceWarning", "RuntimeError", "RuntimeWarning", "StopAsyncIteration",
+        "StopIteration", "SyntaxError", "SyntaxWarning", "SystemError", "SystemExit", "TabError",
+        "TimeoutError", "True", "TypeError", "UnboundLocalError", "UnicodeDecodeError",
+        "UnicodeEncodeError", "UnicodeError", "UnicodeTranslateError", "UnicodeWarning",
+        "UserWarning", "ValueError", "Warning", "ZeroDivisionError", "_IncompleteInputError", "abs",
+        "aiter", "all", "and", "anext", "any", "as", "ascii", "assert", "async", "await", "bin",
+        "bool", "break", "breakpoint", "bytearray", "bytes", "callable", "case", "chr", "class",
+        "classmethod", "compile", "complex", "continue", "copyright", "credits", "def", "del",
+        "delattr", "dict", "dir", "divmod", "elif", "else", "enumerate", "eval", "except", "exec",
+        "exit", "filter", "finally", "float", "for", "format", "from", "frozenset", "getattr",
+        "global", "globals", "hasattr", "hash", "help", "hex", "id", "if", "import", "in", "input",
+        "int", "is", "isinstance", "issubclass", "iter", "lambda", "len", "license", "list",
+        "locals", "map", "match", "max", "memoryview", "min", "next", "nonlocal", "not", "object",
+        "oct", "open", "or", "ord", "pass", "pow", "print", "property", "quit", "raise", "range",
+        "repr", "return", "reversed", "round", "set", "setattr", "slice", "sorted", "staticmethod",
+        "str", "sum", "super", "try", "tuple", "type", "vars", "while", "with", "yield", "zip",
+    }
+)  # fmt: skip
 _RESERVED_ATTRIBUTES = {"cls", "fields", "new", "change", "from_record"}
 _RESERVED_CLASSES = {
     "Any",
@@ -75,7 +107,7 @@ def _words(text: str) -> list[str]:
 
 
 def _is_reserved(name: str) -> bool:
-    return keyword.iskeyword(name) or keyword.issoftkeyword(name) or hasattr(builtins, name)
+    return name in _RESERVED_NAMES
 
 
 def _attribute_name(field: Field) -> str:

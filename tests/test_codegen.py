@@ -2,6 +2,7 @@
 
 import ast
 import json
+import keyword
 import subprocess
 import sys
 import types
@@ -15,7 +16,7 @@ import pytest
 
 from pyquickbase import UNSET, Field, FileUpload, Record, SchemaMismatchError, TableInfo
 from pyquickbase._cli import main
-from pyquickbase._codegen import HEADER, render
+from pyquickbase._codegen import _RESERVED_NAMES, HEADER, render
 from pyquickbase._models import field_from_api, table_info_from_api
 from pyquickbase._typed import is_writable, order_refs, raise_for_problems, schema_problems
 
@@ -125,6 +126,11 @@ def test_fields_work_in_queries_by_id() -> None:
         ("Résumé", "resume"),
         ("1st", "f_1st"),
         ("class", "class_"),
+        ("type", "type_"),
+        ("exit", "exit_"),
+        ("Lazy", "lazy"),
+        ("frozendict", "frozendict"),
+        ("sentinel", "sentinel"),
         ("None", "none"),
         ("match", "match_"),
         ("str", "str_"),
@@ -258,6 +264,11 @@ def test_unset_has_a_readable_repr() -> None:
     assert repr(UNSET) == "UNSET"
 
 
+def test_keywords_of_this_python_are_reserved() -> None:
+    # A new keyword can't be an attribute, so a failure here needs a decision about naming.
+    assert set(keyword.kwlist) <= _RESERVED_NAMES
+
+
 def test_is_writable() -> None:
     assert is_writable(field(6, "A"))
     assert is_writable(field(6, "A", "file"))
@@ -300,10 +311,13 @@ def test_schema_problems_lists_each_change() -> None:
         "amount was numeric and is now text",
         "total is now read-only",
     ]
-    assert schema_problems(
-        load(render([(table(), [*BUILT_IN, field(8, "Total", "numeric", "formula")])])).Tasks,
-        [*BUILT_IN, field(8, "Total", "numeric")],
-    ) == ["total is now writable"]
+    assert (
+        schema_problems(
+            load(render([(table(), [*BUILT_IN, field(8, "Total", "numeric", "formula")])])).Tasks,
+            [*BUILT_IN, field(8, "Total", "numeric")],
+        )
+        == []
+    )
     with pytest.raises(SchemaMismatchError, match=r"Tasks doesn't match.*codegen"):
         raise_for_problems(tasks, problems)
     raise_for_problems(tasks, [])

@@ -714,13 +714,22 @@ class AsyncTypedTable(Generic[R]):
         return self._table
 
     async def check_schema(self) -> None:
-        """Raise `SchemaMismatchError` if the class no longer matches the table."""
+        """Raise `SchemaMismatchError` if the class no longer matches the table.
+
+        This always fetches the table's fields again. Other methods only check once, on first
+        use, against cached metadata, so a long-running process can call this to look again.
+        """
+        self._checked = False
+        fields = await self._table.fields(refresh=True)
+        raise_for_problems(self._model, schema_problems(self._model, fields))
+        self._checked = True
+
+    async def _check_once(self) -> None:
         if self._checked:
             return
         if schema_problems(self._model, await self._table.fields()):
             # The cache may be older than the class, so look once more before giving up.
-            problems = schema_problems(self._model, await self._table.fields(refresh=True))
-            raise_for_problems(self._model, problems)
+            await self.check_schema()
         self._checked = True
 
     def query(
@@ -743,31 +752,31 @@ class AsyncTypedTable(Generic[R]):
             page_size=page_size,
             limit=limit,
         )
-        return AsyncTypedIterator(self, self._model, records)
+        return AsyncTypedIterator(self._check_once, self._model, records)
 
     async def count(self, where: Expression | str | None = None) -> int:
         """Count the matching records without fetching them."""
-        await self.check_schema()
+        await self._check_once()
         return await self._table.count(where)
 
     async def insert(self, rows: Iterable[Row[R]]) -> WriteResult:
         """Create records from rows made with `Tasks.new()`. See `Table.insert`."""
-        await self.check_schema()
+        await self._check_once()
         return await self._table.insert(cast(Iterable[RowInput], rows))
 
     async def update(self, rows: Iterable[Row[R]]) -> WriteResult:
         """Change records from rows made with `Tasks.change()`. See `Table.update`."""
-        await self.check_schema()
+        await self._check_once()
         return await self._table.update(cast(Iterable[RowInput], rows))
 
     async def upsert(self, rows: Iterable[Row[R]], *, merge_on: TypedField) -> WriteResult:
         """Update the record whose unique `merge_on` field matches. See `Table.upsert`."""
-        await self.check_schema()
+        await self._check_once()
         return await self._table.upsert(cast(Iterable[RowInput], rows), merge_on=merge_on.id)
 
     async def delete(self, where: Expression | str) -> int:
         """Delete the matching records and return how many were deleted. See `Table.delete`."""
-        await self.check_schema()
+        await self._check_once()
         return await self._table.delete(where)
 
     def __repr__(self) -> str:
@@ -778,9 +787,9 @@ class AsyncTypedIterator(Generic[R]):
     """Yields records from a query as instances of a generated class."""
 
     def __init__(
-        self, table: AsyncTypedTable[R], model: type[R], records: AsyncRecordIterator
+        self, check: Callable[[], Any], model: type[R], records: AsyncRecordIterator
     ) -> None:
-        self._table = table
+        self._check = check
         self._model = model
         self._records = records
 
@@ -788,5 +797,5 @@ class AsyncTypedIterator(Generic[R]):
         return self
 
     async def __anext__(self) -> R:
-        await self._table.check_schema()
+        await self._check()
         return self._model.from_record(await self._records.__anext__())

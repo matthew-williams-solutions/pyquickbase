@@ -73,8 +73,8 @@ are whatever was uploaded. Treat both as untrusted, especially before opening or
 
 ## Listing versions
 
-Reading a file field in a query returns Quickbase's value unchanged. `url` is an empty string, and
-`versions` an empty list, when the field has no file.
+Reading a file field in a query returns Quickbase's value unchanged, as a plain dictionary. `url` is an
+empty string, and `versions` an empty list, when the field has no file.
 
 ```python
 task = next(iter(tasks.query(where="{3.EX.7}", select=["Attachment"])))

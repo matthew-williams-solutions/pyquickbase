@@ -4,7 +4,7 @@ from typing import Any
 
 
 class QuickbaseError(Exception):
-    """Base class for every error raised by this library."""
+    """Base class for every exception this library defines."""
 
 
 class ConfigurationError(QuickbaseError, ValueError):
