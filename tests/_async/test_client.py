@@ -22,7 +22,7 @@ from pyquickbase import (
 
 pytestmark = pytest.mark.anyio
 
-TOKEN = "b12345_abcd_secret"
+TOKEN = "fake-user-token"
 Handler = Callable[[httpx.Request], httpx.Response]
 
 

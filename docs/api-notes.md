@@ -15,9 +15,32 @@ renders in the browser and has no published spec that we've found, so check anyt
 | On a 429, read `retry-after`; retry only for 429 | Same page |
 | Operators: CT, XCT, HAS, XHAS, EX, TV, XTV, XEX, SW, XSW, BF, OBF, AF, OAF, IR, XIR, LT, LTE, GT, GTE, uppercase only | [Query docs](https://help.quickbase.com/docs/components-of-a-query) |
 | Query dates: `yyyy-MM-dd` or milliseconds, not date-time strings | Same page |
+| Query `metadata` has `numFields`, `numRecords`, `skip`, `totalRecords`, and `top` when it was sent | Live API, 2026-11-02 |
+| Omitting `options` or sending `top: 0` returns all matches in a small table; a `skip` past the end returns no records | Live API, 2026-11-02 |
+| `EX` on text ignores case | Live API, 2026-11-02 |
+| `AND` and `OR` must be uppercase; whitespace around them is accepted | Live API, 2026-11-02 |
+| A nonexistent app or table returns 401 with a valid token, not 404 | Live API, 2026-11-02 |
 
 A bad realm or app can return 400 rather than 401 or 404, even with an invalid token, so don't
 assume a 400 means the request body was wrong.
+
+## Query pitfalls
+
+Tested on 2026-11-02 against a small sandbox app. These matter because many mistakes return a
+plausible result instead of an error.
+
+| `where` clause | Result |
+|---|---|
+| Lowercase or unknown operator: `{6.ex.'x'}`, `{6.NOPE.'x'}` | **Behaves like `CT`** and returns matches |
+| Unquoted value: `{6.EX.foo}` | No records, no error |
+| Unknown field: `{999999.EX.'x'}` | No records, no error |
+| Field label instead of ID: `{'Title'.EX.'x'}` | No records, no error |
+| Trailing join: `{6.EX.'x'}AND` | No error |
+| Lowercase join, missing brace, or free text | 400, `Criteria is invalid.` |
+
+**A value can break out of its clause.** With `zz'}OR{3.GT.'0` as the value, the query matched every
+record whether the quotes were left alone, written as `\'`, or written as `''`. No escaping form
+we've tried is safe, so don't build a `where` clause from untrusted text without rejecting quotes.
 
 ## Unverified
 
@@ -26,9 +49,8 @@ Check these against a sandbox app before the feature that needs them ships.
 | Question | Needed for |
 |---|---|
 | Format and units of `retry-after` on a real 429 (both seconds and dates are handled) | Transport |
-| Can a query return fewer than `top` records before the end? What does `metadata` contain? | Paging |
-| How do you escape a single quote in a query value? | Query builder |
-| Do malformed `where` clauses really return zero records rather than an error? | Query validator |
+| Can a query return fewer than `top` records before the end? The test table was too small to show it, so advance by `numRecords` | Paging |
+| Can a stored value containing a single quote be matched, and how? Needs a record that contains one | Query builder |
 | Shape of the 207 upsert response and `lineErrors`; request size limits | Upsert |
 | What happens when `mergeFieldId` doesn't match, including for Record ID#? | Upsert, MCP updates |
 | Which endpoints have different rate limits? | Transport |
