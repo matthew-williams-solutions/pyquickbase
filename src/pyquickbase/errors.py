@@ -21,6 +21,10 @@ class InvalidResponseError(QuickbaseError):
     """Quickbase reported success, but the response body wasn't in the expected format."""
 
 
+class ReadOnlyError(QuickbaseError):
+    """The client is read-only, and this request could change data. Nothing was sent."""
+
+
 class QueryError(QuickbaseError, ValueError):
     """A query can't be sent as written. Nothing was sent to Quickbase."""
 

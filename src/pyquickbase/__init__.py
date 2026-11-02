@@ -3,7 +3,7 @@
 from ._async._client import AsyncQuickbase
 from ._async._resources import AsyncApp, AsyncRecordIterator, AsyncTable
 from ._models import AppInfo, Field, Page, Record, Relationship, TableInfo
-from ._query import F
+from ._query import F, WhereCondition, parse_where
 from ._retry import RetryPolicy
 from ._sync._client import Quickbase
 from ._sync._resources import App, RecordIterator, Table
@@ -20,6 +20,7 @@ from .errors import (
     QueryError,
     QuickbaseError,
     RateLimitError,
+    ReadOnlyError,
     RequestTimeoutError,
     ServerError,
     UnknownFieldError,
@@ -48,6 +49,7 @@ __all__ = [
     "Quickbase",
     "QuickbaseError",
     "RateLimitError",
+    "ReadOnlyError",
     "Record",
     "RecordIterator",
     "Relationship",
@@ -58,5 +60,7 @@ __all__ = [
     "TableInfo",
     "UnknownFieldError",
     "UnknownTableError",
+    "WhereCondition",
     "__version__",
+    "parse_where",
 ]

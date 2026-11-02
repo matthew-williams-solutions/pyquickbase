@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from ._version import __version__
-from .errors import ConfigurationError
+from .errors import ConfigurationError, ReadOnlyError
 
 DEFAULT_BASE_URL = "https://api.quickbase.com/v1"
 DEFAULT_TIMEOUT = 30.0
@@ -16,6 +16,7 @@ ENV_TOKEN = "QB_USER_TOKEN"
 
 _HOSTNAME = re.compile(r"[a-z0-9-]+(\.[a-z0-9-]+)+")
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+_READ_ONLY_POSTS = {"/records/query"}
 
 
 def normalize_realm(realm: str) -> str:
@@ -51,6 +52,12 @@ def build_url(base_url: str, path: str) -> str:
     if not path.startswith("/") or path.startswith("//") or any(c in path for c in "?#\\"):
         raise ValueError(f"path must look like '/tables/abc', without a query string: {path!r}")
     return f"{base_url}{path}"
+
+
+def check_read_only(method: str, path: str) -> None:
+    """Allow only requests known to be reads. Queries are POSTs, so method alone isn't enough."""
+    if method != "GET" and not (method == "POST" and path in _READ_ONLY_POSTS):
+        raise ReadOnlyError(f"This client is read-only, so it won't send {method} {path}.")
 
 
 def build_user_agent(prefix: str | None) -> str:

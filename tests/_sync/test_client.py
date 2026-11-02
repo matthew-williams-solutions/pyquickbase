@@ -16,6 +16,7 @@ from pyquickbase import (
     PermissionDeniedError,
     Quickbase,
     RateLimitError,
+    ReadOnlyError,
     RequestTimeoutError,
     RetryPolicy,
     ServerError,
@@ -298,3 +299,39 @@ def test_from_env_names_missing_variables(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("QB_USER_TOKEN", TOKEN)
     with pytest.raises(ConfigurationError, match="QB_REALM"):
         Quickbase.from_env()
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("POST", "/records"),
+        ("post", "/records"),
+        ("DELETE", "/records"),
+        ("POST", "/records/query/"),
+        ("POST", "/records/query/../../records"),
+        ("POST", "/tables"),
+        ("PUT", "/records/query"),
+        ("PATCH", "/apps/abc"),
+        ("HEAD", "/apps/abc"),
+    ],
+)
+def test_read_only_client_never_sends_anything_else(method: str, path: str) -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={})
+
+    with make_client(handler, read_only=True) as qb:
+        with pytest.raises(ReadOnlyError, match="read-only"):
+            qb.request(method, path, json={})
+    assert seen == []
+
+
+@pytest.mark.parametrize(("method", "path"), [("GET", "/apps/abc"), ("POST", "/records/query")])
+def test_read_only_client_allows_reads(method: str, path: str) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ok": True})
+
+    with make_client(handler, read_only=True) as qb:
+        assert qb.request(method, path) == {"ok": True}

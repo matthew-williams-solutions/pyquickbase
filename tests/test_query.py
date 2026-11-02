@@ -7,7 +7,16 @@ from typing import Any
 
 import pytest
 
-from pyquickbase import F, Field, InvalidResponseError, Page, QueryError, UnknownFieldError
+from pyquickbase import (
+    F,
+    Field,
+    InvalidResponseError,
+    Page,
+    QueryError,
+    UnknownFieldError,
+    WhereCondition,
+    parse_where,
+)
 from pyquickbase._models import AppInfo, FieldIndex, Relationship, TableInfo, parse
 from pyquickbase._query import build_query_body, compile_where, format_value, validate_where
 from pyquickbase._schema import SchemaCache
@@ -196,6 +205,20 @@ def test_validate_where_accepts(where: str) -> None:
 def test_validate_where_rejects(where: str, problem: str) -> None:
     with pytest.raises(QueryError, match=re.escape(problem)):
         validate_where(where, INDEX)
+
+
+def test_parse_where_returns_unescaped_conditions() -> None:
+    where = " ({6.EX.'O\\'Brien'}OR{7.CT.c}) AND {9.BF.'a\\\\b'} "
+    assert parse_where(where, FIELDS) == [
+        WhereCondition(6, "EX", "O'Brien"),
+        WhereCondition(7, "CT", "c"),
+        WhereCondition(9, "BF", "a\\b"),
+    ]
+
+
+def test_parse_where_rejects_what_validation_rejects() -> None:
+    with pytest.raises(QueryError, match="uppercase"):
+        parse_where("{6.ex.'x'}", FIELDS)
 
 
 def build(**kwargs: Any) -> dict[str, Any]:

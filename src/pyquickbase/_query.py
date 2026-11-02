@@ -26,6 +26,7 @@ _CONDITION = re.compile(
     r"\{\s*(\d+)\s*\.\s*([A-Za-z]+)\s*\.\s*('(?:[^'{}\\]|\\[^{}])*'|[^'{}\\]*?)\s*\}"
 )
 _JOIN = re.compile(r"(?:AND|OR)\b")
+_ESCAPE = re.compile(r"\\(.)")
 _WHERE_HELP = (
     "Each condition must be {fieldId.OPERATOR.'value'} in its own braces, joined outside the "
     "braces with AND or OR in uppercase. Write an apostrophe in a value as \\'."
@@ -184,13 +185,21 @@ def _where_error(where: str, position: int, problem: str) -> QueryError:
     )
 
 
-def validate_where(where: str, fields: FieldIndex) -> str:
-    """Check a hand-written `where` string and return it with outer whitespace removed.
+@dataclass(frozen=True, slots=True)
+class WhereCondition:
+    """One condition from a `where` string, with its value unquoted and unescaped."""
 
-    This catches mistakes, not attacks: a string can legitimately contain several conditions, so
-    build queries with `F` when any of the text comes from someone else.
-    """
-    text = where.strip()
+    field_id: int
+    operator: str
+    value: str
+
+
+def _unquote(raw: str) -> str:
+    return _ESCAPE.sub(r"\1", raw[1:-1]) if raw.startswith("'") else raw
+
+
+def _scan_where(text: str, fields: FieldIndex) -> list[WhereCondition]:
+    found: list[WhereCondition] = []
     position, depth, expect_condition = 0, 0, True
     while position < len(text):
         if text[position].isspace():
@@ -209,6 +218,7 @@ def validate_where(where: str, fields: FieldIndex) -> str:
                 raise _where_error(
                     text, position, f"unknown operator '{match[2]}', operators must be uppercase"
                 )
+            found.append(WhereCondition(int(match[1]), match[2], _unquote(match[3])))
             position, expect_condition = match.end(), False
         elif text[position] == ")":
             if depth == 0:
@@ -223,7 +233,27 @@ def validate_where(where: str, fields: FieldIndex) -> str:
         raise _where_error(text, max(0, len(text) - 20), "clause is empty or ends with AND/OR")
     if depth:
         raise _where_error(text, 0, "unbalanced '('")
+    return found
+
+
+def validate_where(where: str, fields: FieldIndex) -> str:
+    """Check a hand-written `where` string and return it with outer whitespace removed.
+
+    This catches mistakes, not attacks: a string can legitimately contain several conditions, so
+    build queries with `F` when any of the text comes from someone else.
+    """
+    text = where.strip()
+    _scan_where(text, fields)
     return text
+
+
+def parse_where(where: str, fields: Iterable[Field]) -> list[WhereCondition]:
+    """Check a hand-written `where` string and return its conditions.
+
+    Raises `QueryError` for the same mistakes that `table.query()` would. Useful for extra checks
+    of your own, or for finding out which fields a string refers to.
+    """
+    return _scan_where(where.strip(), FieldIndex(fields))
 
 
 def compile_where(where: Expression | str, fields: FieldIndex) -> str:

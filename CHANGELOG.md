@@ -16,3 +16,5 @@ All notable changes to this project are documented here. The format follows
 - Checks that reject broken `where` strings that Quickbase would otherwise accept.
 - `table.query()` for automatic paging, plus `query_page()` and `count()`.
 - `Record`, with access by label or ID and date and timestamp conversion.
+- `read_only=True` on the clients, which refuses any request that could change data.
+- `parse_where()` for inspecting a hand-written `where` string.

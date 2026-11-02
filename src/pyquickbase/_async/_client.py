@@ -40,6 +40,8 @@ class AsyncQuickbase:
         http_client: Your own configured httpx client, for proxies, custom TLS, event hooks,
             or custom transports. You remain responsible for closing it.
         schema_ttl: Seconds to cache app, table, and field metadata. Use 0 to disable caching.
+        read_only: Refuse any request that could change data, raising `ReadOnlyError`. Only GET
+            requests and record queries are sent, including through `request()`.
     """
 
     def __init__(
@@ -53,6 +55,7 @@ class AsyncQuickbase:
         user_agent: str | None = None,
         http_client: httpx.AsyncClient | None = None,
         schema_ttl: float = DEFAULT_SCHEMA_TTL,
+        read_only: bool = False,
     ) -> None:
         self._realm = normalize_realm(realm)
         self._transport = AsyncTransport(
@@ -63,6 +66,7 @@ class AsyncQuickbase:
             timeout=timeout,
             user_agent=build_user_agent(user_agent),
             http_client=http_client,
+            read_only=read_only,
         )
         self._schema = SchemaCache(schema_ttl)
 
@@ -76,6 +80,7 @@ class AsyncQuickbase:
         user_agent: str | None = None,
         http_client: httpx.AsyncClient | None = None,
         schema_ttl: float = DEFAULT_SCHEMA_TTL,
+        read_only: bool = False,
     ) -> Self:
         """Create a client from the `QB_REALM` and `QB_USER_TOKEN` environment variables."""
         realm, token = read_env()
@@ -88,6 +93,7 @@ class AsyncQuickbase:
             user_agent=user_agent,
             http_client=http_client,
             schema_ttl=schema_ttl,
+            read_only=read_only,
         )
 
     @property

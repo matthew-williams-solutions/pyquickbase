@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from .._config import build_url
+from .._config import build_url, check_read_only
 from .._response import error_from_response, error_from_transport, parse_response
 from .._retry import RetryPolicy, parse_retry_after
 
@@ -23,7 +23,9 @@ class Transport:
         timeout: float,
         user_agent: str,
         http_client: httpx.Client | None,
+        read_only: bool = False,
     ) -> None:
+        self._read_only = read_only
         self._auth = auth
         self._base_url = base_url
         self._retry = retry
@@ -41,6 +43,8 @@ class Transport:
     ) -> Any:
         method = method.upper()
         url = build_url(self._base_url, path)
+        if self._read_only:
+            check_read_only(method, path)
         attempt = 0
         while True:
             try:
