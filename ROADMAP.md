@@ -32,7 +32,7 @@ Nothing here should break anyone.
 
 ## Docs playground
 
-- Simulate writes, then add "Try it" links from each guide to its own example.
+- Simulate updates and deletes, then add "Try it" links from each guide to its own example.
 
 ## Open questions
 

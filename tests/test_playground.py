@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import importlib
 import io
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -65,20 +66,64 @@ def test_query_example_finds_open_tasks() -> None:
     )
 
 
-def test_injection_example_shows_the_difference() -> None:
-    assert run_example("08_block_query_injection.py").splitlines() == [
-        "Project 1 has 4 tasks",
-        "Raw API: no error, and it returned 12 tasks",
-        "pyquickbase: QueryError. Quickbase can't search for values containing { or }.",
+def test_import_example_reports_the_lost_row() -> None:
+    assert run_example("08_an_import_that_loses_a_row.py").splitlines() == [
+        "Saved: (13, 14)",
+        "Failed: Book venue - The field with ID '7' has an invalid choice.",
     ]
 
 
-def test_home_page_shows_the_injection_example_and_its_real_output() -> None:
-    home = (APP.parent / "index.md").read_text()
-    code = (APP / "examples/08_block_query_injection.py").read_text()
-    assert code.split("\n", 1)[1] in home
-    assert run_example("08_block_query_injection.py") in home
-    assert "playground-app/index.html#block-query-injection" in home
+def test_home_page_shows_the_import_example_and_its_real_output() -> None:
+    text = (APP.parent / "index.md").read_text()
+    code = (APP / "examples/08_an_import_that_loses_a_row.py").read_text()
+    assert code[code.index("rows = [") : code.index("]\n") + 1] in text
+    assert code[code.index("    try:") :].replace("\n    ", "\n").removeprefix("    ") in text
+    assert run_example("08_an_import_that_loses_a_row.py") in text
+    home = text
+    assert "playground-app/index.html#an-import-that-loses-a-row" in home
+
+
+def test_a_failed_row_returns_a_success_status_and_saves_the_rest(api: httpx.Client) -> None:
+    rows = [{"6": {"value": "Good"}, "7": {"value": "Open"}}, {"7": {"value": "Finished"}}]
+    response = api.post("/records", json={"to": TASKS, "data": rows})
+    response.raise_for_status()  # This is the point: the usual check passes.
+    assert response.status_code == 207
+    assert response.json()["metadata"]["createdRecordIds"] == [13]
+    assert response.json()["metadata"]["lineErrors"] == {
+        "2": ["The field with ID '7' has an invalid choice."]
+    }
+    assert matches(api, "{6.EX.'Good'}") == 1
+
+
+def test_a_fully_valid_write_returns_200(api: httpx.Client) -> None:
+    rows = [{"6": {"value": "Good"}, "8": {"value": 2}}]
+    response = api.post("/records", json={"to": TASKS, "data": rows})
+    assert response.status_code == 200
+    assert "lineErrors" not in response.json()["metadata"]
+
+
+@pytest.mark.parametrize(
+    ("row", "message"),
+    [
+        ({"999": {"value": "x"}}, 'Field with ID "999" not found.'),
+        ({"8": {"value": "five"}}, 'Incompatible value for field with ID "8".'),
+    ],
+)
+def test_bad_values_are_row_errors(api: httpx.Client, row: dict[str, Any], message: str) -> None:
+    response = api.post("/records", json={"to": TASKS, "data": [row]})
+    assert response.json()["metadata"]["lineErrors"] == {"1": [message]}
+
+
+def test_empty_data_returns_400(api: httpx.Client) -> None:
+    assert api.post("/records", json={"to": TASKS, "data": []}).status_code == 400
+
+
+def test_writes_dont_change_the_next_runs_data() -> None:
+    first, second = simulator.SimulatedQuickbase(), simulator.SimulatedQuickbase()
+    body = {"to": TASKS, "data": [{"6": {"value": "Only in the first"}}]}
+    first(httpx.Request("POST", "https://x/v1/records", json=body))
+    query = httpx.Request("POST", "https://x/v1/records/query", json={"from": TASKS})
+    assert json.loads(second(query).content)["metadata"]["totalRecords"] == 12
 
 
 def test_clients_are_restored_after_a_run() -> None:
@@ -263,7 +308,6 @@ def test_a_failed_report_run_still_counts(api: httpx.Client) -> None:
 @pytest.mark.parametrize(
     ("method", "path"),
     [
-        ("POST", "/records"),
         ("DELETE", "/records"),
         ("POST", "/formula/run"),
         ("GET", "/files/a/1/2/0"),
@@ -274,6 +318,11 @@ def test_what_isnt_simulated_says_so(api: httpx.Client, method: str, path: str) 
     response = api.request(method, path)
     assert response.status_code == 403
     assert f"doesn't simulate {method} {path}" in response.json()["message"]
+
+
+def test_merging_rows_isnt_simulated_yet(api: httpx.Client) -> None:
+    body = {"to": TASKS, "data": [{"3": {"value": 1}}], "mergeFieldId": 3}
+    assert api.post("/records", json=body).status_code == 403
 
 
 def test_sample_tables_line_up_with_their_columns() -> None:

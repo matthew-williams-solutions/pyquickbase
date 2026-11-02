@@ -40,42 +40,43 @@ writing `null` to a field does nothing. This SDK turns those into errors or corr
 
 ## See the difference
 
-Say a page shows visitors the tasks for their project, using the project from its URL. Building that
-query by hand looks harmless, until someone edits the URL:
+You import three rows, and one has an invalid status:
 
 ```python
-from pyquickbase import F, QueryError, Quickbase
+rows = [
+    {"Title": "Order chairs", "Status": "Open"},
+    {"Title": "Book venue", "Status": "Finished"},  # Not a valid status
+    {"Title": "Send invites", "Status": "Open"},
+]
+```
 
-# A page shows visitors their project's tasks, using the project from its URL.
-# This visitor edited the URL.
-project = "1'}OR{3.GT.'0"
+The REST API saves the other two and returns HTTP 207. That's a success status, so a normal check
+passes, and the failed row is only listed inside the response body:
 
-with Quickbase(realm="demo", token="demo") as qb:
-    tasks = qb.app("bq1234567").table("Tasks")
-    print(f"Project 1 has {tasks.count(F('Related Project') == 1)} tasks")
+```python
+response = httpx.post(url, headers=headers, json=body)
+response.raise_for_status()  # Passes, because 207 is a success status
+print("Import finished")  # But one row wasn't saved
+```
 
-    body = {"from": "bqtasks", "where": "{12.EX.'" + project + "'}"}
-    records = qb.request("POST", "/records/query", json=body)["data"]
-    print(f"Raw API: no error, and it returned {len(records)} tasks")
+pyquickbase checks the response for you and raises an error that says what happened:
 
-    try:
-        tasks.count(F("Related Project") == project)
-    except QueryError as error:
-        print(f"pyquickbase: QueryError. {error}")
+```python
+try:
+    tasks.insert(rows)
+except WriteError as error:
+    print("Saved:", error.result.created_ids)
+    for failed in error.result.errors:
+        print("Failed:", rows[failed.index]["Title"], "-", *failed.messages)
 ```
 
 ```text
-Project 1 has 4 tasks
-Raw API: no error, and it returned 12 tasks
-pyquickbase: QueryError. Quickbase can't search for values containing { or }.
+Saved: (13, 14)
+Failed: Book venue - The field with ID '7' has an invalid choice.
 ```
 
-The visitor's text rewrote the raw query, so it returned the whole table, with no error. `F` treats
-text as a value and refuses this one before anything is sent. Hand-written query strings can't get this protection,
-so [use `F` for text you don't control](guides/reading.md#writing-queries).
-
-[Run this in the playground](playground-app/index.html#block-query-injection), which uses simulated
-data based on [recorded API behavior](api-notes.md#query-pitfalls).
+[Try it in the playground](playground-app/index.html#an-import-that-loses-a-row), which uses simulated
+data based on [recorded API behavior](api-notes.md#writes).
 
 ## Install
 

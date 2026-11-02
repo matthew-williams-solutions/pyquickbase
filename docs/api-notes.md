@@ -75,6 +75,7 @@ Tested on 2026-11-02 against temporary tables in a sandbox app.
 | `mergeFieldId` on a non-unique field, or a row without the merge field | 400 for the whole request |
 | Unknown field, formula field, built-in field | Row error |
 | A value outside a field's choices | Accepted when `allowNewChoices` is on, otherwise a row error |
+| The row error for an invalid choice | `The field with ID '7' has an invalid choice.` Confirmed again in a three-row import: 207, `raise_for_status()` passes, and the other two rows are saved |
 | Empty `data` | 400 |
 | `DELETE /records` without `where` or with a blank one | 400 |
 | `DELETE /records` with a malformed `where` | **`numberDeleted: 0`, no error** |
