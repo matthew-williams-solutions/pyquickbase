@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pyquickbase playground</title>
+<link rel="stylesheet" href="vendor/codemirror/codemirror.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="toolbar">
+  <label class="picker" for="example">Example
+    <select id="example"></select>
+  </label>
+  <div class="actions">
+    <button id="run" type="button" class="primary" disabled>Run</button>
+    <button id="stop" type="button" disabled>Stop</button>
+    <button id="reset" type="button" disabled>Reset code</button>
+  </div>
+  <span class="label" title="This playground never contacts Quickbase">Simulated data</span>
+</header>
+<main class="panes">
+  <section class="pane" aria-label="Python code">
+    <textarea id="code" aria-label="Python code" spellcheck="false"></textarea>
+  </section>
+  <section class="pane results" aria-label="Results">
+    <div class="tabs" role="tablist" aria-label="Results">
+      <button id="tab-output" type="button" role="tab" aria-selected="true" aria-controls="output-panel">Output</button>
+      <button id="tab-sample" type="button" role="tab" aria-selected="false" aria-controls="sample">Sample data</button>
+      <span id="status" class="status" role="status"></span>
+    </div>
+    <div id="output-panel" class="panel" role="tabpanel" aria-labelledby="tab-output">
+      <pre id="output" tabindex="0"></pre>
+    </div>
+    <div id="sample" class="panel sample" role="tabpanel" aria-labelledby="tab-sample" tabindex="0" hidden></div>
+  </section>
+</main>
+<footer class="foot">
+  Your code runs in this browser, using the real SDK and a simulated Quickbase API. Ctrl+Enter runs it. Esc leaves the editor.
+</footer>
+<script src="vendor/codemirror/codemirror.js"></script>
+<script src="vendor/codemirror/python.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

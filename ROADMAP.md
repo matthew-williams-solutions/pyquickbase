@@ -30,6 +30,14 @@ Nothing here should break anyone.
 - Export `FieldRef`, `OrderBy`, and `Expression`, which appear in public signatures.
 - Tie a `Row` to its class when the code runs. Only a type checker refuses a row from another class.
 
+## Docs playground
+
+- Check the first load on the live site, where download size and compression will show. It took under
+  2 seconds on localhost, and it's about 14 MB uncompressed. It's only been tried in Chromium, so try
+  Firefox and Safari too.
+- Add a runnable comparison of the raw API and the SDK to the home page.
+- Simulate writes, then add "Try it" links from each guide to its own example.
+
 ## Open questions
 
 Nothing is waiting on these. Test one against a sandbox app before depending on the answer, then move

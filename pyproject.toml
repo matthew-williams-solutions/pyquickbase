@@ -80,6 +80,7 @@ target-version = "py311"
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "PT", "RUF", "T20"]
 
 [tool.ruff.lint.per-file-ignores]
+"docs/playground-app/examples/*" = ["E711", "E712", "F704", "T20"]  # top-level await, F == None
 "scripts/*" = ["T20"]
 "src/pyquickbase/_sync/*" = ["UP028"]  # generated from async code, which can't use `yield from`
 "tests/*" = ["SIM117"]  # generated sync tests can't merge what async tests must nest

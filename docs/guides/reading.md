@@ -3,6 +3,9 @@
 The examples use the sync client. With the async client, use `await` on each call and `async for`
 on `query()`.
 
+!!! tip "Try it without installing anything"
+    The [playground](../playground.md) runs these in your browser, against simulated sample data.
+
 ## Tables and fields
 
 `qb.app()` and `app.table()` don't contact Quickbase. A table is found by name or ID when you first

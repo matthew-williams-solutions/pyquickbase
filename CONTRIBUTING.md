@@ -19,6 +19,11 @@ Tests use mocked HTTP and need no Quickbase account.
 Preview the docs site with `uv run --group docs mkdocs serve`. Every public name needs an entry in
 `docs/reference.md`, and a test checks this.
 
+The playground in `docs/playground-app/` needs `uv run scripts/build_playground.py` once before
+previewing it, and again after changing the SDK or an example. It downloads pinned copies of Pyodide
+and CodeMirror and builds the SDK's wheel, none of which is committed. Its simulator copies what's in
+`docs/api-notes.md`, so update both if you confirm that Quickbase behaves differently.
+
 ## Sync and async code
 
 **Only edit the async code.** `src/pyquickbase/_sync/` and `tests/_sync/` are generated from their
