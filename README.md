@@ -28,7 +28,7 @@ sync and async clients.
 ## Usage
 
 ```bash
-pip install pyquickbase==0.1.0a1
+pip install pyquickbase==0.2.0a1
 ```
 
 This is an alpha release, so pin the exact version.

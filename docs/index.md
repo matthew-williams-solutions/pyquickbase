@@ -39,7 +39,7 @@ writing `null` to a field does nothing. This SDK turns those into errors or corr
 ## Install
 
 ```bash
-pip install pyquickbase==0.1.0a1
+pip install pyquickbase==0.2.0a1
 ```
 
 It needs Python 3.11 or newer. Next, see [Getting started](getting-started.md).
