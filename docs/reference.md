@@ -5,7 +5,8 @@ Everything listed here is public. Modules starting with `_` are private and may 
 ## Clients
 
 `Quickbase` is documented in full here. `AsyncQuickbase`, `AsyncApp`, `AsyncTable`, `AsyncReport`,
-and `AsyncRecordIterator` have the same methods, which you `await`.
+`AsyncRecordIterator`, `AsyncTypedTable`, and `AsyncTypedIterator` have the same methods, which you
+`await`.
 
 ::: pyquickbase.Quickbase
 
@@ -37,7 +38,35 @@ and `AsyncRecordIterator` have the same methods, which you `await`.
     options:
       members: false
 
+::: pyquickbase.AsyncTypedTable
+    options:
+      members: false
+
+::: pyquickbase.AsyncTypedIterator
+    options:
+      members: false
+
 ::: pyquickbase.RetryPolicy
+
+## Generated classes
+
+These support the classes from `pyquickbase codegen`, and you rarely need them directly.
+
+::: pyquickbase.TypedTable
+
+::: pyquickbase.TypedIterator
+
+::: pyquickbase.TypedRecord
+
+::: pyquickbase.TypedField
+
+::: pyquickbase.Row
+
+::: pyquickbase.Column
+
+::: pyquickbase.Unset
+
+::: pyquickbase.UNSET
 
 ## Queries
 
@@ -82,6 +111,8 @@ and `AsyncRecordIterator` have the same methods, which you `await`.
 ::: pyquickbase.QueryError
 
 ::: pyquickbase.InvalidValueError
+
+::: pyquickbase.SchemaMismatchError
 
 ::: pyquickbase.UnknownTableError
 

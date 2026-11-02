@@ -14,6 +14,9 @@ All notable changes to this project are documented here. The format follows
   can be read as records.
 - File attachments: `FileUpload` for writes, plus `table.download_file()` and
   `table.delete_file_version()`.
+- `pyquickbase codegen`, which generates a typed class for each table, and `app.typed()`, which reads
+  and writes through those classes, including `query()`, `insert()`, `update()`, and `upsert()`. A
+  class that no longer matches its table raises `SchemaMismatchError`.
 - Formulas: `table.run_formula()`, which returns a `FormulaResult`, `formula=` on `create_field()` and
   `update_field()`, and `Field.formula`.
 

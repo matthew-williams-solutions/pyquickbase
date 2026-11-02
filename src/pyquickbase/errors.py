@@ -63,6 +63,10 @@ class UnsupportedReportError(QuickbaseError):
     """The report can't be read as records, such as a summary or chart report."""
 
 
+class SchemaMismatchError(QuickbaseError):
+    """A generated class no longer matches its table, so it needs generating again."""
+
+
 class APIError(QuickbaseError):
     """Quickbase answered with an unsuccessful status code.
 

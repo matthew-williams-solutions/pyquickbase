@@ -24,6 +24,7 @@ These mean nothing was sent to Quickbase.
 | `ConfigurationError` | Invalid client settings, or missing environment variables |
 | `QueryError` | A query that can't be sent as written |
 | `InvalidValueError` | A row, value, or file request that can't be sent |
+| `SchemaMismatchError` | A generated class no longer matches its table |
 | `UnknownTableError` | No table with that name or ID in this app |
 | `UnknownFieldError` | No field with that label or ID in this table |
 | `UnknownReportError` | No report with that name or ID on this table, or several with that name |

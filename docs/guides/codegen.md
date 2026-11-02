@@ -1,0 +1,102 @@
+# Generated classes
+
+`pyquickbase codegen` reads your tables' schemas and writes a Python module with a class for each one.
+Your editor and type checker then know every field's name and type, so they catch mistakes before the
+code runs.
+
+## Generating the module
+
+The command reads `QB_REALM` and `QB_USER_TOKEN` from the environment, and only ever reads from
+Quickbase.
+
+```bash
+pyquickbase codegen --app bq1234567 --output src/myapp/tables.py
+pyquickbase codegen --app bq1234567 --output src/myapp/tables.py --table Tasks --table Projects
+```
+
+It won't replace a file it didn't generate. The module holds table IDs and field labels, but no realm or
+token, so check that you're comfortable with those in your repository before committing it.
+
+## Reading
+
+Pass a generated class to `app.typed()`. A class is named after its table, and an attribute after its
+field's label, so the `Tasks` table with a `Due Date` field gives you `Tasks` and `due_date`.
+
+```python
+from myapp.tables import Tasks
+
+tasks = qb.app("bq1234567").typed(Tasks)
+
+for task in tasks.query(
+    where=Tasks.fields.status == "Open",
+    order_by=[Tasks.fields.due_date.desc, Tasks.fields.title],
+    limit=50,
+):
+    print(task.id, task.title, task.due_date)
+
+print(tasks.count(Tasks.fields.status == "Open"))
+```
+
+`Tasks.fields` works like `F`, by field ID. Each record is a frozen dataclass, and `query()` always
+selects all of its fields. A record's `repr` leaves out its values, because they may be sensitive.
+
+| Field type | Attribute type |
+|---|---|
+| Text types, `email`, `url`, `phone`, `address`, and `timeofday` | `str`, which is `""` when empty |
+| `numeric`, `currency`, `rating`, `percent`, and `duration` (in milliseconds) | `float \| None` |
+| `date` | `date \| None` |
+| `timestamp` | `datetime \| None` |
+| `checkbox` | `bool`, which is false when empty |
+| `multitext` | `list[str]` |
+| `user` | `dict[str, Any] \| None` |
+| `multiuser` | `list[dict[str, Any]]` |
+| `file` | `dict[str, Any]`, as described in [File attachments](files.md) |
+| Anything else | `Any` |
+
+## Writing
+
+`Tasks.new()` builds a row for a new record, and `Tasks.change()` builds one for an existing record.
+They only accept fields you can write, so setting a formula, lookup, summary, or built-in field is a
+type error, and raises `TypeError` when the code runs. A type checker also refuses a row made for
+another class.
+
+```python
+tasks.insert([Tasks.new(title="Pour slab", due_date=date(2027, 1, 15))])
+tasks.update([Tasks.change(7, status="Done", notes=None)])
+tasks.upsert([Tasks.new(code="A-1", title="Pour slab")], merge_on=Tasks.fields.code)
+tasks.delete(Tasks.fields.status == "Cancelled")
+```
+
+Leaving an argument out leaves that field alone, and `None` clears it, except for file fields, which
+take a `FileUpload`.
+
+`tasks.table` is the ordinary untyped table, for anything else, such as reports and file downloads.
+
+## Keeping it up to date
+
+A generated class is compared with its table the first time it's used, and `SchemaMismatchError` lists
+what's different if a field was deleted, changed type, or became writable or read-only. Reads and writes
+stop rather than risk returning wrong types. Run the command again to fix it. Adding a field or renaming
+one doesn't cause an error, because the class uses field IDs.
+
+To catch changes sooner, run this in CI. It changes nothing, and fails if the file is out of date.
+
+```bash
+pyquickbase codegen --app bq1234567 --output src/myapp/tables.py --check
+```
+
+## How names are chosen
+
+Names use ASCII letters, digits, and underscores, and labels are lowercased with other characters
+turned into underscores, so a label can't inject code into the module.
+
+| Label | Attribute |
+|---|---|
+| `Due Date` | `due_date` |
+| `1st` | `f_1st` |
+| `class`, `str`, `new` | `class_`, `str_`, `new_` |
+| `日本語`, `😀` | `field_6`, using the field's ID |
+
+If two labels give the same name, such as `Due Date` and `Due-Date`, the field with the lowest ID keeps
+it and the other gets its ID added: `due_date_9`. A new field therefore never takes an existing field's
+name. Record ID# is always `id`. Renaming a label renames its attribute the next time you generate.

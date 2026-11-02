@@ -230,6 +230,44 @@ doesn't contain a formula**: `GetRecord()` read a table the token couldn't other
 downloads, and file deletes weren't tested with a temporary token, and neither were tokens from users
 with fewer permissions.
 
+## Field types
+
+Tested on 2026-11-02 against temporary tables in a sandbox app. These decide the types in generated
+classes, and an unlisted type becomes `Any` and read-only.
+
+`POST /fields` accepts these types: `text`, `text-multiple-choice`, `text-multi-line`, `rich-text`,
+`numeric`, `currency`, `rating`, `percent`, `multitext`, `email`, `url`, `duration`, `date`,
+`datetime`, `timestamp`, `timeofday`, `checkbox`, `user`, `multiuser`, `address`, `phone`, and `file`.
+A `datetime` field reports its type as `timestamp`.
+
+| Field type | A query returns | When empty |
+|---|---|---|
+| `recordid` | Integer | Never empty |
+| `text`, `text-multiple-choice`, `text-multi-line`, `rich-text`, `email`, `url`, `phone` | Text | **`""`, not null** |
+| `numeric`, `currency`, `rating`, `percent` | Number | null |
+| `duration` | Milliseconds | null |
+| `date` | `2026-03-04` | `""` |
+| `timestamp` | `2026-03-04T05:06:07Z` | `""` |
+| `timeofday` | `13:30:00` | `""` |
+| `checkbox` | Boolean | `false` |
+| `multitext` | A list of text | `[]` |
+| `user` | `{"email", "id", "name"}` | null |
+| `multiuser` | A list of users | `[]` |
+| `file` | `{"url", "versions"}` | `{"url": "", "versions": []}` |
+| `address` | Display text, such as `1 Main St, Springfield 12345` | `""` |
+| `dblink` | `""` in the one case seen | |
+
+| Behavior | Result |
+|---|---|
+| Lookup and formula fields | Return the same shapes as their type. Lookups were tested holding text, numeric, and date values, and empty for user, multitext, and checkbox. A formula of `Null` matched its type on text, numeric, and checkbox fields |
+| Writable fields | Built-in fields 1 to 5 aren't, nor are formula, lookup, and summary fields, or `address` |
+| An `address` field | Is read-only, with text subfields for its parts, which can be written. Creating one also creates its subfields, and sets `Country` to a default |
+| `dblink` | Created by a relationship, on the parent table |
+| Labels | **Can contain almost anything, including `"""`, line breaks, and code**, as can table names |
+| Label uniqueness | Exact duplicates are refused, ignoring case, but `Due Date` and `Due-Date` can both exist |
+| Field IDs | Assigned in order, and address subfields use up IDs |
+| `GET /tables/{id}` | Returned an error without its `appId`, so use `GET /tables?appId=` |
+
 ## Unverified
 
 Check these against a sandbox app before the feature that needs them ships.
@@ -239,6 +277,7 @@ Check these against a sandbox app before the feature that needs them ships.
 | Can a query return fewer than `top` records before the end? The test table was too small to show it, so advance by `numRecords` | Paging |
 | Which endpoints have different rate limits? | Transport |
 | Whether a formula can read a table in another app | Formulas |
+| Lookups that hold a value, for types other than text, numeric, and date, and field types only the UI can create | Generated classes |
 | Correct API host for EU realms (pass `base_url` if it differs) | Realm handling |
 | Table reports with a formula column, or with Record ID# as a column | Reports |
 | Whether pages of a report are stable when its sort has ties | Reports |
@@ -261,3 +300,4 @@ Choices made in the SDK that are worth another look before 1.0.
 | Quickbase's formula error messages can contain HTML, which errors pass on unchanged | Errors keep Quickbase's message intact | Strip HTML from error messages, in case they're displayed |
 | `FormulaResult.value` leaves dates, timestamps, and durations as display text | They depend on app settings, and timestamps have no time zone | Parse them using the app's settings, if a safe way appears |
 | Temporary tokens aren't supported | Their main use is browser code pages, a script can't get one, and the SDK's table lookup needs `GET /tables`, which a table-scoped token can't call | After 1.0, a `temporary_token` client option that treats `app.table()` as an ID and skips that lookup, for a backend acting for a logged-in user |
+| `codegen` writes one class per table, with no way to rename one | Names come from labels, so renaming a label renames the attribute | Keep names in a small config file, if this proves a problem |

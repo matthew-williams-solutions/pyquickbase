@@ -24,6 +24,9 @@ dependencies = [
     "httpx>=0.27,<1",
 ]
 
+[project.scripts]
+pyquickbase = "pyquickbase._cli:main"
+
 [project.urls]
 Documentation = "https://matthew-williams-solutions.github.io/pyquickbase/"
 Repository = "https://github.com/matthew-williams-solutions/pyquickbase"

@@ -1,7 +1,14 @@
 """pyquickbase: an unofficial, typed Python SDK for the Quickbase API."""
 
 from ._async._client import AsyncQuickbase
-from ._async._resources import AsyncApp, AsyncRecordIterator, AsyncReport, AsyncTable
+from ._async._resources import (
+    AsyncApp,
+    AsyncRecordIterator,
+    AsyncReport,
+    AsyncTable,
+    AsyncTypedIterator,
+    AsyncTypedTable,
+)
 from ._models import (
     AppInfo,
     Field,
@@ -16,7 +23,8 @@ from ._models import (
 from ._query import F, WhereCondition, parse_where
 from ._retry import RetryPolicy
 from ._sync._client import Quickbase
-from ._sync._resources import App, RecordIterator, Report, Table
+from ._sync._resources import App, RecordIterator, Report, Table, TypedIterator, TypedTable
+from ._typed import UNSET, Column, Row, TypedField, TypedRecord, Unset
 from ._version import __version__
 from ._writes import FileUpload, RowError, WriteResult
 from .errors import (
@@ -34,6 +42,7 @@ from .errors import (
     RateLimitError,
     ReadOnlyError,
     RequestTimeoutError,
+    SchemaMismatchError,
     ServerError,
     UnknownFieldError,
     UnknownReportError,
@@ -43,6 +52,7 @@ from .errors import (
 )
 
 __all__ = [
+    "UNSET",
     "APIError",
     "App",
     "AppInfo",
@@ -51,8 +61,11 @@ __all__ = [
     "AsyncRecordIterator",
     "AsyncReport",
     "AsyncTable",
+    "AsyncTypedIterator",
+    "AsyncTypedTable",
     "AuthenticationError",
     "BadRequestError",
+    "Column",
     "ConfigurationError",
     "F",
     "Field",
@@ -77,13 +90,20 @@ __all__ = [
     "ReportInfo",
     "RequestTimeoutError",
     "RetryPolicy",
+    "Row",
     "RowError",
+    "SchemaMismatchError",
     "ServerError",
     "Table",
     "TableInfo",
+    "TypedField",
+    "TypedIterator",
+    "TypedRecord",
+    "TypedTable",
     "UnknownFieldError",
     "UnknownReportError",
     "UnknownTableError",
+    "Unset",
     "UnsupportedReportError",
     "WhereCondition",
     "WriteError",

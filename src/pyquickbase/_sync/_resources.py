@@ -4,7 +4,7 @@
 import difflib
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from functools import partial
-from typing import Any, Self, TypeVar
+from typing import Any, Generic, Self, TypeVar, cast
 
 from .._models import (
     RECORD_ID_FIELD,
@@ -25,6 +25,16 @@ from .._models import (
 )
 from .._query import Expression, FieldRef, build_query_body, compile_where
 from .._schema import SchemaCache
+from .._typed import (
+    OrderBy,
+    R,
+    Row,
+    TypedField,
+    column_ids,
+    order_refs,
+    raise_for_problems,
+    schema_problems,
+)
 from .._writes import (
     RowInput,
     WriteResult,
@@ -116,6 +126,14 @@ class App:
     def table(self, name_or_id: str) -> "Table":
         """Get a table in this app by name or ID. It's checked when first used."""
         return Table(self._transport, self._cache, self, name_or_id)
+
+    def typed(self, model: type[R]) -> "TypedTable[R]":
+        """Use a class from `pyquickbase codegen` for typed access to its table.
+
+        The class is compared with the table when first used, raising `SchemaMismatchError`
+        if it's out of date.
+        """
+        return TypedTable(self.table(model.__table_id__), model)
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._id!r})"
@@ -665,3 +683,93 @@ class Report:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._ref!r}, table={self._table!r})"
+
+
+class TypedTable(Generic[R]):
+    """A table read and written through a generated class. Create one with `app.typed(Tasks)`."""
+
+    def __init__(self, table: Table, model: type[R]) -> None:
+        self._table = table
+        self._model = model
+        self._checked = False
+
+    @property
+    def table(self) -> Table:
+        """The untyped table, for anything this class doesn't cover."""
+        return self._table
+
+    def check_schema(self) -> None:
+        """Raise `SchemaMismatchError` if the class no longer matches the table."""
+        if self._checked:
+            return
+        if schema_problems(self._model, self._table.fields()):
+            # The cache may be older than the class, so look once more before giving up.
+            problems = schema_problems(self._model, self._table.fields(refresh=True))
+            raise_for_problems(self._model, problems)
+        self._checked = True
+
+    def query(
+        self,
+        *,
+        where: Expression | str | None = None,
+        order_by: OrderBy = None,
+        page_size: int = 1000,
+        limit: int | None = None,
+    ) -> "TypedIterator[R]":
+        """Iterate over matching records as instances of the class. See `Table.query`.
+
+        Every field in the class is selected. Sort with `Tasks.fields.title`, or
+        `Tasks.fields.title.desc` for descending.
+        """
+        records = self._table.query(
+            where=where,
+            select=column_ids(self._model),
+            order_by=order_refs(order_by),
+            page_size=page_size,
+            limit=limit,
+        )
+        return TypedIterator(self, self._model, records)
+
+    def count(self, where: Expression | str | None = None) -> int:
+        """Count the matching records without fetching them."""
+        self.check_schema()
+        return self._table.count(where)
+
+    def insert(self, rows: Iterable[Row[R]]) -> WriteResult:
+        """Create records from rows made with `Tasks.new()`. See `Table.insert`."""
+        self.check_schema()
+        return self._table.insert(cast(Iterable[RowInput], rows))
+
+    def update(self, rows: Iterable[Row[R]]) -> WriteResult:
+        """Change records from rows made with `Tasks.change()`. See `Table.update`."""
+        self.check_schema()
+        return self._table.update(cast(Iterable[RowInput], rows))
+
+    def upsert(self, rows: Iterable[Row[R]], *, merge_on: TypedField) -> WriteResult:
+        """Update the record whose unique `merge_on` field matches. See `Table.upsert`."""
+        self.check_schema()
+        return self._table.upsert(cast(Iterable[RowInput], rows), merge_on=merge_on.id)
+
+    def delete(self, where: Expression | str) -> int:
+        """Delete the matching records and return how many were deleted. See `Table.delete`."""
+        self.check_schema()
+        return self._table.delete(where)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self._model.__name__})"
+
+
+class TypedIterator(Generic[R]):
+    """Yields records from a query as instances of a generated class."""
+
+    def __init__(self, table: TypedTable[R], model: type[R], records: RecordIterator) -> None:
+        self._table = table
+        self._model = model
+        self._records = records
+
+    def __iter__(self) -> Self:
+        return self
+
+    def __next__(self) -> R:
+        self._table.check_schema()
+        return self._model.from_record(self._records.__next__())
