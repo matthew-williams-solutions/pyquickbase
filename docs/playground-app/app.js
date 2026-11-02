@@ -222,13 +222,18 @@
     }
   }
 
+  function exampleFromHash() {
+    const id = location.hash.slice(1);
+    return data.examples.some((example) => example.id === id) ? id : null;
+  }
+
   async function start() {
     const response = await fetch("playground-data.json");
     if (!response.ok) throw new Error(`playground-data.json: ${response.status}`);
     data = await response.json();
     for (const example of data.examples) ui.picker.add(new Option(example.title, example.id));
     renderSample();
-    selectExample(data.examples[0].id);
+    selectExample(exampleFromHash() ?? data.examples[0].id);
     ui.run.disabled = false;
     ui.reset.disabled = false;
   }
@@ -241,7 +246,14 @@
     editor.clearHistory();
     if (!running) showSavedOutput();
   });
-  ui.picker.addEventListener("change", () => selectExample(ui.picker.value));
+  ui.picker.addEventListener("change", () => {
+    selectExample(ui.picker.value);
+    history.replaceState(null, "", `#${ui.picker.value}`);
+  });
+  window.addEventListener("hashchange", () => {
+    const id = exampleFromHash();
+    if (id) selectExample(id);
+  });
   ui.tabOutput.addEventListener("click", () => showTab("output"));
   ui.tabSample.addEventListener("click", () => showTab("sample"));
 

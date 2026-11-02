@@ -65,11 +65,20 @@ def test_query_example_finds_open_tasks() -> None:
     )
 
 
-def test_raw_api_example_shows_the_difference() -> None:
-    assert run_example("08_what_the_raw_api_lets_through.py").splitlines() == [
-        "Raw request matched 2 records",
-        "pyquickbase matched 0 records",
+def test_injection_example_shows_the_difference() -> None:
+    assert run_example("08_block_query_injection.py").splitlines() == [
+        "Project 1 has 4 tasks",
+        "Raw API: no error, and it returned 12 tasks",
+        "pyquickbase: QueryError. Quickbase can't search for values containing { or }.",
     ]
+
+
+def test_home_page_shows_the_injection_example_and_its_real_output() -> None:
+    home = (APP.parent / "index.md").read_text()
+    code = (APP / "examples/08_block_query_injection.py").read_text()
+    assert code.split("\n", 1)[1] in home
+    assert run_example("08_block_query_injection.py") in home
+    assert "playground-app/index.html#block-query-injection" in home
 
 
 def test_clients_are_restored_after_a_run() -> None:
