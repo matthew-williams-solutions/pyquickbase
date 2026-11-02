@@ -1,10 +1,13 @@
 """Typed views of Quickbase metadata and records. No network access."""
 
+import base64
 import difflib
+import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, TypeVar
+from urllib.parse import unquote
 
 from .errors import (
     InvalidResponseError,
@@ -14,6 +17,7 @@ from .errors import (
 )
 
 RECORD_ID_FIELD = 3
+_DISPOSITION_NAME = re.compile(r"filename\*=utf-8''([^;]+)", re.IGNORECASE)
 
 
 T = TypeVar("T")
@@ -278,6 +282,36 @@ class Record(Mapping[str | int, Any]):
     def __repr__(self) -> str:
         # Values may be sensitive and reprs end up in logs, so show only the shape.
         return f"Record(id={self._values.get(RECORD_ID_FIELD)!r}, fields={len(self)})"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FileDownload:
+    """A file downloaded from a file attachment field.
+
+    `name` and `content_type` aren't trustworthy. Quickbase stores names as sent, such as
+    `../../x`, so don't use `name` as a path without cleaning it, and `content_type` is based on
+    the name rather than the contents.
+    """
+
+    name: str
+    data: bytes = field(repr=False)
+    content_type: str | None
+
+    @classmethod
+    def from_response(cls, response: Any) -> "FileDownload":
+        """Quickbase sends the contents as base64, whatever `Content-Type` says."""
+        found = _DISPOSITION_NAME.search(response.headers["content-disposition"])
+        if found is None:
+            raise ValueError("No file name in the response.")
+        return cls(
+            name=unquote(found[1]),
+            data=base64.b64decode(response.content, validate=True),
+            content_type=response.headers.get("content-type"),
+        )
+
+    def __repr__(self) -> str:
+        # File contents may be sensitive and reprs end up in logs, so show only the shape.
+        return f"FileDownload({self.name!r}, {len(self.data)} bytes)"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

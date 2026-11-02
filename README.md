@@ -20,11 +20,12 @@ sync and async clients.
 - Creating, updating, and deleting records, with errors reported for each failed row
 - Creating and changing tables, fields, and relationships
 - Running table reports, with automatic paging
+- Uploading, downloading, and deleting file attachments
 - `qb.request()` for calling any Quickbase endpoint directly
 
 ## Coming next
 
-File attachments, formulas, temporary tokens, and generated typed tables.
+Formulas, temporary tokens, and generated typed tables.
 
 ## Usage
 

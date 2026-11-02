@@ -57,6 +57,10 @@ and `AsyncRecordIterator` have the same methods, which you `await`.
 
 ::: pyquickbase.RowError
 
+::: pyquickbase.FileUpload
+
+::: pyquickbase.FileDownload
+
 ::: pyquickbase.AppInfo
 
 ::: pyquickbase.TableInfo

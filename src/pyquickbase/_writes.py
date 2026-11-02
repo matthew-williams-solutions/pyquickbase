@@ -4,16 +4,77 @@ Quickbase silently ignores a null value, reports failed rows inside a successful
 creates a record when a merge value doesn't match. See docs/api-notes.md for the tested behavior.
 """
 
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, replace
+import base64
+import json
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
+from unicodedata import category
 
-from ._models import FieldIndex
+from ._models import Field, FieldIndex
 from .errors import InvalidValueError
 
 RowInput = Mapping[str | int, Any]
+FILE_FIELD_TYPE = "file"
+# Quickbase returns 413 above 40 MiB. This leaves room for the rest of the request body.
+MAX_ROWS_BYTES = 40 * 1024 * 1024 - 1024
+
+
+@dataclass(frozen=True, slots=True)
+class FileUpload:
+    """A file to write to a file attachment field, as a value in `insert()`, `update()`, or
+    `upsert()`.
+
+    `name` can't contain a path or control characters, because Quickbase stores them as sent and
+    could pass them to whoever downloads the file later.
+    """
+
+    name: str
+    data: bytes = field(repr=False)
+
+    def __post_init__(self) -> None:
+        if not self.name or any(c in "/\\" or category(c) == "Cc" for c in self.name):
+            raise InvalidValueError(
+                f"A file name can't be empty or contain a path or control characters: {self.name!r}"
+            )
+        if not isinstance(self.data, bytes):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise InvalidValueError("A file's data must be bytes.")
+
+    def __repr__(self) -> str:
+        # File contents may be sensitive and reprs end up in logs, so show only the shape.
+        return f"FileUpload({self.name!r}, {len(self.data)} bytes)"
+
+    def to_api(self) -> dict[str, str]:
+        return {"fileName": self.name, "data": base64.b64encode(self.data).decode("ascii")}
+
+
+def require_id(name: str, value: int) -> None:
+    """Check a number that goes into a URL path, so a string can't change the path."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:  # pyright: ignore[reportUnnecessaryIsInstance]
+        raise InvalidValueError(f"{name} must be a positive integer, got {value!r}.")
+
+
+def require_file_field(item: Field) -> None:
+    if item.type != FILE_FIELD_TYPE:
+        raise InvalidValueError(f"Field {item.label!r} isn't a file attachment field.")
+
+
+def split_batches(rows: Sequence[Mapping[str, Any]], batch_size: int) -> Iterator[tuple[int, int]]:
+    """Yield `(start, end)` ranges of rows that fit in one request.
+
+    A row too large on its own still gets a request, so that Quickbase decides and reports it.
+    """
+    start = size = 0
+    for index, row in enumerate(rows):
+        row_size = len(json.dumps(row, ensure_ascii=False, separators=(",", ":")).encode()) + 1
+        if index > start and (index - start >= batch_size or size + row_size > MAX_ROWS_BYTES):
+            yield start, index
+            start, size = index, 0
+        size += row_size
+    if rows:
+        yield start, len(rows)
 
 
 def to_api_value(value: Any) -> Any:
@@ -33,6 +94,20 @@ def to_api_value(value: Any) -> Any:
     raise InvalidValueError(f"Can't write a value of type {type(value).__name__}.")
 
 
+def _cell_value(item: Field, value: Any, row: int) -> Any:
+    """Check file values here, since Quickbase accepts the mistakes and silently loses the file."""
+    if item.type == FILE_FIELD_TYPE:
+        if isinstance(value, FileUpload):
+            return value.to_api()
+        raise InvalidValueError(
+            f"Row {row} sets file field {item.label!r} to something other than a FileUpload. "
+            "To keep the field empty, leave it out. To remove a file, use delete_file_version()."
+        )
+    if isinstance(value, FileUpload):
+        raise InvalidValueError(f"Row {row} sends a file to {item.label!r}, not a file field.")
+    return to_api_value(value)
+
+
 def build_rows(rows: Iterable[RowInput], fields: FieldIndex) -> list[dict[str, dict[str, Any]]]:
     """Turn `{label or ID: value}` rows into Quickbase's `{"6": {"value": ...}}` form."""
     built: list[dict[str, dict[str, Any]]] = []
@@ -41,10 +116,11 @@ def build_rows(rows: Iterable[RowInput], fields: FieldIndex) -> list[dict[str, d
             raise InvalidValueError(f"Row {index} has no fields.")
         cells: dict[str, dict[str, Any]] = {}
         for ref, value in row.items():
-            key = str(fields.resolve(ref).id)
+            item = fields.resolve(ref)
+            key = str(item.id)
             if key in cells:
                 raise InvalidValueError(f"Row {index} sets field {key} more than once.")
-            cells[key] = {"value": to_api_value(value)}
+            cells[key] = {"value": _cell_value(item, value, index)}
         built.append(cells)
     return built
 

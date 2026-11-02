@@ -12,9 +12,16 @@ All notable changes to this project are documented here. The format follows
 - Reports: `table.reports()`, `table.report()`, and `Report` with `run()`, `run_page()`, and
   `info()`, plus `ReportInfo`, `UnknownReportError`, and `UnsupportedReportError`. Only table reports
   can be read as records.
+- File attachments: `FileUpload` for writes, plus `table.download_file()` and
+  `table.delete_file_version()`.
 
 ### Changed
 
+- A file attachment field now accepts only a `FileUpload`, and raises `InvalidValueError` for anything
+  else, including `None` and hand-built dictionaries, because Quickbase silently accepts those and
+  keeps or loses the file.
+- Writes are also split by size, to stay under Quickbase's 40 MiB request limit, so `batch_size` is
+  now an upper limit.
 - `read_only` and `allowed_writes` clients now allow running reports, with
   `POST /reports/{id}/run`. This adds to the report's usage count in Quickbase, but changes no
   records.

@@ -10,6 +10,7 @@ from .._models import (
     AppInfo,
     Field,
     FieldIndex,
+    FileDownload,
     Page,
     Record,
     Relationship,
@@ -22,7 +23,16 @@ from .._models import (
 )
 from .._query import Expression, FieldRef, build_query_body, compile_where
 from .._schema import SchemaCache
-from .._writes import RowInput, WriteResult, build_rows, refuse_field, require_field
+from .._writes import (
+    RowInput,
+    WriteResult,
+    build_rows,
+    refuse_field,
+    require_field,
+    require_file_field,
+    require_id,
+    split_batches,
+)
 from ..errors import (
     InvalidResponseError,
     InvalidValueError,
@@ -326,8 +336,8 @@ class AsyncTable:
     ) -> WriteResult:
         table_id = (await self.info()).id
         result = WriteResult()
-        for start in range(0, len(rows), batch_size):
-            body: dict[str, Any] = {"to": table_id, "data": rows[start : start + batch_size]}
+        for start, end in split_batches(rows, batch_size):
+            body: dict[str, Any] = {"to": table_id, "data": rows[start:end]}
             if merge_field_id is not None:
                 body["mergeFieldId"] = merge_field_id
             try:
@@ -407,6 +417,41 @@ class AsyncTable:
             "DELETE", "/records", json={"from": table_id, "where": clause}
         )
         return parse(lambda data: int(data["numberDeleted"]), payload, "delete")
+
+    async def _file_path(self, record_id: int, field: FieldRef, version: int) -> str:
+        require_id("record_id", record_id)
+        table_id = (await self.info()).id
+
+        def resolve(fields: list[Field]) -> int:
+            item = FieldIndex(fields).resolve(field)
+            require_file_field(item)
+            return item.id
+
+        field_id = await self._with_fields(resolve)
+        return f"/files/{table_id}/{record_id}/{field_id}/{version}"
+
+    async def download_file(
+        self, record_id: int, field: FieldRef, *, version: int | None = None
+    ) -> FileDownload:
+        """Download a file from a record, by default its latest version.
+
+        Quickbase keeps a limited number of versions, so an older one may be gone. Raises
+        `NotFoundError` if the record, version, or file doesn't exist.
+        """
+        if version is not None:
+            require_id("version", version)
+        # Version 0 means the latest to Quickbase.
+        path = await self._file_path(record_id, field, version or 0)
+        response = await self._transport.get_raw(path)
+        return parse(FileDownload.from_response, response, "file")
+
+    async def delete_file_version(self, record_id: int, field: FieldRef, *, version: int) -> None:
+        """Delete one version of a file. Deleting the only version leaves the field empty.
+
+        `version` is required, because Quickbase treats version 0 as the latest and deletes it.
+        """
+        require_id("version", version)
+        await self._transport.request("DELETE", await self._file_path(record_id, field, version))
 
     def _forget_fields(self, table_id: str) -> None:
         self._cache.delete(f"fields:{table_id}", f"relationships:{table_id}")

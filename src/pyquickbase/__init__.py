@@ -2,13 +2,13 @@
 
 from ._async._client import AsyncQuickbase
 from ._async._resources import AsyncApp, AsyncRecordIterator, AsyncReport, AsyncTable
-from ._models import AppInfo, Field, Page, Record, Relationship, ReportInfo, TableInfo
+from ._models import AppInfo, Field, FileDownload, Page, Record, Relationship, ReportInfo, TableInfo
 from ._query import F, WhereCondition, parse_where
 from ._retry import RetryPolicy
 from ._sync._client import Quickbase
 from ._sync._resources import App, RecordIterator, Report, Table
 from ._version import __version__
-from ._writes import RowError, WriteResult
+from ._writes import FileUpload, RowError, WriteResult
 from .errors import (
     APIError,
     AuthenticationError,
@@ -46,6 +46,8 @@ __all__ = [
     "ConfigurationError",
     "F",
     "Field",
+    "FileDownload",
+    "FileUpload",
     "InvalidResponseError",
     "InvalidValueError",
     "NetworkError",

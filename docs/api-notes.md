@@ -64,7 +64,7 @@ Tested on 2026-11-02 against temporary tables in a sandbox app.
 
 | Behavior | Result |
 |---|---|
-| A row fails | The request still succeeds, other rows are written, and `metadata.lineErrors` maps the row number, starting from 1, to its messages |
+| A row fails | The request returns 207, other rows are written, and `metadata.lineErrors` maps the row number, starting from 1, to its messages |
 | `{"value": null}` | **Silently ignored**, leaving the old value |
 | `{"value": ""}` | Clears text, date, timestamp, numeric, choice, and checkbox fields |
 | Row with an existing Record ID# | Updates it, or reports it in `unchangedRecordIds` if nothing changed |
@@ -109,6 +109,42 @@ and chart reports built in the UI. The API can't create reports.
 | Chart category values | Dates return as text, `01-01-2026`, not `yyyy-MM-dd` |
 | Renaming a column in a report | The UI doesn't offer this |
 
+## File attachments
+
+Tested on 2026-11-02 against a temporary table in a sandbox app, using a new `file` field with its
+default settings.
+
+| Behavior | Result |
+|---|---|
+| Upload | `POST /records` with `{"value": {"fileName": ..., "data": <base64>}}` |
+| Download | `GET /files/{table}/{record}/{field}/{version}`. **The body is base64**, whatever `Content-Type` says. Bytes round-trip exactly, including all 256 values |
+| File name in a download | `Content-Disposition: attachment; filename*=utf-8''<percent-encoded>` |
+| `Content-Type` of a download | Based on the file name's extension: an `.html` name gives `text/html`, with a base64 body |
+| Version `0` | The latest, **for `DELETE` as well as `GET`** |
+| Each upload | Adds a version, even with identical contents, and reports the record as updated |
+| Version limit | A new field has `maxVersions: 3`. **The oldest is silently removed**, and its download returns 404 |
+| Version numbers | Not reused or renumbered after a delete or removal |
+| `DELETE` a version | Returns that version's details. Deleting the last one keeps the record and empties the field |
+| `{"value": ""}` or `{"value": null}` on a file field | **No error and no change**, reported in `unchangedRecordIds`. On insert, creates a record with no file |
+| `{"value": "text"}`, or a value without `data` | Row error |
+| A value without `fileName` | **No error, and creates a record with no file** |
+| Empty `fileName` | Row error |
+| Invalid base64 | **Accepted, and the file holds garbage**, with no row error, also inside a batch |
+| Empty `data` | Accepted, as an empty file |
+| A file value sent to a text field | **Stores the file name and discards the contents** |
+| File names | **Stored as sent, including `../../etc/passwd`, `C:\\x\\y.txt`, and line breaks.** A NUL byte cuts the name short. No extension was refused, including `.exe` and `.html` |
+| Reading a file field | `{"url": "/files/...", "versions": [...]}`, with a relative `url`. Empty is `{"url": "", "versions": []}` |
+| Each entry in `versions` | `versionNumber`, `fileName`, `uploaded`, and `creator`, **which includes the uploader's email address** |
+| Missing record, field, or version | 404 |
+| A non-file field | 400 |
+| Unknown table | 400, `Invalid usertoken`, unlike other endpoints' 401 |
+
+**Request size limit.** `POST /records` accepted a body of exactly 41,943,040 bytes (40 MiB) and
+returned 413, `request entity too large`, at one byte more. It's a limit on the whole request: two 25
+MB files in one request returned 413, and two 15 MB files succeeded. It applies without files too:
+1,500 rows of 30,000 characters returned 413 and wrote nothing. The largest file that fits was
+31,457,208 bytes. Downloads worked up to that size.
+
 ## Unverified
 
 Check these against a sandbox app before the feature that needs them ships.
@@ -118,10 +154,23 @@ Check these against a sandbox app before the feature that needs them ships.
 | Format and units of `retry-after` on a real 429 (both seconds and dates are handled) | Transport |
 | Can a query return fewer than `top` records before the end? The test table was too small to show it, so advance by `numRecords` | Paging |
 | Which endpoints have different rate limits? | Transport |
-| Request size limits, which decide whether the default batch of 1,000 rows is always safe | Writes |
-| The HTTP status of a partly failed write, assumed to be 207 (any 2xx is handled the same) | Writes |
 | Correct API host for EU realms (pass `base_url` if it differs) | Realm handling |
 | Temporary token format | Temporary tokens |
 | Table reports with a formula column, or with Record ID# as a column | Reports |
 | Whether pages of a report are stable when its sort has ties | Reports |
 | Whether a report's `top`-less run returns every record in a large table | Reports |
+| Whether other endpoints or realms have a different request size limit | Writes |
+| File fields with other version settings, and limits on total storage | File attachments |
+| How reports and files behave for tokens with fewer permissions, since all testing used one token | Reports, file attachments |
+
+## Known limits to revisit
+
+Choices made in the SDK that are worth another look before 1.0.
+
+| Limit | Why it's there | Possible change |
+|---|---|---|
+| Report details are cached for `schema_ttl`, so a report changed in the UI can be checked against old details | Avoids an extra request for every page | Refresh before each run, or compare the run response |
+| Summary and chart reports can only be read through `qb.request()` | Their column IDs are positions, so they can't be records | A separate method returning `{label: value}` rows |
+| `timeout` is set per client, so a large upload on a slow connection may need a larger one for every request | The transport has one timeout | A per-call timeout for uploads and downloads |
+| Files are held in memory as bytes and base64 while being sent | The API takes base64 inside JSON, so there's nothing to stream | Probably none, unless Quickbase adds another upload route |
+| `record["Attachment"]` returns Quickbase's raw dictionary | Kept simple for the first version | A typed value with versions, which could leave out uploader emails |

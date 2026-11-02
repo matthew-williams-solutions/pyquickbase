@@ -1,7 +1,8 @@
 # Writing records
 
 Rows are dictionaries keyed by field label or ID. Python `date`, timezone-aware `datetime`, and
-`Decimal` values are converted for you, and `None` clears a field.
+`Decimal` values are converted for you, and `None` clears a field. File fields work differently: see
+[File attachments](files.md).
 
 | Method | What it does |
 |---|---|
