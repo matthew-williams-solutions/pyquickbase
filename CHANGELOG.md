@@ -19,6 +19,10 @@ All notable changes to this project are documented here. The format follows
 - `pyquickbase codegen` now always reads and writes UTF-8, so labels like `日本語` no longer fail or
   produce a broken file on Windows.
 - `table.relationships()` documents that it lists only relationships where the table is the child.
+- A corrupt compressed response, or a redirect loop with your own `http_client`, now raises
+  `NetworkError` instead of an `httpx` exception.
+- Reading pages now raises `InvalidResponseError` if a response ignores `skip`, instead of returning
+  the same records forever.
 
 ### Added
 

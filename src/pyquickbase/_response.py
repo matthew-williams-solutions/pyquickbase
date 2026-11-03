@@ -87,7 +87,7 @@ def parse_response(response: httpx.Response, method: str, path: str) -> Any:
         ) from exc
 
 
-def error_from_transport(exc: httpx.TransportError, method: str, path: str) -> NetworkError:
+def error_from_transport(exc: httpx.RequestError, method: str, path: str) -> NetworkError:
     reason = type(exc).__name__
     if isinstance(exc, httpx.TimeoutException):
         return RequestTimeoutError(f"{method} {path} timed out ({reason}).")

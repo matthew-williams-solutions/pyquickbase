@@ -113,6 +113,9 @@ Record ID# is always selected, and it's always the last sort key so that pages s
 means that without `order_by`, records come back in Record ID# order rather than the table's default
 sort.
 
+Paging uses offsets, so if records are deleted while you read, others can be skipped without any error.
+Avoid deleting from the set you're reading, or read it all first.
+
 To control paging yourself, use `query_page()`. To count without fetching, use `count()`.
 
 ```python
@@ -172,7 +175,7 @@ position, so a total would otherwise read as a Record ID#. To get their raw resu
 `qb.request("POST", f"/reports/{report_id}/run", params={"tableId": table_id})`. Quickbase can't run
 ask-the-user reports through the API.
 
-Running a report adds to its usage count in Quickbase, even if the run fails, but changes no records.
+Running a report adds to its usage count in Quickbase, but changes no records.
 Report details come from the same cache as other metadata, so `usedCount` in `raw` can be out of
 date, and so can the details used to check that a report is a table report. Quickbase's UI doesn't let
 you change a saved report's type.

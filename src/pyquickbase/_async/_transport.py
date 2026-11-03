@@ -68,7 +68,7 @@ class AsyncTransport:
                 if attempt >= self._retry.max_retries:
                     raise error_from_transport(exc, method, path) from exc
                 delay = self._retry.backoff(attempt)
-            except httpx.TransportError as exc:
+            except httpx.RequestError as exc:
                 raise error_from_transport(exc, method, path) from exc
             else:
                 if response.status_code != 429 or attempt >= self._retry.max_retries:

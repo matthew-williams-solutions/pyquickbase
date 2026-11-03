@@ -231,6 +231,12 @@ def test_text_with_special_characters_is_found_exactly(
         "Row 1 OR",
         "Row 1\tOR\tRow 2",
         "zz AND Row 1",
+        "\\_FID_6",
+        "_FID\\_6",
+        "'_FID_6",
+        ",_FID_6",
+        "x_FID_6",
+        "\u00a0Row 1",
     ],
 )
 def test_a_hostile_value_cant_widen_a_query(
@@ -254,6 +260,7 @@ def test_a_hostile_value_cant_widen_a_query(
         "_FID_ 6",
         "x OR _FID_6",
         " _FID_6",
+        "\t_FID_6",
     ],
 )
 def test_a_value_quickbase_would_read_as_syntax_is_refused(

@@ -22,3 +22,4 @@ docs/playground-app/playground-data.json
 htmlcov/
 .pytest_cache/
 .ruff_cache/
+.hypothesis/

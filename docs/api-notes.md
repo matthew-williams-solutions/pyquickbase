@@ -18,6 +18,9 @@ against a real app before depending on it. Questions we haven't answered yet are
 | Query dates: `yyyy-MM-dd` or milliseconds, not date-time strings | Same page |
 | Query `metadata` has `numFields`, `numRecords`, `skip`, `totalRecords`, and `top` when it was sent | Live API, 2026-11-02 |
 | Omitting `options` or sending `top: 0` returns all matches in a small table; a `skip` past the end returns no records | Live API, 2026-11-02 |
+| **A query can return fewer than `top` records before the end.** With rows of 30,000 characters, `top: 3000` returned 831 at a time, so advance by the number returned | Live API, 2026-11-02 |
+| Paging uses offsets, so deleting 50 earlier rows while reading 600 **silently skipped 50 unread records** | Live API, 2026-11-02 |
+| 50,000 rows: inserted in 12 seconds, read in 8, deleted in one request in 1 second. Each came back exactly once, and a sort with ties stayed stable across pages of 999 and 7,000 with Record ID# as the last sort key | Live API, 2026-11-02 |
 | `EX` on text ignores case | Live API, 2026-11-02 |
 | `AND` and `OR` must be uppercase; whitespace around them is accepted | Live API, 2026-11-02 |
 | Unquoted values such as `{3.EX.5}` work the same as quoted ones | Live API, 2026-11-02 |
@@ -26,7 +29,7 @@ against a real app before depending on it. Questions we haven't answered yet are
 | Timestamps can be compared with `AF` and `BF` using milliseconds | Live API, 2026-11-02 |
 | With no `select`, only fields in the table's default set return, and Record ID# may not be one | Live API, 2026-11-02 |
 | Timestamps return as `2026-10-21T11:49:56Z`, dates as `2026-10-18` | Live API, 2026-11-02 |
-| A nonexistent app or table returns 401 with a valid token, not 404 | Live API, 2026-11-02 |
+| A nonexistent app or table returns 401 with a valid token, not 404. An ID of the wrong shape, such as `abc` or one that's too long, returns 400, `Invalid request` | Live API, 2026-11-02 |
 | `GET /tables/{id}/relationships` lists only relationships where the table is the child. A parent table returns none | Live API, 2026-11-02 |
 | Creating a table with a name already in the app, ignoring case, returns 400, `Invalid input` | Live API, 2026-11-02 |
 
@@ -41,9 +44,8 @@ plausible result instead of an error.
 | `where` clause | Result |
 |---|---|
 | Lowercase or unknown operator: `{6.ex.'x'}`, `{6.NOPE.'x'}` | **Behaves like `CT`** and returns matches |
-| Unquoted value: `{6.EX.foo}` | No records, no error |
 | Unknown field: `{999999.EX.'x'}` | No records, no error |
-| Field label instead of ID: `{'Title'.EX.'x'}` | No records, no error |
+| Anything but a number as the field: `{'Title'.EX.'x'}`, `{Title.EX.'x'}`, even `{'No Such'.EX.'x'}` | **No error, and it matched records holding the value.** The SDK's validator refuses these |
 | Trailing join: `{6.EX.'x'}AND` | No error |
 | Lowercase join, missing brace, or free text | 400, `Criteria is invalid.` |
 
@@ -71,7 +73,7 @@ any text you don't control.
 | What splits a value | **Only uppercase `OR` and `AND` between spaces or tabs.** `Or`, `x,OR,y`, `x-OR-y`, `xOR y`, and a line break or non-breaking space around it don't |
 | The same words in lowercase | Literal text. Comparisons ignore case, so `x or y` finds a stored `x OR y`, including on multi-select fields. This is what `F` sends |
 | `_FID_6`, in any case | **Compares with field 6, so on field 6 it matches every record.** `DELETE /records` with `{6.EX.'_FID_6'}` deleted every record. `F` rejects these |
-| `_FID_6x`, `_FID_06`, `_FID_ 6`, `_FID_6 x` | The same. A leading space or other text before `_FID_` makes it literal. Backslashes don't help |
+| `_FID_6x`, `_FID_06`, `_FID_ 6`, `_FID_6 x`, `\_FID_6` | The same. A leading space, other text, or `\\` before `_FID_` makes it literal, so there's no way to search for this exact text |
 | `_ask1_` | 400, `Incomplete reports not supported`. `_ASK1_` is literal |
 | `_curuser_`, on a text field | Literal |
 | `TRUE`, `NULL`, `today`, `*`, `%`, `_` on a text field | Literal |
@@ -94,13 +96,27 @@ Tested on 2026-11-02 against temporary tables in a sandbox app.
 | A value outside a field's choices | Accepted when `allowNewChoices` is on, otherwise a row error |
 | The row error for an invalid choice | `The field with ID '7' has an invalid choice.` Confirmed again in a three-row import: 207, `raise_for_status()` passes, and the other two rows are saved |
 | Empty `data` | 400 |
-| `DELETE /records` without `where` or with a blank one | 400 |
+| `DELETE /records` without `where`, or with an empty one | 400 |
+| `DELETE /records` with only whitespace as `where` | **200, with `numberDeleted: 0`**, and nothing deleted |
 | `DELETE /records` with a malformed `where` | **`numberDeleted: 0`, no error** |
 | `DELETE /records` with a lowercase operator | **Acts like `CT`**, so it can delete more than intended |
 | `DELETE /fields` with `{"fieldIds": [...]}` | Partial failures are listed in `errors` beside `deletedFieldIds` |
 | `POST /fields` with `unique` or `required` | 400. Set them afterward with `POST /fields/{id}` |
 | Reading a cleared date or timestamp | Returns `""`, and a cleared numeric returns null |
 | Checkbox queries | `{id.EX.'true'}`, `{id.EX.'1'}`, and `{id.TV.'true'}` match the same records |
+
+## Payments and repeated events
+
+Tested on 2026-11-02 with the SDK against temporary tables in a sandbox app.
+
+| Behavior | Result |
+|---|---|
+| 8 simultaneous `POST /records` with the same new value on a unique `mergeFieldId` | All succeeded, and **exactly 1 record was created** |
+| 40 simultaneous writes of different values | All landed |
+| Repeating the same write | Reported as unchanged, with no new record |
+| `insert` of a value already in a unique field | Row error, and no new record |
+| `Decimal` amounts from `0.01` to `99999999.99` in a currency field | Read back to the exact cent, through `Decimal(str(value))` |
+| Whole numbers up to 9,007,199,254,740,991 in a numeric field | Read back exactly |
 
 ## Reports
 
@@ -114,7 +130,6 @@ and chart reports built in the UI. The API can't create reports.
 | Report names | **Can repeat within a table** |
 | `POST /reports/{id}/run?tableId=` | Needs no body. Returns `fields`, `data`, and `metadata`, as a query does |
 | `top` and `skip` | Must be query parameters. **In the body they're silently ignored, and every record returns** |
-| `top` omitted | Returned every record in a 12-record table |
 | `top` of 0 or less, or a negative `skip` | 400, although a query accepts `top: 0` |
 | `skip` past the end | No records, no error |
 | A report ID with leading zeros, such as `01` | Runs the same report |
@@ -126,9 +141,9 @@ and chart reports built in the UI. The API can't create reports.
 | A table report with Record ID# as a column, even in second position | `fields` uses the real ID, 3, with type `recordid`, unlike a summary report's positions. All 1,200 rows matched a query's IDs |
 | A table report with a formula column | `fields` uses the formula field's real ID and its type, such as `numeric`. All 1,200 values matched a query |
 | A sort with ties, 400 records on each of 3 values | Ties came back in Record ID# order. Six full runs, with page sizes of 7, 37, 100, and 1,000, gave the same order, with nothing repeated or missing. Editing a tied record's other field didn't move it |
-| `top` omitted, in a 1,200-record table | Returned every record, and `metadata` has no `top` |
+| `top` omitted, in a 50,000-record table | Returned every record, and `metadata` has no `top` |
 | Changing a saved report's type | The UI doesn't offer this |
-| Running a report | **Adds 1 to `usedCount`, even when the run fails.** A GET doesn't, and records aren't modified |
+| Running a report | **Adds 1 to `usedCount`.** A GET doesn't, a 400 for a bad `top` or `skip` doesn't, and records aren't modified. An earlier test saw a failed run add 1 too, for a reason not pinned down |
 | Ask-the-user report | `incomplete: true`, and running it returns 400, `Incomplete reports not supported` |
 | Summary and chart reports | **Same response shape as a table report, but `fields` IDs are column positions starting at 2.** The second column has ID 3, the Record ID# field in a table report, so nothing in the response tells them apart. Only `type` on the report does |
 | Chart category values | Dates return as text, `01-01-2026`, not `yyyy-MM-dd` |
@@ -219,7 +234,8 @@ Tested on 2026-11-02 with short bursts from 12 threads against temporary tables.
 
 | Behavior | Result |
 |---|---|
-| `retry-after` on a real 429 | **Whole seconds**, such as `9` or `10`. After waiting that long, the next request succeeded |
+| `retry-after` on a real 429 | **Whole seconds**, seen from `0` to `10`. After waiting that long, the next request succeeded |
+| 450 calls from 12 threads, retrying | Hit 48 real 429s and took 39 seconds, and **every call succeeded**. With retries off, 276 of the 450 raised `RateLimitError` |
 | 429 body | `{"error": "Quota has been exceeded"}`, **not the usual `message` and `description`** |
 | When it started | After roughly 170 to 185 responses in 4 to 6 seconds, for both `/formula/run` and `/records/query`. That's more than the documented 100 per 10 seconds, so don't rely on the number. These bursts don't show a difference between the two endpoints |
 

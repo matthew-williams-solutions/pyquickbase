@@ -42,8 +42,6 @@ the result to `docs/api-notes.md`.
 
 **Queries and limits**
 
-- Can a query return fewer than `top` records before the end? The SDK already advances by the number
-  returned.
 - Which endpoints have different rate limits?
 - Do other endpoints or realms have a different request size limit?
 
@@ -52,9 +50,7 @@ the result to `docs/api-notes.md`.
 - Can a deleted report's ID be reused? A new report got ID 8, the highest so far, but the deleted
   report's own ID wasn't recorded. If it can, cached report details could misread a total as a Record
   ID#.
-- Do pages stay stable with ties above 1,200 records, or while records are added or removed?
-- Does a run without `top` return every record above 1,200 records? The SDK always sends `top`, so this
-  only affects `qb.request()`.
+- Do a report's pages stay stable with ties above 1,200 records? A report's sort can't add Record ID#.
 
 **Queries, continued**
 

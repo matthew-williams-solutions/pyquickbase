@@ -204,6 +204,11 @@ class AsyncRecordIterator:
             raise InvalidResponseError(
                 f"Quickbase returned an empty page at {self._skip} of {page.total} records."
             )
+        if page.skip != self._skip:
+            # Carrying on would return the same records forever.
+            raise InvalidResponseError(
+                f"Quickbase returned records from {page.skip} when asked to skip {self._skip}."
+            )
         self._buffer = iter(page.records)
         self._skip = page.next_skip
         self._done = not page.has_more
