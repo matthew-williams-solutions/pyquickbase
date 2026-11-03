@@ -171,7 +171,7 @@ def test_download_retries_rate_limits() -> None:
             return responses.pop(0)
         return server(request)
 
-    with client(handler, retry=RetryPolicy(max_retries=1)) as qb:
+    with client(handler, retry=RetryPolicy(max_retries=1, base_delay=0)) as qb:
         file = qb.app(APP).table("Tasks").download_file(7, "Attachment")
     assert file.data == b"contents"
 

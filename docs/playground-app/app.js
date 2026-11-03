@@ -193,11 +193,27 @@
   }
 
   function renderSample() {
+    const links = document.createElement("nav");
+    links.className = "sample-links";
+    links.setAttribute("aria-label", "Sample tables");
+    ui.sample.append(links);
     for (const table of data.sample) {
       const heading = document.createElement("h2");
+      const link = document.createElement("button");
+      link.type = "button";
+      link.textContent = `${table.name} (${table.rows.length})`;
+      link.addEventListener("click", () => {
+        // Not scrollIntoView, which could also scroll the docs page around this frame.
+        const panelTop = ui.sample.getBoundingClientRect().top;
+        ui.sample.scrollTop += heading.getBoundingClientRect().top - panelTop - 12;
+      });
+      links.append(link);
       const id = document.createElement("code");
       id.textContent = table.id;
       heading.append(`${table.name} `, id);
+
+      const about = document.createElement("p");
+      about.textContent = table.description;
 
       const element = document.createElement("table");
       const head = element.createTHead().insertRow();
@@ -218,7 +234,7 @@
       const wrap = document.createElement("div");
       wrap.className = "table-wrap";
       wrap.append(element);
-      ui.sample.append(heading, wrap);
+      ui.sample.append(heading, about, wrap);
     }
   }
 

@@ -11,7 +11,7 @@ Try pyquickbase in your browser, with nothing to install. No account or token is
 [Open the playground in a full window](playground-app/index.html)
 
 !!! note "The data is simulated"
-    The real SDK runs in your browser, against a simulated Quickbase API with a small sample app.
+    The real SDK runs in your browser, against a simulated Quickbase API with a sample app.
     Nothing is sent to Quickbase, and reloading the page starts over.
 
     The simulator copies the behavior recorded in the [API notes](api-notes.md), but it isn't

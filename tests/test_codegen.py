@@ -458,6 +458,7 @@ def test_command_wont_replace_a_file_it_didnt_generate(
     assert "wasn't generated" in capsys.readouterr().err
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no Unix file modes")
 def test_command_keeps_a_readable_file_mode(server: Server, tmp_path: Path) -> None:
     output = tmp_path / "tables.py"
     assert run(server, "--app", "bq123", "--output", str(output)) == 0

@@ -152,6 +152,20 @@ def test_rate_limit_without_header_backs_off(sleeps: list[float]) -> None:
     assert 1.0 <= sleeps[0] <= 2.0
 
 
+@pytest.mark.parametrize("wait", ["0", "Thu, 01 Jan 2015 00:00:00 GMT"])
+def test_rate_limit_with_no_wait_still_backs_off(sleeps: list[float], wait: str) -> None:
+    responses = [
+        httpx.Response(429, headers={"retry-after": wait}),
+        httpx.Response(429, headers={"retry-after": wait}),
+        httpx.Response(200, json={}),
+    ]
+    policy = RetryPolicy(base_delay=2.0)
+    with make_client(lambda _: responses.pop(0), retry=policy) as qb:
+        qb.request("GET", "/x")
+    assert 1.0 <= sleeps[0] <= 2.0
+    assert 2.0 <= sleeps[1] <= 4.0
+
+
 def test_rate_limit_retries_run_out(sleeps: list[float]) -> None:
     calls: list[int] = []
 

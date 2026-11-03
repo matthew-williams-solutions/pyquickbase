@@ -135,8 +135,11 @@ button.primary { border-color: var(--accent); background: var(--accent); color: 
 #output .note { display: block; margin-bottom: 8px; color: var(--muted); font-family: var(--body); }
 
 .sample { padding: 12px; }
+.sample-links { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.sample-links button { font-size: 12.5px; }
 .sample h2 { margin: 0 0 6px; font-size: 14px; }
 .sample h2 code { color: var(--muted); font: 12.5px var(--mono); font-weight: 400; }
+.sample p { margin: 0 0 6px; color: var(--muted); font-size: 12.5px; }
 .sample .table-wrap { overflow-x: auto; margin-bottom: 18px; }
 .sample table { border-collapse: collapse; font-size: 12.5px; white-space: nowrap; }
 .sample th, .sample td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: left; }

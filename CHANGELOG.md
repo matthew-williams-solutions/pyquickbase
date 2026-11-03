@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0rc3] - 2026-11-02
+
 ### Added
 
 - A guide to
@@ -13,9 +15,15 @@ All notable changes to this project are documented here. The format follows
 - [`llms.txt`](https://matthew-williams-solutions.github.io/pyquickbase/llms.txt) and
   [`llms-full.txt`](https://matthew-williams-solutions.github.io/pyquickbase/llms-full.txt) on the
   docs site, which hold a list of the docs and all of them in one file.
+- The playground's sample app now has three linked tables, with users, tags, attachments, a lookup, a
+  formula, and rollups, and four more examples.
 
 ### Fixed
 
+- `pyquickbase codegen` now writes the same line endings on every system, so generating on Windows
+  doesn't change every line of a file generated elsewhere.
+- A `Retry-After` of 0 now waits using `RetryPolicy`'s backoff instead of retrying immediately.
+  Quickbase can send it while still limiting, so immediate retries could be used up during a burst.
 - If a later batch of a write got a successful response in the wrong shape, `InvalidResponseError` lost
   the results of the earlier batches. It's now a `WriteError`, like any other failure in a later batch.
 
