@@ -6,10 +6,7 @@ to keep are explained in the guides, not here.
 
 ## Before 1.0
 
-- Finish testing the release candidate:
-  - Have someone new follow the docs cold.
-  - Use it for something real, then let the latest candidate run for at least a week with no code
-    changes.
+- Let the latest candidate run for at least a week with no code changes.
 - In the 1.0 release commit:
   - Change the classifier in `pyproject.toml` from Beta to Production/Stable.
   - Remove the release candidate warnings from `README.md` and `docs/index.md`, and the advice to pin
