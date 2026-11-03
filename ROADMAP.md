@@ -8,6 +8,12 @@ to keep are explained in the guides, not here.
 
 - Release `1.0.0rc2`, with the query safety fixes. `1.0.0rc1` and earlier let a value in `F` act as
   query syntax.
+- Finish testing the release candidate:
+  - Run CI once on Windows and macOS, and strict type-check a sample app from a clean install.
+  - Add a snapshot test of every public name and signature.
+  - Run the docs examples against a sandbox app, and have someone new follow the docs cold.
+  - Use it for something real, then let the latest candidate run for at least a week with no code
+    changes.
 - In the 1.0 release commit:
   - Change the classifier in `pyproject.toml` from Beta to Production/Stable.
   - Remove the release candidate warnings from `README.md` and `docs/index.md`, and the advice to pin
