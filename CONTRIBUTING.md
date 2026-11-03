@@ -14,6 +14,9 @@ uv run pytest --cov
 
 Tests use mocked HTTP and need no Quickbase account.
 
+`tests/test_properties.py` is randomized, and quick by default. Set `QB_DEEP_TESTS=1` to look much
+harder, which takes about 15 minutes.
+
 ## Live tests
 
 `tests/_async/live`, `tests/_sync/live`, and `tests/live` use a real Quickbase app, and only run when
@@ -59,6 +62,10 @@ release first. Generated code must keep working on later 1.x versions, so treat 
 public, even when the name is private. `tests/fixtures/generated_tables.py` is an old generated file
 that the tests run against the current code. From 1.0, don't regenerate it to make a test pass, because
 a failure there means you've broken users' files.
+
+`tests/test_contract.py` holds the decisions we've promised to keep, such as defaults and generated
+names. To change what `pyquickbase codegen` writes on purpose, run its golden test with
+`QB_UPDATE_GOLDEN=1`, and review the diff.
 
 ## Secrets
 

@@ -263,3 +263,23 @@ async def test_a_read_only_client_reads_but_cant_write() -> None:
         assert len([t async for t in tasks.query()]) == 3
         with pytest.raises(ReadOnlyError):
             await tasks.insert([Tasks.new(title="x")])
+
+
+async def test_passing_a_check_means_later_uses_dont_check_again() -> None:
+    # With no cache, every check is visible as a request for the table's fields.
+    server = Server()
+
+    def fetches() -> int:
+        return [r.url.path for r in server.requests].count("/v1/fields")
+
+    async with client(server, schema_ttl=0) as qb:
+        tasks = qb.app(APP).typed(Tasks)
+        await tasks.count()
+        first = fetches()
+        await tasks.count()
+        second = fetches() - first
+        assert second < first
+        await tasks.check_schema()
+        after_check = fetches()
+        await tasks.count()
+        assert fetches() - after_check == second
