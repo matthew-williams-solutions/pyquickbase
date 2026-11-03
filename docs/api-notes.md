@@ -273,8 +273,30 @@ browser's console, because a script can't get one.
 
 Tokens are scoped narrowly, and an app-scoped token doesn't reach its tables' contents. **Table scope
 doesn't contain a formula**: `GetRecord()` read a table the token couldn't otherwise reach. Uploads,
-downloads, and file deletes weren't tested with a temporary token, and neither were tokens from users
-with fewer permissions.
+downloads, and file deletes weren't tested with a temporary token. A token from a user with fewer
+permissions was only tested on a delete: see [Code pages and dashboards](#code-pages-and-dashboards).
+
+## Code pages and dashboards
+
+Tested on 2026-11-03 in a sandbox app, in a logged-in browser, using a code page that runs Python in a
+sandboxed frame. Dashboard settings were checked by hand, in the app's own screens.
+
+| Behavior | Result |
+|---|---|
+| A code page's security policy | `default-src * 'unsafe-eval' 'unsafe-inline' data: filesystem: about: blob: ws: wss; worker-src 'none';`, so a page can't start a worker. Almost everything else is allowed, so any tighter limit has to come from the page itself |
+| A code page in a dashboard's Web page widget | **Served from `realm.ui.quickbase.com`, and `GET /auth/temporary` fails there with no CORS header.** Reloading the page from the realm's own address, inside the widget, works |
+| Saving a code page that contains `QB_USER_TOKEN="..."` | A warning that storing secrets in a browser page is insecure, even for a placeholder. It doesn't prevent saving, and moving the value into a variable didn't clear it |
+| The dashboard rich text editor | Removes inline styles and collapses line breaks in `<pre>`. `<br>` and `&nbsp;` work |
+| KPI widgets | Built from a gauge chart report. Tile colors come from the report's Low, Medium, and High legend colors |
+| KPI widget settings | **Show target** hides the `TARGET` line, and **Custom title** replaces the report's name, so neither needs a change to the report |
+| A gauge report saved with a goal of 0 | Still displays, and its settings page marks the goal "Must be greater than start" |
+| Chart widget settings | Only **Report** and **Custom title**. Everything else is set on the report |
+| A horizontal bar chart in a narrow widget | **Its category labels disappear, while the bars and axis remain.** There's no setting for this in the widget |
+| Table report **Options** | **Show edit icon** and **Show view icon** remove the row icons, and **Hide row numbers** works on a table report in a dashboard, though the help only describes it for grid reports |
+| A narrow browser window | The dashboard doesn't rearrange its widgets. It scrolls sideways, so a Web page widget keeps its width |
+| Dashboard reports after a write through the API | **They don't update until the page is reloaded** |
+| A delete with a table-scoped temporary token, from a role without delete rights | 403, `Insufficient permissions: Not enough rights to execute this request.` |
+| The same delete with a filter that matches nothing, `{3.LT.0}` | Also 403, so it shows whether a role can delete before anything changes |
 
 ## Restricted users
 

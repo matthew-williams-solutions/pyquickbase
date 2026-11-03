@@ -44,6 +44,20 @@ Nothing here should break anyone.
 
 - Simulate updates and deletes, then add "Try it" links from each guide to its own example.
 
+## Demo app
+
+The Quickbase demo app and its Python code page, which is kept outside this repo. Do these before anyone
+else gets access, because the page writes with the viewer's own permissions:
+
+- Pin the SDK version the page loads, and verify the downloaded files where possible. It currently
+  loads whichever wheel the docs site lists.
+- Block the Python frame from navigating away with data in the address, or disclose it plainly. The page
+  closes the frame after it navigates, which is too late to stop the data leaving.
+- Decide who gets access, and whether their writes should be limited. Anyone who can add and delete
+  tasks can also run Reset tasks, which replaces the Tasks records for everyone.
+- Find out which roles can add a code page. The help only says "app builders".
+- Keep Overdue Tasks from drifting. The sample due dates are fixed, so the number climbs over time.
+
 ## Open questions
 
 Nothing is waiting on these. Test one against a sandbox app before depending on the answer, then move
