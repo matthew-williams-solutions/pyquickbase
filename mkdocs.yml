@@ -39,6 +39,7 @@ nav:
       - Changing the schema: guides/schema.md
       - Handling errors: guides/errors.md
       - Configuring clients: guides/clients.md
+      - Using pyquickbase from an AI agent: guides/agents.md
   - API reference: reference.md
   - Stability and versioning: stability.md
   - Quickbase API notes: api-notes.md

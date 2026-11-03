@@ -41,6 +41,12 @@ previewing it, and again after changing the SDK or an example. It downloads pinn
 and CodeMirror and builds the SDK's wheel, none of which is committed. Its simulator copies what's in
 `docs/api-notes.md`, so update both if you confirm that Quickbase behaves differently.
 
+`uv run scripts/build_llms.py` writes `docs/llms.txt` and `docs/llms-full.txt`, which aren't
+committed. Run it once before previewing or building the docs, because the home page links to them,
+and again to see a change in them. It reads the pages from the `nav` in `mkdocs.yml`, so a new page
+needs a description in the script, and it writes the API reference from the SDK with `inspect`. It
+deliberately uses no docs plugin or anything from the `docs` dependency group.
+
 ## Sync and async code
 
 **Only edit the async code.** `src/pyquickbase/_sync/` and `tests/_sync/` are generated from their

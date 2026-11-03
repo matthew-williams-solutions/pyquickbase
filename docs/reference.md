@@ -7,7 +7,7 @@ starting with `_` are private and may change at any time.
 
 `Quickbase` is documented in full here. `AsyncQuickbase`, `AsyncApp`, `AsyncTable`, `AsyncReport`,
 `AsyncRecordIterator`, `AsyncTypedTable`, and `AsyncTypedIterator` have the same methods, which you
-`await`.
+`await`. The one difference is that `AsyncQuickbase` closes with `aclose()`, not `close()`.
 
 ::: pyquickbase.Quickbase
 

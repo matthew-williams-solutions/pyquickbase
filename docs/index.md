@@ -85,3 +85,9 @@ pip install pyquickbase==1.0.0rc2
 ```
 
 It needs Python 3.11 or newer. Next, see [Getting started](getting-started.md).
+
+## Using it from an AI agent
+
+If you let an AI agent use the SDK, [Using pyquickbase from an AI agent](guides/agents.md) covers
+how to limit what it can do. These docs are also available as [llms.txt](llms.txt), a list of the
+pages, and [llms-full.txt](llms-full.txt), all of them in one file.
