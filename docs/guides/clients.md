@@ -42,7 +42,8 @@ qb = Quickbase(realm="acme", token="your_user_token", retry=policy)
 ```
 
 `max_retry_after` is the longest `Retry-After` the client will wait for. Past that, it raises
-`RateLimitError`. Use `max_retries=0` to disable retrying.
+`RateLimitError`. A `Retry-After` of 0 uses the backoff from `base_delay` instead, because Quickbase
+can send it while still limiting. Use `max_retries=0` to disable retrying.
 
 ## Using another API host
 

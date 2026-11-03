@@ -115,6 +115,8 @@ def test_rate_limit_delay() -> None:
     assert policy.rate_limit_delay(0, 10.0) == 10.0
     assert policy.rate_limit_delay(0, 10.5) is None
     assert 0.5 <= (policy.rate_limit_delay(0, None) or 0) <= 1.0
+    assert 0.5 <= (policy.rate_limit_delay(0, 0.0) or 0) <= 1.0
+    assert 2.0 <= (policy.rate_limit_delay(2, 0.0) or 0) <= 4.0
 
 
 @pytest.mark.parametrize(

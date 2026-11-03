@@ -22,7 +22,8 @@ class RetryPolicy:
 
     Args:
         max_retries: Retries after the first attempt. Use 0 to disable retrying.
-        base_delay: Starting backoff in seconds, when Quickbase doesn't specify a wait.
+        base_delay: Starting backoff in seconds, when Quickbase doesn't specify a wait or says to
+            wait 0 seconds.
         max_delay: Longest backoff in seconds.
         max_retry_after: Raise `RateLimitError` rather than obey a longer `Retry-After`.
     """
@@ -44,8 +45,12 @@ class RetryPolicy:
         return random.uniform(ceiling / 2, ceiling)
 
     def rate_limit_delay(self, attempt: int, retry_after: float | None) -> float | None:
-        """Seconds to wait after a 429, or None if the wait is too long to be worth it."""
-        if retry_after is None:
+        """Seconds to wait after a 429, or None if the wait is too long to be worth it.
+
+        Quickbase can send a wait of 0 while it's still limiting, so an immediate retry could use up
+        the retries, and that's treated like no wait at all.
+        """
+        if not retry_after:
             return self.backoff(attempt)
         return retry_after if retry_after <= self.max_retry_after else None
 

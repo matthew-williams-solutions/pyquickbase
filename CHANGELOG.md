@@ -16,6 +16,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- A `Retry-After` of 0 now waits using `RetryPolicy`'s backoff instead of retrying immediately.
+  Quickbase can send it while still limiting, so immediate retries could be used up during a burst.
 - If a later batch of a write got a successful response in the wrong shape, `InvalidResponseError` lost
   the results of the earlier batches. It's now a `WriteError`, like any other failure in a later batch.
 
