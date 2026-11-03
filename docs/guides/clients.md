@@ -13,8 +13,8 @@ One sync client can be shared across threads. The async client works with both a
 
 Pass `read_only=True` to guarantee a client can't change data. It only sends GET requests, record
 queries, report runs, and formula runs, including through `request()`, and raises `ReadOnlyError`
-for anything else without contacting Quickbase. Running a report adds to its usage count in Quickbase,
-but changes no records.
+for anything else without sending it, though a table method may read the table's metadata first.
+Running a report adds to its usage count in Quickbase, but changes no records.
 
 ```python
 from pyquickbase import Quickbase

@@ -24,15 +24,15 @@ class InvalidResponseError(QuickbaseError):
 
 
 class ReadOnlyError(QuickbaseError):
-    """The client is read-only, and this request could change data. Nothing was sent."""
+    """The client is read-only, and this request could change data. It wasn't sent."""
 
 
 class QueryError(QuickbaseError, ValueError):
-    """A query can't be sent as written. Nothing was sent to Quickbase."""
+    """A query can't be sent as written, so it wasn't sent to Quickbase."""
 
 
 class InvalidValueError(QuickbaseError, ValueError):
-    """A write can't be sent as written. Nothing was sent to Quickbase."""
+    """A write can't be sent as written, so it wasn't sent to Quickbase."""
 
 
 class WriteError(QuickbaseError):

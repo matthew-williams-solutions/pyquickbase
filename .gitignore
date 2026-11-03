@@ -16,6 +16,10 @@ site/
 docs/playground-app/vendor/
 docs/playground-app/playground-data.json
 
+# Files for AI tools: created by scripts/build_llms.py
+docs/llms.txt
+docs/llms-full.txt
+
 # Tool caches
 .coverage
 .coverage.*

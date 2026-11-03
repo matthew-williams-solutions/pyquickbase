@@ -9,6 +9,7 @@ to keep are explained in the guides, not here.
 - Yank `1.0.0rc1`, `0.2.0a1`, and `0.1.0a1` on PyPI, which let a value in `F` act as query syntax.
 - Decide whether a `Retry-After` of `0` should wait a moment. Quickbase sends it while still limiting, so
   those retries are used up immediately. In a long burst, a call can run out of retries.
+- Release `1.0.0rc3` with the write fix in `CHANGELOG.md`, which restarts the week below.
 - Finish testing the release candidate:
   - Run CI once on Windows and macOS, and strict type-check a sample app from a clean install.
   - Add a snapshot test of every public name and signature.
@@ -27,7 +28,10 @@ Nothing here should break anyone.
 
 - Switch the docs from Material to Zensical, **by 2027-05-05**, when Material's maintenance ends. A
   trial build of 0.0.74 worked, and its strict mode also catches broken anchors, which MkDocs doesn't.
-  Wait for 0.1.0, announced for 2026-11-05.
+  Wait for 0.1.0, announced for 2026-11-05. `scripts/build_llms.py` reads the nav from
+  `mkdocs.yml`, so update it if the config moves.
+- `llms.txt` is at `/pyquickbase/llms.txt`, not the domain root where some tools look, because the
+  site is served from a subpath. Only a custom domain would change that.
 - A method for summary and chart reports, returning `{label: value}` rows.
 - A per-call timeout for uploads and downloads.
 - A small config file to choose generated names.
@@ -63,7 +67,8 @@ the result to `docs/api-notes.md`.
 
 - What does `_curuser_` match on a user field? On a text field it's literal, but a value from someone
   else could match the token owner's records on a user field. Other relative values on date fields, such
-  as `today`, may behave the same way.
+  as `today`, may behave the same way. `docs/guides/agents.md` calls this unconfirmed, so update it
+  with the answer.
 
 **Fields and files**
 
@@ -79,5 +84,6 @@ the result to `docs/api-notes.md`.
   hidden field? Only a view-only role with hidden fields has been tested.
 - Can a restricted user's formula read a table their role has no access to? A role's hidden fields held
   up, but this wasn't tested, because the role's other tables were the seeded ones.
+  `docs/guides/agents.md` calls this untested, so update it with the answer.
 - Can renaming a table, or using the UI, give two tables the same name? If so, `app.table()` takes the
   first match, unlike fields and reports, which raise an error.

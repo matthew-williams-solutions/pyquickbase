@@ -376,6 +376,7 @@ class Table:
                 body["mergeFieldId"] = merge_field_id
             try:
                 payload = self._transport.request("POST", "/records", json=body)
+                result = parse(partial(merge_write_result, result, offset=start), payload, "write")
             except QuickbaseError as exc:
                 if start == 0:
                     raise
@@ -383,7 +384,6 @@ class Table:
                     f"Writing stopped at row {start}, after earlier rows were written: {exc}",
                     result=result,
                 ) from exc
-            result = parse(partial(merge_write_result, result, offset=start), payload, "write")
         if result.errors:
             raise WriteError(write_result_summary(result), result=result)
         return result

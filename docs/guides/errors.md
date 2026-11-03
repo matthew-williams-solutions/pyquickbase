@@ -19,7 +19,7 @@ except QuickbaseError as error:
 
 ## Mistakes caught before sending
 
-These mean nothing was sent to Quickbase.
+These mean the request wasn't sent, though the SDK may have read table metadata first to check it.
 
 | Exception | Cause |
 |---|---|

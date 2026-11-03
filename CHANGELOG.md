@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A guide to
+  [using pyquickbase from an AI agent](https://matthew-williams-solutions.github.io/pyquickbase/guides/agents/).
+- [`llms.txt`](https://matthew-williams-solutions.github.io/pyquickbase/llms.txt) and
+  [`llms-full.txt`](https://matthew-williams-solutions.github.io/pyquickbase/llms-full.txt) on the
+  docs site, which hold a list of the docs and all of them in one file.
+
+### Fixed
+
+- If a later batch of a write got a successful response in the wrong shape, `InvalidResponseError` lost
+  the results of the earlier batches. It's now a `WriteError`, like any other failure in a later batch.
+
 ## [1.0.0rc2] - 2026-11-02
 
 ### Security
