@@ -13,6 +13,8 @@ All notable changes to this project are documented here. The format follows
 - [`llms.txt`](https://matthew-williams-solutions.github.io/pyquickbase/llms.txt) and
   [`llms-full.txt`](https://matthew-williams-solutions.github.io/pyquickbase/llms-full.txt) on the
   docs site, which hold a list of the docs and all of them in one file.
+- The playground's sample app now has three linked tables, with users, tags, attachments, a lookup, a
+  formula, and rollups, and four more examples.
 
 ### Fixed
 

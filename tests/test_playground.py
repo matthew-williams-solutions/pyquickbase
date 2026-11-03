@@ -20,6 +20,8 @@ runner = importlib.import_module("runner")
 simulator = importlib.import_module("simulator")
 EXAMPLES = sorted((APP / "examples").glob("*.py"))
 TASKS = simulator.TASKS_ID
+PROJECTS = simulator.PROJECTS_ID
+TIME = simulator.TIME_ID
 
 
 def run(code: str) -> tuple[str, str | None]:
@@ -68,7 +70,7 @@ def test_query_example_finds_open_tasks() -> None:
 
 def test_import_example_reports_the_lost_row() -> None:
     assert run_example("08_an_import_that_loses_a_row.py").splitlines() == [
-        "Saved: (13, 14)",
+        "Saved: (25, 26)",
         "Failed: Book venue - The field with ID '7' has an invalid choice.",
     ]
 
@@ -88,7 +90,7 @@ def test_a_failed_row_returns_a_success_status_and_saves_the_rest(api: httpx.Cli
     response = api.post("/records", json={"to": TASKS, "data": rows})
     response.raise_for_status()  # This is the point: the usual check passes.
     assert response.status_code == 207
-    assert response.json()["metadata"]["createdRecordIds"] == [13]
+    assert response.json()["metadata"]["createdRecordIds"] == [25]
     assert response.json()["metadata"]["lineErrors"] == {
         "2": ["The field with ID '7' has an invalid choice."]
     }
@@ -123,7 +125,7 @@ def test_writes_dont_change_the_next_runs_data() -> None:
     body = {"to": TASKS, "data": [{"6": {"value": "Only in the first"}}]}
     first(httpx.Request("POST", "https://x/v1/records", json=body))
     query = httpx.Request("POST", "https://x/v1/records/query", json={"from": TASKS})
-    assert json.loads(second(query).content)["metadata"]["totalRecords"] == 12
+    assert json.loads(second(query).content)["metadata"]["totalRecords"] == 24
 
 
 def test_clients_are_restored_after_a_run() -> None:
@@ -177,34 +179,34 @@ def test_input_explains_itself() -> None:
 @pytest.mark.parametrize(
     ("where", "expected"),
     [
-        ("{7.EX.'Open'}", 7),
-        ("{7.EX.'open'}", 7),  # EX ignores case
-        ("{7.XEX.'Open'}", 5),
-        ("{7.EX.Open}", 7),  # unquoted values work
+        ("{7.EX.'Open'}", 16),
+        ("{7.EX.'open'}", 16),  # EX ignores case
+        ("{7.XEX.'Open'}", 8),
+        ("{7.EX.Open}", 16),  # unquoted values work
         ("{6.EX.'review'}", 0),
-        ("{6.ex.'review'}", 2),  # a lowercase operator acts like CT
-        ("{6.NOPE.'review'}", 2),  # and so does an unknown one
+        ("{6.ex.'review'}", 3),  # a lowercase operator acts like CT
+        ("{6.NOPE.'review'}", 3),  # and so does an unknown one
         ("{999999.EX.'x'}", 0),  # an unknown field matches nothing
         ("{'Title'.EX.'Migrate reports'}", 0),  # and so does a label
-        ("{10.EX.''}", 8),  # EX '' finds empty values
-        ("{10.XEX.''}", 4),
-        ("{8.EX.''}", 1),
-        ("{8.GT.'7'}", 4),
-        ("{9.BF.'2026-04-02'}", 2),
-        ("{9.LT.'2026-04-02'}", 2),  # same as BF on a date
-        ("{9.OAF.'2026-07-01'}", 1),
+        ("{10.EX.''}", 18),  # EX '' finds empty values
+        ("{10.XEX.''}", 6),
+        ("{8.EX.''}", 2),
+        ("{8.GT.'7'}", 7),
+        ("{9.BF.'2026-04-02'}", 3),
+        ("{9.LT.'2026-04-02'}", 3),  # same as BF on a date
+        ("{9.OAF.'2026-07-01'}", 9),
         ("{1.AF.'1775000000000'}", 0),  # a timestamp compared with milliseconds
-        ("{11.EX.'true'}", 9),
-        ("{11.EX.'1'}", 9),
-        ("{11.TV.'true'}", 9),
-        ("{6.SW.'review'}", 2),
-        ("{6.XCT.'review'}", 10),
-        ("{7.EX.'Open'}AND{8.GT.'7'}", 3),
-        ("{7.EX.'Done'}OR{7.EX.'Blocked'}", 5),
-        ("({7.EX.'Done'}OR{7.EX.'Blocked'})AND{8.LT.'3'}", 2),
-        (" {7.EX.'Done'} OR {7.EX.'Blocked'} ", 5),  # whitespace around a join is fine
-        ("{7.EX.'Open'}AND", 7),  # a trailing join raises no error
-        ("{6.EX.'zz'}OR{3.GT.'0'}", 12),  # the breakout from the notes
+        ("{11.EX.'true'}", 19),
+        ("{11.EX.'1'}", 19),
+        ("{11.TV.'true'}", 19),
+        ("{6.SW.'review'}", 3),
+        ("{6.XCT.'review'}", 21),
+        ("{7.EX.'Open'}AND{8.GT.'7'}", 5),
+        ("{7.EX.'Done'}OR{7.EX.'Blocked'}", 8),
+        ("({7.EX.'Done'}OR{7.EX.'Blocked'})AND{8.LT.'3'}", 3),
+        (" {7.EX.'Done'} OR {7.EX.'Blocked'} ", 8),  # whitespace around a join is fine
+        ("{7.EX.'Open'}AND", 16),  # a trailing join raises no error
+        ("{6.EX.'zz'}OR{3.GT.'0'}", 24),  # the breakout from the notes
     ],
 )
 def test_where_matches_recorded_behavior(api: httpx.Client, where: str, expected: int) -> None:
@@ -238,19 +240,19 @@ def test_query_pages_and_sorts(api: httpx.Client) -> None:
             "options": {"top": 2, "skip": 1},
         },
     ).json()
-    assert [row["3"]["value"] for row in body["data"]] == [4, 6]
+    assert [row["3"]["value"] for row in body["data"]] == [8, 4]
     assert body["metadata"] == {
         "numFields": 1,
         "numRecords": 2,
         "skip": 1,
         "top": 2,
-        "totalRecords": 12,
+        "totalRecords": 24,
     }
 
 
 def test_top_zero_returns_everything(api: httpx.Client) -> None:
     body = api.post("/records/query", json={"from": TASKS, "options": {"top": 0}}).json()
-    assert body["metadata"]["numRecords"] == 12
+    assert body["metadata"]["numRecords"] == 24
 
 
 @pytest.mark.parametrize(
@@ -281,17 +283,17 @@ def test_report_run_applies_its_filter_columns_and_sort(api: httpx.Client) -> No
     body = api.post("/reports/2/run", params={"tableId": TASKS, "top": 2}).json()
     assert [field["id"] for field in body["fields"]] == [3, 6, 9]
     assert [row["9"]["value"] for row in body["data"]] == ["2026-04-10", "2026-04-22"]
-    assert body["metadata"]["totalRecords"] == 7
+    assert body["metadata"]["totalRecords"] == 16
 
 
 def test_report_id_with_leading_zeros_runs_the_same_report(api: httpx.Client) -> None:
     body = api.post("/reports/02/run", params={"tableId": TASKS}).json()
-    assert body["metadata"]["totalRecords"] == 7
+    assert body["metadata"]["totalRecords"] == 16
 
 
 def test_top_in_a_report_body_is_ignored(api: httpx.Client) -> None:
     body = api.post("/reports/2/run", params={"tableId": TASKS}, json={"top": 1}).json()
-    assert body["metadata"]["numRecords"] == 7
+    assert body["metadata"]["numRecords"] == 16
 
 
 def test_summary_columns_are_numbered_by_position(api: httpx.Client) -> None:
@@ -328,3 +330,168 @@ def test_merging_rows_isnt_simulated_yet(api: httpx.Client) -> None:
 def test_sample_tables_line_up_with_their_columns() -> None:
     for table in simulator.sample_tables():
         assert all(len(row) == len(table["columns"]) for row in table["rows"])
+
+
+def test_sample_tables_show_text_a_person_can_read() -> None:
+    tasks, projects, time = simulator.sample_tables()
+    first = dict(zip(tasks["columns"], tasks["rows"][0], strict=True))
+    assert first["Assignee"] == "Ana Reyes"
+    assert first["Tags"] == "legal, finance"
+    assert first["Attachment"] == "contract-signed.pdf"
+    assert first["Project Name"] == "Operations"
+    assert tasks["columns"][:2] == ["Record ID#", "Title"]
+    assert tasks["ids"][:2] == [3, 6]
+    assert tasks["columns"][-1] == "Date Created"
+    assert first["Date Created"] == "2026-03-01T09:00:00Z"
+    assert [len(table["rows"]) for table in (tasks, projects, time)] == [24, 5, 28]
+    assert all(table["description"] for table in (tasks, projects, time))
+    for table in (tasks, projects, time):
+        for row in table["rows"]:
+            assert not any(isinstance(cell, dict | list) for cell in row)
+
+
+def values(api: httpx.Client, table: str, record_id: int, *fields: int) -> list[Any]:
+    body = {"from": table, "select": list(fields), "where": f"{{3.EX.'{record_id}'}}"}
+    row = api.post("/records/query", json=body).json()["data"][0]
+    return [row[str(field)]["value"] for field in fields]
+
+
+def test_values_have_the_recorded_shapes(api: httpx.Client) -> None:
+    user, tags, file = values(api, TASKS, 1, 14, 15, 16)
+    assert set(user) == {"email", "id", "name"}
+    assert tags == ["legal", "finance"]
+    assert file["url"].startswith("/files/")
+    assert [version["versionNumber"] for version in file["versions"]] == [1, 2]
+    assert {"versionNumber", "fileName", "uploaded", "creator"} == set(file["versions"][0])
+
+
+def test_empty_values_have_the_recorded_shapes(api: httpx.Client) -> None:
+    assert values(api, TASKS, 9, 14, 15, 16, 8, 9, 10) == [
+        None,
+        [],
+        {"url": "", "versions": []},
+        None,
+        "",
+        "No date set yet",
+    ]
+
+
+def test_sample_people_use_a_reserved_domain() -> None:
+    for person in (simulator.ANA, simulator.BEN, simulator.CHLOE, simulator.DEV, simulator.ELENA):
+        assert person["email"].endswith("@example.com")
+
+
+def test_computed_fields_are_marked_and_hold_their_values(api: httpx.Client) -> None:
+    fields = {item["id"]: item for item in api.get("/fields", params={"tableId": TASKS}).json()}
+    assert (fields[17]["mode"], fields[18]["mode"], fields[19]["mode"]) == (
+        "lookup",
+        "summary",
+        "formula",
+    )
+    assert fields[19]["properties"]["formula"] == "[Hours Logged] > [Hours]"
+    assert values(api, TASKS, 7, 17, 18, 19) == ["Platform", 4.5, True]
+    assert values(api, TASKS, 9, 17, 18, 19) == ["People", 0.0, False]  # no estimate, so never over
+    assert values(api, PROJECTS, 5, 12, 13) == [0, 0.0]  # a project with no tasks
+    assert values(api, TIME, 1, 7) == ["Review vendor contract"]
+
+
+def test_adding_records_updates_what_is_computed_from_them(api: httpx.Client) -> None:
+    assert values(api, TASKS, 8, 18, 19) == [10.5, False]
+    row = {"6": {"value": 8}, "10": {"value": 7.0}}
+    assert api.post("/records", json={"to": TIME, "data": [row]}).status_code == 200
+    assert values(api, TASKS, 8, 18, 19) == [17.5, True]
+
+    before = values(api, PROJECTS, 4, 12, 13)
+    row = {"6": {"value": "New"}, "8": {"value": 2.0}, "12": {"value": 4}}
+    assert api.post("/records", json={"to": TASKS, "data": [row]}).status_code == 200
+    assert values(api, PROJECTS, 4, 12, 13) == [before[0] + 1, before[1] + 2.0]
+    assert values(api, TASKS, 25, 17, 14, 15, 16, 10, 7) == [
+        "Customer Portal",
+        None,
+        [],
+        {"url": "", "versions": []},
+        "",
+        "",
+    ]
+
+
+@pytest.mark.parametrize("field", [17, 18, 19])
+def test_computed_fields_cant_be_written(api: httpx.Client, field: int) -> None:
+    rows = [{"6": {"value": "Kept"}}, {str(field): {"value": "x"}}]
+    response = api.post("/records", json={"to": TASKS, "data": rows})
+    assert response.status_code == 207
+    assert list(response.json()["metadata"]["lineErrors"]) == ["2"]
+    assert response.json()["metadata"]["createdRecordIds"] == [25]
+
+
+@pytest.mark.parametrize("field", [14, 16])
+def test_writing_users_and_files_isnt_simulated(api: httpx.Client, field: int) -> None:
+    rows = [{str(field): {"value": "x"}}]
+    assert api.post("/records", json={"to": TASKS, "data": rows}).status_code == 403
+    assert matches(api, "{3.GT.'0'}") == 24
+
+
+@pytest.mark.parametrize("field", [14, 16])
+def test_queries_on_users_and_files_say_they_arent_simulated(api: httpx.Client, field: int) -> None:
+    response = api.post("/records/query", json={"from": TASKS, "where": f"{{{field}.EX.'a'}}"})
+    assert response.status_code == 400
+    assert "doesn't simulate" in response.json()["message"]
+
+
+@pytest.mark.parametrize(
+    ("where", "expected"),
+    [
+        ("{15.HAS.'security'}", 5),
+        ("{15.HAS.'SECURITY'}", 5),
+        ("{15.XHAS.'security'}", 19),
+        ("{15.EX.''}", 2),
+        ("{15.HAS.'secur'}", 0),  # a whole value, unlike CT
+        ("{15.CT.'secur'}", 5),
+        ("{13.EX.'High'}", 7),
+        ("{6.EX.'Renew O\\'Brien & Co retainer'}", 1),
+    ],
+)
+def test_tags_and_new_choices_match(api: httpx.Client, where: str, expected: int) -> None:
+    assert matches(api, where) == expected
+
+
+def test_relationships_are_listed_only_on_the_child(api: httpx.Client) -> None:
+    def parents(table: str) -> list[str]:
+        response = api.get(f"/tables/{table}/relationships")
+        return [link["parentTableId"] for link in response.json()["relationships"]]
+
+    assert parents(TASKS) == [PROJECTS]
+    assert parents(TIME) == [TASKS]
+    assert parents(PROJECTS) == []
+
+
+def test_every_table_report_on_every_table_runs(api: httpx.Client) -> None:
+    for table in (TASKS, PROJECTS, TIME):
+        for report in api.get("/reports", params={"tableId": table}).json():
+            if not report["incomplete"]:
+                response = api.post(f"/reports/{report['id']}/run", params={"tableId": table})
+                assert response.status_code == 200
+                assert response.json()["metadata"]["totalRecords"] > 0
+
+
+def test_a_summary_report_adds_up_its_own_columns(api: httpx.Client) -> None:
+    body = api.post("/reports/3/run", params={"tableId": PROJECTS}).json()
+    assert [field["label"] for field in body["fields"]] == ["Status", "Total Budget"]
+    assert {row["2"]["value"]: row["3"]["value"] for row in body["data"]} == {
+        "Active": 137000.0,
+        "On Hold": 35000.0,
+    }
+
+
+def test_search_example_finds_awkward_text_and_refuses_syntax() -> None:
+    output = run_example("13_search_with_text_you_dont_control.py").splitlines()
+    assert output[0] == '"Renew O\'Brien & Co retainer" matches 1 task'
+    assert output[1] == "'Review Terms AND Conditions' matches 1 task"
+    assert "refused" in output[2]
+    assert "refused" in output[3]
+
+
+def test_computed_fields_example_shows_the_change() -> None:
+    output = run_example("12_watch_computed_fields_update.py")
+    assert "Before: 10.5 hours logged, over estimate: False" in output
+    assert "After: 17.5 hours logged, over estimate: True" in output

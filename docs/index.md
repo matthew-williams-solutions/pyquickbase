@@ -71,7 +71,7 @@ except WriteError as error:
 ```
 
 ```text
-Saved: (13, 14)
+Saved: (25, 26)
 Failed: Book venue - The field with ID '7' has an invalid choice.
 ```
 
