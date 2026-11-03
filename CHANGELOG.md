@@ -20,6 +20,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `pyquickbase codegen` now writes the same line endings on every system, so generating on Windows
+  doesn't change every line of a file generated elsewhere.
 - A `Retry-After` of 0 now waits using `RetryPolicy`'s backoff instead of retrying immediately.
   Quickbase can send it while still limiting, so immediate retries could be used up during a burst.
 - If a later batch of a write got a successful response in the wrong shape, `InvalidResponseError` lost
