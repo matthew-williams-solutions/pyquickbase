@@ -236,6 +236,7 @@ Tested on 2026-11-02 with short bursts from 12 threads against temporary tables.
 |---|---|
 | `retry-after` on a real 429 | **Whole seconds**, seen from `0` to `10`. After waiting that long, the next request succeeded |
 | 450 calls from 12 threads, with the default 4 retries | Took about 30 seconds and hit 24 to 53 real 429s. **All 450 succeeded in most runs, but in 1 of 7, a call used up its retries and raised `RateLimitError`.** With retries off, about 300 of the 450 raised it |
+| The same burst with `1.0.0rc3`, which waits before retrying on a `retry-after` of 0 | 10 runs on 2026-11-03: **all 450 succeeded every time**, with 24 to 42 real 429s, in 27 to 37 seconds. That fits an improvement over 1 failure in 7 runs, but a sample this small can't prove one |
 | `retry-after: 0` | Sent while still limiting, so an immediate retry can get another 429 |
 | 429 body | `{"error": "Quota has been exceeded"}`, **not the usual `message` and `description`** |
 | When it started | After roughly 170 to 185 responses in 4 to 6 seconds, for both `/formula/run` and `/records/query`. That's more than the documented 100 per 10 seconds, so don't rely on the number. These bursts don't show a difference between the two endpoints |

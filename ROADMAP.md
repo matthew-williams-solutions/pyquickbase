@@ -6,10 +6,8 @@ to keep are explained in the guides, not here.
 
 ## Before 1.0
 
-- Run the live tests against `1.0.0rc3` from PyPI, including whether the wait for a `Retry-After` of 0
-  makes long bursts more reliable, and record the result in `docs/api-notes.md`.
 - Finish testing the release candidate:
-  - Run the docs examples against a sandbox app, and have someone new follow the docs cold.
+  - Have someone new follow the docs cold.
   - Use it for something real, then let the latest candidate run for at least a week with no code
     changes.
 - In the 1.0 release commit:

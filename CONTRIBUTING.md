@@ -25,7 +25,7 @@ harder, which takes about 15 minutes.
 ## Live tests
 
 `tests/_async/live`, `tests/_sync/live`, and `tests/live` use a real Quickbase app, and only run when
-asked for. Use a sandbox app. They create tables named `ZZ Live ...`, drop exactly those afterward, and
+asked for. Use a sandbox app. They create tables named `ZZ Live ...`, plus `Tasks` for the docs examples, drop exactly those afterward, and
 fail if the record count of any other table changed.
 
 ```bash
