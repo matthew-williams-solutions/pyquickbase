@@ -36,7 +36,8 @@ def _write(path: Path, source: str) -> None:
     mode = path.stat().st_mode if path.exists() else _NEW_FILE_MODE
     descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+        # Always the same line endings, so generating on Windows doesn't change every line.
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as file:
             file.write(source)
         os.chmod(temporary, mode)
         os.replace(temporary, path)
