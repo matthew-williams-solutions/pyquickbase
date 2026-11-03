@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/readme-banner.png" alt="pyquickbase" width="640"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/matthew-williams-solutions/pyquickbase/main/assets/readme-banner.png" alt="pyquickbase" width="640"></p>
 
 An unofficial, typed Python SDK for the [Quickbase](https://www.quickbase.com/) API, with matching
 sync and async clients.
