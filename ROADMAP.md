@@ -6,7 +6,8 @@ to keep are explained in the guides, not here.
 
 ## Before 1.0
 
-- Release `1.0.0rc3` with the write fix in `CHANGELOG.md`, which restarts the week below.
+- Run the live tests against `1.0.0rc3` from PyPI, including whether the wait for a `Retry-After` of 0
+  makes long bursts more reliable, and record the result in `docs/api-notes.md`.
 - Finish testing the release candidate:
   - Run CI once on Windows and macOS, and strict type-check a sample app from a clean install.
   - Add a snapshot test of every public name and signature.
