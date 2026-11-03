@@ -8,6 +8,7 @@ import pytest
 
 from pyquickbase import (
     F,
+    InvalidResponseError,
     InvalidValueError,
     QueryError,
     Quickbase,
@@ -218,6 +219,26 @@ def test_failure_in_a_later_batch_reports_what_was_already_written() -> None:
     assert caught.value.result.created_ids == (0, 1)
     assert isinstance(caught.value.__cause__, ServerError)
     assert server.writes == 2
+
+
+def test_a_wrong_response_in_a_later_batch_reports_what_was_already_written() -> None:
+    server = FakeQuickbase()
+    server.failures = {1: httpx.Response(200, json={})}
+    rows = [{"Title": str(n)} for n in range(5)]
+    with client(server) as qb:
+        with pytest.raises(WriteError, match="stopped at row 2") as caught:
+            qb.app(APP).table("Tasks").insert(rows, batch_size=2)
+    assert caught.value.result.created_ids == (0, 1)
+    assert isinstance(caught.value.__cause__, InvalidResponseError)
+    assert server.writes == 2
+
+
+def test_a_wrong_response_in_the_first_batch_is_the_original_error() -> None:
+    server = FakeQuickbase()
+    server.failures = {0: httpx.Response(200, json={})}
+    with client(server) as qb:
+        with pytest.raises(InvalidResponseError):
+            qb.app(APP).table("Tasks").insert([{"Title": "a"}])
 
 
 def test_failure_in_the_first_batch_is_the_original_error() -> None:

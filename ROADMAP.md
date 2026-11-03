@@ -9,6 +9,7 @@ to keep are explained in the guides, not here.
 - Yank `1.0.0rc1`, `0.2.0a1`, and `0.1.0a1` on PyPI, which let a value in `F` act as query syntax.
 - Decide whether a `Retry-After` of `0` should wait a moment. Quickbase sends it while still limiting, so
   those retries are used up immediately. In a long burst, a call can run out of retries.
+- Release `1.0.0rc3` with the write fix in `CHANGELOG.md`, which restarts the week below.
 - Finish testing the release candidate:
   - Run CI once on Windows and macOS, and strict type-check a sample app from a clean install.
   - Add a snapshot test of every public name and signature.
