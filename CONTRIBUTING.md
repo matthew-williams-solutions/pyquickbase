@@ -14,6 +14,11 @@ uv run pytest --cov
 
 Tests use mocked HTTP and need no Quickbase account.
 
+`tests/test_public_api.py` compares every public name and signature with
+`tests/fixtures/public_api.txt`. If a change to the public API is intended, check it against
+[the stability policy](docs/stability.md), then update the file with
+`QB_UPDATE_PUBLIC_API=1 uv run pytest tests/test_public_api.py`.
+
 `tests/test_properties.py` is randomized, and quick by default. Set `QB_DEEP_TESTS=1` to look much
 harder, which takes about 15 minutes.
 
