@@ -114,7 +114,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if isinstance(action, str):
             # A response that stops partway through, with these raw bytes as its body so far.
-            head = "HTTP/1.1 200 OK\r\nContent-Length: 100000\r\nContent-Type: application/json\r\n\r\n"
+            head = "HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\r\n"
             self.wfile.write(head.encode() + action.encode())
             self.wfile.flush()
             self.close_connection = True
@@ -159,6 +159,11 @@ def table(qb: AsyncQuickbase) -> Any:
     return qb.app("bq1234567").table("Tasks")
 
 
+async def read_all(source: Any, seen: list[int]) -> None:
+    async for record in source.query(page_size=2):
+        seen.append(record.id)
+
+
 @pytest.mark.parametrize("failure", ["drop", '{"fields": [{"id": 3'], ids=["dropped", "truncated"])
 async def test_a_failure_on_a_later_page_raises_after_the_earlier_records(
     server: Server, failure: str
@@ -167,8 +172,7 @@ async def test_a_failure_on_a_later_page_raises_after_the_earlier_records(
     seen: list[int] = []
     async with client(server) as qb:
         with pytest.raises(NetworkError) as caught:
-            async for record in table(qb).query(page_size=2):
-                seen.append(record.id)
+            await read_all(table(qb), seen)
     assert seen == [1, 2]
     assert TOKEN not in str(caught.value)
     assert server.count("/records/query") == 2  # A read could be retried, but nothing hides this.
@@ -200,8 +204,7 @@ async def test_a_page_that_ignores_skip_raises_instead_of_looping(server: Server
     seen: list[int] = []
     async with client(server) as qb:
         with pytest.raises(InvalidResponseError, match="skip"):
-            async for record in table(qb).query(page_size=2):
-                seen.append(record.id)
+            await read_all(table(qb), seen)
     assert seen == [1, 2]
 
 

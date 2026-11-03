@@ -85,6 +85,7 @@ select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "PT", "RUF", "T20"]
 "scripts/*" = ["T20"]
 "src/pyquickbase/_sync/*" = ["UP028"]  # generated from async code, which can't use `yield from`
 "tests/*" = ["SIM117"]  # generated sync tests can't merge what async tests must nest
+"tests/test_properties.py" = ["RUF001"]  # lookalike characters are the point of these tests
 "tests/_sync/*" = ["C416", "SIM117"]  # generated from async comprehensions
 
 [tool.pyright]

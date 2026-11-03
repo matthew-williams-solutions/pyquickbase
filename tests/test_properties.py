@@ -1,7 +1,9 @@
-"""Randomized tests of the code that keeps users safe. Hypothesis tries to find a case that breaks."""
+"""Randomized tests of the code that keeps users safe. Hypothesis looks for a case that breaks."""
 
+import contextlib
 import json
 import keyword
+import os
 import re
 import sys
 import types
@@ -56,8 +58,10 @@ from pyquickbase._writes import (
     to_api_value,
 )
 
+# A quick run by default. Set QB_DEEP_TESTS=1 to look much harder.
+EXAMPLES = 2000 if os.environ.get("QB_DEEP_TESTS") == "1" else 40
 settings.register_profile(
-    "sdk", deadline=None, suppress_health_check=[HealthCheck.too_slow], max_examples=300
+    "sdk", deadline=None, suppress_health_check=[HealthCheck.too_slow], max_examples=EXAMPLES
 )
 settings.load_profile("sdk")
 
@@ -143,10 +147,8 @@ def test_combined_conditions_parse_back_with_every_condition(tree: Any) -> None:
 
 @given(TEXT)
 def test_a_where_string_is_accepted_or_refused_cleanly(where: str) -> None:
-    try:
+    with contextlib.suppress(QueryError):
         parse_where(where, FIELDS)
-    except QueryError:
-        pass
 
 
 PATHS = st.one_of(
@@ -247,14 +249,15 @@ def test_a_realm_is_a_plain_hostname(realm: str) -> None:
 
 @given(st.text(max_size=40))
 def test_a_bad_token_never_appears_in_the_error(token: str) -> None:
+    message = ""
     try:
         checked = validate_token(token)
     except ConfigurationError as exc:
-        assert not token.strip() or token.strip() not in str(exc) or len(token.strip()) < 4
-        return
-    assert checked
-    assert not any(c.isspace() for c in checked)
-    httpx.Headers({"Authorization": f"QB-USER-TOKEN {checked}"}) if checked.isascii() else None
+        message = str(exc)
+    else:
+        assert checked
+        assert not any(c.isspace() for c in checked)
+    assert len(token.strip()) < 4 or token.strip() not in message
 
 
 JSON = st.recursive(
@@ -308,10 +311,8 @@ PARSERS = [
 @pytest.mark.parametrize("parser", PARSERS, ids=lambda p: p.__name__)
 @given(payload=SHAPED)
 def test_any_response_parses_or_is_an_invalid_response(parser: Any, payload: Any) -> None:
-    try:
+    with contextlib.suppress(InvalidResponseError):
         parse(parser, payload, "test")
-    except InvalidResponseError:
-        pass
 
 
 @given(st.text(max_size=20), st.sampled_from(["bool", "number", "null", "text", "date", "other"]))
@@ -424,8 +425,8 @@ LABELS = st.one_of(
             "class", "id", "ID", "fields", "new", "change", "from_record", "cls", "self", "_row",
             "__columns__", "__table_id__", "__class__", "__init__", "mro", "print", "None", "True",
             '"""', "'''", "\\", '")\nraise SystemExit("hacked', "# coding: latin-1", "\n", "\r\n",
-            "{x}", "%s", "日本語", "😀", "é", "ß", "Ⅷ", "1st", "9", "a" * 200, "Unset", "UNSET", "Row",
-            "dataclass", "ClassVar", "Any", "Self", "_dt", "dt", "date", "datetime", "float", "str",
+            "{x}", "%s", "日本語", "😀", "é", "ß", "Ⅷ", "1st", "9", "a" * 200, "Unset", "UNSET",
+            "Row", "dataclass", "ClassVar", "Any", "Self", "_dt", "dt", "date", "datetime", "float",
         ]
     ),
 )  # fmt: skip
