@@ -1,0 +1,302 @@
+class APIError(QuickbaseError)
+    def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
+class App(object)
+    def create_table(self, name: str, *, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> 'Table'
+    property id -> str
+    def info(self) -> AppInfo
+    def table(self, name_or_id: str) -> 'Table'
+    def tables(self, *, refresh: bool = False) -> list[TableInfo]
+    def typed(self, model: type[~R]) -> 'TypedTable[R]'
+class AppInfo(object)
+    def __eq__(self, other)
+    def __init__(self, *, id: str, name: str, description: str, time_zone: str | None, date_format: str | None, raw: Mapping[str, Any]) -> None
+    field date_format: str | None
+    field description: str
+    field id: str
+    field name: str
+    field raw: Mapping[str, Any]
+    field time_zone: str | None
+class AsyncApp(object)
+    async def create_table(self, name: str, *, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> 'AsyncTable'
+    property id -> str
+    async def info(self) -> AppInfo
+    def table(self, name_or_id: str) -> 'AsyncTable'
+    async def tables(self, *, refresh: bool = False) -> list[TableInfo]
+    def typed(self, model: type[~R]) -> 'AsyncTypedTable[R]'
+class AsyncQuickbase(object)
+    async def __aenter__(self) -> Self
+    async def __aexit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: traceback | None) -> None
+    def __init__(self, *, realm: str, token: str, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.AsyncClient | None = None, schema_ttl: float = 300.0, read_only: bool = False, allowed_writes: Collection[tuple[str, str]] | None = None) -> None
+    async def aclose(self) -> None
+    def app(self, app_id: str) -> AsyncApp
+    def clear_schema_cache(self) -> None
+    classmethod def from_env(cls, *, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.AsyncClient | None = None, schema_ttl: float = 300.0, read_only: bool = False, allowed_writes: Collection[tuple[str, str]] | None = None) -> Self
+    property realm -> str
+    async def request(self, method: str, path: str, *, params: Mapping[str, Any] | None = None, json: Any = None) -> Any
+class AsyncRecordIterator(object)
+    def __aiter__(self) -> Self
+    async def __anext__(self) -> Record
+class AsyncReport(object)
+    async def info(self) -> ReportInfo
+    def run(self, *, page_size: int = 1000, limit: int | None = None) -> AsyncRecordIterator
+    async def run_page(self, *, top: int = 100, skip: int = 0) -> Page
+class AsyncTable(object)
+    async def count(self, where: Expression | str | None = None) -> int
+    async def create_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None) -> Field
+    async def create_relationship(self, parent: 'AsyncTable', *, foreign_key_label: str, lookup_fields: Sequence[str | int] = ()) -> Relationship
+    async def delete(self, where: Expression | str) -> int
+    async def delete_fields(self, fields: str | int | Sequence[str | int]) -> None
+    async def delete_file_version(self, record_id: int, field: str | int, *, version: int) -> None
+    async def download_file(self, record_id: int, field: str | int, *, version: int | None = None) -> FileDownload
+    async def drop(self, *, confirm: str) -> None
+    async def fields(self, *, refresh: bool = False) -> list[Field]
+    async def info(self) -> TableInfo
+    async def insert(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000) -> WriteResult
+    def query(self, *, where: Expression | str | None = None, select: str | int | Sequence[str | int] | None = None, order_by: str | int | Sequence[str | int] | None = None, page_size: int = 1000, limit: int | None = None) -> AsyncRecordIterator
+    async def query_page(self, *, where: Expression | str | None = None, select: str | int | Sequence[str | int] | None = None, order_by: str | int | Sequence[str | int] | None = None, top: int = 100, skip: int = 0) -> Page
+    async def relationships(self, *, refresh: bool = False) -> list[Relationship]
+    def report(self, name_or_id: str) -> 'AsyncReport'
+    async def reports(self, *, refresh: bool = False) -> list[ReportInfo]
+    async def resolve_field_ids(self, fields: Sequence[str | int]) -> list[int]
+    async def run_formula(self, formula: str, *, record_id: int | None = None) -> FormulaResult
+    async def update(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000) -> WriteResult
+    async def update_field(self, field: str | int, *, label: str | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None) -> Field
+    async def upsert(self, rows: Iterable[Mapping[str | int, Any]], *, merge_on: str | int, batch_size: int = 1000) -> WriteResult
+class AsyncTypedIterator(Generic)
+    def __aiter__(self) -> Self
+    async def __anext__(self) -> ~R
+class AsyncTypedTable(Generic)
+    async def check_schema(self) -> None
+    async def count(self, where: Expression | str | None = None) -> int
+    async def delete(self, where: Expression | str) -> int
+    async def insert(self, rows: Iterable[Row[~R]]) -> WriteResult
+    def query(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, limit: int | None = None) -> 'AsyncTypedIterator[R]'
+    property table -> AsyncTable
+    async def update(self, rows: Iterable[Row[~R]]) -> WriteResult
+    async def upsert(self, rows: Iterable[Row[~R]], *, merge_on: TypedField) -> WriteResult
+class AuthenticationError(APIError)
+    def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
+class BadRequestError(APIError)
+    def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
+class Column(object)
+    def __eq__(self, other)
+    def __init__(self, name: str, id: int, field_type: str, writable: bool, label: str) -> None
+    field field_type: str
+    field id: int
+    field label: str
+    field name: str
+    field writable: bool
+class ConfigurationError(QuickbaseError, ValueError)
+class F(object)
+    def __eq__(self, value: object) -> Condition
+    def __ge__(self, value: Any) -> Condition
+    def __gt__(self, value: Any) -> Condition
+    def __init__(self, field: str | int) -> None
+    def __le__(self, value: Any) -> Condition
+    def __lt__(self, value: Any) -> Condition
+    def __ne__(self, value: object) -> Condition
+    def contains(self, value: Any) -> Condition
+    def is_in(self, values: Iterable[Any]) -> Expression
+    def not_contains(self, value: Any) -> Condition
+    def not_starts_with(self, value: Any) -> Condition
+    def op(self, operator: str, value: Any) -> Condition
+    def starts_with(self, value: Any) -> Condition
+class Field(object)
+    def __eq__(self, other)
+    def __init__(self, *, id: int, label: str, type: str, mode: str | None, required: bool, unique: bool, appears_by_default: bool, choices: tuple[str, ...], allow_new_choices: bool, formula: str | None = None, raw: Mapping[str, Any]) -> None
+    field allow_new_choices: bool
+    field appears_by_default: bool
+    field choices: tuple[str, ...]
+    field formula: str | None
+    field id: int
+    field label: str
+    field mode: str | None
+    field raw: Mapping[str, Any]
+    field required: bool
+    field type: str
+    field unique: bool
+class FileDownload(object)
+    def __eq__(self, other)
+    def __init__(self, *, name: str, data: bytes, content_type: str | None) -> None
+    field content_type: str | None
+    field data: bytes
+    field name: str
+class FileUpload(object)
+    def __eq__(self, other)
+    def __init__(self, name: str, data: bytes) -> None
+    field data: bytes
+    field name: str
+class FormulaResult(object)
+    def __eq__(self, other)
+    def __init__(self, *, text: str, type: str) -> None
+    field text: str
+    field type: str
+    property value -> Any
+class InvalidResponseError(QuickbaseError)
+class InvalidValueError(QuickbaseError, ValueError)
+class NetworkError(QuickbaseError)
+class NotFoundError(APIError)
+    def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
+class Page(object)
+    def __eq__(self, other)
+    def __init__(self, *, records: tuple[Record, ...], total: int, skip: int) -> None
+    property has_more -> bool
+    property next_skip -> int
+    field records: tuple[Record, ...]
+    field skip: int
+    field total: int
+class PermissionDeniedError(APIError)
+    def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
+class QueryError(QuickbaseError, ValueError)
+class Quickbase(object)
+    def __enter__(self) -> Self
+    def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: traceback | None) -> None
+    def __init__(self, *, realm: str, token: str, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.Client | None = None, schema_ttl: float = 300.0, read_only: bool = False, allowed_writes: Collection[tuple[str, str]] | None = None) -> None
+    def app(self, app_id: str) -> App
+    def clear_schema_cache(self) -> None
+    def close(self) -> None
+    classmethod def from_env(cls, *, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.Client | None = None, schema_ttl: float = 300.0, read_only: bool = False, allowed_writes: Collection[tuple[str, str]] | None = None) -> Self
+    property realm -> str
+    def request(self, method: str, path: str, *, params: Mapping[str, Any] | None = None, json: Any = None) -> Any
+class QuickbaseError(Exception)
+class RateLimitError(APIError)
+    def __init__(self, summary: str, *, retry_after: float | None = None, **kwargs: object) -> None
+class ReadOnlyError(QuickbaseError)
+class Record(Mapping)
+    def __getitem__(self, key: str | int) -> Any
+    def __init__(self, values: Mapping[int, Any], labels: Mapping[str, int]) -> None
+    def __iter__(self) -> Iterator[str | int]
+    def __len__(self) -> int
+    property id -> int
+class RecordIterator(object)
+    def __iter__(self) -> Self
+    def __next__(self) -> Record
+class Relationship(object)
+    def __eq__(self, other)
+    def __init__(self, *, id: int, parent_table_id: str, child_table_id: str, foreign_key_field_id: int | None, lookup_field_ids: tuple[int, ...], is_cross_app: bool, raw: Mapping[str, Any]) -> None
+    field child_table_id: str
+    field foreign_key_field_id: int | None
+    field id: int
+    field is_cross_app: bool
+    field lookup_field_ids: tuple[int, ...]
+    field parent_table_id: str
+    field raw: Mapping[str, Any]
+class Report(object)
+    def info(self) -> ReportInfo
+    def run(self, *, page_size: int = 1000, limit: int | None = None) -> RecordIterator
+    def run_page(self, *, top: int = 100, skip: int = 0) -> Page
+class ReportInfo(object)
+    def __eq__(self, other)
+    def __init__(self, *, id: str, name: str, type: str, description: str, incomplete: bool, raw: Mapping[str, Any]) -> None
+    field description: str
+    field id: str
+    field incomplete: bool
+    field name: str
+    field raw: Mapping[str, Any]
+    field type: str
+class RequestTimeoutError(NetworkError)
+class RetryPolicy(object)
+    def __eq__(self, other)
+    def __init__(self, *, max_retries: int = 4, base_delay: float = 1.0, max_delay: float = 30.0, max_retry_after: float = 60.0) -> None
+    def backoff(self, attempt: int) -> float
+    field base_delay: float
+    field max_delay: float
+    field max_retries: int
+    field max_retry_after: float
+    def rate_limit_delay(self, attempt: int, retry_after: float | None) -> float | None
+class Row(dict, Generic)
+class RowError(object)
+    def __eq__(self, other)
+    def __init__(self, *, index: int, messages: tuple[str, ...]) -> None
+    field index: int
+    field messages: tuple[str, ...]
+class SchemaMismatchError(QuickbaseError)
+class ServerError(APIError)
+    def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
+class Table(object)
+    def count(self, where: Expression | str | None = None) -> int
+    def create_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None) -> Field
+    def create_relationship(self, parent: 'Table', *, foreign_key_label: str, lookup_fields: Sequence[str | int] = ()) -> Relationship
+    def delete(self, where: Expression | str) -> int
+    def delete_fields(self, fields: str | int | Sequence[str | int]) -> None
+    def delete_file_version(self, record_id: int, field: str | int, *, version: int) -> None
+    def download_file(self, record_id: int, field: str | int, *, version: int | None = None) -> FileDownload
+    def drop(self, *, confirm: str) -> None
+    def fields(self, *, refresh: bool = False) -> list[Field]
+    def info(self) -> TableInfo
+    def insert(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000) -> WriteResult
+    def query(self, *, where: Expression | str | None = None, select: str | int | Sequence[str | int] | None = None, order_by: str | int | Sequence[str | int] | None = None, page_size: int = 1000, limit: int | None = None) -> RecordIterator
+    def query_page(self, *, where: Expression | str | None = None, select: str | int | Sequence[str | int] | None = None, order_by: str | int | Sequence[str | int] | None = None, top: int = 100, skip: int = 0) -> Page
+    def relationships(self, *, refresh: bool = False) -> list[Relationship]
+    def report(self, name_or_id: str) -> 'Report'
+    def reports(self, *, refresh: bool = False) -> list[ReportInfo]
+    def resolve_field_ids(self, fields: Sequence[str | int]) -> list[int]
+    def run_formula(self, formula: str, *, record_id: int | None = None) -> FormulaResult
+    def update(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000) -> WriteResult
+    def update_field(self, field: str | int, *, label: str | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None) -> Field
+    def upsert(self, rows: Iterable[Mapping[str | int, Any]], *, merge_on: str | int, batch_size: int = 1000) -> WriteResult
+class TableInfo(object)
+    def __eq__(self, other)
+    def __init__(self, *, id: str, name: str, description: str, key_field_id: int | None, raw: Mapping[str, Any]) -> None
+    field description: str
+    field id: str
+    field key_field_id: int | None
+    field name: str
+    field raw: Mapping[str, Any]
+class TypedField(F)
+    def __eq__(self, value: object) -> Condition
+    def __ge__(self, value: Any) -> Condition
+    def __gt__(self, value: Any) -> Condition
+    def __init__(self, field: str | int) -> None
+    def __le__(self, value: Any) -> Condition
+    def __lt__(self, value: Any) -> Condition
+    def __ne__(self, value: object) -> Condition
+    def contains(self, value: Any) -> Condition
+    property desc -> int
+    property id -> int
+    def is_in(self, values: Iterable[Any]) -> Expression
+    def not_contains(self, value: Any) -> Condition
+    def not_starts_with(self, value: Any) -> Condition
+    def op(self, operator: str, value: Any) -> Condition
+    def starts_with(self, value: Any) -> Condition
+class TypedIterator(Generic)
+    def __iter__(self) -> Self
+    def __next__(self) -> ~R
+class TypedRecord(object)
+    classmethod def from_record(cls, record: Record) -> Self
+class TypedTable(Generic)
+    def check_schema(self) -> None
+    def count(self, where: Expression | str | None = None) -> int
+    def delete(self, where: Expression | str) -> int
+    def insert(self, rows: Iterable[Row[~R]]) -> WriteResult
+    def query(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, limit: int | None = None) -> 'TypedIterator[R]'
+    property table -> Table
+    def update(self, rows: Iterable[Row[~R]]) -> WriteResult
+    def upsert(self, rows: Iterable[Row[~R]], *, merge_on: TypedField) -> WriteResult
+value UNSET = UNSET
+class UnknownFieldError(QuickbaseError, LookupError)
+class UnknownReportError(QuickbaseError, LookupError)
+class UnknownTableError(QuickbaseError, LookupError)
+class Unset(object)
+class UnsupportedReportError(QuickbaseError)
+class WhereCondition(object)
+    def __eq__(self, other)
+    def __init__(self, field_id: int, operator: str, value: str) -> None
+    field field_id: int
+    field operator: str
+    field value: str
+class WriteError(QuickbaseError)
+    def __init__(self, summary: str, *, result: Any = None) -> None
+class WriteResult(object)
+    def __eq__(self, other)
+    def __init__(self, *, created_ids: tuple[int, ...] = (), updated_ids: tuple[int, ...] = (), unchanged_ids: tuple[int, ...] = (), errors: tuple[RowError, ...] = ()) -> None
+    field created_ids: tuple[int, ...]
+    field errors: tuple[RowError, ...]
+    field unchanged_ids: tuple[int, ...]
+    field updated_ids: tuple[int, ...]
+def parse_where(where: str, fields: Iterable[Field]) -> list[WhereCondition]
+command pyquickbase codegen
+    --app (StoreAction, required)
+    --output (StoreAction, required)
+    --table (AppendAction, default [])
+    --check (StoreTrueAction, default False)
