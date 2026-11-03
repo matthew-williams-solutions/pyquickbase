@@ -6,8 +6,8 @@ to keep are explained in the guides, not here.
 
 ## Before 1.0
 
-- Release `1.0.0rc2`, with the query safety fixes. `1.0.0rc1` and earlier let a value in `F` act as
-  query syntax.
+- Run the live tests against `1.0.0rc2` from PyPI, then yank `1.0.0rc1`, `0.2.0a1`, and `0.1.0a1`, which
+  let a value in `F` act as query syntax.
 - Finish testing the release candidate:
   - Run CI once on Windows and macOS, and strict type-check a sample app from a clean install.
   - Add a snapshot test of every public name and signature.

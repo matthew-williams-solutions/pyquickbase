@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0rc2] - 2026-11-02
+
 ### Security
 
 - `F` no longer lets a value act as query syntax, which could match, or delete, records it shouldn't.
