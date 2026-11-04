@@ -83,6 +83,7 @@ except WriteError as error:
 | `duplicate` | A value is already in a unique field, which `field_id` names |
 | `permission` | The token's role refused it |
 | `invalid_choice` | A value isn't one of the field's choices, and `field_id` names the field |
+| `rule` | One of the table's custom data rules refused it, and `messages` holds the rule's text |
 | `other` | Anything else, including wording this version doesn't recognize |
 
 This makes a repeated insert easy to treat as already done, for a table a role can add to but not

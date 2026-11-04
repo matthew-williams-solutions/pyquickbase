@@ -165,9 +165,12 @@ def refuse_field(rows: Sequence[Mapping[str, Any]], field_id: int, purpose: str)
             raise InvalidValueError(f"Row {index} sets field {field_id}, {purpose}.")
 
 
-RowErrorKind = Literal["duplicate", "permission", "invalid_choice", "other"]
+RowErrorKind = Literal["duplicate", "permission", "invalid_choice", "rule", "other"]
 # Quickbase only gives text. Message wording isn't a promise, so unknown text counts as "other".
 _ROW_ERROR_KINDS: tuple[tuple[RowErrorKind, re.Pattern[str]], ...] = (
+    # A rule's message is the app builder's own text, so only the prefix can be matched, and it's
+    # checked first so that a message mentioning permissions or choices isn't misread.
+    ("rule", re.compile(r"^Table rule validation:()", re.I)),
     ("duplicate", re.compile(r"non-unique value for field with ID ['\"]?(\d+)", re.IGNORECASE)),
     ("invalid_choice", re.compile(r"field with ID ['\"]?(\d+)['\"]? has an invalid choice", re.I)),
     ("permission", re.compile(r"(?:don't have permission|insufficient permissions)()", re.I)),
@@ -180,8 +183,9 @@ class RowError:
 
     Use `kind` instead of reading `messages`, whose wording can change. It's `duplicate` for a value
     already in a unique field, `permission` for a refusal by the token's role, `invalid_choice` for
-    a value outside a field's choices, and `other` for anything else, including wording this version
-    doesn't recognize. `field_id` is the field Quickbase named, if it's one of the first or third.
+    a value outside a field's choices, `rule` for a refusal by one of the table's custom data rules,
+    whose message is in `messages`, and `other` for anything else, including wording this version
+    doesn't recognize. `field_id` is the field Quickbase named, for the first and third of these.
     """
 
     index: int

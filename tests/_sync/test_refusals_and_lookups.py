@@ -62,6 +62,9 @@ def write_response(line_errors: dict[str, list[str]] | None = None) -> httpx.Res
         ("You don't have permission to add records to this table.", "permission", None),
         ("You don't have permission to update records in this table.", "permission", None),
         ("Insufficient permissions to update data in a restricted field.", "permission", None),
+        ("Table rule validation: This invoice has been issued.", "rule", None),
+        # A rule's text is free-form, so words from other kinds must not change what it counts as.
+        ("Table rule validation: You don't have permission to do this.", "rule", None),
         ("Something Quickbase has never said before.", "other", None),
     ],
 )

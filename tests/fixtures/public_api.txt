@@ -235,10 +235,10 @@ class Role(object)
 class Row(dict, Generic)
 class RowError(object)
     def __eq__(self, other)
-    def __init__(self, *, index: int, messages: tuple[str, ...], kind: Literal['duplicate', 'permission', 'invalid_choice', 'other'] = 'other', field_id: int | None = None) -> None
+    def __init__(self, *, index: int, messages: tuple[str, ...], kind: Literal['duplicate', 'permission', 'invalid_choice', 'rule', 'other'] = 'other', field_id: int | None = None) -> None
     field field_id: int | None
     field index: int
-    field kind: Literal['duplicate', 'permission', 'invalid_choice', 'other']
+    field kind: Literal['duplicate', 'permission', 'invalid_choice', 'rule', 'other']
     field messages: tuple[str, ...]
 class SchemaMismatchError(QuickbaseError)
 class ServerError(APIError)

@@ -24,8 +24,8 @@ These changes come from building a customer portal on the SDK.
 
 ### Added
 
-- `RowError.kind` and `RowError.field_id`, so you can recognize a duplicate value or a refused row
-  without reading Quickbase's wording.
+- `RowError.kind` and `RowError.field_id`, so you can recognize a duplicate value, a refused row, or a
+  row refused by a custom data rule, without reading Quickbase's wording.
 - `App.ensure_table()`, `Table.ensure_field()`, `Table.ensure_relationship()`,
   `Table.ensure_lookup_field()`, and `Table.ensure_summary_field()`, for setup scripts that are safe
   to run again. The last two also add lookups to an existing relationship and create summary fields,

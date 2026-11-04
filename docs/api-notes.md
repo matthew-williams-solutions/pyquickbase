@@ -349,6 +349,31 @@ tables, and no delete rights. Record-level rules weren't tested.
 you made. We didn't find any endpoint for reading or changing a role's permissions:
 `/apps/{id}/roles/{id}` and `/apps/{id}/roles/{id}/permissions` return 404.
 
+## Custom data rules
+
+Rules are written in the table's Advanced settings, and the API can't create them. Tested on 2026-11-04 in a
+real app. The help says they also cover imports, grid edit, and connected table refreshes, which weren't tested.
+
+| Behavior | Result |
+|---|---|
+| A rule refusing an update or insert through the API | 207, with the row error `Table rule validation: <the rule's message>` |
+| **An administrator** | **Is bound by the rule**, through both the API and a form |
+| A pipeline's write | Is bound by the rule. The run fails with `Custom data rule failed`, Error Code 88 |
+| Deleting a record | The help only mentions adding and editing, and this wasn't tested |
+| **`IsNull()` on an empty numeric field with `blankIsZero: true`** | **False, because the field counts as 0.** A rule using it refused every record until `blankIsZero` was set to false, which the API accepts |
+
+## Pipelines
+
+Tested on 2026-11-04 in a real app, with the Quickbase channel's **Record Updated** trigger and **Update Record**
+action. Pipelines can't be created or read through this API.
+
+| Behavior | Result |
+|---|---|
+| An update through the API | Fires the trigger, and the action had run within 4 seconds |
+| A field the action reads | Must be listed in the trigger's "Fields for subsequent steps" |
+| The trigger's filter | `Status is Open` didn't fire on a change from Open to Draft, and did on Draft to Open |
+| The record changing before the action runs | The action works on the record as it is then, so it can hit a custom data rule |
+
 ## Relationships
 
 Tested on 2026-11-03 and 2026-11-04 in a real app, using `POST /tables/{child}/relationship/{id}`.
