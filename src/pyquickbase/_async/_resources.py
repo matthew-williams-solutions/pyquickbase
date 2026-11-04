@@ -32,13 +32,14 @@ from .._models import (
     table_info_from_api,
     unknown_report_message,
 )
-from .._query import Expression, F, FieldRef, build_query_body, compile_where
+from .._query import Expression, F, FieldRef, FieldRefs, build_query_body, compile_where
 from .._schema import SchemaCache
 from .._typed import (
     OrderBy,
     R,
     Row,
     TypedField,
+    TypedPage,
     column_ids,
     order_refs,
     raise_for_problems,
@@ -376,8 +377,8 @@ class AsyncTable:
     async def _query_body(
         self,
         where: Expression | str | None,
-        select: FieldRef | Sequence[FieldRef] | None,
-        order_by: FieldRef | Sequence[FieldRef] | None,
+        select: FieldRefs | None,
+        order_by: FieldRefs | None,
     ) -> dict[str, Any]:
         table_id = (await self.info()).id
         return await self._with_fields(
@@ -396,12 +397,31 @@ class AsyncTable:
         self,
         *,
         where: Expression | str | None = None,
-        select: FieldRef | Sequence[FieldRef] | None = None,
-        order_by: FieldRef | Sequence[FieldRef] | None = None,
+        select: FieldRefs | None = None,
+        order_by: FieldRefs | None = None,
         top: int = 100,
         skip: int = 0,
     ) -> Page:
-        """Fetch one page of records. See `query` for the arguments."""
+        """Fetch one page of records, for controlling paging yourself.
+
+        Args:
+            where: A condition built with `F`, or a hand-written string, which gets checked.
+            select: The fields to return, by label, ID, or field object. Defaults to the table's
+                default fields. Record ID# is always included.
+            order_by: The fields to sort by, by label, ID, or field object. Prefix a label with `-`,
+                or negate an ID, to sort descending. Without this, records come back in Record ID#
+                order.
+            top: The most records to return.
+            skip: How many matching records to pass over first. Use the previous page's `next_skip`.
+
+        Returns:
+            A `Page` with `records`, `total`, `skip`, `has_more`, and `next_skip`. Skipping past the
+            end returns no records rather than raising an error.
+
+        Raises:
+            UnknownFieldError: The table has no such field. Nothing was queried.
+            QueryError: An argument can't be sent as written. Nothing was queried.
+        """
         _require_positive("top", top)
         if skip < 0:
             raise QueryError("skip can't be negative.")
@@ -412,8 +432,8 @@ class AsyncTable:
         self,
         *,
         where: Expression | str | None = None,
-        select: FieldRef | Sequence[FieldRef] | None = None,
-        order_by: FieldRef | Sequence[FieldRef] | None = None,
+        select: FieldRefs | None = None,
+        order_by: FieldRefs | None = None,
         page_size: int = 1000,
         limit: int | None = None,
     ) -> AsyncRecordIterator:
@@ -421,12 +441,21 @@ class AsyncTable:
 
         Args:
             where: A condition built with `F`, or a hand-written string, which gets checked.
-            select: Field labels or IDs. Defaults to the table's default fields. Record ID# is
-                always included.
-            order_by: Field labels or IDs. Prefix a label with `-`, or negate an ID, to sort
-                descending. Without this, records come back in Record ID# order.
+            select: The fields to return, by label, ID, or field object. Defaults to the table's
+                default fields. Record ID# is always included.
+            order_by: The fields to sort by, by label, ID, or field object. Prefix a label with `-`,
+                or negate an ID, to sort descending. Without this, records come back in Record ID#
+                order.
             page_size: Records to request per call to Quickbase.
             limit: Stop after this many records.
+
+        Returns:
+            An iterator of `Record`, which only contacts Quickbase once you start iterating.
+
+        Raises:
+            UnknownFieldError: The table has no such field. Nothing was queried.
+            QueryError: An argument can't be sent as written. Nothing was queried. `page_size` and
+                `limit` raise this right away, and the others on first use.
         """
         _require_positive("page_size", page_size)
         if limit is not None:
@@ -439,22 +468,54 @@ class AsyncTable:
         self,
         *,
         where: Expression | str | None = None,
-        select: FieldRef | Sequence[FieldRef] | None = None,
-        order_by: FieldRef | Sequence[FieldRef] | None = None,
+        select: FieldRefs | None = None,
+        order_by: FieldRefs | None = None,
     ) -> Record | None:
-        """Get the first matching record, or None if there isn't one. See `query` for arguments."""
+        """Get the first matching record, or None if there isn't one.
+
+        Args:
+            where: A condition built with `F`, or a hand-written string, which gets checked.
+            select: The fields to return, by label, ID, or field object. Defaults to the table's
+                default fields.
+            order_by: The fields to sort by, which decide which record is first. See `query`.
+
+        Returns:
+            The record, or None.
+
+        Raises:
+            UnknownFieldError: The table has no such field. Nothing was queried.
+            QueryError: An argument can't be sent as written. Nothing was queried.
+        """
         page = await self.query_page(where=where, select=select, order_by=order_by, top=1)
         return page.records[0] if page.records else None
 
-    async def get(
-        self, record_id: int, *, select: FieldRef | Sequence[FieldRef] | None = None
-    ) -> Record | None:
-        """Get a record by its Record ID#, or None if it doesn't exist. See `query` for `select`."""
+    async def get(self, record_id: int, *, select: FieldRefs | None = None) -> Record | None:
+        """Get a record by its Record ID#, or None if it doesn't exist.
+
+        Args:
+            record_id: The record's Record ID#.
+            select: The fields to return, by label, ID, or field object. Defaults to the table's
+                default fields.
+
+        Returns:
+            The record, or None.
+
+        Raises:
+            InvalidValueError: `record_id` isn't a positive integer. Nothing was sent.
+            UnknownFieldError: The table has no such field. Nothing was queried.
+        """
         require_id("record_id", record_id)
         return await self.first(where=F(RECORD_ID_FIELD) == record_id, select=select)
 
     async def count(self, where: Expression | str | None = None) -> int:
-        """Count the matching records without fetching them."""
+        """Count the matching records without fetching them.
+
+        Args:
+            where: A condition built with `F`, or a hand-written string. Defaults to every record.
+
+        Returns:
+            The number of matching records.
+        """
         body = await self._query_body(where, None, None)
         return (await self._fetch_page({**body, "select": [RECORD_ID_FIELD]}, 1, 0)).total
 
@@ -488,9 +549,20 @@ class AsyncTable:
     ) -> WriteResult:
         """Create records from `{label or ID: value}` rows. This never changes existing records.
 
-        Raises `WriteError` if any row fails. Other rows are still written, and are listed in
-        the error's `result`. A value of `None` leaves the field empty, but a row needs at least
-        one real value, because Quickbase can silently skip a row without one.
+        Args:
+            rows: The rows. A value of `None` leaves the field empty, but a row needs at least one
+                real value, because Quickbase can silently skip a row without one.
+            batch_size: The most rows to send in one request.
+
+        Returns:
+            A `WriteResult`, whose `created_ids` are in the same order as `rows`.
+
+        Raises:
+            InvalidValueError: A row can't be sent, such as one that sets `Record ID#` or has no
+                real values. Nothing was written.
+            UnknownFieldError: A row names a field the table doesn't have. Nothing was written.
+            WriteError: A row failed. Other rows are still written, and are listed in the error's
+                `result`.
         """
         _require_positive("batch_size", batch_size)
         given = list(rows)
@@ -505,8 +577,22 @@ class AsyncTable:
         """Change existing records. Each row must set `Record ID#`.
 
         A record that doesn't exist is an error rather than being created.
-        Fields left out of a row keep their values, and a value of `None` clears the field.
-        Raises `WriteError` if any row fails. Other rows are still written.
+
+        Args:
+            rows: The rows. Fields left out of a row keep their values, and a value of `None` clears
+                the field.
+            batch_size: The most rows to send in one request.
+
+        Returns:
+            A `WriteResult`. A record whose values didn't change is in `unchanged_ids`, not
+            `updated_ids`.
+
+        Raises:
+            InvalidValueError: A row can't be sent, such as one without `Record ID#`. Nothing was
+                written.
+            UnknownFieldError: A row names a field the table doesn't have. Nothing was written.
+            WriteError: A row failed. Other rows are still written, and are listed in the error's
+                `result`.
         """
         _require_positive("batch_size", batch_size)
         given = list(rows)
@@ -523,7 +609,23 @@ class AsyncTable:
     ) -> WriteResult:
         """Update the record whose unique `merge_on` field matches, or create one if none does.
 
-        Raises `WriteError` if any row fails. Other rows are still written.
+        Args:
+            rows: The rows, which must each set `merge_on`.
+            merge_on: A field marked as unique, by label or ID.
+            batch_size: The most rows to send in one request.
+
+        Returns:
+            A `WriteResult`, with new records in `created_ids`, changed ones in `updated_ids`, and
+            ones that already matched in `unchanged_ids`.
+
+        Raises:
+            InvalidValueError: A row can't be sent, such as one without `merge_on`. Nothing was
+                written.
+            UnknownFieldError: `merge_on` or a row names a field the table doesn't have. Nothing was
+                written.
+            BadRequestError: `merge_on` isn't a unique field. Nothing was written.
+            WriteError: A row failed. Other rows are still written, and are listed in the error's
+                `result`.
         """
         _require_positive("batch_size", batch_size)
         given = list(rows)
@@ -540,8 +642,17 @@ class AsyncTable:
     async def delete(self, where: Expression | str) -> int:
         """Delete the matching records and return how many were deleted.
 
-        `where` is required and is checked first. Quickbase would otherwise treat a lowercase
-        operator as "contains" and delete far more than you meant.
+        Args:
+            where: A condition built with `F`, or a hand-written string. It's required and is
+                checked first, because Quickbase would otherwise treat a lowercase operator as
+                "contains" and delete far more than you meant.
+
+        Returns:
+            The number of records deleted, which is 0 if none matched.
+
+        Raises:
+            QueryError: `where` can't be sent as written. Nothing was deleted.
+            UnknownFieldError: `where` names a field the table doesn't have. Nothing was deleted.
         """
         table_id = (await self.info()).id
         clause = await self._with_fields(lambda fields: compile_where(where, FieldIndex(fields)))
@@ -625,7 +736,8 @@ class AsyncTable:
                 `numeric`, `currency`, `rating`, `percent`, `multitext`, `email`, `url`, `duration`,
                 `date`, `datetime`, `timestamp`, `timeofday`, `checkbox`, `user`, `multiuser`,
                 `address`, `phone`, or `file`. A `datetime` field reports its type as `timestamp`.
-            choices: The options of a `text-multiple-choice` or `multitext` field.
+            choices: The options of a `text-multiple-choice` or `multitext` field. Quickbase still
+                accepts other values unless `properties` sets `allowNewChoices` to False.
             required: Whether the field must have a value. Quickbase refuses this if the table has
                 records, because the new field is empty on all of them.
             unique: Whether values must be different on every record.
@@ -1138,6 +1250,45 @@ class AsyncTypedTable(Generic[R]):
             limit=limit,
         )
         return AsyncTypedIterator(self._check_once, self._model, records)
+
+    async def query_page(
+        self,
+        *,
+        where: Expression | str | None = None,
+        order_by: OrderBy = None,
+        top: int = 100,
+        skip: int = 0,
+    ) -> TypedPage[R]:
+        """Fetch one page of records as instances of the class, for controlling paging yourself.
+
+        Every field in the class is selected.
+
+        Args:
+            where: A condition built with `Tasks.fields` or `F`, or a query string.
+            order_by: A field or list of fields, such as `Tasks.fields.title`, or
+                `Tasks.fields.title.desc` for descending. Without this, records come back in
+                Record ID# order.
+            top: The most records to return.
+            skip: How many matching records to pass over first. Use the previous page's `next_skip`.
+
+        Returns:
+            The records, with `total`, `skip`, `has_more`, and `next_skip`.
+
+        Raises:
+            SchemaMismatchError: The class no longer matches the table.
+            QueryError: `where`, `top`, or `skip` can't be sent as written. Nothing was sent.
+            InvalidResponseError: A record has a fraction in a whole number field.
+        """
+        await self._check_once()
+        page = await self._table.query_page(
+            where=where,
+            select=column_ids(self._model),
+            order_by=order_refs(order_by),
+            top=top,
+            skip=skip,
+        )
+        records = tuple(self._model.from_record(record) for record in page.records)
+        return TypedPage(records=records, total=page.total, skip=page.skip)
 
     async def first(
         self, *, where: Expression | str | None = None, order_by: OrderBy = None

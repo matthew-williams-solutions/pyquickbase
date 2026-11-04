@@ -57,6 +57,8 @@ These support the classes from `pyquickbase codegen`, and you rarely need them d
 
 ::: pyquickbase.TypedIterator
 
+::: pyquickbase.TypedPage
+
 ::: pyquickbase.TypedRecord
 
 ::: pyquickbase.TypedField

@@ -93,7 +93,7 @@ Tested on 2026-11-02 against temporary tables in a sandbox app.
 | `mergeFieldId` on a non-unique field, or a row without the merge field | 400 for the whole request |
 | Unknown field, formula field, built-in field | Row error |
 | A batch where every row sets the same one field, and a row's value is empty | **That row is silently skipped, with no error**, so `createdRecordIds` no longer lines up with the rows. A batch of one row, or using two or more fields, creates it. `insert()` and `upsert()` refuse these rows |
-| A value outside a field's choices | Accepted when `allowNewChoices` is on, otherwise a row error |
+| A value outside a field's choices | Accepted when `allowNewChoices` is on, which is the default for a field made through the API, otherwise a row error |
 | The row error for an invalid choice | `The field with ID '7' has an invalid choice.` Confirmed again in a three-row import: 207, `raise_for_status()` passes, and the other two rows are saved |
 | Empty `data` | 400 |
 | `DELETE /records` without `where`, or with an empty one | 400 |

@@ -1,7 +1,18 @@
 # Reading records
 
-The examples use the sync client. With the async client, use `await` on each call and `async for`
-on `query()`.
+This page covers finding tables and fields, querying records, reading their values, and running
+reports. To write records, see [Writing records](writing.md).
+
+```python
+from pyquickbase import Quickbase
+
+with Quickbase(realm="acme", token="your_user_token") as qb:
+    tasks = qb.app("bq1234567").table("Tasks")
+    print(tasks.count())
+```
+
+The other examples on this page use `qb` and `tasks`, made in the same way, with the sync client. With
+the async client, use `await` on each call and `async for` on `query()`.
 
 !!! tip "Try it without installing anything"
     The [playground](../playground.md) runs these in your browser, against simulated sample data.
@@ -28,7 +39,7 @@ the cache triggers one refresh before it counts as unknown.
 ## Getting one record
 
 `first()` returns the first match, and `get()` finds a record by its Record ID#. Each returns None if
-there's no such record.
+there's no such record, rather than raising an error.
 
 ```python
 task = tasks.first(where=F("Status") == "Open", order_by="Due Date", select=["Title"])
@@ -114,8 +125,8 @@ for task in tasks.query(
 | Argument | Meaning |
 |---|---|
 | `where` | A condition built with `F`, or a query string |
-| `select` | Field labels or IDs. Defaults to the table's default fields |
-| `order_by` | Field labels or IDs. Prefix a label with `-`, or negate an ID, to sort descending |
+| `select` | Field labels, IDs, or field objects. Defaults to the table's default fields |
+| `order_by` | Field labels, IDs, or field objects. Prefix a label with `-`, or negate an ID, to sort descending |
 | `page_size` | Records to request per call to Quickbase. Defaults to 1,000 |
 | `limit` | Stop after this many records |
 
@@ -126,12 +137,43 @@ sort.
 Paging uses offsets, so if records are deleted while you read, others can be skipped without any error.
 Avoid deleting from the set you're reading, or read it all first.
 
-To control paging yourself, use `query_page()`. To count without fetching, use `count()`.
+To count without fetching, use `count()`.
+
+Field objects are `F("Status")`, or `Tasks.fields.status` from a
+[generated class](codegen.md#reading). They name exactly that field, so a leading `-` in one is part of
+the label. To sort a generated class's field descending, use `Tasks.fields.status.desc`. A generated
+class's own `order_by` takes only these fields or their IDs, not labels.
+
+## Fetching one page at a time
+
+`query_page()` fetches a single page, for when you control the paging yourself, such as behind a list
+endpoint. It takes the same arguments as `query()`, with `top` and `skip` in place of `page_size` and
+`limit`.
 
 ```python
-page = tasks.query_page(where=F("Status") == "Open", top=100, skip=0)
-print(len(page.records), page.total, page.has_more, page.next_skip)
+from pyquickbase import F
+
+skip = 0
+while True:
+    page = tasks.query_page(where=F("Status") == "Open", select=["Title"], top=100, skip=skip)
+    for task in page.records:
+        print(task["Title"])
+    if not page.has_more:
+        break
+    skip = page.next_skip
 ```
+
+| Attribute | Meaning |
+|---|---|
+| `records` | This page's records |
+| `total` | Every match, not just this page |
+| `skip` | The `skip` this page was fetched with |
+| `has_more` | Whether any matches come after this page |
+| `next_skip` | The `skip` that fetches the following page |
+
+Skipping past the end returns no records rather than raising an error, with `total` still correct.
+A [generated class](codegen.md#reading-a-page-at-a-time) has its own `query_page()`, which returns
+instances of the class.
 
 ## Reading values
 
@@ -147,7 +189,12 @@ print(dict(task))
 
 Date fields come back as `date` objects and timestamp fields as timezone-aware `datetime` objects, or
 `None` when empty. Other values are as Quickbase returns them, so a user field is a dictionary and
-a numeric field is a `float`.
+a numeric field is a `float`. [Field types](../field-types.md) lists what every type reads as, including
+when it's empty.
+
+**A record only holds the fields you selected.** Without `select`, that's the table's default fields, so
+a built-in field such as `Record Owner` may be missing. Reading a missing field raises `KeyError`, and
+`3 in record` checks for one first.
 
 ## Running reports
 
@@ -189,3 +236,21 @@ Running a report adds to its usage count in Quickbase, but changes no records.
 Report details come from the same cache as other metadata, so `usedCount` in `raw` can be out of
 date, and so can the details used to check that a report is a table report. Quickbase's UI doesn't let
 you change a saved report's type.
+
+## When something is refused
+
+These all raise before the query is sent, though the SDK may read table metadata first to check them.
+
+| What happened | Exception |
+|---|---|
+| The app has no such table, or the table is in another app | `UnknownTableError` |
+| `select`, `order_by`, or `where` names a field the table doesn't have, or the token can't see | `UnknownFieldError` |
+| `where` can't be sent as written, such as a lowercase operator in a query string | `QueryError` |
+| `top`, `page_size`, or `limit` below 1, or a negative `skip` | `QueryError` |
+| `select` or `order_by` isn't a field or a list of them | `QueryError` |
+| `get()` with something other than a positive integer | `InvalidValueError` |
+| Reading a field the record doesn't hold | `KeyError` |
+| The table has no such report, or several with that name | `UnknownReportError` |
+| A summary, chart, or ask-the-user report | `UnsupportedReportError` |
+
+See [Handling errors](errors.md) for failures that come from Quickbase, such as a refused token.

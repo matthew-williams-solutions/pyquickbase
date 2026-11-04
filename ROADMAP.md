@@ -29,7 +29,7 @@ Nothing here should break anyone.
 - A way to set `fieldHelp` and the other field settings the API takes outside `properties`.
 - A per-call timeout for uploads and downloads.
 - A small config file to choose generated names.
-- `query_page()`, `select`, and `batch_size` on typed tables. `select` needs a design, because a
+- `select` and `batch_size` on typed tables. `select` needs a design, because a
   generated class requires every column.
 - A setting that repeats a typed table's schema check after a set time.
 - Typed access to file and user values, as a dictionary subclass, which could leave out uploader emails.

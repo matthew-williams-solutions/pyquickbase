@@ -575,6 +575,31 @@ def test_generated_classes_read_and_write(
         Tasks.new(doubled=1)
 
 
+def test_generated_classes_read_a_page_at_a_time(
+    qb: Quickbase, scratch: Any, seeded: str, tmp_path: Path
+) -> None:
+    Tasks = generated_class(scratch, seeded, tmp_path)
+    tasks = qb.app(scratch.app_id).typed(Tasks)
+    where = Tasks.fields.amount > 1
+
+    first = tasks.query_page(where=where, order_by=Tasks.fields.amount.desc, top=2)
+    assert all(isinstance(task, Tasks) for task in first.records)
+    assert [task.code for task in first.records] == ["C5", "C4"]
+    assert first.records[0].due_date == date(2027, 1, 5)
+    assert (first.total, first.skip, first.has_more, first.next_skip) == (4, 0, True, 2)
+
+    last = tasks.query_page(
+        where=where, order_by=Tasks.fields.amount.desc, top=2, skip=first.next_skip
+    )
+    assert [task.code for task in last.records] == ["C3", "C2"]
+    assert (last.skip, last.has_more, last.next_skip) == (2, False, 4)
+
+    # The untyped table takes the same fields, and sorts the same way.
+    untyped = tasks.table.query_page(where=where, order_by=Tasks.fields.amount, top=1)
+    assert untyped.records[0]["Code"] == "C2"
+    assert (tasks.table.first(order_by=Tasks.fields.amount.desc))["Code"] == "C5"
+
+
 def test_check_schema_notices_what_first_use_doesnt(
     scratch: Any, qb: Quickbase, tmp_path: Path
 ) -> None:
