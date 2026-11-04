@@ -6,14 +6,25 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0rc5] - 2026-11-04
+
+This candidate closes gaps that would be hard to change after 1.0, and has four more breaking
+changes, so check the list under Changed before upgrading.
+
 ### Added
 
+- `Expression`, `FieldRef`, `FieldRefs`, and `OrderBy` are now exported, as they appear in public
+  signatures.
+- `batch_size` on `insert()`, `update()`, and `upsert()` of a typed table.
 - `TypedTable.query_page()`, which returns a page of generated class instances as a new `TypedPage`,
   with `total`, `skip`, `has_more`, and `next_skip`. It runs the same schema check as other typed
   methods.
 
 ### Fixed
 
+- A `datetime` with a fraction of a second can now be written, including `datetime.now(UTC)`. Before,
+  Quickbase refused it as a row error, because Python's default of six fractional digits isn't
+  accepted.
 - `order_by` and `select` on an untyped table now accept a field from a generated class or `F`, such
   as `tasks.table.query_page(order_by=Tasks.fields.title)`. Before, it raised a bare `TypeError`. Any
   other unusable value now raises `QueryError`.
@@ -22,6 +33,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Breaking:** `==` and `!=` on a `user` field now work, by email or user ID. Before, `==` silently
+  matched nothing, and `!=` silently matched every record, including that user's, so a `delete()` with
+  it could remove more than intended. Check any code that compares a `user` field.
+- **Breaking:** `F` now raises `QueryError` for `_curuser_` on a `user` or `multiuser` field, because
+  Quickbase reads it as the token's owner, so a value from someone else could match that person's
+  records. A query string can still use it on purpose.
+- **Breaking:** a typed table now raises `InvalidValueError` for a row made by a class for another
+  table, whose field IDs would mean different fields. Before, only a type checker refused it.
 - **Breaking:** `order_by` on a typed table now takes only what its signature says, a field of the
   generated class or its ID, alone or in a list. Anything else raises `QueryError`. Before, `["Title"]`
   and `[F("Title")]` happened to work, `"Title"` was read as one field name per letter, and

@@ -115,7 +115,8 @@ def to_api_value(value: Any) -> Any:
     if isinstance(value, datetime):
         if value.tzinfo is None:
             raise InvalidValueError("A datetime needs a timezone, so its meaning is clear.")
-        return value.isoformat()
+        # Quickbase refuses Python's default of six fractional digits, and only accepts three.
+        return value.isoformat(timespec="milliseconds" if value.microsecond else "seconds")
     if isinstance(value, date):
         return value.isoformat()
     raise InvalidValueError(f"Can't write a value of type {type(value).__name__}.")

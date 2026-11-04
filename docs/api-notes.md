@@ -76,6 +76,11 @@ any text you don't control.
 | `_FID_6x`, `_FID_06`, `_FID_ 6`, `_FID_6 x`, `\_FID_6` | The same. A leading space, other text, or `\\` before `_FID_` makes it literal, so there's no way to search for this exact text |
 | `_ask1_` | 400, `Incomplete reports not supported`. `_ASK1_` is literal |
 | `_curuser_`, on a text field | Literal |
+| `_curuser_`, on a `multiuser` field | **The token's owner**, with `EX`, `TV`, and `HAS`, ignoring case and surrounding spaces |
+| `_curuser_`, on a `user` field | **The token's owner** with `TV`, ignoring case and surrounding spaces. Nothing with `EX` |
+| Matching a `user` field | `TV` and `XTV` with an email or user ID, ignoring case, and with `''` for empty. **`EX` matched nothing**, including the field's real user, and so did `CT` and `HAS`. **`XEX` matched every record, including that user's.** `EX` and `XEX` with `''` do work. `F` sends `TV` and `XTV` for `==` and `!=` here |
+| Matching a `multiuser` field | `EX`, `TV`, or `HAS` with an email or user ID, and `CT` with a name |
+| Text on a date or timestamp field | Read as a date: `today`, `yesterday`, and `1 day ago` matched. Text it can't read, such as `garbage`, `last week`, or `now`, **matched nothing, with no error** |
 | `TRUE`, `NULL`, `today`, `*`, `%`, `_` on a text field | Literal |
 
 ## Writes
@@ -427,7 +432,8 @@ A `datetime` field reports its type as `timestamp`.
 | `dblink` | Created by a relationship, on the parent table |
 | Labels | **Can contain almost anything, including `"""`, line breaks, and code**, as can table names |
 | Label uniqueness | Exact duplicates are refused, ignoring case, but `Due Date` and `Due-Date` can both exist |
-| Table names | `POST /tables` refuses a name already in use with 400, `Table name exists` |
+| Table names | `POST /tables` and renaming with `POST /tables/{id}` refuse a name already in use with 400, `Table name exists`, ignoring case and surrounding spaces |
+| Writing a timestamp | `2027-01-02T03:04:05+00:00` and three fractional digits are accepted. **Python's default of six, or one, is a row error**, `Incompatible value`. It reads back to the second |
 | `properties` | An unknown key is refused with 400, `Extraneous key`. `fieldHelp` isn't a property, and neither are `choices` on a type without them |
 | `POST /fields/{id}` with `required: true` | 400, `field contains null values`, if any record has it empty, which includes a new field on a table with records |
 | `POST /fields/{id}` with `unique: true` | 400, `field contains non-unique values`, if it holds duplicates. A new, empty field on a table with records is allowed |

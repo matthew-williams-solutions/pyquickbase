@@ -81,12 +81,12 @@ class AsyncTypedTable(Generic)
     async def delete(self, where: Expression | str) -> int
     async def first(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None) -> ~R | None
     async def get(self, record_id: int) -> ~R | None
-    async def insert(self, rows: Iterable[Row[~R]]) -> WriteResult
+    async def insert(self, rows: Iterable[Row[~R]], *, batch_size: int = 1000) -> WriteResult
     def query(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, limit: int | None = None) -> 'AsyncTypedIterator[R]'
     async def query_page(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, top: int = 100, skip: int = 0) -> TypedPage[~R]
     property table -> AsyncTable
-    async def update(self, rows: Iterable[Row[~R]]) -> WriteResult
-    async def upsert(self, rows: Iterable[Row[~R]], *, merge_on: TypedField) -> WriteResult
+    async def update(self, rows: Iterable[Row[~R]], *, batch_size: int = 1000) -> WriteResult
+    async def upsert(self, rows: Iterable[Row[~R]], *, merge_on: TypedField, batch_size: int = 1000) -> WriteResult
 class AuthenticationError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
 class BadRequestError(APIError)
@@ -101,6 +101,11 @@ class Column(object)
     field read_as: str
     field writable: bool
 class ConfigurationError(QuickbaseError, ValueError)
+class Expression(object)
+    def __and__(self, other: 'Expression') -> 'Group'
+    def __bool__(self) -> bool
+    def __or__(self, other: 'Expression') -> 'Group'
+    def compile(self, fields: FieldIndex) -> str
 class F(object)
     def __eq__(self, value: object) -> Condition
     def __ge__(self, value: Any) -> Condition
@@ -136,6 +141,8 @@ class Field(object)
     field summary_target_field_id: int | None
     field type: str
     field unique: bool
+value FieldRef = str | int
+value FieldRefs = str | int | F | Sequence[str | int | F]
 class FileDownload(object)
     def __eq__(self, other)
     def __init__(self, *, name: str, data: bytes, content_type: str | None) -> None
@@ -158,6 +165,7 @@ class InvalidValueError(QuickbaseError, ValueError)
 class NetworkError(QuickbaseError)
 class NotFoundError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
+value OrderBy = TypedField | int | Sequence[TypedField | int] | None
 class Page(object)
     def __eq__(self, other)
     def __init__(self, *, records: tuple[Record, ...], total: int, skip: int) -> None
@@ -234,6 +242,7 @@ class Role(object)
     field name: str
     field raw: Mapping[str, Any]
 class Row(dict, Generic)
+    def __init__(self, values: Mapping[int, Any] | None = None, *, table_id: str | None = None) -> None
 class RowError(object)
     def __eq__(self, other)
     def __init__(self, *, index: int, messages: tuple[str, ...], kind: Literal['duplicate', 'permission', 'invalid_choice', 'rule', 'other'] = 'other', field_id: int | None = None) -> None
@@ -315,12 +324,12 @@ class TypedTable(Generic)
     def delete(self, where: Expression | str) -> int
     def first(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None) -> ~R | None
     def get(self, record_id: int) -> ~R | None
-    def insert(self, rows: Iterable[Row[~R]]) -> WriteResult
+    def insert(self, rows: Iterable[Row[~R]], *, batch_size: int = 1000) -> WriteResult
     def query(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, limit: int | None = None) -> 'TypedIterator[R]'
     def query_page(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, top: int = 100, skip: int = 0) -> TypedPage[~R]
     property table -> Table
-    def update(self, rows: Iterable[Row[~R]]) -> WriteResult
-    def upsert(self, rows: Iterable[Row[~R]], *, merge_on: TypedField) -> WriteResult
+    def update(self, rows: Iterable[Row[~R]], *, batch_size: int = 1000) -> WriteResult
+    def upsert(self, rows: Iterable[Row[~R]], *, merge_on: TypedField, batch_size: int = 1000) -> WriteResult
 value UNSET = UNSET
 class UnknownFieldError(QuickbaseError, LookupError)
 class UnknownReportError(QuickbaseError, LookupError)

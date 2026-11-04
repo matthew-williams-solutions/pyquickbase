@@ -29,16 +29,14 @@ Nothing here should break anyone.
 - A way to set `fieldHelp` and the other field settings the API takes outside `properties`.
 - A per-call timeout for uploads and downloads.
 - A small config file to choose generated names.
-- `select` and `batch_size` on typed tables. `select` needs a design, because a
-  generated class requires every column.
+- `select` on typed tables, which needs a design, because a generated class requires every column.
 - A setting that repeats a typed table's schema check after a set time.
 - Typed access to file and user values, as a dictionary subclass, which could leave out uploader emails.
-- Export `FieldRef`, `OrderBy`, and `Expression`, which appear in public signatures.
-- Tie a `Row` to its class when the code runs. Only a type checker refuses a row from another class.
 
 ## Docs playground
 
 - Simulate updates and deletes, then add "Try it" links from each guide to its own example.
+- Simulate queries on `user` fields, which `docs/api-notes.md` now records. The simulator refuses them.
 
 ## Demo app
 
@@ -71,13 +69,6 @@ the result to `docs/api-notes.md`.
   ID#.
 - Do a report's pages stay stable with ties above 1,200 records? A report's sort can't add Record ID#.
 
-**Queries, continued**
-
-- What does `_curuser_` match on a user field? On a text field it's literal, but a value from someone
-  else could match the token owner's records on a user field. Other relative values on date fields, such
-  as `today`, may behave the same way. `docs/guides/agents.md` calls this unconfirmed, so update it
-  with the answer.
-
 **Fields and files**
 
 - What do lookups return for types other than text, numeric, and date, and what about field types only
@@ -93,5 +84,5 @@ the result to `docs/api-notes.md`.
 - Can a restricted user's formula read a table their role has no access to? A role's hidden fields held
   up, but this wasn't tested, because the role's other tables were the seeded ones.
   `docs/guides/agents.md` calls this untested, so update it with the answer.
-- Can renaming a table, or using the UI, give two tables the same name? If so, `app.table()` takes the
-  first match, unlike fields and reports, which raise an error.
+- Can the UI give two tables the same name? The API refuses it, ignoring case. If so, `app.table()`
+  takes the first match, unlike fields and reports, which raise an error.

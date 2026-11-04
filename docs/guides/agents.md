@@ -105,12 +105,14 @@ That protects the shape of a query, not its meaning:
 - **`delete()` requires `where`,** so leaving it out can't delete everything, but a broad condition
   still can. Call `count()` with the same condition first, and compare it with what you expect.
 
-!!! warning "`_curuser_` and other relative values are unconfirmed"
-    `F` sends `_curuser_` and `today` unchanged. Quickbase treats both as literal text on a text
-    field, but what they do on other fields hasn't been tested. A value from someone else might
-    match the token owner's records on a user field, and relative values on a date field may behave
-    the same way. Until that's known, don't pass a model's text to those fields. Convert dates to
-    `date` objects, and check user values against the ones you expect.
+!!! note "`_curuser_` and relative dates"
+    On a `user` or `multiuser` field, Quickbase reads `_curuser_` as the token's owner, ignoring case
+    and surrounding spaces, so a value from someone else could match the owner's records. `F` raises
+    `QueryError` for it there. On a text field it's literal text, so `F` allows it.
+
+    On a date field, Quickbase reads text such as `today` or `1 day ago` as a date. That gives a
+    model nothing it couldn't get by naming the date, but text it can't read matches nothing, with no
+    error. Convert dates to `date` objects, so a bad one fails right away.
 
 ## Reading results
 

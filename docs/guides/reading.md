@@ -69,16 +69,21 @@ print(tasks.count(where))
 | `F("Title").starts_with("x")`, `.not_starts_with("x")` | Text at the start of the value |
 | `F("Status").is_in(["Done", "Blocked"])` | Any of the values |
 | `F("Tags").op("HAS", "x")` | Any other Quickbase operator |
+| `F("Owner") == "a@example.com"` | A `user` or `multiuser` field, by email or user ID |
 
 Using `and`, `or`, or a chained comparison like `1 < F("x") < 5` raises `QueryError`, because
 Python would otherwise silently drop part of the condition.
 
-A `datetime` needs a timezone. Some text would otherwise change what a query means, because Quickbase
+A `datetime` needs a timezone. On a date field, Quickbase reads text such as `today` or `1 day ago` as a
+date, and text it can't read matches nothing with no error, so prefer `date` objects. Some text would otherwise change what a query means, because Quickbase
 reads it as query syntax even inside quotes, so `F` handles it for you:
 
 - Values containing `{` or `}` are refused, because Quickbase can't search for them.
 - Values like `_FID_6` are refused, because Quickbase compares them with that field, so
   `F("Code") == "_FID_7"` could match every record. These can't be searched for either.
+- `_curuser_` is refused on a `user` or `multiuser` field, because Quickbase reads it as the token's
+  owner, so `F("Team") == "_curuser_"` could match that person's records. To mean that on purpose, write a
+  [query string](#hand-written-query-strings).
 - An uppercase `OR` or `AND` standing alone is sent in lowercase, because `a OR b` would otherwise match
   `a` and `b` rather than that text. Comparisons ignore case, so this still finds it.
 
@@ -245,7 +250,7 @@ These all raise before the query is sent, though the SDK may read table metadata
 |---|---|
 | The app has no such table, or the table is in another app | `UnknownTableError` |
 | `select`, `order_by`, or `where` names a field the table doesn't have, or the token can't see | `UnknownFieldError` |
-| `where` can't be sent as written, such as a lowercase operator in a query string | `QueryError` |
+| `where` can't be sent as written, such as a lowercase operator in a query string, or `_curuser_` on a user field through `F` | `QueryError` |
 | `top`, `page_size`, or `limit` below 1, or a negative `skip` | `QueryError` |
 | `select` or `order_by` isn't a field or a list of them | `QueryError` |
 | `get()` with something other than a positive integer | `InvalidValueError` |

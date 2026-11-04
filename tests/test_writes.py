@@ -58,6 +58,13 @@ def test_to_api_value(value: Any, expected: Any) -> None:
     assert to_api_value(value) == expected
 
 
+def test_a_datetime_is_written_with_the_precision_quickbase_accepts() -> None:
+    whole = datetime(2027, 1, 2, 3, 4, 5, tzinfo=UTC)
+    assert to_api_value(whole) == "2027-01-02T03:04:05+00:00"
+    assert to_api_value(whole.replace(microsecond=123456)) == "2027-01-02T03:04:05.123+00:00"
+    assert to_api_value(whole.replace(microsecond=500)) == "2027-01-02T03:04:05.000+00:00"
+
+
 def test_to_api_value_rejects_ambiguous_and_unknown_values() -> None:
     with pytest.raises(InvalidValueError, match="timezone"):
         to_api_value(datetime(2026, 1, 2))

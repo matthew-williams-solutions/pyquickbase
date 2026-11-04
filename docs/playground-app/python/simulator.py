@@ -43,7 +43,7 @@ _EMPTY: dict[str, Any] = {
     "file": {"url": "", "versions": []},
 }
 _NUMERIC_TYPES = {"numeric", "currency", "recordid"}
-_NOT_SIMULATED_IN_QUERIES = {"user", "file"}  # docs/api-notes.md doesn't record how they match.
+_NOT_SIMULATED_IN_QUERIES = {"user", "file"}  # See ROADMAP.md for user fields.
 
 
 def _field(
