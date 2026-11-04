@@ -608,3 +608,59 @@ async def test_check_schema_notices_what_first_use_doesnt(
         await tasks.check_schema()
     with pytest.raises(SchemaMismatchError):
         await tasks.count()
+
+
+async def test_setup_methods_create_once_and_read_back_exactly(
+    qb: AsyncQuickbase, scratch: Any
+) -> None:
+    app = qb.app(scratch.app_id)
+    parent_id = scratch.table(("Name", "text")).info().id
+    child_id = scratch.table(("Hours", "numeric")).info().id
+    parent, child = app.table(parent_id), app.table(child_id)
+
+    assert (await app.ensure_table((await parent.info()).name)).__class__ is parent.__class__
+    field = await child.ensure_field("Code", "text", unique=True, required=True)
+    assert field.unique
+    assert field.required
+    assert (await child.ensure_field("code", "text", unique=True)).id == field.id
+    with pytest.raises(SchemaMismatchError):
+        await child.ensure_field("Code", "numeric")
+
+    link = await child.ensure_relationship(parent, foreign_key_label="Parent")
+    assert (await child.ensure_relationship(parent, foreign_key_label="Parent")).id == link.id
+    foreign_key = next(f for f in await child.fields(refresh=True) if f.label == "Parent")
+    assert foreign_key.is_foreign_key
+    assert foreign_key.decimal_places == 0
+
+    # Two in a row, because resending an existing lookup's ID creates an unrelated lookup.
+    await parent.ensure_field("Owner", "text")
+    name = await child.ensure_lookup_field(link, "Name", label="Parent Name")
+    owner = await child.ensure_lookup_field(link, "Owner")
+    assert name.label == "Parent Name"
+    assert owner.mode == "lookup"
+    assert (await child.ensure_lookup_field(link, "Name", label="Parent Name")).id == name.id
+    lookups = [f for f in await child.fields(refresh=True) if f.mode == "lookup"]
+    assert len(lookups) == 2
+
+    summary = await child.ensure_summary_field(link, "Hours", "Hours Sum")
+    assert summary.mode == "summary"
+    assert summary.summary_function == "SUM"
+    assert (await child.ensure_summary_field(link, "Hours", "Hours Sum")).id == summary.id
+    total = await parent.ensure_field("Total", "numeric", formula="Nz([Hours Sum])")
+    assert (await parent.ensure_field("Total", "numeric", formula="Nz([Hours Sum])")).id == total.id
+
+    created = await parent.insert([{"Name": "P"}])
+    record = await parent.get(created.created_ids[0], select=["Hours Sum", "Total"])
+    assert record is not None
+    assert record["Hours Sum"] is None
+    assert record["Total"] == 0
+    assert await parent.get(999999) is None
+    assert (await parent.first(where=F("Name") == "P", select=["Name"])) is not None
+
+    await child.insert([{"Code": "a", "Parent": created.created_ids[0], "Hours": 2}])
+    with pytest.raises(WriteError) as caught:
+        await child.insert([{"Code": "a"}])
+    assert caught.value.result.errors[0].kind == "duplicate"
+    assert caught.value.result.errors[0].field_id == field.id
+
+    assert any(role.access for role in await app.roles())

@@ -2,6 +2,7 @@
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, fields
+from decimal import Decimal
 from typing import Any, ClassVar, Generic, Self, TypeVar
 
 from ._models import Field, Record
@@ -36,6 +37,18 @@ WRITABLE_TYPES = {
 def is_writable(field: Field) -> bool:
     """Whether a field can be written. Types we haven't confirmed count as read-only."""
     return field.mode is None and field.id > _BUILT_IN_FIELDS and field.type in WRITABLE_TYPES
+
+
+def read_as(field: Field) -> str:
+    """How a generated class converts a field's value, as a query returns every number as a float.
+
+    `decimal_places` is only how a number is displayed, so `TypedRecord` still checks each value.
+    """
+    if field.type == "currency":
+        return "decimal"
+    if field.type == "numeric" and (field.is_foreign_key or field.decimal_places == 0):
+        return "int"
+    return ""
 
 
 class Unset:
@@ -77,13 +90,17 @@ def order_refs(order_by: OrderBy) -> list[int] | None:
 
 @dataclass(frozen=True, slots=True)
 class Column:
-    """How a generated attribute maps to a field. `field_type` is what codegen saw."""
+    """How a generated attribute maps to a field. `field_type` is what codegen saw.
+
+    `read_as` is `int` or `decimal` when a number gets converted, and empty otherwise.
+    """
 
     name: str
     id: int
     field_type: str
     writable: bool
     label: str
+    read_as: str = ""
 
 
 R = TypeVar("R", bound="TypedRecord")
@@ -94,6 +111,22 @@ class Row(dict[int, Any], Generic[R]):
 
     It's tied to its class, so a type checker refuses a row meant for another table.
     """
+
+
+def _converted(column: Column, value: Any) -> Any:
+    if value is None or not column.read_as:
+        return value
+    if column.read_as == "decimal":
+        # str() gives the shortest text for the float, which is the exact cents Quickbase holds.
+        return Decimal(str(value))
+    if value != int(value):
+        # Rounding could silently change an amount. The value isn't shown, as it may be sensitive.
+        raise InvalidResponseError(
+            f"Field {column.label!r} is set to no decimal places, so it was generated as an int, "
+            "but a record holds a fraction. Quickbase only uses that setting for display. Fix the "
+            "record, or change the setting and run `pyquickbase codegen` again."
+        )
+    return int(value)
 
 
 class TypedRecord:
@@ -114,7 +147,9 @@ class TypedRecord:
     def from_record(cls, record: Record) -> Self:
         """Build an instance from a record that holds every column."""
         try:
-            return cls(**{column.name: record[column.id] for column in cls.__columns__})
+            return cls(
+                **{column.name: _converted(column, record[column.id]) for column in cls.__columns__}
+            )
         except KeyError as exc:
             raise InvalidResponseError(
                 f"A {cls.__name__} record is missing a field. A report may have left it out, or "
@@ -148,6 +183,8 @@ def schema_problems(model: type[TypedRecord], current: Iterable[Field]) -> list[
             )
         elif field.type != column.field_type:
             problems.append(f"{column.name} was {column.field_type} and is now {field.type}")
+        elif column.read_as and read_as(field) != column.read_as:
+            problems.append(f"{column.name} is no longer read as {column.read_as}")
         elif column.writable and not is_writable(field):
             # Only this direction. A later SDK can confirm more writable types, which mustn't fail
             # a class generated before that, and a class that won't write a field is still safe.

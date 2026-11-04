@@ -120,3 +120,20 @@ class RateLimitError(APIError):
 
 class ServerError(APIError):
     """5xx: Quickbase failed to process the request."""
+
+
+class WritePermissionError(WriteError, PermissionDeniedError):
+    """A write was refused because of the token's role, so nothing in the failed rows changed.
+
+    Quickbase refuses some writes with a 403, and reports others as row errors in a successful
+    response, depending on the role. Both raise this, so `except PermissionDeniedError` and
+    `except WriteError` each catch it. `result` holds what earlier batches or rows did write.
+    `status_code` is 403 for a refused request, and 207 for row errors. If some rows failed for
+    other reasons as well, you get a plain `WriteError`, whose rows each have a `kind`.
+    """
+
+    def __init__(
+        self, summary: str, *, result: Any = None, status_code: int = 403, **kwargs: Any
+    ) -> None:
+        PermissionDeniedError.__init__(self, summary, status_code=status_code, **kwargs)
+        self.result = result

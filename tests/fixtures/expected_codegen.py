@@ -3,6 +3,7 @@
 # ruff: noqa
 import datetime as _dt
 from dataclasses import dataclass
+from decimal import Decimal as _Decimal
 from typing import Any, ClassVar, Self
 
 from pyquickbase import UNSET, Column, FileUpload, Row, TypedField, TypedRecord, Unset
@@ -67,7 +68,6 @@ class TasksFields_bqtasks:
     a_user = TypedField(24)
     a_multiuser = TypedField(25)
     a_file = TypedField(26)
-    a_dblink = TypedField(27)
     a_some_new_type = TypedField(28)
     a_formula = TypedField(100)
     a_lookup = TypedField(101)
@@ -91,7 +91,7 @@ class Tasks(TypedRecord):
         Column('a_address', 13, 'address', False, 'A address'),
         Column('a_timeofday', 14, 'timeofday', True, 'A timeofday'),
         Column('a_numeric', 15, 'numeric', True, 'A numeric'),
-        Column('a_currency', 16, 'currency', True, 'A currency'),
+        Column('a_currency', 16, 'currency', True, 'A currency', 'decimal'),
         Column('a_rating', 17, 'rating', True, 'A rating'),
         Column('a_percent', 18, 'percent', True, 'A percent'),
         Column('a_duration', 19, 'duration', True, 'A duration'),
@@ -102,7 +102,6 @@ class Tasks(TypedRecord):
         Column('a_user', 24, 'user', True, 'A user'),
         Column('a_multiuser', 25, 'multiuser', True, 'A multiuser'),
         Column('a_file', 26, 'file', True, 'A file'),
-        Column('a_dblink', 27, 'dblink', False, 'A dblink'),
         Column('a_some_new_type', 28, 'some-new-type', False, 'A some-new-type'),
         Column('a_formula', 100, 'numeric', False, 'A formula'),
         Column('a_lookup', 101, 'text', False, 'A lookup'),
@@ -123,7 +122,7 @@ class Tasks(TypedRecord):
     a_address: str
     a_timeofday: str
     a_numeric: float | None
-    a_currency: float | None
+    a_currency: _Decimal | None
     a_rating: float | None
     a_percent: float | None
     a_duration: float | None
@@ -134,7 +133,6 @@ class Tasks(TypedRecord):
     a_user: dict[str, Any] | None
     a_multiuser: list[dict[str, Any]]
     a_file: dict[str, Any]
-    a_dblink: Any
     a_some_new_type: Any
     a_formula: float | None
     a_lookup: str
@@ -155,7 +153,7 @@ class Tasks(TypedRecord):
         a_phone: str | None | Unset = UNSET,
         a_timeofday: str | None | Unset = UNSET,
         a_numeric: float | None | Unset = UNSET,
-        a_currency: float | None | Unset = UNSET,
+        a_currency: _Decimal | int | None | Unset = UNSET,
         a_rating: float | None | Unset = UNSET,
         a_percent: float | None | Unset = UNSET,
         a_duration: float | None | Unset = UNSET,
@@ -185,7 +183,7 @@ class Tasks(TypedRecord):
         a_phone: str | None | Unset = UNSET,
         a_timeofday: str | None | Unset = UNSET,
         a_numeric: float | None | Unset = UNSET,
-        a_currency: float | None | Unset = UNSET,
+        a_currency: _Decimal | int | None | Unset = UNSET,
         a_rating: float | None | Unset = UNSET,
         a_percent: float | None | Unset = UNSET,
         a_duration: float | None | Unset = UNSET,

@@ -32,6 +32,41 @@ tasks = app.table("Tasks")
 tasks.create_relationship(projects, foreign_key_label="Project", lookup_fields=["Name"])
 ```
 
+`lookup_fields` are the parent's fields. `Relationship.lookup_field_ids` lists the lookups that
+resulted, which are fields on the child, so don't pass one back in.
+
+## Setup scripts you can run again
+
+The `ensure_` methods return what's there and create only what's missing, so a script can stop partway
+and be run again. They're also the way to add a lookup to an existing relationship, and to create a
+summary field.
+
+```python
+app = qb.app("bq1234567")
+
+projects = app.ensure_table("Projects")
+projects.ensure_field("Name", "text", required=True)
+projects.ensure_field("Code", "text", unique=True)
+
+tasks = app.ensure_table("Tasks")
+tasks.ensure_field("Hours", "numeric")
+
+link = tasks.ensure_relationship(projects, foreign_key_label="Project")
+tasks.ensure_lookup_field(link, "Name", label="Project Name")
+tasks.ensure_summary_field(link, "Hours", "Hours Sum")
+projects.ensure_field("Total Hours", "numeric", formula="Nz([Hours Sum])")
+```
+
+- `ensure_field()` finds a field by its label, ignoring case. It changes only what you passed that
+  differs, including `formula`, and repairs `required` or `unique` if the second request failed before.
+  It raises `SchemaMismatchError` rather than changing a field's type.
+- `ensure_lookup_field()` finds a lookup by what it points at, so `label` can rename one that Quickbase
+  named `Project - Name`.
+- `ensure_summary_field()` is called on the child, and creates the field on the parent.
+- **A summary with no child records is empty, not 0.** Code that expects a number should read a formula
+  that uses `Nz()`, as above, rather than the summary.
+- `ensure_table()` doesn't change a table that exists.
+
 ## Changing and deleting
 
 ```python

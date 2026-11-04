@@ -85,12 +85,12 @@ def build_user_agent(prefix: str | None) -> str:
     return f"{prefix} {agent}" if prefix else agent
 
 
-def read_env(environ: dict[str, str] | None = None) -> tuple[str, str]:
+def read_env(environ: dict[str, str] | None = None, token_env: str = ENV_TOKEN) -> tuple[str, str]:
     """Read the realm and token from the environment, naming any that are missing."""
     import os
 
     env = os.environ if environ is None else environ
-    missing = [name for name in (ENV_REALM, ENV_TOKEN) if not env.get(name, "").strip()]
+    missing = [name for name in (ENV_REALM, token_env) if not env.get(name, "").strip()]
     if missing:
         raise ConfigurationError(f"Missing environment variables: {', '.join(missing)}")
-    return env[ENV_REALM], env[ENV_TOKEN]
+    return env[ENV_REALM], env[token_env]

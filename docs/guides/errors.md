@@ -33,6 +33,17 @@ These mean the request wasn't sent, though the SDK may have read table metadata 
 | `UnsupportedReportError` | A report that can't be read as records, such as a summary or chart |
 | `ReadOnlyError` | The client isn't allowed to send this request |
 
+## Refused writes
+
+Quickbase reports the same kind of refusal in two ways. A role with neither add nor modify rights on a
+table gets a 403, and any other refusal is a row error in a successful response, including a field the
+role can only view. `WritePermissionError` covers both, and is both a `WriteError` and a
+`PermissionDeniedError`, so either one catches it. Its `status_code` is 403 or 207.
+
+If some rows failed for another reason too, you get a plain `WriteError`. Check each row's
+[`kind`](writing.md#when-rows-fail). A row with one field the role can't change is refused whole, so
+its other fields don't change either.
+
 ## Errors from Quickbase
 
 These derive from `APIError`, which has `status_code`, `method`, `path`, `message`, `description`,

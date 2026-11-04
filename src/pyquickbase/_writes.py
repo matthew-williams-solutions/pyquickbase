@@ -6,15 +6,16 @@ creates a record when a merge value doesn't match. See docs/api-notes.md for the
 
 import base64
 import json
+import re
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 from unicodedata import category
 
 from ._models import Field, FieldIndex
-from .errors import InvalidValueError
+from .errors import InvalidValueError, PermissionDeniedError, WriteError, WritePermissionError
 
 RowInput = Mapping[str | int, Any]
 FILE_FIELD_TYPE = "file"
@@ -164,12 +165,40 @@ def refuse_field(rows: Sequence[Mapping[str, Any]], field_id: int, purpose: str)
             raise InvalidValueError(f"Row {index} sets field {field_id}, {purpose}.")
 
 
+RowErrorKind = Literal["duplicate", "permission", "invalid_choice", "other"]
+# Quickbase only gives text. Message wording isn't a promise, so unknown text counts as "other".
+_ROW_ERROR_KINDS: tuple[tuple[RowErrorKind, re.Pattern[str]], ...] = (
+    ("duplicate", re.compile(r"non-unique value for field with ID ['\"]?(\d+)", re.IGNORECASE)),
+    ("invalid_choice", re.compile(r"field with ID ['\"]?(\d+)['\"]? has an invalid choice", re.I)),
+    ("permission", re.compile(r"(?:don't have permission|insufficient permissions)()", re.I)),
+)
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class RowError:
-    """Why one row failed. `index` is its position in the rows you passed, starting from 0."""
+    """Why one row failed. `index` is its position in the rows you passed, starting from 0.
+
+    Use `kind` instead of reading `messages`, whose wording can change. It's `duplicate` for a value
+    already in a unique field, `permission` for a refusal by the token's role, `invalid_choice` for
+    a value outside a field's choices, and `other` for anything else, including wording this version
+    doesn't recognize. `field_id` is the field Quickbase named, if it's one of the first or third.
+    """
 
     index: int
     messages: tuple[str, ...]
+    kind: RowErrorKind = "other"
+    field_id: int | None = None
+
+
+def row_error(index: int, messages: tuple[str, ...]) -> RowError:
+    """Classify a failed row from Quickbase's messages."""
+    for message in messages:
+        for kind, pattern in _ROW_ERROR_KINDS:
+            found = pattern.search(message)
+            if found:
+                field_id = int(found.group(1)) if found.group(1) else None
+                return RowError(index=index, messages=messages, kind=kind, field_id=field_id)
+    return RowError(index=index, messages=messages)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -191,13 +220,39 @@ def write_result_summary(result: WriteResult) -> str:
     )
 
 
+def write_failure(result: WriteResult) -> WriteError:
+    """The error for rows that failed, which is about permissions only if they all were."""
+    summary = write_result_summary(result)
+    if all(item.kind == "permission" for item in result.errors):
+        return WritePermissionError(
+            summary, result=result, status_code=207, method="POST", path="/records"
+        )
+    return WriteError(summary, result=result)
+
+
+def refused_write(exc: PermissionDeniedError, result: WriteResult, start: int) -> WriteError:
+    """The error for a request refused with a 403, which can follow batches that were written."""
+    summary = str(exc)
+    if start:
+        summary = f"Writing stopped at row {start}, after earlier rows were written: {summary}"
+    return WritePermissionError(
+        summary,
+        result=result,
+        status_code=exc.status_code,
+        method=exc.method,
+        path=exc.path,
+        message=exc.message,
+        description=exc.description,
+        request_id=exc.request_id,
+    )
+
+
 def merge_write_result(result: WriteResult, payload: Mapping[str, Any], offset: int) -> WriteResult:
     """Add one request's response. `offset` is the position of its first row."""
     metadata = payload["metadata"]
     line_errors: Mapping[str, list[str]] = metadata.get("lineErrors") or {}
     errors = tuple(
-        RowError(index=int(line) - 1 + offset, messages=tuple(messages))
-        for line, messages in line_errors.items()
+        row_error(int(line) - 1 + offset, tuple(messages)) for line, messages in line_errors.items()
     )
     return replace(
         result,

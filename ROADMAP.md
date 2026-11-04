@@ -85,8 +85,8 @@ the result to `docs/api-notes.md`.
 
 - What's the API host for EU realms?
 - Can a formula read a table in another app?
-- How do roles with write access or record-level rules behave, and a report that sorts or filters on a
-  hidden field? Only a view-only role with hidden fields has been tested.
+- How do roles with record-level rules behave, and a report that sorts or filters on a hidden field?
+  Roles with write access are in the [API notes](docs/api-notes.md#roles-with-write-access).
 - Can a restricted user's formula read a table their role has no access to? A role's hidden fields held
   up, but this wasn't tested, because the role's other tables were the seeded ones.
   `docs/guides/agents.md` calls this untested, so update it with the answer.

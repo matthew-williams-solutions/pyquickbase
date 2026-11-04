@@ -588,3 +588,57 @@ def test_check_schema_notices_what_first_use_doesnt(
         tasks.check_schema()
     with pytest.raises(SchemaMismatchError):
         tasks.count()
+
+
+def test_setup_methods_create_once_and_read_back_exactly(qb: Quickbase, scratch: Any) -> None:
+    app = qb.app(scratch.app_id)
+    parent_id = scratch.table(("Name", "text")).info().id
+    child_id = scratch.table(("Hours", "numeric")).info().id
+    parent, child = app.table(parent_id), app.table(child_id)
+
+    assert (app.ensure_table((parent.info()).name)).__class__ is parent.__class__
+    field = child.ensure_field("Code", "text", unique=True, required=True)
+    assert field.unique
+    assert field.required
+    assert (child.ensure_field("code", "text", unique=True)).id == field.id
+    with pytest.raises(SchemaMismatchError):
+        child.ensure_field("Code", "numeric")
+
+    link = child.ensure_relationship(parent, foreign_key_label="Parent")
+    assert (child.ensure_relationship(parent, foreign_key_label="Parent")).id == link.id
+    foreign_key = next(f for f in child.fields(refresh=True) if f.label == "Parent")
+    assert foreign_key.is_foreign_key
+    assert foreign_key.decimal_places == 0
+
+    # Two in a row, because resending an existing lookup's ID creates an unrelated lookup.
+    parent.ensure_field("Owner", "text")
+    name = child.ensure_lookup_field(link, "Name", label="Parent Name")
+    owner = child.ensure_lookup_field(link, "Owner")
+    assert name.label == "Parent Name"
+    assert owner.mode == "lookup"
+    assert (child.ensure_lookup_field(link, "Name", label="Parent Name")).id == name.id
+    lookups = [f for f in child.fields(refresh=True) if f.mode == "lookup"]
+    assert len(lookups) == 2
+
+    summary = child.ensure_summary_field(link, "Hours", "Hours Sum")
+    assert summary.mode == "summary"
+    assert summary.summary_function == "SUM"
+    assert (child.ensure_summary_field(link, "Hours", "Hours Sum")).id == summary.id
+    total = parent.ensure_field("Total", "numeric", formula="Nz([Hours Sum])")
+    assert (parent.ensure_field("Total", "numeric", formula="Nz([Hours Sum])")).id == total.id
+
+    created = parent.insert([{"Name": "P"}])
+    record = parent.get(created.created_ids[0], select=["Hours Sum", "Total"])
+    assert record is not None
+    assert record["Hours Sum"] is None
+    assert record["Total"] == 0
+    assert parent.get(999999) is None
+    assert (parent.first(where=F("Name") == "P", select=["Name"])) is not None
+
+    child.insert([{"Code": "a", "Parent": created.created_ids[0], "Hours": 2}])
+    with pytest.raises(WriteError) as caught:
+        child.insert([{"Code": "a"}])
+    assert caught.value.result.errors[0].kind == "duplicate"
+    assert caught.value.result.errors[0].field_id == field.id
+
+    assert any(role.access for role in app.roles())

@@ -3,19 +3,23 @@ import json
 import sys
 import types
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
 import httpx
 import pytest
 
 from pyquickbase import (
+    InvalidResponseError,
     QueryError,
     Quickbase,
+    Record,
     SchemaMismatchError,
     WriteError,
 )
 from pyquickbase._codegen import render
 from pyquickbase._models import field_from_api, table_info_from_api
+from pyquickbase._typed import schema_problems
 
 APP = "bq1234567"
 TASKS = "bqtasks"
@@ -282,3 +286,74 @@ def test_passing_a_check_means_later_uses_dont_check_again() -> None:
         after_check = fetches()
         tasks.count()
         assert fetches() - after_check == second
+
+
+MONEY_FIELDS = [
+    {"id": 3, "label": "Record ID#", "fieldType": "recordid"},
+    {"id": 6, "label": "Price", "fieldType": "currency"},
+    {"id": 7, "label": "Cents", "fieldType": "numeric", "properties": {"decimalPlaces": 0}},
+    {"id": 8, "label": "Parent", "fieldType": "numeric", "properties": {"foreignKey": True}},
+    {"id": 9, "label": "Ratio", "fieldType": "numeric"},
+]
+
+
+def money_class() -> Any:
+    source = render(
+        [
+            (
+                table_info_from_api({"id": TASKS, "name": "Tasks"}),
+                [field_from_api(f) for f in MONEY_FIELDS],
+            )
+        ]
+    )
+    module = types.ModuleType("generated_for_money")
+    sys.modules[module.__name__] = module
+    exec(compile(source, module.__name__, "exec"), module.__dict__)
+    return module.Tasks
+
+
+def money_record(**values: Any) -> Any:
+    base = {"Record ID#": 1, "Price": 19.99, "Cents": 1999.0, "Parent": 4.0, "Ratio": 1.5, **values}
+    labels = {"Record ID#": 3, "Price": 6, "Cents": 7, "Parent": 8, "Ratio": 9}
+    return Record(
+        {labels[label]: value for label, value in base.items()},
+        {field_id: label for label, field_id in labels.items()},
+    )
+
+
+def test_money_reads_exactly_and_whole_numbers_read_as_int() -> None:
+    record = money_class().from_record(money_record())
+    assert record.price == Decimal("19.99")
+    assert isinstance(record.price, Decimal)
+    assert record.cents == 1999
+    assert isinstance(record.cents, int)
+    assert isinstance(record.parent, int)
+    assert record.ratio == 1.5
+
+
+def test_empty_numbers_stay_none() -> None:
+    record = money_class().from_record(money_record(Price=None, Cents=None, Parent=None))
+    assert (record.price, record.cents, record.parent) == (None, None, None)
+
+
+def test_a_fraction_in_a_whole_number_field_raises_without_showing_it() -> None:
+    with pytest.raises(InvalidResponseError) as caught:
+        money_class().from_record(money_record(Cents=1999.5))
+    assert "Cents" in str(caught.value)
+    assert "1999.5" not in str(caught.value)
+
+
+def test_a_class_notices_a_field_no_longer_whole() -> None:
+    model = money_class()
+    current = [field_from_api(f) for f in MONEY_FIELDS]
+    assert schema_problems(model, current) == []
+    changed = [
+        field_from_api({**f, "properties": {"decimalPlaces": 2}} if f["id"] == 7 else f)
+        for f in MONEY_FIELDS
+    ]
+    assert "cents is no longer read as int" in schema_problems(model, changed)[0]
+
+
+def test_decimals_can_be_written() -> None:
+    row = money_class().new(price=Decimal("19.99"), cents=1999, parent=4)
+    assert row == {6: Decimal("19.99"), 7: 1999, 8: 4}

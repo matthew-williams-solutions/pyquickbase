@@ -23,6 +23,9 @@ from tests.test_docs import examples
 SKIPPED = {
     'tasks.delete(f"{{6.EX': "A counterexample, whose first line raises on purpose",
     "httpx.post(url, headers=headers, json=body)": "Shows raw httpx, with placeholder values",
+    'app.ensure_table("Projects")': "Makes lasting tables. test_sdk.py tests these methods",
+    "movements.insert(": "Needs a table the page doesn't set up, with a role that can only add",
+    'token_env="QB_SERVICE_TOKEN"': "Needs a second token in the environment",
 }
 
 # These change a table's fields, or need a field that's unique, so they get their own table.

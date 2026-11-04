@@ -6,6 +6,36 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0rc4] - 2026-11-04
+
+These changes come from building a customer portal on the SDK.
+
+### Changed
+
+- **Breaking:** generated classes now read `currency` fields as `Decimal`, and foreign keys and
+  `numeric` fields set to 0 decimal places as `int`. A fractional value in an `int` field raises
+  `InvalidResponseError` rather than being rounded, because Quickbase only uses that setting for
+  display. Generate your classes again, and update code that expects `float` for these fields.
+- **Breaking:** `pyquickbase codegen` now leaves out the links Quickbase makes for each relationship,
+  such as `Add Task` and `Task records`. Pass `--include-links` to keep them.
+- **Breaking:** a write refused by the token's role now always raises `WritePermissionError`, which
+  is both a `WriteError` and a `PermissionDeniedError`. Before, the same refusal raised one or the
+  other depending on the role's other permissions.
+
+### Added
+
+- `RowError.kind` and `RowError.field_id`, so you can recognize a duplicate value or a refused row
+  without reading Quickbase's wording.
+- `App.ensure_table()`, `Table.ensure_field()`, `Table.ensure_relationship()`,
+  `Table.ensure_lookup_field()`, and `Table.ensure_summary_field()`, for setup scripts that are safe
+  to run again. The last two also add lookups to an existing relationship and create summary fields,
+  which needed `request()` before.
+- `first()` and `get()` on `Table` and `TypedTable`.
+- `App.roles()`, and the new `Role` type.
+- `Field` attributes for what a lookup or summary points at, plus `decimal_places` and
+  `is_foreign_key`. `Relationship.summary_field_ids`.
+- `from_env(token_env=...)` and `pyquickbase codegen --token-env`, for a program with several tokens.
+
 ## [1.0.0rc3] - 2026-11-02
 
 ### Added

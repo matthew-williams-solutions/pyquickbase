@@ -536,3 +536,57 @@ def test_generated_files_are_utf8_whatever_the_locale(tmp_path: Path) -> None:
     assert run.returncode == 0, run.stderr[-300:]
     assert output.read_bytes().decode("utf-8") == source
     compile(output.read_bytes(), "tables.py", "exec")
+
+
+def test_links_made_for_a_relationship_are_left_out_by_default() -> None:
+    add = field_from_api(
+        {
+            "id": 7,
+            "label": "Add Task",
+            "fieldType": "url",
+            "mode": "formula",
+            "properties": {"formula": 'URLRoot() & "db/" & [_DBID_T] & "?a=API_GenAddRecordForm"'},
+        }
+    )
+    records = field(8, "Task records", "dblink")
+    other_link = field_from_api(
+        {
+            "id": 9,
+            "label": "Site",
+            "fieldType": "url",
+            "mode": "formula",
+            "properties": {"formula": '"https://example.com"'},
+        }
+    )
+    fields = [*BUILT_IN, field(6, "Title"), add, records, other_link]
+    source = render([(table(), fields)])
+    assert "add_task" not in source
+    assert "task_records" not in source
+    assert "site" in source
+    included = render([(table(), fields)], include_links=True)
+    assert "add_task" in included
+    assert "task_records" in included
+
+
+def test_decimal_is_only_imported_when_used() -> None:
+    assert "Decimal" not in render([(table(), [*BUILT_IN, field(6, "Title")])])
+    assert "as _Decimal" in render([(table(), [*BUILT_IN, field(6, "Price", "currency")])])
+
+
+def test_codegen_can_read_another_token(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers["authorization"])
+        return httpx.Response(200, json=[])
+
+    monkeypatch.setenv("QB_REALM", "acme")
+    monkeypatch.delenv("QB_USER_TOKEN", raising=False)
+    monkeypatch.setenv("QB_SERVICE_TOKEN", "service-secret")
+    code = main(
+        ["codegen", "--app", "bq1", "--output", str(tmp_path / "t.py"),
+         "--token-env", "QB_SERVICE_TOKEN"],
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )  # fmt: skip
+    assert code == 0
+    assert seen == ["QB-USER-TOKEN service-secret"]
