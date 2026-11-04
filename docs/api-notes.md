@@ -381,7 +381,11 @@ Tested on 2026-11-03 and 2026-11-04 in a real app, using `POST /tables/{child}/r
 | Behavior | Result |
 |---|---|
 | `lookupFieldIds` | **The parent's field IDs, and it adds to the existing lookups.** Sending an existing lookup's ID, which is on the child, looked up whichever parent field has that number, and created a field nobody asked for |
-| A new lookup's label | `<Parent's single record name> - <Field>`, such as `Product - SKU`, and it can be renamed |
+| A new lookup's label | `<Foreign key's label> - <Field>`, such as `Buyer - Name` on a parent whose record name is `Client`, and it can be renamed |
+| A second `POST /tables/{child}/relationship` to the same parent | **Makes another relationship**, even with the same foreign key label |
+| `accumulationType` values | The API lists `AVG`, `SUM`, `MAX`, `MIN`, `STD-DEV`, `COUNT`, `COMBINED-TEXT`, `COMBINED-USER`, and `DISTINCT-COUNT`, in capitals |
+| Summaries that worked | `SUM` of numeric and currency, `AVG` and `STD-DEV` of numeric, `MAX` and `MIN` of numeric and date, `DISTINCT-COUNT` of numeric and text, `COMBINED-TEXT` of text, and `COMBINED-USER` of user. Each kept the child's type, except that `AVG`, `STD-DEV`, and `DISTINCT-COUNT` are numeric, and the combined ones are `multitext` and `multiuser` |
+| Summaries refused with 400 | `SUM` of checkbox, `MAX` of text, and `COUNT` of numeric, text, checkbox, and the record ID |
 | A lookup's properties | `lookupReferenceFieldId` is the foreign key on the child, and `lookupTargetFieldId` is the field on the parent |
 | `summaryFields`, with `summaryFid`, `label`, and `accumulationType: "SUM"` | Creates the field on the parent. Works on a formula field of the child |
 | A summary's properties | `summaryReferenceFieldId`, `summaryTargetFieldId`, and `summaryFunction` |
@@ -423,5 +427,11 @@ A `datetime` field reports its type as `timestamp`.
 | `dblink` | Created by a relationship, on the parent table |
 | Labels | **Can contain almost anything, including `"""`, line breaks, and code**, as can table names |
 | Label uniqueness | Exact duplicates are refused, ignoring case, but `Due Date` and `Due-Date` can both exist |
+| Table names | `POST /tables` refuses a name already in use with 400, `Table name exists` |
+| `properties` | An unknown key is refused with 400, `Extraneous key`. `fieldHelp` isn't a property, and neither are `choices` on a type without them |
+| `POST /fields/{id}` with `required: true` | 400, `field contains null values`, if any record has it empty, which includes a new field on a table with records |
+| `POST /fields/{id}` with `unique: true` | 400, `field contains non-unique values`, if it holds duplicates. A new, empty field on a table with records is allowed |
+| A `phone` value | Reformatted: `5551234567` reads back as `(555) 123-4567` |
+| A built-in field in `DELETE /fields` | Refused in `errors`, and the others in the list are deleted |
 | Field IDs | Assigned in order, and address subfields use up IDs |
 | `GET /tables/{id}` | Returned an error without its `appId`, so use `GET /tables?appId=` |

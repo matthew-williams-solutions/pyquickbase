@@ -144,11 +144,21 @@ class AsyncApp:
     ) -> "AsyncTable":
         """Return the table with this name, creating it if it doesn't exist.
 
-        An existing table isn't changed, so the other arguments only apply when creating one.
+        This makes a setup script safe to run again. An existing table isn't changed.
+
+        Args:
+            name: The table's name, ignoring case when looking for an existing table.
+            description: The new table's description.
+            single_record_name: What the new table calls one record, such as `Project`.
+            plural_record_name: What the new table calls several records, such as `Projects`.
+
+        Returns:
+            The existing or new table.
         """
         tables = await self.tables(refresh=True)
-        if any(item.name.casefold() == name.casefold() for item in tables):
-            return self.table(name)
+        for item in tables:
+            if item.name.casefold() == name.casefold():
+                return self.table(item.id)
         return await self.create_table(
             name,
             description=description,
@@ -164,7 +174,20 @@ class AsyncApp:
         single_record_name: str | None = None,
         plural_record_name: str | None = None,
     ) -> "AsyncTable":
-        """Create a table and return it."""
+        """Create a table and return it.
+
+        Args:
+            name: The table's name.
+            description: The table's description.
+            single_record_name: What the table calls one record, such as `Project`.
+            plural_record_name: What the table calls several records, such as `Projects`.
+
+        Returns:
+            The new table.
+
+        Raises:
+            BadRequestError: The app already has a table with this name.
+        """
         optional = {
             "description": description,
             "singleRecordName": single_record_name,
@@ -591,11 +614,33 @@ class AsyncTable:
         properties: Mapping[str, Any] | None = None,
         formula: str | None = None,
     ) -> Field:
-        """Create a field and return it. `field_type` is Quickbase's, such as `text` or `date`.
+        """Create a field and return it.
 
-        `formula` makes it a formula field, and `field_type` must match the formula's result.
         Quickbase sets `required` and `unique` in a second request, so if that one fails the field
-        exists without them.
+        exists without them. Use `ensure_field()` to repair it.
+
+        Args:
+            label: The field's label. Another field can't have the same label, ignoring case.
+            field_type: One of `text`, `text-multiple-choice`, `text-multi-line`, `rich-text`,
+                `numeric`, `currency`, `rating`, `percent`, `multitext`, `email`, `url`, `duration`,
+                `date`, `datetime`, `timestamp`, `timeofday`, `checkbox`, `user`, `multiuser`,
+                `address`, `phone`, or `file`. A `datetime` field reports its type as `timestamp`.
+            choices: The options of a `text-multiple-choice` or `multitext` field.
+            required: Whether the field must have a value. Quickbase refuses this if the table has
+                records, because the new field is empty on all of them.
+            unique: Whether values must be different on every record.
+            properties: Other settings, sent as they are, such as `{"decimalPlaces": 2}`. Quickbase
+                refuses a key it doesn't know.
+            formula: Makes this a formula field. `field_type` must match the formula's result, and
+                can't be `timestamp` or `text-multi-line`. Use `datetime` for a timestamp formula.
+
+        Returns:
+            The new field.
+
+        Raises:
+            BadRequestError: Quickbase refused the field, such as for an unknown type, a label
+                that's already used, or `choices` on a type without them.
+            InvalidValueError: `formula` is blank. Nothing was sent.
         """
         merged = field_properties(properties, formula)
         table_id = (await self.info()).id
@@ -625,8 +670,27 @@ class AsyncTable:
     ) -> Field:
         """Change a field's settings and return it. Anything left as None stays as it is.
 
-        `formula` only works on a formula field, and can't be blank, because Quickbase would accept
-        that and empty the field's values.
+        A field's type can't be changed here.
+
+        Args:
+            field: The field's label or ID.
+            label: A new label.
+            required: Whether the field must have a value. Quickbase refuses `True` if any record
+                has this field empty.
+            unique: Whether values must be different on every record. Quickbase refuses `True` if
+                the field already holds duplicates.
+            properties: Other settings, sent as they are. `{"choices": [...]}` replaces the whole
+                list of choices.
+            formula: New formula text, only for a formula field. It can't be blank, because
+                Quickbase would accept that and empty the field's values.
+
+        Returns:
+            The changed field.
+
+        Raises:
+            UnknownFieldError: The table has no such field. Nothing was sent.
+            InvalidValueError: There's nothing to change, or `formula` is blank. Nothing was sent.
+            BadRequestError: Quickbase refused the change, and the field is as it was.
         """
         merged = field_properties(properties, formula)
         table_id = (await self.info()).id
@@ -647,7 +711,17 @@ class AsyncTable:
         return parse(field_from_api, payload, "field")
 
     async def delete_fields(self, fields: FieldRef | Sequence[FieldRef]) -> None:
-        """Delete fields and their data. Raises `WriteError` if any couldn't be deleted."""
+        """Delete fields and all their data.
+
+        Args:
+            fields: One field or a list of them, by label or ID.
+
+        Raises:
+            UnknownFieldError: A field doesn't exist. Nothing was deleted.
+            InvalidValueError: The list is empty. Nothing was sent.
+            WriteError: A field couldn't be deleted, such as a built-in field. The others in the
+                list were still deleted.
+        """
         table_id = (await self.info()).id
         refs = [fields] if isinstance(fields, str | int) else list(fields)
         if not refs:
@@ -670,7 +744,23 @@ class AsyncTable:
     ) -> Relationship:
         """Make this table a child of `parent`, with a new foreign key field on this table.
 
-        `lookup_fields` are fields of the parent to show on this table.
+        Quickbase also adds two fields to the parent: a list of the child's records, and a link to
+        add one. Calling this again makes another relationship, even with the same label, so use
+        `ensure_relationship()` in a script that may run twice.
+
+        Args:
+            parent: The table to link to.
+            foreign_key_label: The new foreign key field's label.
+            lookup_fields: Fields of the parent to show on this table, by label or ID. Quickbase
+                names each new field after the foreign key and the field, such as
+                `Project - Name`.
+
+        Returns:
+            The relationship. Its `lookup_field_ids` are the new fields on this table, so don't
+            pass them back as `lookup_fields`.
+
+        Raises:
+            UnknownFieldError: The parent has no such field. Nothing was sent.
         """
         table_id = (await self.info()).id
         parent_id = (await parent.info()).id
@@ -701,10 +791,28 @@ class AsyncTable:
     ) -> Field:
         """Return the field with this label, creating it or changing it to match what you pass.
 
-        Anything left as None is ignored on an existing field. This makes a setup script safe to
-        run again, and repairs a field whose `required` or `unique` didn't get set, because
-        Quickbase sets those in a second request. Raises `SchemaMismatchError` if the field has
-        a different type, because Quickbase can't always convert one.
+        This makes a setup script safe to run again, and repairs a field whose `required` or
+        `unique` didn't get set, because Quickbase sets those in a second request. The arguments
+        are the same as for `create_field()`, and anything left as None is ignored on an existing
+        field. `choices` are compared ignoring order.
+
+        Args:
+            label: The field's label, ignoring case.
+            field_type: The field's type. `datetime` matches a field that reports `timestamp`.
+            choices: The options of a `text-multiple-choice` or `multitext` field.
+            required: Whether the field must have a value. Quickbase refuses `True` if any record
+                has this field empty, which includes a new field on a table with records.
+            unique: Whether values must be different on every record.
+            properties: Other settings, sent as they are.
+            formula: The text of a formula field.
+
+        Returns:
+            The field, whether it was found, created, or changed.
+
+        Raises:
+            SchemaMismatchError: The field exists with a different type, because Quickbase can't
+                always convert one. It wasn't changed.
+            BadRequestError: Quickbase refused the field or the change.
         """
         fields = await self.fields(refresh=True)
         found = next((item for item in fields if item.label.casefold() == label.casefold()), None)
@@ -743,8 +851,17 @@ class AsyncTable:
     async def ensure_relationship(
         self, parent: "AsyncTable", *, foreign_key_label: str
     ) -> Relationship:
-        """Return this table's relationship with `parent` through this foreign key, creating it if
-        it doesn't exist. Use the result with `ensure_lookup_field()` and `ensure_summary_field()`.
+        """Return this table's relationship with `parent`, creating it if it doesn't exist.
+
+        Use the result with `ensure_lookup_field()` and `ensure_summary_field()`.
+
+        Args:
+            parent: The table to link to.
+            foreign_key_label: The foreign key field's label, ignoring case when looking for an
+                existing relationship.
+
+        Returns:
+            The existing or new relationship.
         """
         parent_id = (await parent.info()).id
         labels = {item.id: item.label.casefold() for item in await self.fields(refresh=True)}
@@ -759,7 +876,20 @@ class AsyncTable:
     ) -> Field:
         """Return this table's lookup of `parent_field`, creating it if it doesn't exist.
 
-        `label` renames it, since Quickbase names a lookup after the parent table and field.
+        Call this on the child table, and the new field is on the child. It's found by what it
+        points at, so renaming it doesn't make a script create another.
+
+        Args:
+            relationship: The relationship, from `ensure_relationship()`.
+            parent_field: The parent's field to look up, by label or ID.
+            label: A label for the lookup, since Quickbase names one after the foreign key and the
+                field, such as `Project - Name`. An existing lookup is renamed to match.
+
+        Returns:
+            The lookup field.
+
+        Raises:
+            UnknownFieldError: The parent has no such field. Nothing was sent.
         """
         parent = self._app.table(relationship.parent_table_id)
         target_id = (await parent.resolve_field_ids([parent_field]))[0]
@@ -803,10 +933,25 @@ class AsyncTable:
     ) -> Field:
         """Return the summary of this table's `child_field` on the parent, creating it if needed.
 
-        Call this on the child table. The new field is on the parent, and `function` is Quickbase's
-        name for the calculation. **A summary with no child records is empty, not 0**, so wrap it in
-        `Nz()` in a formula if your code expects a number. Raises `SchemaMismatchError` if the label
-        is already used on the parent by anything but this summary.
+        Call this on the child table, and the new field is on the parent. **A summary with no child
+        records is empty, not 0**, so wrap it in `Nz()` in a formula if your code expects a number.
+
+        Args:
+            relationship: The relationship, from `ensure_relationship()`.
+            child_field: This table's field to summarize, by label or ID.
+            label: The label of the summary field on the parent.
+            function: Quickbase's name for the calculation, in capitals: `SUM`, `AVG`, `MAX`, `MIN`,
+                `STD-DEV`, `DISTINCT-COUNT`, `COMBINED-TEXT`, or `COMBINED-USER`.
+
+        Returns:
+            The summary field, on the parent.
+
+        Raises:
+            UnknownFieldError: This table has no such field. Nothing was sent.
+            SchemaMismatchError: The label is already used on the parent by anything but this
+                summary. It wasn't changed.
+            BadRequestError: Quickbase can't apply `function` to this field, such as `SUM` of a
+                checkbox.
         """
         parent = self._app.table(relationship.parent_table_id)
         target_id = (await self.resolve_field_ids([child_field]))[0]
@@ -850,7 +995,14 @@ class AsyncTable:
         )
 
     async def drop(self, *, confirm: str) -> None:
-        """Delete this table and all its records. `confirm` must be the table's exact name."""
+        """Delete this table and all its records.
+
+        Args:
+            confirm: The table's exact name, so a wrong variable can't drop the wrong table.
+
+        Raises:
+            InvalidValueError: `confirm` isn't the table's exact name. Nothing was sent.
+        """
         info = await self.info()
         if confirm != info.name:
             raise InvalidValueError(

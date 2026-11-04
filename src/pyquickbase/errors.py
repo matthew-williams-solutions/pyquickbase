@@ -64,7 +64,11 @@ class UnsupportedReportError(QuickbaseError):
 
 
 class SchemaMismatchError(QuickbaseError):
-    """A generated class no longer matches its table, so it needs generating again."""
+    """A table doesn't match what the code expects, so nothing was changed.
+
+    A generated class no longer matches its table, so it needs generating again, or an `ensure_`
+    method found a field that isn't what it was asked for.
+    """
 
 
 class APIError(QuickbaseError):

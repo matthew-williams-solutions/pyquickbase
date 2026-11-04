@@ -24,6 +24,9 @@ Nothing here should break anyone.
 - `llms.txt` is at `/pyquickbase/llms.txt`, not the domain root where some tools look, because the
   site is served from a subpath. Only a custom domain would change that.
 - A method for summary and chart reports, returning `{label: value}` rows.
+- Find out how `COUNT` summaries work. `ensure_summary_field()` always sends a child field, and
+  Quickbase refused `COUNT` on every field tried, so the SDK may need to leave it out.
+- A way to set `fieldHelp` and the other field settings the API takes outside `properties`.
 - A per-call timeout for uploads and downloads.
 - A small config file to choose generated names.
 - `query_page()`, `select`, and `batch_size` on typed tables. `select` needs a design, because a

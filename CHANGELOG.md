@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `ensure_table()` now returns a table you can use when the name differs only in case from an
+  existing one. Before, it found the table, then raised `UnknownTableError` on first use.
+
+### Changed
+
+- Fuller docstrings for the schema methods, a longer schema guide, and a new field types page.
+- `SchemaMismatchError`'s description now covers the `ensure_` methods, which also raise it.
+
 ## [1.0.0rc4] - 2026-11-04
 
 These changes come from building a customer portal on the SDK.
