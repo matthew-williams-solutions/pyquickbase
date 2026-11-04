@@ -358,3 +358,43 @@ async def test_a_class_notices_a_field_no_longer_whole() -> None:
 async def test_decimals_can_be_written() -> None:
     row = money_class().new(price=Decimal("19.99"), cents=1999, parent=4)
     assert row == {6: Decimal("19.99"), 7: 1999, 8: 4}
+
+
+def single_record_client(rows: list[dict[str, Any]]) -> AsyncQuickbase:
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path.removeprefix("/v1")
+        if path == "/tables":
+            return httpx.Response(200, json=[{"id": TASKS, "name": "Tasks"}])
+        if path == "/fields":
+            return httpx.Response(200, json=FIELDS)
+        return httpx.Response(
+            200,
+            json={
+                "data": rows,
+                "fields": [
+                    {"id": f["id"], "label": f["label"], "type": f["fieldType"]} for f in FIELDS
+                ],
+                "metadata": {"numFields": 4, "numRecords": len(rows), "skip": 0,
+                             "totalRecords": len(rows), "top": 1},
+            },
+        )  # fmt: skip
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    return AsyncQuickbase(realm="acme", token="t", http_client=http)
+
+
+async def test_first_and_get_return_an_instance_or_none() -> None:
+    model = generated()
+    row = {"3": {"value": 5}, "6": {"value": "A"}, "7": {"value": ""}, "8": {"value": 1.5}}
+    async with single_record_client([row]) as qb:
+        tasks = qb.app(APP).typed(model)
+        first = await tasks.first(where=model.fields.title == "A", order_by=model.fields.title)
+        got = await tasks.get(5)
+    assert isinstance(first, model)
+    assert first.title == "A"
+    assert isinstance(got, model)
+    assert got.id == 5
+    async with single_record_client([]) as qb:
+        tasks = qb.app(APP).typed(model)
+        assert await tasks.first() is None
+        assert await tasks.get(5) is None
