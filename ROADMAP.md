@@ -33,6 +33,22 @@ Nothing here should break anyone.
 - A setting that repeats a typed table's schema check after a set time.
 - Typed access to file and user values, as a dictionary subclass, which could leave out uploader emails.
 
+## Guides
+
+Bring these up to the format of `docs/guides/schema.md`, `reading.md`, and `writing.md`: organized by task,
+with a complete setup in the first example, sections that make sense on their own, and a table of what each
+refusal raises and leaves behind. Check new claims in a live test before publishing them.
+
+- `docs/guides/files.md`
+- `docs/guides/formulas.md`
+- `docs/guides/errors.md`
+- `docs/guides/clients.md`
+- `docs/guides/agents.md`
+- `docs/guides/codegen.md`, which so far only gained a section on `query_page()`
+
+Give the methods these guides cover full `Args`, `Returns`, and `Raises` docstrings at the same time. Those
+are code changes, so during the week before 1.0 only change the guides, and leave docstrings until after it.
+
 ## Docs playground
 
 - Simulate updates and deletes, then add "Try it" links from each guide to its own example.
