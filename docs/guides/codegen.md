@@ -107,7 +107,8 @@ tasks.delete(Tasks.fields.status == "Cancelled")
 ```
 
 Leaving an argument out leaves that field alone, and `None` clears it, except for file fields, which
-take a `FileUpload`.
+take a `FileUpload`. A row made by a class for another table raises `InvalidValueError`, because its field
+IDs would mean different fields here. `insert()`, `update()`, and `upsert()` also take `batch_size`.
 
 `tasks.table` is the ordinary untyped table, for anything else, such as reports and file downloads.
 Its `where`, `select`, and `order_by` also accept `Tasks.fields`, but its records aren't converted, so

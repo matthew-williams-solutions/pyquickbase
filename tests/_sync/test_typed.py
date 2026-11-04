@@ -12,9 +12,11 @@ import pytest
 from pyquickbase import (
     F,
     InvalidResponseError,
+    InvalidValueError,
     QueryError,
     Quickbase,
     Record,
+    Row,
     SchemaMismatchError,
     TypedPage,
     WriteError,
@@ -515,3 +517,52 @@ def test_typed_order_by_takes_any_iterable_of_fields_and_ids() -> None:
         {"fieldId": 6, "order": "ASC"},
         {"fieldId": 7, "order": "DESC"},
     ]
+
+
+class OtherTable(Tasks):
+    """A class for another table, whose field IDs mean something else there."""
+
+    __slots__ = ()
+    __table_id__ = "bqother"
+
+
+def test_a_row_for_another_table_is_refused_before_sending() -> None:
+    server = Server()
+    row = OtherTable.new(title="Wrong table")
+    assert row.table_id == "bqother"
+    with client(server) as qb:
+        tasks = qb.app(APP).typed(Tasks)
+        title = Tasks.fields.title
+        for call in (
+            lambda: tasks.insert([Tasks.new(title="Fine"), row]),
+            lambda: tasks.update([row]),
+            lambda: tasks.upsert([row], merge_on=title),
+        ):
+            with pytest.raises(InvalidValueError, match=r"Row [01] "):
+                call()
+    assert not server.sent("/records")
+    assert not server.requests
+
+
+def test_rows_without_a_table_and_from_the_same_table_are_accepted() -> None:
+    server = Server()
+    same_table = type("Regenerated", (Tasks,), {"__slots__": ()})
+    with client(server) as qb:
+        tasks = qb.app(APP).typed(Tasks)
+        tasks.insert([same_table.new(title="A"), Row({6: "B"})])
+    assert len(server.sent("/records")[0]["data"]) == 2
+
+
+def test_batch_size_reaches_the_writes() -> None:
+    server = Server()
+    rows = [Tasks.new(title=f"T{n}") for n in range(3)]
+    with client(server) as qb:
+        tasks = qb.app(APP).typed(Tasks)
+        tasks.insert(rows, batch_size=2)
+        assert len(server.sent("/records")) == 2
+        tasks.update([Tasks.change(n + 1, title="x") for n in range(3)], batch_size=1)
+        assert len(server.sent("/records")) == 5
+        tasks.upsert(rows, merge_on=Tasks.fields.title, batch_size=3)
+        assert len(server.sent("/records")) == 6
+        with pytest.raises(QueryError):
+            tasks.insert(rows, batch_size=0)

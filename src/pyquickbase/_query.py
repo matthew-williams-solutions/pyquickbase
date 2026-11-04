@@ -16,6 +16,11 @@ from ._models import RECORD_ID_FIELD, Field, FieldIndex
 from .errors import QueryError, UnknownFieldError
 
 FieldRef = str | int
+"""A field's label (`str`) or ID (`int`)."""
+_CURRENT_USER = "_curuser_"
+_USER_TYPES = frozenset({"user", "multiuser"})
+# On a `user` field, EX never matches a user, and XEX matches everyone, including that user.
+_USER_FIELD_OPERATORS = {"EX": "TV", "XEX": "XTV"}
 OPERATORS = frozenset(
     {
         "EX", "XEX", "CT", "XCT", "SW", "XSW", "LT", "LTE", "GT", "GTE",
@@ -96,7 +101,17 @@ class Condition(Expression):
     value: str
 
     def compile(self, fields: FieldIndex) -> str:
-        return f"{{{fields.resolve(self.field).id}.{self.operator}.'{self.value}'}}"
+        item = fields.resolve(self.field)
+        if item.type in _USER_TYPES and self.value.strip().casefold() == _CURRENT_USER:
+            raise QueryError(
+                "On a user field, Quickbase reads _curuser_ as the token's owner, so a value from "
+                "someone else could match the owner's records. To mean that on purpose, write a "
+                "query string."
+            )
+        operator = self.operator
+        if item.type == "user":
+            operator = _USER_FIELD_OPERATORS.get(operator, operator)
+        return f"{{{item.id}.{operator}.'{self.value}'}}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +144,8 @@ class F:
 
     `(F("Status") == "Done") & (F("Due Date") < date.today())`. Values are escaped for you, so
     this is the safe way to use text you don't control. `== None` matches empty fields.
+
+    On a `user` or `multiuser` field, compare with an email or user ID.
     """
 
     __slots__ = ("_field",)
@@ -277,6 +294,7 @@ def compile_where(where: Expression | str, fields: FieldIndex) -> str:
 
 
 FieldRefs = FieldRef | F | Sequence[FieldRef | F]
+"""One field or a list of them, each by label, ID, or field object."""
 
 
 def _as_list(refs: FieldRefs, argument: str) -> list[FieldRef | F]:

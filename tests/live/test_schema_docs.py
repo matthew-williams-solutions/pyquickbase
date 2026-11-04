@@ -172,8 +172,19 @@ def test_deleting_fields(scratch: Any) -> None:
 def test_table_mistakes_are_refused(scratch: Any) -> None:
     table = scratch.table()
     name = table.info().name
+    app = scratch.client.app(scratch.app_id)
     with pytest.raises(BadRequestError, match="exists"):
-        scratch.client.app(scratch.app_id).create_table(name)
+        app.create_table(name)
+    # Two tables can't share a name through the API, whatever the case or spacing.
+    for similar in (name.lower(), f"{name} "):
+        with pytest.raises(BadRequestError, match="exists"):
+            app.create_table(similar)
+    other = app.create_table(f"ZZ Live {secrets.token_hex(4)}")
+    scratch.created.append(other)
+    with pytest.raises(BadRequestError, match="exists"):
+        scratch.client.request(
+            "POST", f"/tables/{other.info().id}", params={"appId": app.id}, json={"name": name}
+        )
     with pytest.raises(InvalidValueError):
         table.drop(confirm=name.upper())
     found = scratch.client.app(scratch.app_id).ensure_table(name.upper())

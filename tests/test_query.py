@@ -449,3 +449,45 @@ def test_body_takes_field_objects() -> None:
 def test_body_refuses_anything_else_clearly(argument: str, value: Any) -> None:
     with pytest.raises(QueryError, match=argument):
         build(**{argument: value})
+
+
+USER_FIELDS = FieldIndex(
+    [
+        field(3, "Record ID#", "recordid"),
+        field(4, "Owner", "user"),
+        field(5, "Team", "multiuser"),
+        field(6, "Note", "text"),
+    ]
+)
+
+
+@pytest.mark.parametrize("label", ["Owner", "Team"])
+@pytest.mark.parametrize("value", ["_curuser_", "_CURUSER_", " _curuser_ "])
+def test_the_current_user_is_refused_on_user_fields(label: str, value: str) -> None:
+    conditions = [F(label) == value, F(label).op("TV", value), F(label).is_in([value, "x"])]
+    for condition in conditions:
+        with pytest.raises(QueryError, match="_curuser_"):
+            compile_where(condition, USER_FIELDS)
+
+
+def test_a_user_field_compares_by_true_value() -> None:
+    def where(condition: Any) -> str:
+        return compile_where(condition, USER_FIELDS)
+
+    assert where(F("Owner") == "a@example.com") == "{4.TV.'a@example.com'}"
+    assert where(F("Owner") != "a@example.com") == "{4.XTV.'a@example.com'}"
+    assert where(F("Owner") == None) == "{4.TV.''}"  # noqa: E711
+    assert where(F("Owner").is_in(["a", "b"])) == "{4.TV.'a'}OR{4.TV.'b'}"
+    assert where(F("Owner").contains("a")) == "{4.CT.'a'}"
+    # Only a single-user field needs this, and a query string is sent as written.
+    assert where(F("Team") == "a") == "{5.EX.'a'}"
+    assert where(F("Note") == "a") == "{6.EX.'a'}"
+    assert where("{4.EX.'a'}") == "{4.EX.'a'}"
+
+
+def test_the_current_user_stays_literal_elsewhere_and_allowed_in_strings() -> None:
+    assert compile_where(F("Note") == "_curuser_", USER_FIELDS) == "{6.EX.'_curuser_'}"
+    assert compile_where(F("Owner").op("TV", "a@example.com"), USER_FIELDS) == (
+        "{4.TV.'a@example.com'}"
+    )
+    assert compile_where("{4.TV.'_curuser_'}", USER_FIELDS) == "{4.TV.'_curuser_'}"

@@ -44,6 +44,7 @@ from .._typed import (
     column_ids,
     order_refs,
     raise_for_problems,
+    rows_for,
     schema_problems,
 )
 from .._writes import (
@@ -1302,20 +1303,40 @@ class TypedTable(Generic[R]):
         self._check_once()
         return self._table.count(where)
 
-    def insert(self, rows: Iterable[Row[R]]) -> WriteResult:
-        """Create records from rows made with `Tasks.new()`. See `Table.insert`."""
-        self._check_once()
-        return self._table.insert(cast(Iterable[RowInput], rows))
+    def insert(
+        self, rows: Iterable[Row[R]], *, batch_size: int = DEFAULT_BATCH_SIZE
+    ) -> WriteResult:
+        """Create records from rows made with `Tasks.new()`. See `Table.insert`.
 
-    def update(self, rows: Iterable[Row[R]]) -> WriteResult:
-        """Change records from rows made with `Tasks.change()`. See `Table.update`."""
+        Raises `InvalidValueError` for a row made by a class for another table.
+        """
+        given = rows_for(self._model, rows)
         self._check_once()
-        return self._table.update(cast(Iterable[RowInput], rows))
+        return self._table.insert(cast(Iterable[RowInput], given), batch_size=batch_size)
 
-    def upsert(self, rows: Iterable[Row[R]], *, merge_on: TypedField) -> WriteResult:
-        """Update the record whose unique `merge_on` field matches. See `Table.upsert`."""
+    def update(
+        self, rows: Iterable[Row[R]], *, batch_size: int = DEFAULT_BATCH_SIZE
+    ) -> WriteResult:
+        """Change records from rows made with `Tasks.change()`. See `Table.update`.
+
+        Raises `InvalidValueError` for a row made by a class for another table.
+        """
+        given = rows_for(self._model, rows)
         self._check_once()
-        return self._table.upsert(cast(Iterable[RowInput], rows), merge_on=merge_on.id)
+        return self._table.update(cast(Iterable[RowInput], given), batch_size=batch_size)
+
+    def upsert(
+        self, rows: Iterable[Row[R]], *, merge_on: TypedField, batch_size: int = DEFAULT_BATCH_SIZE
+    ) -> WriteResult:
+        """Update the record whose unique `merge_on` field matches. See `Table.upsert`.
+
+        Raises `InvalidValueError` for a row made by a class for another table.
+        """
+        given = rows_for(self._model, rows)
+        self._check_once()
+        return self._table.upsert(
+            cast(Iterable[RowInput], given), merge_on=merge_on.id, batch_size=batch_size
+        )
 
     def delete(self, where: Expression | str) -> int:
         """Delete the matching records and return how many were deleted. See `Table.delete`."""

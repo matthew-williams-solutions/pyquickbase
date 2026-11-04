@@ -59,6 +59,8 @@ These support the classes from `pyquickbase codegen`, and you rarely need them d
 
 ::: pyquickbase.TypedPage
 
+::: pyquickbase.OrderBy
+
 ::: pyquickbase.TypedRecord
 
 ::: pyquickbase.TypedField
@@ -74,6 +76,12 @@ These support the classes from `pyquickbase codegen`, and you rarely need them d
 ## Queries
 
 ::: pyquickbase.F
+
+::: pyquickbase.Expression
+
+::: pyquickbase.FieldRef
+
+::: pyquickbase.FieldRefs
 
 ::: pyquickbase.parse_where
 

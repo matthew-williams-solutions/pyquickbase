@@ -29,7 +29,7 @@ for each type.
 | Python value | What happens |
 |---|---|
 | `date` | Written as a date |
-| `datetime` with a timezone | Written as a date and time. Without a timezone, it raises `InvalidValueError` |
+| `datetime` with a timezone | Written as a date and time, and reads back to the second. Without a timezone, it raises `InvalidValueError` |
 | `Decimal` | Written exactly, so money doesn't pick up rounding errors |
 | `str`, `int`, `float`, `bool`, `list`, or `dict` | Written as it is |
 | `None` | Clears the field |

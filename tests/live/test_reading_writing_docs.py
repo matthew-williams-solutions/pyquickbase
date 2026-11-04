@@ -1,12 +1,14 @@
 """Check what the reading and writing guides say. A failure means the docs are wrong."""
 
-from datetime import UTC, date, datetime
+import types
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
 import pytest
 
-from pyquickbase import F, Quickbase
+from pyquickbase import F, Quickbase, TypedRecord
+from pyquickbase._codegen import render
 from pyquickbase.errors import (
     BadRequestError,
     InvalidValueError,
@@ -222,3 +224,85 @@ def test_a_read_only_client_refuses_writes(scratch: Any) -> None:
             table.insert([{"Title": "x"}])
         with pytest.raises(ReadOnlyError):
             table.delete(F("Title") == "x")
+
+
+def test_the_current_user_and_how_user_fields_match(scratch: Any) -> None:
+    table = scratch.table(("Who", "user"), ("Many", "multiuser"), ("Note", "text"))
+    table.insert([{"Note": "_curuser_"}])
+    me = next(iter(table.query(select=["Record Owner"])))["Record Owner"]
+    mine = table.insert([{"Who": {"id": me["id"]}, "Many": [{"id": me["id"]}]}]).created_ids[0]
+
+    def found(where: Any) -> list[int]:
+        return [record.id for record in table.query(where=where, select=[3])]
+
+    # What Quickbase does with the operators that `==` and `!=` would otherwise send.
+    who_id = table.resolve_field_ids(["Who"])[0]
+    assert found(f"{{{who_id}.EX.'{me['email']}'}}") == []
+    assert found(f"{{{who_id}.XEX.'{me['email']}'}}") == [1, mine]
+
+    # What the docs tell you to use.
+    assert found(F("Who") == me["email"]) == [mine]
+    assert found(F("Who") == me["id"]) == [mine]
+    assert found(F("Who") == me["email"].upper()) == [mine]
+    assert found(F("Who") == "nobody@example.com") == []
+    assert found(F("Who") != me["email"]) == [1]
+    assert found(F("Who") != "nobody@example.com") == [1, mine]
+    assert found(F("Who") == None) == [1]  # noqa: E711
+    assert found(F("Who") != None) == [mine]  # noqa: E711
+    assert found(F("Who").is_in([me["email"], "nobody@example.com"])) == [mine]
+    assert found(F("Many") == me["email"]) == [mine]
+    assert found(F("Note") == "_curuser_") == [1]
+
+    # Why F refuses this, and that a query string still means it.
+    many, who = table.resolve_field_ids(["Many", "Who"])
+    assert found(f"{{{many}.EX.'_curuser_'}}") == [mine]
+    assert found(f"{{{many}.EX.' _CURUSER_ '}}") == [mine]
+    assert found(f"{{{who}.TV.'_curuser_'}}") == [mine]
+    for where in (F("Many") == "_curuser_", F("Who").op("TV", " _CURUSER_ ")):
+        with pytest.raises(QueryError, match="_curuser_"):
+            found(where)
+
+
+def test_relative_dates_and_unreadable_dates(scratch: Any) -> None:
+    table = scratch.table(("Due", "date"))
+    today = date.today()
+    recent, old = table.insert(
+        [{"Due": today - timedelta(days=1)}, {"Due": date(2000, 1, 1)}]
+    ).created_ids
+
+    def found(where: Any) -> list[int]:
+        return [record.id for record in table.query(where=where, select=[3])]
+
+    assert found(F("Due") == "yesterday") == [recent]
+    assert found(F("Due") == "1 day ago") == [recent]
+    assert found(F("Due") < "today") == [recent, old]
+    assert found(F("Due") == "not a date") == []
+
+
+def test_datetimes_with_fractions_of_a_second(scratch: Any) -> None:
+    table = scratch.table(("Seen", "datetime"))
+    moment = datetime(2027, 1, 2, 3, 4, 5, 123456, tzinfo=UTC)
+    for value in (moment, moment.replace(microsecond=0), datetime.now(UTC)):
+        record_id = table.insert([{"Seen": value}]).created_ids[0]
+        read = table.get(record_id, select=["Seen"])["Seen"]
+        assert read == value.replace(microsecond=0)  # It reads back to the second.
+
+
+def test_a_typed_batch_size_and_a_row_for_another_table(scratch: Any) -> None:
+    table = scratch.table(("Title", "text"))
+    app = scratch.client.app(scratch.app_id)
+    source = render([(table.info(), table.fields(refresh=True))])
+    module = types.ModuleType("generated_for_docs")
+    exec(source, module.__dict__)
+    model = next(
+        item
+        for item in vars(module).values()
+        if isinstance(item, type) and issubclass(item, TypedRecord) and item is not TypedRecord
+    )
+    typed = app.typed(model)
+    made = typed.insert([model.new(title=f"Row {n}") for n in range(3)], batch_size=2)
+    assert len(made.created_ids) == 3
+    other = type("Other", (model,), {"__slots__": (), "__table_id__": "bqother"})
+    with pytest.raises(InvalidValueError):
+        typed.insert([other.new(title="Wrong")])
+    assert table.count() == 3
