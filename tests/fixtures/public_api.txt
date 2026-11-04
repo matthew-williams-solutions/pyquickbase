@@ -79,8 +79,8 @@ class AsyncTypedTable(Generic)
     async def check_schema(self) -> None
     async def count(self, where: Expression | str | None = None) -> int
     async def delete(self, where: Expression | str) -> int
-    async def first(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None) -> Optional[~R]
-    async def get(self, record_id: int) -> Optional[~R]
+    async def first(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None) -> ~R | None
+    async def get(self, record_id: int) -> ~R | None
     async def insert(self, rows: Iterable[Row[~R]]) -> WriteResult
     def query(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, limit: int | None = None) -> 'AsyncTypedIterator[R]'
     property table -> AsyncTable
@@ -304,8 +304,8 @@ class TypedTable(Generic)
     def check_schema(self) -> None
     def count(self, where: Expression | str | None = None) -> int
     def delete(self, where: Expression | str) -> int
-    def first(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None) -> Optional[~R]
-    def get(self, record_id: int) -> Optional[~R]
+    def first(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None) -> ~R | None
+    def get(self, record_id: int) -> ~R | None
     def insert(self, rows: Iterable[Row[~R]]) -> WriteResult
     def query(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, limit: int | None = None) -> 'TypedIterator[R]'
     property table -> Table
