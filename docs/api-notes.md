@@ -338,6 +338,7 @@ tables, and no delete rights. Record-level rules weren't tested.
 | Inserting a duplicate into a unique field | Row error, `Adding non-unique value for field with ID "8".`, and no new record, with only add rights |
 | A field set to View in the role | Readable and usable in `where`. Writing it gives the row error `Insufficient permissions to update data in a restricted field.` |
 | **A row with an allowed field and a view-only field** | **The whole row is refused**, and the allowed field doesn't change |
+| **A field created after a role's Custom Access was set** | **The role gets full access to it.** It could write the new field straight away, until it was set to View. Check a role after adding any field |
 | `where` on lookup and foreign key fields | Works |
 | Upsert with add and modify rights, including repeating it | Works |
 | `DELETE /records` with no delete rights, with `{3.LT.0}` | 403 on every table |
