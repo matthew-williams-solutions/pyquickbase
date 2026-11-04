@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0rc5] - 2026-11-04
+
+This candidate closes gaps that would be hard to change after 1.0, and has four more breaking
+changes, so check the list under Changed before upgrading.
+
 ### Added
 
 - `Expression`, `FieldRef`, `FieldRefs`, and `OrderBy` are now exported, as they appear in public
