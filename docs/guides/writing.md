@@ -1,8 +1,18 @@
 # Writing records
 
-Rows are dictionaries keyed by field label or ID. Python `date`, timezone-aware `datetime`, and
-`Decimal` values are converted for you, and `None` clears a field. File fields work differently: see
-[File attachments](files.md).
+This page covers creating, updating, and deleting records, and what to do when rows fail.
+
+```python
+from pyquickbase import Quickbase
+
+with Quickbase(realm="acme", token="your_user_token") as qb:
+    tasks = qb.app("bq1234567").table("Tasks")
+    result = tasks.insert([{"Title": "Pour slab"}])
+    print(result.created_ids)
+```
+
+The other examples on this page use `tasks`, made in the same way, with the sync client. With the async
+client, use `await` on each call.
 
 | Method | What it does |
 |---|---|
@@ -10,6 +20,21 @@ Rows are dictionaries keyed by field label or ID. Python `date`, timezone-aware 
 | `table.update(rows)` | Changes records. Each row needs a `Record ID#` |
 | `table.upsert(rows, merge_on="Code")` | Updates the record whose unique field matches, or creates one |
 | `table.delete(where)` | Deletes matching records and returns the count |
+
+## Writing values
+
+Rows are dictionaries keyed by field label or ID. [Field types](../field-types.md) lists what to write
+for each type.
+
+| Python value | What happens |
+|---|---|
+| `date` | Written as a date |
+| `datetime` with a timezone | Written as a date and time. Without a timezone, it raises `InvalidValueError` |
+| `Decimal` | Written exactly, so money doesn't pick up rounding errors |
+| `str`, `int`, `float`, `bool`, `list`, or `dict` | Written as it is |
+| `None` | Clears the field |
+| `FileUpload` | Attaches a file. See [File attachments](files.md) |
+| Anything else | Raises `InvalidValueError` |
 
 ## Creating records
 
@@ -25,12 +50,14 @@ result = tasks.insert(
 print(result.created_ids)
 ```
 
-A row that sets `Record ID#` raises `InvalidValueError`, because that would update a record.
+`created_ids` are in the same order as your rows. A row that sets `Record ID#` raises
+`InvalidValueError`, because that would update a record.
 
 ## Updating records
 
-Fields you leave out keep their values. A Record ID# that doesn't exist is an error, not a new
-record.
+Each row needs a `Record ID#`. Fields you leave out keep their values. A Record ID# that doesn't exist
+is an error, not a new record. A record whose values didn't change is listed in `unchanged_ids`, not
+`updated_ids`.
 
 ```python
 result = tasks.update([{"Record ID#": 7, "Status": "Done", "Notes": None}])
@@ -40,7 +67,8 @@ print(result.updated_ids, result.unchanged_ids)
 ## Upserting records
 
 `merge_on` must name a field marked as unique, and every row must set it. A row whose value doesn't
-match any record **creates a new record**, so use `update()` if that isn't what you want.
+match any record **creates a new record**, so use `update()` if that isn't what you want. Repeating the
+same write changes nothing, and lists the record in `unchanged_ids`.
 
 ```python
 result = tasks.upsert([{"Code": "A1", "Title": "Frame walls"}], merge_on="Code")
@@ -51,6 +79,7 @@ print(result.created_ids, result.updated_ids)
 
 `where` is required, and it's checked before sending. This matters more here than anywhere else:
 Quickbase treats a lowercase operator as "contains", so a typo could delete far more than you meant.
+If nothing matches, it returns 0 rather than raising an error.
 
 ```python
 from pyquickbase import F
@@ -58,6 +87,17 @@ from pyquickbase import F
 deleted = tasks.delete(F("Status") == "Cancelled")
 print(deleted)
 ```
+
+## What a write returns
+
+`insert()`, `update()`, and `upsert()` return a `WriteResult`:
+
+| Attribute | Meaning |
+|---|---|
+| `created_ids` | Record IDs of new records |
+| `updated_ids` | Record IDs of records that changed |
+| `unchanged_ids` | Record IDs of records whose values were already the same |
+| `errors` | The rows that failed. This is only ever set on `WriteError.result`, because a failure raises |
 
 ## When rows fail
 
@@ -82,9 +122,9 @@ except WriteError as error:
 |---|---|
 | `duplicate` | A value is already in a unique field, which `field_id` names |
 | `permission` | The token's role refused it |
-| `invalid_choice` | A value isn't one of the field's choices, and `field_id` names the field |
+| `invalid_choice` | A value isn't one of the field's choices, on a field with `allowNewChoices` off, and `field_id` names the field |
 | `rule` | One of the table's custom data rules refused it, and `messages` holds the rule's text |
-| `other` | Anything else, including wording this version doesn't recognize |
+| `other` | Anything else, such as writing to a formula or built-in field, or wording this version doesn't recognize |
 
 This makes a repeated insert easy to treat as already done, for a table a role can add to but not
 change:
@@ -101,12 +141,35 @@ A write refused by the role raises `WritePermissionError`, whichever way Quickba
 [Errors](errors.md#refused-writes). **An upsert that matches an existing record needs permission to
 modify**, so a role that can only add gets a refusal when a write is repeated.
 
+## Rows Quickbase could skip
+
 A row needs at least one real value, so `insert()` and `upsert()` raise `InvalidValueError` for a row
 where every value is empty. Quickbase can skip such a row without saying so, which also shifts
 `created_ids` against your rows.
+
+## Large writes
 
 Large writes are split into batches of 1,000 rows, which you can change with `batch_size`. If a later
 batch fails outright, `WriteError` is raised with the results so far. Check `error.result` before
 trying again, so you don't write the same rows twice.
 
 A write that times out isn't retried, because Quickbase may already have applied it.
+
+## When something is refused
+
+| What happened | Exception | What's left behind |
+|---|---|---|
+| A row sets `Record ID#` in `insert()`, or leaves it out of `update()` | `InvalidValueError` | Nothing was sent |
+| A row leaves out the `merge_on` field in `upsert()` | `InvalidValueError` | Nothing was sent |
+| A row has no real values in `insert()` or `upsert()` | `InvalidValueError` | Nothing was sent |
+| A value that can't be written, such as a `datetime` without a timezone | `InvalidValueError` | Nothing was sent |
+| A row names a field the table doesn't have, or the token can't see | `UnknownFieldError` | Nothing was sent |
+| `batch_size` below 1, or a `delete()` condition that can't be sent as written | `QueryError` | Nothing was sent |
+| The client is read-only, or doesn't allow this write | `ReadOnlyError` | Nothing was sent |
+| `merge_on` isn't a unique field | `BadRequestError` | Nothing was written |
+| Some rows failed, such as a duplicate or a formula field | `WriteError` | **The other rows were written** |
+| A later batch failed outright | `WriteError` | **Earlier batches were written** |
+| The role refused the write | `WritePermissionError` | Check `error.result` for earlier rows |
+| The request timed out | `RequestTimeoutError` | **It may have been applied.** It isn't retried |
+
+See [Handling errors](errors.md) for how these exceptions relate.

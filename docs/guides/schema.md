@@ -27,7 +27,8 @@ with Quickbase(realm="acme", token="your_user_token") as qb:
 The other examples on this page use `qb`, a client made in the same way.
 
 - `choices` are the options of a `text-multiple-choice` or `multitext` field. Quickbase refuses them on
-  other types.
+  other types. **They don't restrict what can be written** unless you also pass
+  `properties={"allowNewChoices": False}`, because a new field accepts new choices by default.
 - `properties` are any other settings, sent as they are. The
   [field types page](../field-types.md#field-settings) lists common ones.
 - `formula` makes it a formula field. See [Formulas](formulas.md#formula-fields).

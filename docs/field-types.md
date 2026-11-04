@@ -16,10 +16,10 @@ tasks.create_field("Priority", "text-multiple-choice", choices=["Low", "High"])
 | `field_type` | Holds | Write | Reads as | Empty reads as | Takes a formula |
 |---|---|---|---|---|---|
 | `text` | One line of text | `str` | `str` | `""` | Yes |
-| `text-multiple-choice` | One of its `choices` | `str` | `str` | `""` | Not tested |
+| `text-multiple-choice` | One choice | `str` | `str` | `""` | Not tested |
 | `text-multi-line` | Several lines of text | `str` | `str` | `""` | No |
 | `rich-text` | Text containing HTML | `str` | `str` | `""` | Not tested |
-| `multitext` | Several of its `choices` | `list[str]` | `list[str]` | `[]` | Not tested |
+| `multitext` | Several choices | `list[str]` | `list[str]` | `[]` | Not tested |
 | `email` | An email address | `str` | `str` | `""` | Yes |
 | `url` | A link | `str` | `str` | `""` | Yes |
 | `phone` | A phone number | `str` | `str`, formatted by Quickbase: `5551234567` reads as `(555) 123-4567` | `""` | Not tested |
@@ -83,7 +83,7 @@ with `BadRequestError`, rather than ignoring it. These were accepted and kept, a
 | `comments` | `text` | `"A note about this field"` |
 | `numLines` | `text-multi-line` | `3` |
 | `appearsAs` | `url` | `"Link"` |
-| `allowNewChoices` | `text-multiple-choice` | `True` |
+| `allowNewChoices` | `text-multiple-choice` | `False`, so a value outside `choices` is refused. It's on by default |
 | `sortAsGiven` | `text-multiple-choice` | `True` |
 
 ```python

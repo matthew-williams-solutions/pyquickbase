@@ -25,8 +25,10 @@ LEFT_OUT = {"playground.md"}
 DESCRIPTIONS = {
     "index.md": "What the SDK is, why to use it, and how to install it",
     "getting-started.md": "Install it, read some records, and write one",
-    "guides/reading.md": "Tables, fields, queries with `F`, paging, record values, and reports",
-    "guides/writing.md": "Inserts, updates, upserts, deletes, and rows that fail",
+    "guides/reading.md": "Tables, fields, queries with `F`, paging, record values, reports, and "
+    "what each refusal raises",
+    "guides/writing.md": "Inserts, updates, upserts, deletes, rows that fail, and what each "
+    "refusal leaves behind",
     "guides/files.md": "Uploading, downloading, and deleting file attachments",
     "guides/formulas.md": "Running formulas and creating formula fields, and why not to run "
     "formula text you don't control",

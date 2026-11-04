@@ -58,12 +58,12 @@ class AsyncTable(object)
     async def ensure_relationship(self, parent: 'AsyncTable', *, foreign_key_label: str) -> Relationship
     async def ensure_summary_field(self, relationship: Relationship, child_field: str | int, label: str, *, function: str = 'SUM') -> Field
     async def fields(self, *, refresh: bool = False) -> list[Field]
-    async def first(self, *, where: Expression | str | None = None, select: str | int | Sequence[str | int] | None = None, order_by: str | int | Sequence[str | int] | None = None) -> Record | None
-    async def get(self, record_id: int, *, select: str | int | Sequence[str | int] | None = None) -> Record | None
+    async def first(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None) -> Record | None
+    async def get(self, record_id: int, *, select: str | int | F | Sequence[str | int | F] | None = None) -> Record | None
     async def info(self) -> TableInfo
     async def insert(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000) -> WriteResult
-    def query(self, *, where: Expression | str | None = None, select: str | int | Sequence[str | int] | None = None, order_by: str | int | Sequence[str | int] | None = None, page_size: int = 1000, limit: int | None = None) -> AsyncRecordIterator
-    async def query_page(self, *, where: Expression | str | None = None, select: str | int | Sequence[str | int] | None = None, order_by: str | int | Sequence[str | int] | None = None, top: int = 100, skip: int = 0) -> Page
+    def query(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, page_size: int = 1000, limit: int | None = None) -> AsyncRecordIterator
+    async def query_page(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, top: int = 100, skip: int = 0) -> Page
     async def relationships(self, *, refresh: bool = False) -> list[Relationship]
     def report(self, name_or_id: str) -> 'AsyncReport'
     async def reports(self, *, refresh: bool = False) -> list[ReportInfo]
@@ -83,6 +83,7 @@ class AsyncTypedTable(Generic)
     async def get(self, record_id: int) -> ~R | None
     async def insert(self, rows: Iterable[Row[~R]]) -> WriteResult
     def query(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, limit: int | None = None) -> 'AsyncTypedIterator[R]'
+    async def query_page(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, top: int = 100, skip: int = 0) -> TypedPage[~R]
     property table -> AsyncTable
     async def update(self, rows: Iterable[Row[~R]]) -> WriteResult
     async def upsert(self, rows: Iterable[Row[~R]], *, merge_on: TypedField) -> WriteResult
@@ -257,12 +258,12 @@ class Table(object)
     def ensure_relationship(self, parent: 'Table', *, foreign_key_label: str) -> Relationship
     def ensure_summary_field(self, relationship: Relationship, child_field: str | int, label: str, *, function: str = 'SUM') -> Field
     def fields(self, *, refresh: bool = False) -> list[Field]
-    def first(self, *, where: Expression | str | None = None, select: str | int | Sequence[str | int] | None = None, order_by: str | int | Sequence[str | int] | None = None) -> Record | None
-    def get(self, record_id: int, *, select: str | int | Sequence[str | int] | None = None) -> Record | None
+    def first(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None) -> Record | None
+    def get(self, record_id: int, *, select: str | int | F | Sequence[str | int | F] | None = None) -> Record | None
     def info(self) -> TableInfo
     def insert(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000) -> WriteResult
-    def query(self, *, where: Expression | str | None = None, select: str | int | Sequence[str | int] | None = None, order_by: str | int | Sequence[str | int] | None = None, page_size: int = 1000, limit: int | None = None) -> RecordIterator
-    def query_page(self, *, where: Expression | str | None = None, select: str | int | Sequence[str | int] | None = None, order_by: str | int | Sequence[str | int] | None = None, top: int = 100, skip: int = 0) -> Page
+    def query(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, page_size: int = 1000, limit: int | None = None) -> RecordIterator
+    def query_page(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, top: int = 100, skip: int = 0) -> Page
     def relationships(self, *, refresh: bool = False) -> list[Relationship]
     def report(self, name_or_id: str) -> 'Report'
     def reports(self, *, refresh: bool = False) -> list[ReportInfo]
@@ -298,6 +299,14 @@ class TypedField(F)
 class TypedIterator(Generic)
     def __iter__(self) -> Self
     def __next__(self) -> ~R
+class TypedPage(Generic)
+    def __eq__(self, other)
+    def __init__(self, *, records: tuple[~R, ...], total: int, skip: int) -> None
+    property has_more -> bool
+    property next_skip -> int
+    field records: tuple[~R, ...]
+    field skip: int
+    field total: int
 class TypedRecord(object)
     classmethod def from_record(cls, record: Record) -> Self
 class TypedTable(Generic)
@@ -308,6 +317,7 @@ class TypedTable(Generic)
     def get(self, record_id: int) -> ~R | None
     def insert(self, rows: Iterable[Row[~R]]) -> WriteResult
     def query(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, limit: int | None = None) -> 'TypedIterator[R]'
+    def query_page(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, top: int = 100, skip: int = 0) -> TypedPage[~R]
     property table -> Table
     def update(self, rows: Iterable[Row[~R]]) -> WriteResult
     def upsert(self, rows: Iterable[Row[~R]], *, merge_on: TypedField) -> WriteResult

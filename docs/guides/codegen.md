@@ -40,8 +40,10 @@ for task in tasks.query(
 print(tasks.count(Tasks.fields.status == "Open"))
 ```
 
-`Tasks.fields` works like `F`, by field ID. Each record is a frozen dataclass, and `query()` always
-selects all of its fields. A record's `repr` leaves out its values, because they may be sensitive.
+`Tasks.fields` works like `F`, by field ID. `order_by` takes these fields or their IDs, and raises
+`QueryError` for a label such as `"Title"`, because the class uses IDs so that renaming a label can't
+break it. Each record is a frozen dataclass, and `query()` and
+`query_page()` always select all of its fields. A record's `repr` leaves out its values, because they may be sensitive.
 
 | Field type | Attribute type |
 |---|---|
@@ -62,6 +64,34 @@ An ordinary `Record` holds every number as a `float`. Generated classes convert 
 exactly. **Quickbase uses decimal places only for display**, and stores `1.5` in a field set to 0 places.
 A value like that raises `InvalidResponseError`, without showing the value, rather than being rounded.
 
+## Reading a page at a time
+
+Use `query_page()` when you control the paging yourself, such as for a list endpoint. It takes `where`,
+`order_by`, `top`, and `skip`, and returns a `TypedPage` whose `records` are instances of the class, so
+money still reads as `Decimal`.
+
+```python
+from myapp.tables import Tasks
+
+tasks = qb.app("bq1234567").typed(Tasks)
+
+page = tasks.query_page(where=Tasks.fields.status == "Open", order_by=Tasks.fields.due_date, top=25)
+print([task.title for task in page.records])
+print(page.total, page.skip, page.has_more, page.next_skip)
+
+if page.has_more:
+    following = tasks.query_page(
+        where=Tasks.fields.status == "Open",
+        order_by=Tasks.fields.due_date,
+        top=25,
+        skip=page.next_skip,
+    )
+```
+
+`total` counts every match, not just this page. Like other typed methods, it checks the class against
+the table on first use. Paging uses offsets, so records deleted between pages can cause others to be
+skipped without any error.
+
 ## Writing
 
 `Tasks.new()` builds a row for a new record, and `Tasks.change()` builds one for an existing record.
@@ -80,6 +110,8 @@ Leaving an argument out leaves that field alone, and `None` clears it, except fo
 take a `FileUpload`.
 
 `tasks.table` is the ordinary untyped table, for anything else, such as reports and file downloads.
+Its `where`, `select`, and `order_by` also accept `Tasks.fields`, but its records aren't converted, so
+money reads as a `float`.
 
 ## Keeping it up to date
 

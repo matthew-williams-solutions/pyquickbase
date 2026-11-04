@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Generic, Self, TypeVar
 
 from ._models import Field, Record
 from ._query import F
-from .errors import InvalidResponseError, SchemaMismatchError
+from .errors import InvalidResponseError, QueryError, SchemaMismatchError
 
 _BUILT_IN_FIELDS = 5
 WRITABLE_TYPES = {
@@ -80,12 +80,32 @@ class TypedField(F):
 OrderBy = TypedField | int | Sequence[TypedField | int] | None
 
 
+_ORDER_BY_HELP = (
+    "order_by takes a field of the generated class or its ID, or a list of them, such as "
+    "Tasks.fields.title, or Tasks.fields.title.desc for descending."
+)
+
+
+def _order_ref(ref: TypedField | int) -> int:
+    if isinstance(ref, TypedField):
+        return ref.id
+    if isinstance(ref, bool) or not isinstance(ref, int):  # pyright: ignore[reportUnnecessaryIsInstance]
+        raise QueryError(_ORDER_BY_HELP)
+    return ref
+
+
 def order_refs(order_by: OrderBy) -> list[int] | None:
-    """Turn `order_by` into field IDs, where a negative ID sorts descending."""
+    """Turn `order_by` into field IDs, where a negative ID sorts descending.
+
+    Labels are refused, because generated classes use IDs so that renaming a label can't break them.
+    """
     if order_by is None:
         return None
-    refs = [order_by] if isinstance(order_by, TypedField | int) else order_by
-    return [ref.id if isinstance(ref, TypedField) else ref for ref in refs]
+    if isinstance(order_by, TypedField | int):
+        return [_order_ref(order_by)]
+    if isinstance(order_by, str) or not isinstance(order_by, Iterable):  # pyright: ignore[reportUnnecessaryIsInstance]
+        raise QueryError(_ORDER_BY_HELP)
+    return [_order_ref(ref) for ref in order_by]
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +131,24 @@ class Row(dict[int, Any], Generic[R]):
 
     It's tied to its class, so a type checker refuses a row meant for another table.
     """
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TypedPage(Generic[R]):
+    """One page of records as instances of a generated class. `total` counts every match."""
+
+    records: tuple[R, ...]
+    total: int
+    skip: int
+
+    @property
+    def has_more(self) -> bool:
+        return self.next_skip < self.total
+
+    @property
+    def next_skip(self) -> int:
+        """The `skip` that fetches the following page."""
+        return self.skip + len(self.records)
 
 
 def _converted(column: Column, value: Any) -> Any:

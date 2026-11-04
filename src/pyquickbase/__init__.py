@@ -25,7 +25,7 @@ from ._query import F, WhereCondition, parse_where
 from ._retry import RetryPolicy
 from ._sync._client import Quickbase
 from ._sync._resources import App, RecordIterator, Report, Table, TypedIterator, TypedTable
-from ._typed import UNSET, Column, Row, TypedField, TypedRecord, Unset
+from ._typed import UNSET, Column, Row, TypedField, TypedPage, TypedRecord, Unset
 from ._version import __version__
 from ._writes import FileUpload, RowError, WriteResult
 from .errors import (
@@ -101,6 +101,7 @@ __all__ = [
     "TableInfo",
     "TypedField",
     "TypedIterator",
+    "TypedPage",
     "TypedRecord",
     "TypedTable",
     "UnknownFieldError",

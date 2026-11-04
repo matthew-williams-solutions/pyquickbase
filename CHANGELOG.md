@@ -6,14 +6,28 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `TypedTable.query_page()`, which returns a page of generated class instances as a new `TypedPage`,
+  with `total`, `skip`, `has_more`, and `next_skip`. It runs the same schema check as other typed
+  methods.
+
 ### Fixed
 
+- `order_by` and `select` on an untyped table now accept a field from a generated class or `F`, such
+  as `tasks.table.query_page(order_by=Tasks.fields.title)`. Before, it raised a bare `TypeError`. Any
+  other unusable value now raises `QueryError`.
 - `ensure_table()` now returns a table you can use when the name differs only in case from an
   existing one. Before, it found the table, then raised `UnknownTableError` on first use.
 
 ### Changed
 
-- Fuller docstrings for the schema methods, a longer schema guide, and a new field types page.
+- **Breaking:** `order_by` on a typed table now takes only what its signature says, a field of the
+  generated class or its ID, alone or in a list. Anything else raises `QueryError`. Before, `["Title"]`
+  and `[F("Title")]` happened to work, `"Title"` was read as one field name per letter, and
+  `F("Title")` raised a bare `TypeError`. Use `Tasks.fields.title`.
+- Fuller docstrings for the schema, query, and write methods, longer schema, reading, and writing
+  guides, and a new field types page.
 - `SchemaMismatchError`'s description now covers the `ensure_` methods, which also raise it.
 
 ## [1.0.0rc4] - 2026-11-04

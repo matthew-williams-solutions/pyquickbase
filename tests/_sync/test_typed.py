@@ -10,11 +10,13 @@ import httpx
 import pytest
 
 from pyquickbase import (
+    F,
     InvalidResponseError,
     QueryError,
     Quickbase,
     Record,
     SchemaMismatchError,
+    TypedPage,
     WriteError,
 )
 from pyquickbase._codegen import render
@@ -397,3 +399,119 @@ def test_first_and_get_return_an_instance_or_none() -> None:
         tasks = qb.app(APP).typed(model)
         assert tasks.first() is None
         assert tasks.get(5) is None
+
+
+def test_query_page_returns_instances_and_paging_details() -> None:
+    server = Server(total=5)
+    with client(server) as qb:
+        tasks = qb.app(APP).typed(Tasks)
+        page = tasks.query_page(
+            where=Tasks.fields.title == "Item", order_by=Tasks.fields.due_date.desc, top=2, skip=1
+        )
+    assert isinstance(page, TypedPage)
+    assert [task.id for task in page.records] == [2, 3]
+    assert page.records[0] == Tasks(id=2, title="Item 2", due_date=date(2027, 1, 2), total=None)
+    assert (page.total, page.skip, page.has_more, page.next_skip) == (5, 1, True, 3)
+    body = server.sent("/records/query")[0]
+    assert body["select"] == [3, 6, 7, 8]
+    assert body["where"] == "{6.EX.'Item'}"
+    assert body["sortBy"][0] == {"fieldId": 7, "order": "DESC"}
+    assert body["options"] == {"top": 2, "skip": 1}
+
+
+def test_query_page_defaults_and_last_page() -> None:
+    server = Server(total=3)
+    with client(server) as qb:
+        page = qb.app(APP).typed(Tasks).query_page()
+    assert server.sent("/records/query")[0]["options"] == {"top": 100, "skip": 0}
+    assert (len(page.records), page.has_more, page.next_skip) == (3, False, 3)
+
+
+@pytest.mark.parametrize(
+    "order_by",
+    [
+        lambda: Tasks.fields.title,
+        lambda: Tasks.fields.title.id,
+        lambda: Tasks.fields.title.desc,
+        lambda: [Tasks.fields.title.desc, Tasks.fields.due_date],
+    ],
+)
+def test_query_page_takes_what_query_takes_for_order_by(order_by: Any) -> None:
+    server = Server(total=1)
+    with client(server) as qb:
+        tasks = qb.app(APP).typed(Tasks)
+        tasks.query_page(order_by=order_by())
+        [_ for _ in tasks.query(order_by=order_by())]
+    first, second = server.sent("/records/query")
+    assert first["sortBy"] == second["sortBy"]
+
+
+def test_query_page_checks_the_schema_first() -> None:
+    fields = [field for field in FIELDS if field["label"] != "Title"]
+    server = Server(total=1)
+    server.fields = fields
+    with client(server) as qb:
+        with pytest.raises(SchemaMismatchError):
+            qb.app(APP).typed(Tasks).query_page()
+    assert not server.sent("/records/query")
+
+
+@pytest.mark.parametrize(("top", "skip"), [(0, 0), (1, -1)])
+def test_query_page_refuses_bad_paging_before_querying(top: int, skip: int) -> None:
+    server = Server(total=1)
+    with client(server) as qb:
+        with pytest.raises(QueryError):
+            qb.app(APP).typed(Tasks).query_page(top=top, skip=skip)
+    assert not server.sent("/records/query")
+
+
+def test_typed_fields_work_on_the_untyped_table() -> None:
+    server = Server(total=1)
+    title = Tasks.fields.title
+    with client(server) as qb:
+        table = qb.app(APP).typed(Tasks).table
+        table.query_page(order_by=title, select=title)
+        table.query_page(order_by=[title, Tasks.fields.due_date.desc], select=[title])
+        table.first(order_by=title)
+        [_ for _ in table.query(order_by=title)]
+    single, several, first, iterated = server.sent("/records/query")
+    assert single["sortBy"] == [{"fieldId": 6, "order": "ASC"}, {"fieldId": 3, "order": "ASC"}]
+    assert single["select"] == [3, 6]
+    assert several["sortBy"][:2] == [
+        {"fieldId": 6, "order": "ASC"},
+        {"fieldId": 7, "order": "DESC"},
+    ]
+    assert first["sortBy"] == iterated["sortBy"] == single["sortBy"]
+
+
+@pytest.mark.parametrize(
+    "order_by",
+    ["Title", ["Title"], ["-Title"], F("Title"), [F("Title")], 1.5, [1.5], True, [None]],
+    ids=repr,
+)
+def test_typed_order_by_takes_only_fields_of_the_class_and_ids(order_by: Any) -> None:
+    server = Server(total=1)
+    with client(server) as qb:
+        tasks = qb.app(APP).typed(Tasks)
+        with pytest.raises(QueryError, match=r"Tasks\.fields\.title"):
+            tasks.query(order_by=order_by)
+        with pytest.raises(QueryError, match=r"Tasks\.fields\.title"):
+            tasks.query_page(order_by=order_by)
+        with pytest.raises(QueryError, match=r"Tasks\.fields\.title"):
+            tasks.first(order_by=order_by)
+    assert not server.sent("/records/query")
+
+
+def test_typed_order_by_takes_any_iterable_of_fields_and_ids() -> None:
+    server = Server(total=1)
+    title = Tasks.fields.title
+    with client(server) as qb:
+        tasks = qb.app(APP).typed(Tasks)
+        tasks.query_page(order_by=(title, -7))
+        tasks.query_page(order_by=iter([title, -7]))  # pyright: ignore[reportArgumentType]
+    first, second = server.sent("/records/query")
+    assert first["sortBy"] == second["sortBy"]
+    assert first["sortBy"][:2] == [
+        {"fieldId": 6, "order": "ASC"},
+        {"fieldId": 7, "order": "DESC"},
+    ]

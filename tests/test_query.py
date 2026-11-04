@@ -428,3 +428,24 @@ def test_words_quickbase_treats_as_syntax_are_sent_as_text(value: str, sent: str
 def test_field_references_in_values_are_refused(value: str) -> None:
     with pytest.raises(QueryError, match="_FID_6 as a field"):
         format_value(value)
+
+
+def test_body_takes_field_objects() -> None:
+    labelled = build(order_by=F("Due Date"), select=F("Title"))
+    assert labelled["sortBy"][0] == {"fieldId": 9, "order": "ASC"}
+    assert labelled["select"] == [3, 6]
+    by_id = build(order_by=[F(9), "-Title"], select=[F(9), "Title"])
+    assert by_id["sortBy"][:2] == [
+        {"fieldId": 9, "order": "ASC"},
+        {"fieldId": 6, "order": "DESC"},
+    ]
+    assert by_id["select"] == [3, 9, 6]
+    # A field object means that exact field, so this dash is part of the label.
+    assert build(order_by=F("-Odd Label"))["sortBy"][0] == {"fieldId": 20, "order": "ASC"}
+
+
+@pytest.mark.parametrize("argument", ["order_by", "select"])
+@pytest.mark.parametrize("value", [1.5, F("Title") == "x", object(), [1.5], [["Title"]], [None]])
+def test_body_refuses_anything_else_clearly(argument: str, value: Any) -> None:
+    with pytest.raises(QueryError, match=argument):
+        build(**{argument: value})

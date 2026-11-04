@@ -88,7 +88,7 @@ def test_a_datetime_field_reports_timestamp(scratch: Any) -> None:
         ("comments", "hi", "text"),
         ("numLines", 3, "text-multi-line"),
         ("appearsAs", "Link", "url"),
-        ("allowNewChoices", True, "text-multiple-choice"),
+        ("allowNewChoices", False, "text-multiple-choice"),
         ("sortAsGiven", True, "text-multiple-choice"),
     ],
 )

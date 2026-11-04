@@ -276,11 +276,30 @@ def compile_where(where: Expression | str, fields: FieldIndex) -> str:
     raise QueryError("`where` must be a condition built with F, or a string.")
 
 
-def _as_list(refs: FieldRef | Sequence[FieldRef]) -> list[FieldRef]:
-    return [refs] if isinstance(refs, str | int) else list(refs)
+FieldRefs = FieldRef | F | Sequence[FieldRef | F]
 
 
-def _sort_field(ref: FieldRef, fields: FieldIndex) -> dict[str, Any]:
+def _as_list(refs: FieldRefs, argument: str) -> list[FieldRef | F]:
+    if isinstance(refs, str | int | F):
+        return [refs]
+    try:
+        items = list(refs)
+    except TypeError:
+        raise QueryError(f"{argument} takes fields or a list of them, not this value.") from None
+    for item in items:
+        if not isinstance(item, str | int | F):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise QueryError(f"{argument} takes field labels, IDs, or fields, not this value.")
+    return items
+
+
+def _named(field: F) -> FieldRef:
+    return field._field  # pyright: ignore[reportPrivateUsage]
+
+
+def _sort_field(ref: FieldRef | F, fields: FieldIndex) -> dict[str, Any]:
+    if isinstance(ref, F):
+        # A field object means exactly that field, so a leading `-` in its label isn't a prefix.
+        return {"fieldId": fields.resolve(_named(ref)).id, "order": "ASC"}
     descending = False
     if isinstance(ref, int) and not isinstance(ref, bool) and ref < 0:
         ref, descending = -ref, True
@@ -290,12 +309,15 @@ def _sort_field(ref: FieldRef, fields: FieldIndex) -> dict[str, Any]:
 
 
 def _select_ids(
-    select: FieldRef | Sequence[FieldRef] | None, all_fields: Sequence[Field], fields: FieldIndex
+    select: FieldRefs | None, all_fields: Sequence[Field], fields: FieldIndex
 ) -> list[int]:
     if select is None:
         ids = [item.id for item in all_fields if item.appears_by_default]
     else:
-        ids = [fields.resolve(ref).id for ref in _as_list(select)]
+        ids = [
+            fields.resolve(_named(ref) if isinstance(ref, F) else ref).id
+            for ref in _as_list(select, "select")
+        ]
     return list(dict.fromkeys([RECORD_ID_FIELD, *ids]))
 
 
@@ -304,8 +326,8 @@ def build_query_body(
     all_fields: Sequence[Field],
     *,
     where: Expression | str | None,
-    select: FieldRef | Sequence[FieldRef] | None,
-    order_by: FieldRef | Sequence[FieldRef] | None,
+    select: FieldRefs | None,
+    order_by: FieldRefs | None,
 ) -> dict[str, Any]:
     """Build the body of a records query, without its paging options.
 
@@ -313,7 +335,7 @@ def build_query_body(
     when other sort values tie.
     """
     fields = FieldIndex(all_fields)
-    refs = [] if order_by is None else _as_list(order_by)
+    refs = [] if order_by is None else _as_list(order_by, "order_by")
     sort = [_sort_field(ref, fields) for ref in refs]
     if all(item["fieldId"] != RECORD_ID_FIELD for item in sort):
         sort.append({"fieldId": RECORD_ID_FIELD, "order": "ASC"})
