@@ -7,12 +7,15 @@ code runs.
 ## Generating the module
 
 The command reads `QB_REALM` and `QB_USER_TOKEN` from the environment, and only ever reads from
-Quickbase.
+Quickbase. `--token-env` names a different variable for the token.
 
 ```bash
 pyquickbase codegen --app bq1234567 --output src/myapp/tables.py
 pyquickbase codegen --app bq1234567 --output src/myapp/tables.py --table Tasks --table Projects
 ```
+
+The links Quickbase makes for each relationship, such as `Add Task` and `Task records`, are left out,
+because only people use them and every query would fetch them. `--include-links` keeps them.
 
 It won't replace a file it didn't generate. The module holds table IDs and field labels, but no realm or
 token, so check that you're comfortable with those in your repository before committing it.
@@ -43,7 +46,9 @@ selects all of its fields. A record's `repr` leaves out its values, because they
 | Field type | Attribute type |
 |---|---|
 | Text types, `email`, `url`, `phone`, `address`, and `timeofday` | `str`, which is `""` when empty |
-| `numeric`, `currency`, `rating`, `percent`, and `duration` (in milliseconds) | `float \| None` |
+| `currency` | `Decimal \| None` |
+| Foreign keys, and `numeric` fields set to 0 decimal places | `int \| None` |
+| Other `numeric` fields, `rating`, `percent`, and `duration` (in milliseconds) | `float \| None` |
 | `date` | `date \| None` |
 | `timestamp` | `datetime \| None` |
 | `checkbox` | `bool`, which is false when empty |
@@ -53,7 +58,9 @@ selects all of its fields. A record's `repr` leaves out its values, because they
 | `file` | `dict[str, Any]`, as described in [File attachments](files.md) |
 | Anything else | `Any` |
 
-Numbers are `float`, as in `Record`, so currency values aren't exact decimals.
+An ordinary `Record` holds every number as a `float`. Generated classes convert them, so money reads
+exactly. **Quickbase uses decimal places only for display**, and stores `1.5` in a field set to 0 places.
+A value like that raises `InvalidResponseError`, without showing the value, rather than being rounded.
 
 ## Writing
 

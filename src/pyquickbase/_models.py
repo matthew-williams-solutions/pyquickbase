@@ -44,6 +44,26 @@ class AppInfo:
     raw: Mapping[str, Any] = field(repr=False, compare=False)
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Role:
+    """A role in an app. `access` is Quickbase's name for its level, such as `Basic Access`."""
+
+    id: int
+    name: str
+    access: str
+    raw: Mapping[str, Any] = field(repr=False, compare=False)
+
+
+def role_from_api(data: Mapping[str, Any]) -> Role:
+    access: Mapping[str, Any] = data.get("access") or {}
+    return Role(
+        id=data["id"],
+        name=data["name"],
+        access=access.get("type") or "",
+        raw=data,
+    )
+
+
 def app_info_from_api(data: Mapping[str, Any]) -> AppInfo:
     return AppInfo(
         id=data["id"],
@@ -81,6 +101,11 @@ class Field:
     """A field's metadata. `mode` is `formula`, `lookup`, `summary`, or None for plain fields.
 
     `formula` is the formula's text, or None if the field doesn't have one.
+    `decimal_places` is only how a number is displayed: Quickbase still stores `1.5` in a field set
+    to 0 places. `is_foreign_key` means it links to a parent table's record. The `lookup_` and
+    `summary_` attributes say what those fields point at: `*_reference_field_id` is the foreign key
+    field, on this table for a lookup and on the child table for a summary, and
+    `*_target_field_id` is the field they read, on the parent or the child.
     """
 
     id: int
@@ -93,6 +118,13 @@ class Field:
     choices: tuple[str, ...]
     allow_new_choices: bool
     formula: str | None = None
+    decimal_places: int | None = None
+    is_foreign_key: bool = False
+    lookup_reference_field_id: int | None = None
+    lookup_target_field_id: int | None = None
+    summary_reference_field_id: int | None = None
+    summary_target_field_id: int | None = None
+    summary_function: str | None = None
     raw: Mapping[str, Any] = field(repr=False, compare=False)
 
 
@@ -109,19 +141,31 @@ def field_from_api(data: Mapping[str, Any]) -> Field:
         choices=tuple(properties.get("choices") or ()),
         allow_new_choices=bool(properties.get("allowNewChoices")),
         formula=properties.get("formula") or None,
+        decimal_places=properties.get("decimalPlaces"),
+        is_foreign_key=bool(properties.get("foreignKey")),
+        lookup_reference_field_id=properties.get("lookupReferenceFieldId"),
+        lookup_target_field_id=properties.get("lookupTargetFieldId"),
+        summary_reference_field_id=properties.get("summaryReferenceFieldId"),
+        summary_target_field_id=properties.get("summaryTargetFieldId"),
+        summary_function=properties.get("summaryFunction"),
         raw=data,
     )
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Relationship:
-    """A parent-child link between two tables."""
+    """A parent-child link between two tables.
+
+    `lookup_field_ids` are fields on the child, and `summary_field_ids` are fields on the parent.
+    `create_relationship()` and `ensure_lookup_field()` instead take the parent's field to look up.
+    """
 
     id: int
     parent_table_id: str
     child_table_id: str
     foreign_key_field_id: int | None
     lookup_field_ids: tuple[int, ...]
+    summary_field_ids: tuple[int, ...] = ()
     is_cross_app: bool
     raw: Mapping[str, Any] = field(repr=False, compare=False)
 
@@ -134,6 +178,7 @@ def relationship_from_api(data: Mapping[str, Any]) -> Relationship:
         child_table_id=data["childTableId"],
         foreign_key_field_id=foreign_key.get("id"),
         lookup_field_ids=tuple(item["id"] for item in data.get("lookupFields") or ()),
+        summary_field_ids=tuple(item["id"] for item in data.get("summaryFields") or ()),
         is_cross_app=bool(data.get("isCrossApp")),
         raw=data,
     )

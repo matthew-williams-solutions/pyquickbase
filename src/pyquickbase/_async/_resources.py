@@ -16,6 +16,7 @@ from .._models import (
     Record,
     Relationship,
     ReportInfo,
+    Role,
     TableInfo,
     app_info_from_api,
     field_from_api,
@@ -27,10 +28,11 @@ from .._models import (
     relationship_from_api,
     report_info_from_api,
     require_table_report,
+    role_from_api,
     table_info_from_api,
     unknown_report_message,
 )
-from .._query import Expression, FieldRef, build_query_body, compile_where
+from .._query import Expression, F, FieldRef, build_query_body, compile_where
 from .._schema import SchemaCache
 from .._typed import (
     OrderBy,
@@ -50,18 +52,21 @@ from .._writes import (
     merge_write_result,
     refuse_blank_rows,
     refuse_field,
+    refused_write,
     require_field,
     require_file_field,
     require_formula,
     require_id,
     split_batches,
-    write_result_summary,
+    write_failure,
 )
 from ..errors import (
     InvalidResponseError,
     InvalidValueError,
+    PermissionDeniedError,
     QueryError,
     QuickbaseError,
+    SchemaMismatchError,
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
@@ -114,6 +119,43 @@ class AsyncApp:
         self._cache.set(key, tables)
         return list(tables)
 
+    async def roles(self, *, refresh: bool = False) -> list[Role]:
+        """List the app's roles, from the cache unless `refresh` is set.
+
+        This needs an administrator's token: Quickbase returns 403 for a restricted role, and it
+        has no API for reading or changing what a role can do.
+        """
+        key = f"roles:{self._id}"
+        cached = None if refresh else self._cache.get(key)
+        if cached is not None:
+            return list(cached)
+        payload = await self._transport.request("GET", f"/apps/{self._id}/roles")
+        roles = parse(lambda rows: tuple(role_from_api(row) for row in rows), payload, "roles")
+        self._cache.set(key, roles)
+        return list(roles)
+
+    async def ensure_table(
+        self,
+        name: str,
+        *,
+        description: str | None = None,
+        single_record_name: str | None = None,
+        plural_record_name: str | None = None,
+    ) -> "AsyncTable":
+        """Return the table with this name, creating it if it doesn't exist.
+
+        An existing table isn't changed, so the other arguments only apply when creating one.
+        """
+        tables = await self.tables(refresh=True)
+        if any(item.name.casefold() == name.casefold() for item in tables):
+            return self.table(name)
+        return await self.create_table(
+            name,
+            description=description,
+            single_record_name=single_record_name,
+            plural_record_name=plural_record_name,
+        )
+
     async def create_table(
         self,
         name: str,
@@ -149,6 +191,13 @@ class AsyncApp:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._id!r})"
+
+
+def _same_property(key: str, current: Any, wanted: Any) -> bool:
+    """Compare a field's property with what's wanted. Quickbase can reorder a field's choices."""
+    if key == "choices":
+        return set(current or ()) == set(wanted)
+    return current == wanted
 
 
 def _find_table(tables: Sequence[TableInfo], ref: str) -> TableInfo | None:
@@ -363,6 +412,24 @@ class AsyncTable:
             lambda: self._query_body(where, select, order_by), self._fetch_page, page_size, limit
         )
 
+    async def first(
+        self,
+        *,
+        where: Expression | str | None = None,
+        select: FieldRef | Sequence[FieldRef] | None = None,
+        order_by: FieldRef | Sequence[FieldRef] | None = None,
+    ) -> Record | None:
+        """Get the first matching record, or None if there isn't one. See `query` for arguments."""
+        page = await self.query_page(where=where, select=select, order_by=order_by, top=1)
+        return page.records[0] if page.records else None
+
+    async def get(
+        self, record_id: int, *, select: FieldRef | Sequence[FieldRef] | None = None
+    ) -> Record | None:
+        """Get a record by its Record ID#, or None if it doesn't exist. See `query` for `select`."""
+        require_id("record_id", record_id)
+        return await self.first(where=F(RECORD_ID_FIELD) == record_id, select=select)
+
     async def count(self, where: Expression | str | None = None) -> int:
         """Count the matching records without fetching them."""
         body = await self._query_body(where, None, None)
@@ -380,6 +447,8 @@ class AsyncTable:
             try:
                 payload = await self._transport.request("POST", "/records", json=body)
                 result = parse(partial(merge_write_result, result, offset=start), payload, "write")
+            except PermissionDeniedError as exc:
+                raise refused_write(exc, result, start) from exc
             except QuickbaseError as exc:
                 if start == 0:
                     raise
@@ -388,7 +457,7 @@ class AsyncTable:
                     result=result,
                 ) from exc
         if result.errors:
-            raise WriteError(write_result_summary(result), result=result)
+            raise write_failure(result)
         return result
 
     async def insert(
@@ -619,6 +688,161 @@ class AsyncTable:
         self._forget_fields(parent_id)
         return parse(relationship_from_api, payload, "relationship")
 
+    async def ensure_field(
+        self,
+        label: str,
+        field_type: str,
+        *,
+        choices: Sequence[str] | None = None,
+        required: bool | None = None,
+        unique: bool | None = None,
+        properties: Mapping[str, Any] | None = None,
+        formula: str | None = None,
+    ) -> Field:
+        """Return the field with this label, creating it or changing it to match what you pass.
+
+        Anything left as None is ignored on an existing field. This makes a setup script safe to
+        run again, and repairs a field whose `required` or `unique` didn't get set, because
+        Quickbase sets those in a second request. Raises `SchemaMismatchError` if the field has
+        a different type, because Quickbase can't always convert one.
+        """
+        fields = await self.fields(refresh=True)
+        found = next((item for item in fields if item.label.casefold() == label.casefold()), None)
+        if found is None:
+            return await self.create_field(
+                label,
+                field_type,
+                choices=choices,
+                required=required,
+                unique=unique,
+                properties=properties,
+                formula=formula,
+            )
+        reported_type = "timestamp" if field_type == "datetime" else field_type
+        if found.type != reported_type:
+            raise SchemaMismatchError(
+                f"Field {found.label!r} is {found.type}, not {field_type}, so it wasn't changed."
+            )
+        wanted = field_properties(properties, formula)
+        if choices is not None:
+            wanted["choices"] = list(choices)
+        current: Mapping[str, Any] = found.raw.get("properties") or {}
+        changed = {
+            key: value
+            for key, value in wanted.items()
+            if not _same_property(key, current.get(key), value)
+        }
+        new_required = required if required not in (None, found.required) else None
+        new_unique = unique if unique not in (None, found.unique) else None
+        if not changed and new_required is None and new_unique is None:
+            return found
+        return await self.update_field(
+            found.id, required=new_required, unique=new_unique, properties=changed or None
+        )
+
+    async def ensure_relationship(
+        self, parent: "AsyncTable", *, foreign_key_label: str
+    ) -> Relationship:
+        """Return this table's relationship with `parent` through this foreign key, creating it if
+        it doesn't exist. Use the result with `ensure_lookup_field()` and `ensure_summary_field()`.
+        """
+        parent_id = (await parent.info()).id
+        labels = {item.id: item.label.casefold() for item in await self.fields(refresh=True)}
+        for item in await self.relationships(refresh=True):
+            label = labels.get(item.foreign_key_field_id or 0)
+            if item.parent_table_id == parent_id and label == foreign_key_label.casefold():
+                return item
+        return await self.create_relationship(parent, foreign_key_label=foreign_key_label)
+
+    async def ensure_lookup_field(
+        self, relationship: Relationship, parent_field: FieldRef, *, label: str | None = None
+    ) -> Field:
+        """Return this table's lookup of `parent_field`, creating it if it doesn't exist.
+
+        `label` renames it, since Quickbase names a lookup after the parent table and field.
+        """
+        parent = self._app.table(relationship.parent_table_id)
+        target_id = (await parent.resolve_field_ids([parent_field]))[0]
+        found = await self._find_lookup(relationship, target_id)
+        if found is None:
+            table_id = (await self.info()).id
+            # This adds to the existing lookups, and takes the parent's field IDs, not the child's.
+            await self._transport.request(
+                "POST",
+                f"/tables/{table_id}/relationship/{relationship.id}",
+                json={"lookupFieldIds": [target_id]},
+            )
+            self._forget_fields(table_id)
+            self._forget_fields(relationship.parent_table_id)
+            found = await self._find_lookup(relationship, target_id)
+            if found is None:
+                raise InvalidResponseError(
+                    f"Quickbase accepted a lookup of field {target_id}, but it can't be found."
+                )
+        if label is not None and found.label != label:
+            return await self.update_field(found.id, label=label)
+        return found
+
+    async def _find_lookup(self, relationship: Relationship, target_id: int) -> Field | None:
+        for item in await self.fields(refresh=True):
+            if (
+                item.mode == "lookup"
+                and item.lookup_reference_field_id == relationship.foreign_key_field_id
+                and item.lookup_target_field_id == target_id
+            ):
+                return item
+        return None
+
+    async def ensure_summary_field(
+        self,
+        relationship: Relationship,
+        child_field: FieldRef,
+        label: str,
+        *,
+        function: str = "SUM",
+    ) -> Field:
+        """Return the summary of this table's `child_field` on the parent, creating it if needed.
+
+        Call this on the child table. The new field is on the parent, and `function` is Quickbase's
+        name for the calculation. **A summary with no child records is empty, not 0**, so wrap it in
+        `Nz()` in a formula if your code expects a number. Raises `SchemaMismatchError` if the label
+        is already used on the parent by anything but this summary.
+        """
+        parent = self._app.table(relationship.parent_table_id)
+        target_id = (await self.resolve_field_ids([child_field]))[0]
+        fields = await parent.fields(refresh=True)
+        found = next((item for item in fields if item.label.casefold() == label.casefold()), None)
+        if found is not None:
+            if (
+                found.mode != "summary"
+                or found.summary_target_field_id != target_id
+                or found.summary_reference_field_id != relationship.foreign_key_field_id
+                or found.summary_function != function
+            ):
+                raise SchemaMismatchError(
+                    f"Field {found.label!r} on the parent isn't this summary, so it wasn't changed."
+                )
+            return found
+        table_id = (await self.info()).id
+        await self._transport.request(
+            "POST",
+            f"/tables/{table_id}/relationship/{relationship.id}",
+            json={
+                "summaryFields": [
+                    {"summaryFid": target_id, "label": label, "accumulationType": function}
+                ]
+            },
+        )
+        self._forget_fields(table_id)
+        self._forget_fields(relationship.parent_table_id)
+        fields = await parent.fields(refresh=True)
+        created = next((item for item in fields if item.label == label), None)
+        if created is None:
+            raise InvalidResponseError(
+                f"Quickbase accepted summary {label!r}, but it can't be found."
+            )
+        return created
+
     async def resolve_field_ids(self, fields: Sequence[FieldRef]) -> list[int]:
         """Turn field labels or IDs into IDs. Raises `UnknownFieldError` if one doesn't exist."""
         return await self._with_fields(
@@ -762,6 +986,22 @@ class AsyncTypedTable(Generic[R]):
             limit=limit,
         )
         return AsyncTypedIterator(self._check_once, self._model, records)
+
+    async def first(
+        self, *, where: Expression | str | None = None, order_by: OrderBy = None
+    ) -> R | None:
+        """Get the first matching record as an instance of the class, or None if there isn't one."""
+        await self._check_once()
+        record = await self._table.first(
+            where=where, select=column_ids(self._model), order_by=order_refs(order_by)
+        )
+        return None if record is None else self._model.from_record(record)
+
+    async def get(self, record_id: int) -> R | None:
+        """Get a record by its Record ID# as an instance of the class, or None if there's none."""
+        await self._check_once()
+        record = await self._table.get(record_id, select=column_ids(self._model))
+        return None if record is None else self._model.from_record(record)
 
     async def count(self, where: Expression | str | None = None) -> int:
         """Count the matching records without fetching them."""

@@ -2,8 +2,10 @@ class APIError(QuickbaseError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
 class App(object)
     def create_table(self, name: str, *, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> 'Table'
+    def ensure_table(self, name: str, *, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> 'Table'
     property id -> str
     def info(self) -> AppInfo
+    def roles(self, *, refresh: bool = False) -> list[Role]
     def table(self, name_or_id: str) -> 'Table'
     def tables(self, *, refresh: bool = False) -> list[TableInfo]
     def typed(self, model: type[~R]) -> 'TypedTable[R]'
@@ -18,8 +20,10 @@ class AppInfo(object)
     field time_zone: str | None
 class AsyncApp(object)
     async def create_table(self, name: str, *, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> 'AsyncTable'
+    async def ensure_table(self, name: str, *, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> 'AsyncTable'
     property id -> str
     async def info(self) -> AppInfo
+    async def roles(self, *, refresh: bool = False) -> list[Role]
     def table(self, name_or_id: str) -> 'AsyncTable'
     async def tables(self, *, refresh: bool = False) -> list[TableInfo]
     def typed(self, model: type[~R]) -> 'AsyncTypedTable[R]'
@@ -30,7 +34,7 @@ class AsyncQuickbase(object)
     async def aclose(self) -> None
     def app(self, app_id: str) -> AsyncApp
     def clear_schema_cache(self) -> None
-    classmethod def from_env(cls, *, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.AsyncClient | None = None, schema_ttl: float = 300.0, read_only: bool = False, allowed_writes: Collection[tuple[str, str]] | None = None) -> Self
+    classmethod def from_env(cls, *, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.AsyncClient | None = None, schema_ttl: float = 300.0, read_only: bool = False, allowed_writes: Collection[tuple[str, str]] | None = None, token_env: str = 'QB_USER_TOKEN') -> Self
     property realm -> str
     async def request(self, method: str, path: str, *, params: Mapping[str, Any] | None = None, json: Any = None) -> Any
 class AsyncRecordIterator(object)
@@ -49,7 +53,13 @@ class AsyncTable(object)
     async def delete_file_version(self, record_id: int, field: str | int, *, version: int) -> None
     async def download_file(self, record_id: int, field: str | int, *, version: int | None = None) -> FileDownload
     async def drop(self, *, confirm: str) -> None
+    async def ensure_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None) -> Field
+    async def ensure_lookup_field(self, relationship: Relationship, parent_field: str | int, *, label: str | None = None) -> Field
+    async def ensure_relationship(self, parent: 'AsyncTable', *, foreign_key_label: str) -> Relationship
+    async def ensure_summary_field(self, relationship: Relationship, child_field: str | int, label: str, *, function: str = 'SUM') -> Field
     async def fields(self, *, refresh: bool = False) -> list[Field]
+    async def first(self, *, where: Expression | str | None = None, select: str | int | Sequence[str | int] | None = None, order_by: str | int | Sequence[str | int] | None = None) -> Record | None
+    async def get(self, record_id: int, *, select: str | int | Sequence[str | int] | None = None) -> Record | None
     async def info(self) -> TableInfo
     async def insert(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000) -> WriteResult
     def query(self, *, where: Expression | str | None = None, select: str | int | Sequence[str | int] | None = None, order_by: str | int | Sequence[str | int] | None = None, page_size: int = 1000, limit: int | None = None) -> AsyncRecordIterator
@@ -69,6 +79,8 @@ class AsyncTypedTable(Generic)
     async def check_schema(self) -> None
     async def count(self, where: Expression | str | None = None) -> int
     async def delete(self, where: Expression | str) -> int
+    async def first(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None) -> ~R | None
+    async def get(self, record_id: int) -> ~R | None
     async def insert(self, rows: Iterable[Row[~R]]) -> WriteResult
     def query(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, limit: int | None = None) -> 'AsyncTypedIterator[R]'
     property table -> AsyncTable
@@ -80,11 +92,12 @@ class BadRequestError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
 class Column(object)
     def __eq__(self, other)
-    def __init__(self, name: str, id: int, field_type: str, writable: bool, label: str) -> None
+    def __init__(self, name: str, id: int, field_type: str, writable: bool, label: str, read_as: str = '') -> None
     field field_type: str
     field id: int
     field label: str
     field name: str
+    field read_as: str
     field writable: bool
 class ConfigurationError(QuickbaseError, ValueError)
 class F(object)
@@ -103,16 +116,23 @@ class F(object)
     def starts_with(self, value: Any) -> Condition
 class Field(object)
     def __eq__(self, other)
-    def __init__(self, *, id: int, label: str, type: str, mode: str | None, required: bool, unique: bool, appears_by_default: bool, choices: tuple[str, ...], allow_new_choices: bool, formula: str | None = None, raw: Mapping[str, Any]) -> None
+    def __init__(self, *, id: int, label: str, type: str, mode: str | None, required: bool, unique: bool, appears_by_default: bool, choices: tuple[str, ...], allow_new_choices: bool, formula: str | None = None, decimal_places: int | None = None, is_foreign_key: bool = False, lookup_reference_field_id: int | None = None, lookup_target_field_id: int | None = None, summary_reference_field_id: int | None = None, summary_target_field_id: int | None = None, summary_function: str | None = None, raw: Mapping[str, Any]) -> None
     field allow_new_choices: bool
     field appears_by_default: bool
     field choices: tuple[str, ...]
+    field decimal_places: int | None
     field formula: str | None
     field id: int
+    field is_foreign_key: bool
     field label: str
+    field lookup_reference_field_id: int | None
+    field lookup_target_field_id: int | None
     field mode: str | None
     field raw: Mapping[str, Any]
     field required: bool
+    field summary_function: str | None
+    field summary_reference_field_id: int | None
+    field summary_target_field_id: int | None
     field type: str
     field unique: bool
 class FileDownload(object)
@@ -155,7 +175,7 @@ class Quickbase(object)
     def app(self, app_id: str) -> App
     def clear_schema_cache(self) -> None
     def close(self) -> None
-    classmethod def from_env(cls, *, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.Client | None = None, schema_ttl: float = 300.0, read_only: bool = False, allowed_writes: Collection[tuple[str, str]] | None = None) -> Self
+    classmethod def from_env(cls, *, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.Client | None = None, schema_ttl: float = 300.0, read_only: bool = False, allowed_writes: Collection[tuple[str, str]] | None = None, token_env: str = 'QB_USER_TOKEN') -> Self
     property realm -> str
     def request(self, method: str, path: str, *, params: Mapping[str, Any] | None = None, json: Any = None) -> Any
 class QuickbaseError(Exception)
@@ -173,7 +193,7 @@ class RecordIterator(object)
     def __next__(self) -> Record
 class Relationship(object)
     def __eq__(self, other)
-    def __init__(self, *, id: int, parent_table_id: str, child_table_id: str, foreign_key_field_id: int | None, lookup_field_ids: tuple[int, ...], is_cross_app: bool, raw: Mapping[str, Any]) -> None
+    def __init__(self, *, id: int, parent_table_id: str, child_table_id: str, foreign_key_field_id: int | None, lookup_field_ids: tuple[int, ...], summary_field_ids: tuple[int, ...] = (), is_cross_app: bool, raw: Mapping[str, Any]) -> None
     field child_table_id: str
     field foreign_key_field_id: int | None
     field id: int
@@ -181,6 +201,7 @@ class Relationship(object)
     field lookup_field_ids: tuple[int, ...]
     field parent_table_id: str
     field raw: Mapping[str, Any]
+    field summary_field_ids: tuple[int, ...]
 class Report(object)
     def info(self) -> ReportInfo
     def run(self, *, page_size: int = 1000, limit: int | None = None) -> RecordIterator
@@ -204,11 +225,20 @@ class RetryPolicy(object)
     field max_retries: int
     field max_retry_after: float
     def rate_limit_delay(self, attempt: int, retry_after: float | None) -> float | None
+class Role(object)
+    def __eq__(self, other)
+    def __init__(self, *, id: int, name: str, access: str, raw: Mapping[str, Any]) -> None
+    field access: str
+    field id: int
+    field name: str
+    field raw: Mapping[str, Any]
 class Row(dict, Generic)
 class RowError(object)
     def __eq__(self, other)
-    def __init__(self, *, index: int, messages: tuple[str, ...]) -> None
+    def __init__(self, *, index: int, messages: tuple[str, ...], kind: Literal['duplicate', 'permission', 'invalid_choice', 'rule', 'other'] = 'other', field_id: int | None = None) -> None
+    field field_id: int | None
     field index: int
+    field kind: Literal['duplicate', 'permission', 'invalid_choice', 'rule', 'other']
     field messages: tuple[str, ...]
 class SchemaMismatchError(QuickbaseError)
 class ServerError(APIError)
@@ -222,7 +252,13 @@ class Table(object)
     def delete_file_version(self, record_id: int, field: str | int, *, version: int) -> None
     def download_file(self, record_id: int, field: str | int, *, version: int | None = None) -> FileDownload
     def drop(self, *, confirm: str) -> None
+    def ensure_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None) -> Field
+    def ensure_lookup_field(self, relationship: Relationship, parent_field: str | int, *, label: str | None = None) -> Field
+    def ensure_relationship(self, parent: 'Table', *, foreign_key_label: str) -> Relationship
+    def ensure_summary_field(self, relationship: Relationship, child_field: str | int, label: str, *, function: str = 'SUM') -> Field
     def fields(self, *, refresh: bool = False) -> list[Field]
+    def first(self, *, where: Expression | str | None = None, select: str | int | Sequence[str | int] | None = None, order_by: str | int | Sequence[str | int] | None = None) -> Record | None
+    def get(self, record_id: int, *, select: str | int | Sequence[str | int] | None = None) -> Record | None
     def info(self) -> TableInfo
     def insert(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000) -> WriteResult
     def query(self, *, where: Expression | str | None = None, select: str | int | Sequence[str | int] | None = None, order_by: str | int | Sequence[str | int] | None = None, page_size: int = 1000, limit: int | None = None) -> RecordIterator
@@ -268,6 +304,8 @@ class TypedTable(Generic)
     def check_schema(self) -> None
     def count(self, where: Expression | str | None = None) -> int
     def delete(self, where: Expression | str) -> int
+    def first(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None) -> ~R | None
+    def get(self, record_id: int) -> ~R | None
     def insert(self, rows: Iterable[Row[~R]]) -> WriteResult
     def query(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, limit: int | None = None) -> 'TypedIterator[R]'
     property table -> Table
@@ -287,6 +325,8 @@ class WhereCondition(object)
     field value: str
 class WriteError(QuickbaseError)
     def __init__(self, summary: str, *, result: Any = None) -> None
+class WritePermissionError(WriteError, PermissionDeniedError)
+    def __init__(self, summary: str, *, result: Any = None, status_code: int = 403, **kwargs: Any) -> None
 class WriteResult(object)
     def __eq__(self, other)
     def __init__(self, *, created_ids: tuple[int, ...] = (), updated_ids: tuple[int, ...] = (), unchanged_ids: tuple[int, ...] = (), errors: tuple[RowError, ...] = ()) -> None
@@ -299,4 +339,6 @@ command pyquickbase codegen
     --app (StoreAction, required)
     --output (StoreAction, required)
     --table (AppendAction, default [])
+    --token-env (StoreAction, default 'QB_USER_TOKEN')
+    --include-links (StoreTrueAction, default False)
     --check (StoreTrueAction, default False)

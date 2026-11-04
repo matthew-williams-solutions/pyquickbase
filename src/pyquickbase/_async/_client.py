@@ -11,6 +11,7 @@ from .._auth import UserTokenAuth
 from .._config import (
     DEFAULT_BASE_URL,
     DEFAULT_TIMEOUT,
+    ENV_TOKEN,
     build_user_agent,
     normalize_allowed_writes,
     normalize_realm,
@@ -88,9 +89,13 @@ class AsyncQuickbase:
         schema_ttl: float = DEFAULT_SCHEMA_TTL,
         read_only: bool = False,
         allowed_writes: Collection[tuple[str, str]] | None = None,
+        token_env: str = ENV_TOKEN,
     ) -> Self:
-        """Create a client from the `QB_REALM` and `QB_USER_TOKEN` environment variables."""
-        realm, token = read_env()
+        """Create a client from the `QB_REALM` and `QB_USER_TOKEN` environment variables.
+
+        `token_env` names a different variable for the token, for a program that has several.
+        """
+        realm, token = read_env(token_env=token_env)
         return cls(
             realm=realm,
             token=token,

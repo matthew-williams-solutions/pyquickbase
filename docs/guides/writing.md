@@ -76,6 +76,31 @@ except WriteError as error:
         print(rows[failed.index], failed.messages)
 ```
 
+`kind` says why a row failed, without you having to read Quickbase's wording, which can change:
+
+| `kind` | Why the row failed |
+|---|---|
+| `duplicate` | A value is already in a unique field, which `field_id` names |
+| `permission` | The token's role refused it |
+| `invalid_choice` | A value isn't one of the field's choices, and `field_id` names the field |
+| `rule` | One of the table's custom data rules refused it, and `messages` holds the rule's text |
+| `other` | Anything else, including wording this version doesn't recognize |
+
+This makes a repeated insert easy to treat as already done, for a table a role can add to but not
+change:
+
+```python
+try:
+    movements.insert([{"Key": "order-7", "Quantity": -1}])
+except WriteError as error:
+    if any(failed.kind != "duplicate" for failed in error.result.errors):
+        raise
+```
+
+A write refused by the role raises `WritePermissionError`, whichever way Quickbase reported it. See
+[Errors](errors.md#refused-writes). **An upsert that matches an existing record needs permission to
+modify**, so a role that can only add gets a refusal when a write is repeated.
+
 A row needs at least one real value, so `insert()` and `upsert()` raise `InvalidValueError` for a row
 where every value is empty. Quickbase can skip such a row without saying so, which also shifts
 `created_ids` against your rows.

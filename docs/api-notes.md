@@ -116,6 +116,8 @@ Tested on 2026-11-02 with the SDK against temporary tables in a sandbox app.
 | Repeating the same write | Reported as unchanged, with no new record |
 | `insert` of a value already in a unique field | Row error, and no new record |
 | `Decimal` amounts from `0.01` to `99999999.99` in a currency field | Read back to the exact cent, through `Decimal(str(value))` |
+| `decimalPlaces: 0` on a numeric field | **Display only.** `1999.5` was stored and read back as `1999.5`. Whole numbers return as floats, such as `1999.0` |
+| A foreign key's properties | `foreignKey: true` and `decimalPlaces: 0`. A lookup of a foreign key has `foreignKey: false` and `decimalPlaces: 0`. A plain numeric field has no `decimalPlaces` unless it was set |
 | Whole numbers up to 9,007,199,254,740,991 in a numeric field | Read back exactly |
 
 ## Reports
@@ -303,7 +305,8 @@ sandboxed frame. Dashboard settings were checked by hand, in the app's own scree
 
 Tested on 2026-11-02 against a temporary table in a sandbox app, with a second user's token. Its role
 could only view that table, had no access to the app's other tables, and had access `None` on one text
-field and one file field. A role with write access or record-level rules wasn't tested.
+field and one file field. See also [roles with write access](#roles-with-write-access). Record-level
+rules weren't tested.
 
 | Behavior | Result |
 |---|---|
@@ -321,6 +324,69 @@ field and one file field. A role with write access or record-level rules wasn't 
 | Downloading from a hidden file field | 404, `No such field` |
 | A formula using a hidden field, directly or through `GetRecords()` | 403, including when `GetRecords()` only filters on it. A visible field works |
 | Insert, update, delete, upload, deleting a file version, creating a field | 403, `Insufficient permissions`, and nothing changed |
+
+## Roles with write access
+
+Tested on 2026-11-04 in a real app, with a second user's token. Its role had custom field access on some
+tables, and no delete rights. Record-level rules weren't tested.
+
+| Behavior | Result |
+|---|---|
+| Add off, and Modify on for the table | 207, with the row error `You don't have permission to add records to this table.` |
+| Add and Modify both off for the table | **403, `Insufficient permissions`**, for inserts and updates, so the same refusal takes a different form |
+| Modify off, with an upsert that matches an existing record | Row error, `You don't have permission to update records in this table.` An upsert that creates a record works |
+| Inserting a duplicate into a unique field | Row error, `Adding non-unique value for field with ID "8".`, and no new record, with only add rights |
+| A field set to View in the role | Readable and usable in `where`. Writing it gives the row error `Insufficient permissions to update data in a restricted field.` |
+| **A row with an allowed field and a view-only field** | **The whole row is refused**, and the allowed field doesn't change |
+| **A field created after a role's Custom Access was set** | **The role gets full access to it.** It could write the new field straight away, until it was set to View. Check a role after adding any field |
+| `where` on lookup and foreign key fields | Works |
+| Upsert with add and modify rights, including repeating it | Works |
+| `DELETE /records` with no delete rights, with `{3.LT.0}` | 403 on every table |
+| `POST /fields` and `POST /tables` | 403 |
+| `GET /apps/{id}` and `GET /apps/{id}/roles` | **403**. `GET /tables` and `GET /fields` work |
+
+`GET /apps/{id}/roles` with an administrator's token returns `id`, `name`, and `access`, including roles
+you made. We didn't find any endpoint for reading or changing a role's permissions:
+`/apps/{id}/roles/{id}` and `/apps/{id}/roles/{id}/permissions` return 404.
+
+## Custom data rules
+
+Rules are written in the table's Advanced settings, and the API can't create them. Tested on 2026-11-04 in a
+real app. The help says they also cover imports, grid edit, and connected table refreshes, which weren't tested.
+
+| Behavior | Result |
+|---|---|
+| A rule refusing an update or insert through the API | 207, with the row error `Table rule validation: <the rule's message>` |
+| **An administrator** | **Is bound by the rule**, through both the API and a form |
+| A pipeline's write | Is bound by the rule. The run fails with `Custom data rule failed`, Error Code 88 |
+| Deleting a record | The help only mentions adding and editing, and this wasn't tested |
+| **`IsNull()` on an empty numeric field with `blankIsZero: true`** | **False, because the field counts as 0.** A rule using it refused every record until `blankIsZero` was set to false, which the API accepts |
+
+## Pipelines
+
+Tested on 2026-11-04 in a real app, with the Quickbase channel's **Record Updated** trigger and **Update Record**
+action. Pipelines can't be created or read through this API.
+
+| Behavior | Result |
+|---|---|
+| An update through the API | Fires the trigger, and the action had run within 4 seconds |
+| A field the action reads | Must be listed in the trigger's "Fields for subsequent steps" |
+| The trigger's filter | `Status is Open` didn't fire on a change from Open to Draft, and did on Draft to Open |
+| The record changing before the action runs | The action works on the record as it is then, so it can hit a custom data rule |
+
+## Relationships
+
+Tested on 2026-11-03 and 2026-11-04 in a real app, using `POST /tables/{child}/relationship/{id}`.
+
+| Behavior | Result |
+|---|---|
+| `lookupFieldIds` | **The parent's field IDs, and it adds to the existing lookups.** Sending an existing lookup's ID, which is on the child, looked up whichever parent field has that number, and created a field nobody asked for |
+| A new lookup's label | `<Parent's single record name> - <Field>`, such as `Product - SKU`, and it can be renamed |
+| A lookup's properties | `lookupReferenceFieldId` is the foreign key on the child, and `lookupTargetFieldId` is the field on the parent |
+| `summaryFields`, with `summaryFid`, `label`, and `accumulationType: "SUM"` | Creates the field on the parent. Works on a formula field of the child |
+| A summary's properties | `summaryReferenceFieldId`, `summaryTargetFieldId`, and `summaryFunction` |
+| **A summary with no child records** | **Empty, not 0.** A formula using it is also empty unless it uses `Nz()`, which matters for something like a balance |
+| Fields added to the parent | A `dblink` such as `Task records`, and a `url` formula such as `Add Task`, containing `a=API_GenAddRecordForm` |
 
 ## Field types
 

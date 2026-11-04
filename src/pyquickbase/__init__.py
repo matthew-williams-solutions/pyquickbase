@@ -18,6 +18,7 @@ from ._models import (
     Record,
     Relationship,
     ReportInfo,
+    Role,
     TableInfo,
 )
 from ._query import F, WhereCondition, parse_where
@@ -49,6 +50,7 @@ from .errors import (
     UnknownTableError,
     UnsupportedReportError,
     WriteError,
+    WritePermissionError,
 )
 
 __all__ = [
@@ -90,6 +92,7 @@ __all__ = [
     "ReportInfo",
     "RequestTimeoutError",
     "RetryPolicy",
+    "Role",
     "Row",
     "RowError",
     "SchemaMismatchError",
@@ -107,6 +110,7 @@ __all__ = [
     "UnsupportedReportError",
     "WhereCondition",
     "WriteError",
+    "WritePermissionError",
     "WriteResult",
     "__version__",
     "parse_where",

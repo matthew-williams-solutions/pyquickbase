@@ -101,6 +101,8 @@ These support the classes from `pyquickbase codegen`, and you rarely need them d
 
 ::: pyquickbase.Relationship
 
+::: pyquickbase.Role
+
 ::: pyquickbase.ReportInfo
 
 ## Exceptions
@@ -126,6 +128,8 @@ These support the classes from `pyquickbase codegen`, and you rarely need them d
 ::: pyquickbase.ReadOnlyError
 
 ::: pyquickbase.WriteError
+
+::: pyquickbase.WritePermissionError
 
 ::: pyquickbase.NetworkError
 

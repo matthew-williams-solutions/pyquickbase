@@ -25,6 +25,16 @@ Metadata is cached for five minutes. Set `schema_ttl` on the client to change th
 `qb.clear_schema_cache()` after changing a table outside this client. A name or label that isn't in
 the cache triggers one refresh before it counts as unknown.
 
+## Getting one record
+
+`first()` returns the first match, and `get()` finds a record by its Record ID#. Each returns None if
+there's no such record.
+
+```python
+task = tasks.first(where=F("Status") == "Open", order_by="Due Date", select=["Title"])
+same_task = tasks.get(7, select=["Title"])
+```
+
 ## Writing queries
 
 Build conditions with `F`, naming a field by label or ID. Combine them with `&` and `|`, and wrap

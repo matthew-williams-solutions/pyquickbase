@@ -10,6 +10,7 @@ from pathlib import Path
 import httpx
 
 from ._codegen import HEADER, render
+from ._config import ENV_TOKEN
 from ._sync._client import Quickbase
 from ._sync._resources import App
 from .errors import QuickbaseError
@@ -17,7 +18,7 @@ from .errors import QuickbaseError
 _NEW_FILE_MODE = 0o644
 
 
-def _tables(app: App, wanted: Sequence[str]) -> str:
+def _tables(app: App, wanted: Sequence[str], *, include_links: bool = False) -> str:
     tables = app.tables()
     if wanted:
         known = {item.id for item in tables} | {item.name for item in tables}
@@ -25,7 +26,9 @@ def _tables(app: App, wanted: Sequence[str]) -> str:
         if missing:
             raise QuickbaseError(f"App {app.id} has no table {', '.join(map(repr, missing))}.")
         tables = [item for item in tables if item.id in wanted or item.name in wanted]
-    return render([(item, app.table(item.id).fields()) for item in tables])
+    return render(
+        [(item, app.table(item.id).fields()) for item in tables], include_links=include_links
+    )
 
 
 def _write(path: Path, source: str) -> None:
@@ -47,8 +50,12 @@ def _write(path: Path, source: str) -> None:
 
 
 def _codegen(arguments: argparse.Namespace, http_client: httpx.Client | None) -> int:
-    with Quickbase.from_env(read_only=True, http_client=http_client) as qb:
-        source = _tables(qb.app(arguments.app), arguments.table)
+    with Quickbase.from_env(
+        read_only=True, http_client=http_client, token_env=arguments.token_env
+    ) as qb:
+        source = _tables(
+            qb.app(arguments.app), arguments.table, include_links=arguments.include_links
+        )
     path = Path(arguments.output)
     if arguments.check:
         if path.exists() and path.read_text(encoding="utf-8") == source:
@@ -72,6 +79,17 @@ def _parser() -> argparse.ArgumentParser:
     codegen.add_argument("--output", required=True, help="The Python file to write.")
     codegen.add_argument(
         "--table", action="append", default=[], help="Only this table, by name or ID. Repeatable."
+    )
+    codegen.add_argument(
+        "--token-env",
+        default=ENV_TOKEN,
+        help="The environment variable holding the token. Use one with the same access as the code "
+        "that will use these classes, because fields its role can't see look deleted.",
+    )
+    codegen.add_argument(
+        "--include-links",
+        action="store_true",
+        help="Include the links Quickbase makes for each relationship, left out by default.",
     )
     codegen.add_argument(
         "--check", action="store_true", help="Change nothing, and fail if the file is out of date."

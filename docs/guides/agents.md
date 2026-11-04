@@ -69,11 +69,11 @@ code is running.
   from the model, but not from code the agent runs in the same environment.
 - Temporary tokens are deliberately [not in the SDK](../api-notes.md#temporary-tokens).
 
-Test the role you plan to use, because this has only been [partly
-confirmed](../api-notes.md#restricted-users). A view-only role was refused every write we tried, and
-fields it couldn't see were left out. Roles with write access or record-level rules haven't been
-tested, and neither has whether a restricted user's formula can read a table their role has no
-access to.
+Test the role you plan to use, because this has only been partly confirmed. A
+[view-only role](../api-notes.md#restricted-users) was refused every write we tried, and fields it
+couldn't see were left out. A [role with write access](../api-notes.md#roles-with-write-access) was
+held to its limits as well. Record-level rules haven't been tested, and neither has whether a
+restricted user's formula can read a table their role has no access to.
 
 ## Untrusted values
 

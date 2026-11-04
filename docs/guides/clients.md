@@ -9,6 +9,15 @@ The clients have the same methods, and the sync client is a true sync client rat
 around asyncio. That means it works in notebooks, in threads, and inside a running event loop.
 One sync client can be shared across threads. The async client works with both asyncio and Trio.
 
+## Using several tokens
+
+`Quickbase.from_env()` reads `QB_REALM` and `QB_USER_TOKEN`. A program with more than one token can
+name the variable, such as a setup token and a restricted one:
+
+```python
+qb = Quickbase.from_env(token_env="QB_SERVICE_TOKEN")
+```
+
 ## Limiting what a client can do
 
 Pass `read_only=True` to guarantee a client can't change data. It only sends GET requests, record
