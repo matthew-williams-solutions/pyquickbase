@@ -154,8 +154,9 @@ async def test_ensure_table_creates_once_and_ignores_case(app: Any, fake: FakeSc
     await app.ensure_table("New Table", single_record_name="Thing")
     await app.ensure_table("new table")
     assert fake.writes() == [("/tables", {"name": "New Table", "singleRecordName": "Thing"})]
-    await app.ensure_table("TASKS")
+    found = await app.ensure_table("TASKS")
     assert len(fake.writes()) == 1
+    assert (await found.info()).name == "Tasks"
 
 
 async def test_ensure_field_creates_then_leaves_a_matching_field_alone(

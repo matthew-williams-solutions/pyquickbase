@@ -21,7 +21,7 @@ class Scratch:
     """Makes temporary tables in a sandbox app, and drops exactly those afterward."""
 
     realm: str
-    token: str
+    token: str = field(repr=False)
     app_id: str
     client: Any
     created: list[Any] = field(default_factory=list)

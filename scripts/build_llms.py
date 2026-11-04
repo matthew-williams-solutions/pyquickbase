@@ -31,12 +31,14 @@ DESCRIPTIONS = {
     "guides/formulas.md": "Running formulas and creating formula fields, and why not to run "
     "formula text you don't control",
     "guides/codegen.md": "Typed classes for your tables from `pyquickbase codegen`",
-    "guides/schema.md": "Creating and changing tables, fields, and relationships",
+    "guides/schema.md": "Creating and changing tables, fields, relationships, lookups, and "
+    "summaries, and what each refusal leaves behind",
     "guides/errors.md": "Every exception, and which ones mean a request wasn't sent",
     "guides/clients.md": "Read-only clients, allowed writes, retries, proxies, and other settings",
     "guides/agents.md": "Limiting what an agent can do, untrusted values, and reading results as "
     "data",
     "reference.md": "Every public name, with its signature and docstring",
+    "field-types.md": "Every field type, what to write, what it reads as, and field settings",
     "stability.md": "What 1.x promises, and what it doesn't",
     "api-notes.md": "How Quickbase's REST API behaves, as confirmed against a live app",
     "changelog.md": "What changed in each release",

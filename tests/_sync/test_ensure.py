@@ -153,8 +153,9 @@ def test_ensure_table_creates_once_and_ignores_case(app: Any, fake: FakeSchema) 
     app.ensure_table("New Table", single_record_name="Thing")
     app.ensure_table("new table")
     assert fake.writes() == [("/tables", {"name": "New Table", "singleRecordName": "Thing"})]
-    app.ensure_table("TASKS")
+    found = app.ensure_table("TASKS")
     assert len(fake.writes()) == 1
+    assert (found.info()).name == "Tasks"
 
 
 def test_ensure_field_creates_then_leaves_a_matching_field_alone(

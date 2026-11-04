@@ -35,6 +35,7 @@ NEEDS_OWN_TABLE = (
     "create_table",
     "delete_fields",
     ".drop(",
+    "ensure_",
     "merge_on",
     "update_field",
 )
@@ -113,6 +114,10 @@ def generated_module(table: Any, fields: Any) -> types.ModuleType:
 
 
 def prepare(code: str, world: Any, table_name: str, table_id: str) -> str:
+    if 'table("Projects")' in code:
+        parent = world.app.create_table(f"ZZ Live {secrets.token_hex(4)}")
+        parent.create_field("Name", "text")
+        code = code.replace('table("Projects")', f"table({parent.info().id!r})")
     code = code.replace('realm="acme"', f"realm={world.scratch.realm!r}")
     code = code.replace('token="your_user_token"', f"token={world.scratch.token!r}")
     code = code.replace("bq1234567", world.scratch.app_id)
@@ -120,7 +125,7 @@ def prepare(code: str, world: Any, table_name: str, table_id: str) -> str:
     code = code.replace('tasks.report("Open tasks")', 'tasks.report("List All")')
     code = code.replace('tasks.report("12")', 'tasks.report("1")')
     code = code.replace("tasks.delete_file_version(7,", "tasks.delete_file_version(8,")
-    code = code.replace('app.table("Tasks")', f"app.table({table_name!r})")
+    code = code.replace('.table("Tasks")', f".table({table_name!r})")
     return code.replace('confirm="Tasks"', f"confirm={table_name!r}")
 
 
