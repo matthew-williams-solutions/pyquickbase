@@ -476,3 +476,36 @@ def test_any_json_raises_query_error_or_builds(data: Any) -> None:
     ):
         with contextlib.suppress(QueryError, UnknownFieldError):
             compile_where(where_from_dict(candidate), FIELDS)
+
+
+def test_fields_can_be_field_objects_in_both_halves() -> None:
+    from pyquickbase import Field
+
+    status = Field(
+        id=7,
+        label="Status",
+        type="text",
+        mode=None,
+        required=False,
+        unique=False,
+        appears_by_default=True,
+        choices=(),
+        allow_new_choices=False,
+        raw={},
+    )
+    schema = where_schema(fields=[status])
+    assert schema["anyOf"][0]["properties"]["field"]["enum"] == ["Status"]
+    where_from_dict({"field": "Status", "op": "==", "value": "x"}, fields=[status])
+    with pytest.raises(QueryError, match="may use"):
+        where_from_dict({"field": "Title", "op": "==", "value": "x"}, fields=[status])
+
+
+def test_descriptions_are_added_and_must_be_for_offered_fields() -> None:
+    schema = where_schema(fields=["Status"], descriptions={"Status": "Open or Done."})
+    assert schema["description"].endswith(" Fields: Status: Open or Done.")
+    with pytest.raises(QueryError, match="isn't one of the fields"):
+        where_schema(fields=["Status"], descriptions={"Title": "x"})
+    with pytest.raises(QueryError, match="needs fields"):
+        where_schema(descriptions={"Title": "x"})
+    with pytest.raises(QueryError, match="isn't empty"):
+        where_schema(fields=["Status"], descriptions={"Status": " "})

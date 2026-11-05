@@ -46,12 +46,13 @@ nav:
       - App: reference/app.md
       - Table: reference/table.md
       - Report: reference/report.md
+      - Operation: reference/operation.md
       - TypedTable: reference/typed-table.md
       - Queries: reference/queries.md
       - Records and results: reference/records.md
       - Metadata: reference/metadata.md
       - Limits and retries: reference/limits.md
-      - Output for models: reference/output.md
+      - Tools for models: reference/tools.md
       - Generated classes: reference/generated.md
       - Errors: reference/errors.md
   - Field types: field-types.md

@@ -243,17 +243,40 @@ def _operators_help() -> str:
     return f"Use one of: {', '.join(_SCHEMA_OPERATORS)}."
 
 
-def _field_set(fields: Iterable[FieldRef]) -> frozenset[FieldRef]:
+def _field_set(fields: Iterable[FieldRef | Field]) -> frozenset[FieldRef]:
+    """The fields a filter may use, with a `Field` counted by its label, as a model names it."""
     if isinstance(fields, str):
         raise QueryError("fields takes a list of labels or IDs, not a single string.")
-    allowed = frozenset(fields)
+    allowed = frozenset(item.label if isinstance(item, Field) else item for item in fields)
     if not allowed:
         raise QueryError("fields can't be empty, because no filter could use it.")
     return allowed
 
 
+def _descriptions(
+    descriptions: Mapping[FieldRef, str], fields: Iterable[FieldRef | Field] | None
+) -> str:
+    """Describe the fields in one sentence, refusing a description for a field not offered."""
+    if fields is None:
+        raise QueryError("descriptions needs fields, so that each one is for a field offered.")
+    names: dict[FieldRef, str] = {}
+    for item in fields:
+        if isinstance(item, Field):
+            names[item.label] = names[item.id] = item.label
+        else:
+            names[item] = str(item)
+    entries: list[str] = []
+    for key, text in descriptions.items():
+        if key not in names:
+            raise QueryError(f"descriptions has {key!r}, which isn't one of the fields offered.")
+        if not isinstance(text, str) or not text.strip():  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise QueryError("Each description must be text that isn't empty.")
+        entries.append(f"{names[key]}: {text.strip()}")
+    return f" Fields: {' '.join(entries)}" if entries else ""
+
+
 def where_from_dict(
-    data: Mapping[str, Any], *, fields: Iterable[FieldRef] | None = None
+    data: Mapping[str, Any], *, fields: Iterable[FieldRef] | Iterable[Field] | None = None
 ) -> Expression:
     """Build a condition from plain data, such as the JSON from a model's tool call.
 
@@ -282,9 +305,10 @@ def where_from_dict(
         data: The condition or group. `value` is required on every condition, so that a dropped key
             can't turn into a search for empty fields. Send `null` to mean that on purpose, which
             works with `==`, `!=`, `in`, and `not_in`.
-        fields: The only fields this filter may use, exactly as they'll be written. Without this,
-            it may use any field the token can see, and a model could learn a value it can't read by
-            filtering on it. A field listed by label can't be named by its ID.
+        fields: The only fields this filter may use, as labels, IDs, or `Field` objects, which
+            count by label. Pass the same list as to `where_schema()`. Without this, it may use any
+            field the token can see, and a model could learn a value it can't read by filtering on
+            it. A field listed by label can't be named by its ID.
 
     Returns:
         A condition to pass as `where`.
@@ -332,7 +356,10 @@ def _group_schema(key: str, depth: int, condition: dict[str, Any]) -> dict[str, 
 
 
 def where_schema(
-    *, fields: Iterable[FieldRef] | Iterable[Field] | None = None, max_depth: int = 2
+    *,
+    fields: Iterable[FieldRef] | Iterable[Field] | None = None,
+    descriptions: Mapping[FieldRef, str] | None = None,
+    max_depth: int = 2,
 ) -> dict[str, Any]:
     """Describe the format of `where_from_dict()` as JSON Schema, for a tool's input.
 
@@ -344,6 +371,9 @@ def where_schema(
             that doesn't exist. Pass the same fields to `where_from_dict()`, by label or ID, to
             enforce the list, as this only describes it. Field labels can contain any text, and
             this shows them to the model, so only offer fields from an app you trust.
+        descriptions: What each field means, as `{label or ID: text}`, added to the schema's
+            description so the model can choose the right field. Each must be for a field in
+            `fields`, so a renamed field can't silently keep a description.
         max_depth: How many levels of `all` and `any` to describe, from 0 to 5. The default allows
             `A and (B or C)`. A tool's schema is sent to the model with every request, so each level
             has a cost. `where_from_dict()` accepts deeper filters regardless.
@@ -352,15 +382,18 @@ def where_schema(
         The JSON Schema, as a dictionary.
 
     Raises:
-        QueryError: `fields` is empty, or `max_depth` is out of range.
+        QueryError: `fields` is empty, `max_depth` is out of range, or a description isn't for a
+            field in `fields`.
     """
     if isinstance(max_depth, bool) or not 0 <= max_depth <= _MAX_SCHEMA_DEPTH:
         raise QueryError(f"max_depth must be from 0 to {_MAX_SCHEMA_DEPTH}.")
-    allowed = None
+    offered: list[FieldRef | Field] | None = None
     if fields is not None:
         if isinstance(fields, str):
             raise QueryError("fields takes a list of labels or IDs, not a single string.")
-        allowed = _field_set(item.label if isinstance(item, Field) else item for item in fields)
+        offered = list(fields)
+    allowed = None if offered is None else _field_set(offered)
+    glossary = "" if descriptions is None else _descriptions(descriptions, offered)
     condition = _condition_schema(allowed)
     schema: dict[str, Any] = {"description": f"One filter condition. {_SCHEMA_DESCRIPTION}"}
     if max_depth == 0:
@@ -369,5 +402,6 @@ def where_schema(
         schema["description"] = f"A condition, or all or any of a list. {_SCHEMA_DESCRIPTION}"
         groups = [_group_schema(key, max_depth, condition) for key in ("all", "any")]
         schema["anyOf"] = [condition, *groups]
+    schema["description"] += glossary
     # Separates the copies of a condition, so that changing one in a tool's schema can't change all.
     return json.loads(json.dumps(schema))

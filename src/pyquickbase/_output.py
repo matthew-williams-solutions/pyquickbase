@@ -16,7 +16,7 @@ from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Any, Literal, cast
 
-from ._models import FormulaResult, Page, Record
+from ._models import Field, FileDownload, FormulaResult, Page, Record, ReportInfo, TableInfo
 from ._preview import UpdatePreview
 from ._summary import SummaryRow
 from ._typed import TypedPage, TypedRecord
@@ -383,6 +383,49 @@ def _preview(preview: UpdatePreview, state: _State) -> dict[str, Any]:
     }
 
 
+def _metadata(value: TableInfo | Field | ReportInfo, state: _State) -> dict[str, Any]:
+    """Describe metadata by what a model needs, leaving out `raw`."""
+    if isinstance(value, TableInfo):
+        return {"id": value.id, "name": value.name, "description": _text(value.description, state)}
+    if isinstance(value, ReportInfo):
+        return {
+            "id": value.id,
+            "name": value.name,
+            "type": value.type,
+            "description": _text(value.description, state),
+        }
+    found: dict[str, Any] = {
+        "id": value.id,
+        "label": value.label,
+        "type": value.type,
+        "required": value.required,
+        "unique": value.unique,
+        "computed": value.mode is not None,
+    }
+    if value.choices:
+        found["choices"] = list(value.choices)
+    return found
+
+
+def _download(value: FileDownload, state: _State) -> dict[str, Any]:
+    """A file's name and size, and its text if it's UTF-8 text, as a model can't read bytes."""
+    try:
+        text: str | None = value.data.decode("utf-8")
+    except UnicodeDecodeError:
+        text = None
+    if text is not None and "\x00" in text:
+        text = None
+    found: dict[str, Any] = {
+        "name": value.name,
+        "content_type": value.content_type,
+        "size": len(value.data),
+        "text": None if text is None else (_text(text, state) or ""),
+    }
+    if text is None:
+        found["binary"] = True
+    return found
+
+
 def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, Any]:
     if isinstance(value, Page | TypedPage):
         page = cast(Page | TypedPage[Any], value)
@@ -404,14 +447,22 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
         return {"value": _value(value.value, state), "type": value.type}
     if isinstance(value, str | int | float | bool | Decimal | date | time):
         return {"value": _value(value, state)}
+    if isinstance(value, TableInfo | Field | ReportInfo):
+        key = {TableInfo: "table", Field: "field", ReportInfo: "report"}[type(value)]
+        return {key: _metadata(value, state)}
+    if isinstance(value, FileDownload):
+        return {"file": _download(value, state)}
     if isinstance(value, list | tuple):
         items = cast(Sequence[Any], value)
         if items and all(isinstance(item, SummaryRow) for item in items):
             return {"groups": [_summary(item, state) for item in items]}
+        for cls, key in ((TableInfo, "tables"), (Field, "fields"), (ReportInfo, "reports")):
+            if items and all(isinstance(item, cls) for item in items):
+                return {key: [_metadata(item, state) for item in items]}
         return _paged(items, state, max_records, total=None, skip=None, has_more=False)
     raise TypeError(
         f"tool_result() can't describe a {type(value).__name__}. It takes records, pages, write "
-        "results, summaries, previews, formula results, and plain values."
+        "results, summaries, previews, formula results, files, metadata, and plain values."
     )
 
 
@@ -447,6 +498,12 @@ def tool_result(
     | `UpdatePreview` | `changes`, `unchanged_ids`, and `missing_ids` |
     | `FormulaResult` | `value` and `type` |
     | Text, a number, a date, or a bool | `value` |
+    | `TableInfo`, `Field`, or `ReportInfo` | `table`, `field`, or `report`, without `raw` |
+    | A list of one of those | `tables`, `fields`, or `reports` |
+    | `FileDownload` | `file`, with `name`, `content_type`, `size`, and `text` or `binary` |
+
+    A file's `text` is its contents if they're UTF-8 text, and otherwise it's null and `binary` is
+    true, as a model can't read bytes.
 
     `page` holds `returned`, `total`, `skip`, `next_skip`, and `has_more`, so a model can tell
     whether it has every record, and ask for the next page. An empty list counts as no records.
@@ -470,8 +527,8 @@ def tool_result(
         The result, as plain data.
 
     Raises:
-        TypeError: The value isn't one of these, such as a `FileDownload` or metadata, or holds a
-            value of another type.
+        TypeError: The value isn't one of these, such as an `AppInfo`, or holds a value of another
+            type.
         ValueError: `max_records` or `max_text` isn't a positive whole number.
     """
     _limit("max_records", max_records)

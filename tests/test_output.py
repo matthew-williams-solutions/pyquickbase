@@ -12,10 +12,12 @@ from hypothesis import strategies as st
 
 from pyquickbase import (
     APIError,
+    AppInfo,
     AuthenticationError,
     BadRequestError,
     Column,
     ConfigurationError,
+    Field,
     FieldChange,
     FileDownload,
     FormulaResult,
@@ -31,6 +33,7 @@ from pyquickbase import (
     ReadRefusedError,
     Record,
     RecordChange,
+    ReportInfo,
     RequestRefusedError,
     RequestTimeoutError,
     RowError,
@@ -285,8 +288,7 @@ def test_formula_results() -> None:
 @pytest.mark.parametrize(
     "value",
     [
-        FileDownload(name="a", data=b"x", content_type=None),
-        TableInfo(id="x", name="x", description="", key_field_id=3, raw={}),
+        AppInfo(id="x", name="x", description="", time_zone=None, date_format=None, raw={}),
         {"a": 1},
         object(),
     ],
@@ -451,3 +453,76 @@ def test_a_permission_refusal_after_earlier_rows_were_written() -> None:
     error = WritePermissionError("x", result=written(updated_ids=[1, 2]))
     found = tool_error(error)["error"]
     assert (found["code"], found["changed"]) == ("write_permission", "some")
+
+
+# Metadata and files
+
+
+def field(**overrides: Any) -> Field:
+    values: dict[str, Any] = {
+        "id": 7,
+        "label": "Status",
+        "type": "text-multiple-choice",
+        "mode": None,
+        "required": True,
+        "unique": False,
+        "appears_by_default": True,
+        "choices": ("Open", "Done"),
+        "allow_new_choices": False,
+        "raw": {"properties": {"formula": "s3cret"}},
+    }
+    return Field(**{**values, **overrides})
+
+
+def test_metadata_leaves_out_raw() -> None:
+    table = TableInfo(id="bqx", name="Tasks", description="", key_field_id=3, raw={"x": "s3cret"})
+    assert tool_result(table) == {
+        "ok": True,
+        "table": {"id": "bqx", "name": "Tasks", "description": None},
+    }
+    assert tool_result([field(), field(id=8, label="Total", mode="formula", choices=())]) == {
+        "ok": True,
+        "fields": [
+            {
+                "id": 7,
+                "label": "Status",
+                "type": "text-multiple-choice",
+                "required": True,
+                "unique": False,
+                "computed": False,
+                "choices": ["Open", "Done"],
+            },
+            {
+                "id": 8,
+                "label": "Total",
+                "type": "text-multiple-choice",
+                "required": True,
+                "unique": False,
+                "computed": True,
+            },
+        ],
+    }
+    report = ReportInfo(
+        id="7", name="Open", type="table", description="x", incomplete=False, raw={}
+    )
+    assert tool_result([report])["reports"] == [
+        {"id": "7", "name": "Open", "type": "table", "description": "x"}
+    ]
+    assert "s3cret" not in dumps(tool_result(field()))
+
+
+def test_a_text_file_has_its_text_and_a_binary_one_says_so() -> None:
+    text = tool_result(FileDownload(name="a.txt", data="héllo".encode(), content_type="text/plain"))
+    assert text["file"] == {
+        "name": "a.txt",
+        "content_type": "text/plain",
+        "size": 6,
+        "text": "héllo",
+    }
+    binary = tool_result(FileDownload(name="a.png", data=b"\x89PNG\x00", content_type=None))
+    assert binary["file"]["text"] is None
+    assert binary["file"]["binary"] is True
+    long = tool_result(FileDownload(name="a.txt", data=b"x" * 30, content_type=None), max_text=10)
+    assert long["text_shortened"] is True
+    empty = tool_result(FileDownload(name="a.txt", data=b"", content_type=None))
+    assert empty["file"]["text"] == ""

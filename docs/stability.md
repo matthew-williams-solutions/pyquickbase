@@ -19,11 +19,13 @@ minor release.
   response whatever it doesn't allow. A later version can add a new `WriteAction` or `ReadAction`, or a
   new attribute on `WriteRequest` or `ReadRequest`, so have your own policy refuse an action it doesn't
   recognize.
-- Which metadata keys `ReadRules` keeps can change, as Quickbase's responses aren't covered either.
 - The keys of what `tool_result()` and `tool_error()` return, how they write each kind of value, and the
   codes in `ToolErrorCode`, along with each code's `changed` and `retryable`. A later version can add a
   key or a code, so have your tool handle a code it doesn't recognize. The wording of `message` and
   `hint` isn't covered.
+- The operation names in `OperationName`, the arguments each one's schema takes, and how `run()` reads
+  them. A later version can add an operation or an optional argument. The schema's descriptions aren't
+  covered.
 
 ## What isn't covered
 
@@ -33,6 +35,7 @@ minor release.
 - The wording of error messages and `repr`s, so don't parse them.
 - Quickbase's own behavior, including any change it makes to its responses, and the contents of `raw`
   attributes.
+- Which metadata keys `ReadRules` keeps, as Quickbase's responses aren't covered either.
 
 ## Generated code
 

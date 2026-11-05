@@ -15,14 +15,19 @@ to keep are explained in the guides, not here.
 
 ## Agent features
 
-In progress on `feature/agent-features`: read limits and output for models are built, and schema
-discovery and more JSON Schema functions are next.
+On `feature/agent-features`: read limits, output for models, and operations with their JSON Schema
+are built. Each needs its live tests run, which wait for no other live run to be using the test app.
 
-- Run the live tests of read limits, `tests/_async/live/test_read_policy.py`. Until then, what
-  `ReadRules` leaves of real user values, file values, and report columns is only tested against mocks.
+- Run `tests/_async/live/test_read_policy.py`. Until then, what `ReadRules` leaves of real user values,
+  file values, and report columns is only tested against mocks.
+- Run `tests/_async/live/test_operations.py`, which checks a scope against real records, a file
+  uploaded from text, and a formula and report run through an operation.
 - Record the output of the new reference examples: `ReadRules`, `ReadAccess`, and `ReadRequest` in
   `docs_src/reference/limits/`, `ReadRefusedError` and `RequestRefusedError` in
-  `docs_src/reference/errors/`, and both in `docs_src/reference/output/`.
+  `docs_src/reference/errors/`, both in `docs_src/reference/tools/`, `operation` in
+  `docs_src/reference/table/`, and all three in `docs_src/reference/operation/`.
+- Confirm what unit Quickbase takes when writing a `duration` field, then let operations write them.
+  Reading one returns milliseconds, and operations leave them out of `records` until then.
 
 ## After 1.0
 

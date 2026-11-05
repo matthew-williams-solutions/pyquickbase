@@ -42,6 +42,11 @@ def read_rules_in(policy: ReadPolicy | None) -> tuple[ReadRules, ...]:
     return tuple(item for item in _flatten(policy) if isinstance(item, ReadRules))
 
 
+def write_rules_in(policy: WritePolicy | None) -> tuple[WriteRules, ...]:
+    """Every `WriteRules` in a write policy."""
+    return tuple(item for item in _flatten(policy) if isinstance(item, WriteRules))
+
+
 def check_write_policy(policy: WritePolicy | None, *, read_only: bool) -> WritePolicy | None:
     if any(isinstance(item, ReadRules) for item in _flatten(policy)):
         raise ConfigurationError("ReadRules limits reads. Pass it as read_policy.")

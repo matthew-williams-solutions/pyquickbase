@@ -53,6 +53,8 @@ ALIASES = {
     "SummaryGroups": "What `Table.summarize()` can group by.",
     "WriteAction": "What kind of write a `WriteRequest` is.",
     "ReadAction": "What kind of read a `ReadRequest` is.",
+    "OperationName": "What `Table.operation()` can offer a model, each running the table or "
+    "report method of the same name.",
     "ToolErrorCode": "The `code` in what `tool_error()` returns. Codes don't change within 1.x, so "
     "a tool can act on them.",
     "ReadPolicy": "A function that decides on each read. Only a return value of `True` lets one "
@@ -144,6 +146,9 @@ _AGENTS = ("Using pyquickbase from an AI agent", "../guides/agents.md")
 _ERRORS = ("Handling errors", "../guides/errors.md")
 
 _TABLE_LINE = 'tasks = qb.app("bq1234567").table("Job Tasks")'
+_SEARCH_LINES = (
+    '\n    search = await tasks.operation(\n        "query", fields=["Title", "Status"]\n    )'
+)
 
 RESOURCES = (
     Resource(
@@ -233,6 +238,7 @@ RESOURCES = (
                 ("info", "fields", "relationships", "reports", "report", "resolve_field_ids"),
             ),
             Group("Work with files", "files", _FILES, ("download_file", "delete_file_version")),
+            Group("Offer an operation to a model", "operations", _AGENTS, ("operation",)),
             Group(
                 "Change the schema",
                 "schema",
@@ -267,6 +273,22 @@ RESOURCES = (
         (
             Group("Run a report", "run-a-report", _READING, ("run", "run_page", "summary_rows")),
             Group("Look up the report's details", "report-details", _READING, ("info",)),
+        ),
+    ),
+    Resource(
+        "Operation",
+        "operation",
+        pyquickbase.Operation,
+        pyquickbase.AsyncOperation,
+        "An `Operation` is one table operation offered to a model as a tool: a JSON Schema of "
+        "the arguments it may send, and `run()`, which checks them against the same lists before "
+        "calling the table. Get one from `Table.operation()`.",
+        f"The examples below use `search`, made as shown here. {_JOB_TASKS} {_LIVE_TEST}",
+        _setup(_TABLE_LINE)[0] + _SEARCH_LINES.replace("await ", ""),
+        _setup(_TABLE_LINE)[1] + _SEARCH_LINES,
+        (
+            Group("Describe it to a model", "describe-it", _AGENTS, ("schema", "name")),
+            Group("Run it", "run-it", _AGENTS, ("run",)),
         ),
     ),
     Resource(
@@ -411,17 +433,19 @@ SYMBOL_PAGES = (
         ),
     ),
     SymbolPage(
-        "Output for models",
-        "output",
+        "Tools for models",
+        "tools",
         "These turn results and errors into plain data for the result of a model's tool call, in "
         "the same shapes and value formats whatever the call. They work with any tool-calling "
-        "framework, as `json.dumps()` always accepts what they return.",
+        "framework, as `json.dumps()` always accepts what they return. `Table.operation()` makes "
+        "the tools themselves.",
         "Each example makes its own client from the environment, with `bqtasks123` standing for "
         f"the ID of the `Job Tasks` table. {_JOB_TASKS} {_LIVE_TEST}",
         *_setup(_TABLE_LINE),
         (
             Group("Results", "results", _AGENTS, ("tool_result",)),
             Group("Errors", "errors", _AGENTS, ("tool_error", "ToolErrorCode")),
+            Group("Operations", "operations", _AGENTS, ("OperationName",)),
         ),
     ),
     SymbolPage(
@@ -514,6 +538,7 @@ def _name_links() -> dict[str, str]:
     links["AsyncApp"] = links["App"]
     links["AsyncTable"] = links["Table"]
     links["AsyncReport"] = links["Report"]
+    links["AsyncOperation"] = links["Operation"]
     links["AsyncTypedTable"] = links["TypedTable"]
     links["AsyncRecordIterator"] = links["RecordIterator"]
     links["AsyncTypedIterator"] = links["TypedIterator"]

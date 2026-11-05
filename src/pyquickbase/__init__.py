@@ -3,6 +3,7 @@
 from ._async._client import AsyncQuickbase
 from ._async._resources import (
     AsyncApp,
+    AsyncOperation,
     AsyncRecordIterator,
     AsyncReport,
     AsyncTable,
@@ -22,6 +23,7 @@ from ._models import (
     Role,
     TableInfo,
 )
+from ._operations import OperationName
 from ._output import ToolErrorCode, tool_error, tool_result
 from ._policy import WriteAccess, WriteAction, WritePolicy, WriteRequest, WriteRules
 from ._preview import FieldChange, RecordChange, UpdatePreview
@@ -30,7 +32,15 @@ from ._read_policy import ReadAccess, ReadAction, ReadPolicy, ReadRequest, ReadR
 from ._retry import RetryPolicy
 from ._summary import Period, PeriodUnit, SummaryGroups, SummaryRow
 from ._sync._client import Quickbase
-from ._sync._resources import App, RecordIterator, Report, Table, TypedIterator, TypedTable
+from ._sync._resources import (
+    App,
+    Operation,
+    RecordIterator,
+    Report,
+    Table,
+    TypedIterator,
+    TypedTable,
+)
 from ._typed import UNSET, Column, OrderBy, Row, TypedField, TypedPage, TypedRecord, Unset
 from ._version import __version__
 from ._where_data import where_from_dict, where_schema
@@ -68,6 +78,7 @@ __all__ = [
     "App",
     "AppInfo",
     "AsyncApp",
+    "AsyncOperation",
     "AsyncQuickbase",
     "AsyncRecordIterator",
     "AsyncReport",
@@ -91,6 +102,8 @@ __all__ = [
     "InvalidValueError",
     "NetworkError",
     "NotFoundError",
+    "Operation",
+    "OperationName",
     "OrderBy",
     "Page",
     "Period",

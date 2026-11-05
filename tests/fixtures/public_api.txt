@@ -27,6 +27,11 @@ class AsyncApp(object)
     def table(self, name_or_id: str) -> 'AsyncTable'
     async def tables(self, *, refresh: bool = False) -> list[TableInfo]
     def typed(self, model: type[~R]) -> 'AsyncTypedTable[R]'
+class AsyncOperation(object)
+    def __init__(self, table: AsyncTable, spec: OperationSpec) -> None
+    property name -> Literal['query', 'count', 'summarize', 'insert', 'update', 'delete', 'preview_update', 'preview_delete', 'run_report', 'summary_report', 'run_formula', 'download_file', 'delete_file_version']
+    async def run(self, arguments: Mapping[str, Any], *, scope: Expression | None = None) -> Any
+    property schema -> dict[str, Any]
 class AsyncQuickbase(object)
     async def __aenter__(self) -> Self
     async def __aexit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: traceback | None) -> None
@@ -63,6 +68,7 @@ class AsyncTable(object)
     async def get(self, record_id: int, *, select: str | int | F | Sequence[str | int | F] | None = None) -> Record | None
     async def info(self) -> TableInfo
     async def insert(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000) -> WriteResult
+    async def operation(self, name: Literal['query', 'count', 'summarize', 'insert', 'update', 'delete', 'preview_update', 'preview_delete', 'run_report', 'summary_report', 'run_formula', 'download_file', 'delete_file_version'], *, fields: Sequence[str | int] | None = None, descriptions: Mapping[str | int, str] | None = None, reports: Sequence[str] | Mapping[str, str] | None = None, formula: str | None = None, max_records: int | None = None, max_rows: int = 100) -> 'AsyncOperation'
     async def preview_delete(self, where: Expression | str, *, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, top: int = 100) -> Page
     async def preview_update(self, rows: Iterable[Mapping[str | int, Any]]) -> UpdatePreview
     def query(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, page_size: int = 1000, limit: int | None = None) -> AsyncRecordIterator
@@ -177,6 +183,12 @@ class InvalidValueError(QuickbaseError, ValueError)
 class NetworkError(QuickbaseError)
 class NotFoundError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
+class Operation(object)
+    def __init__(self, table: Table, spec: OperationSpec) -> None
+    property name -> Literal['query', 'count', 'summarize', 'insert', 'update', 'delete', 'preview_update', 'preview_delete', 'run_report', 'summary_report', 'run_formula', 'download_file', 'delete_file_version']
+    def run(self, arguments: Mapping[str, Any], *, scope: Expression | None = None) -> Any
+    property schema -> dict[str, Any]
+value OperationName = Literal['query', 'count', 'summarize', 'insert', 'update', 'delete', 'preview_update', 'preview_delete', 'run_report', 'summary_report', 'run_formula', 'download_file', 'delete_file_version']
 value OrderBy = TypedField | int | Sequence[TypedField | int] | None
 class Page(object)
     def __eq__(self, other)
@@ -338,6 +350,7 @@ class Table(object)
     def get(self, record_id: int, *, select: str | int | F | Sequence[str | int | F] | None = None) -> Record | None
     def info(self) -> TableInfo
     def insert(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000) -> WriteResult
+    def operation(self, name: Literal['query', 'count', 'summarize', 'insert', 'update', 'delete', 'preview_update', 'preview_delete', 'run_report', 'summary_report', 'run_formula', 'download_file', 'delete_file_version'], *, fields: Sequence[str | int] | None = None, descriptions: Mapping[str | int, str] | None = None, reports: Sequence[str] | Mapping[str, str] | None = None, formula: str | None = None, max_records: int | None = None, max_rows: int = 100) -> 'Operation'
     def preview_delete(self, where: Expression | str, *, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, top: int = 100) -> Page
     def preview_update(self, rows: Iterable[Mapping[str | int, Any]]) -> UpdatePreview
     def query(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, page_size: int = 1000, limit: int | None = None) -> RecordIterator
@@ -459,8 +472,8 @@ def all_of(*policies: Any) -> Any
 def parse_where(where: str, fields: Iterable[Field]) -> list[WhereCondition]
 def tool_error(error: BaseException) -> dict[str, Any]
 def tool_result(value: Any, *, compact: bool = False, max_records: int | None = None, max_text: int | None = None) -> dict[str, Any]
-def where_from_dict(data: Mapping[str, Any], *, fields: Iterable[str | int] | None = None) -> Expression
-def where_schema(*, fields: Iterable[str | int] | Iterable[Field] | None = None, max_depth: int = 2) -> dict[str, Any]
+def where_from_dict(data: Mapping[str, Any], *, fields: Iterable[str | int] | Iterable[Field] | None = None) -> Expression
+def where_schema(*, fields: Iterable[str | int] | Iterable[Field] | None = None, descriptions: Mapping[str | int, str] | None = None, max_depth: int = 2) -> dict[str, Any]
 command pyquickbase codegen
     --app (StoreAction, required)
     --output (StoreAction, required)

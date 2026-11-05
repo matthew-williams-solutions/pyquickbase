@@ -35,6 +35,17 @@ from .._models import (
     table_info_from_api,
     unknown_report_message,
 )
+from .._operations import (
+    DEFAULT_MAX_ROWS,
+    OperationName,
+    OperationSpec,
+    allowed_for,
+    copy_schema,
+    make_spec,
+    operation_names,
+    refused_operation,
+    unavailable,
+)
 from .._preview import UpdatePreview, build_update_preview, id_batches, merge_rows
 from .._query import Expression, F, FieldRef, FieldRefs, build_query_body, compile_where
 from .._schema import SchemaCache
@@ -69,6 +80,7 @@ from .._writes import (
     write_failure,
 )
 from ..errors import (
+    ConfigurationError,
     InvalidResponseError,
     InvalidValueError,
     PermissionDeniedError,
@@ -1432,6 +1444,106 @@ class Table:
             lambda known: [FieldIndex(known).resolve(ref).id for ref in fields]
         )
 
+    def operation(
+        self,
+        name: OperationName,
+        *,
+        fields: Sequence[FieldRef] | None = None,
+        descriptions: Mapping[FieldRef, str] | None = None,
+        reports: Sequence[str] | Mapping[str, str] | None = None,
+        formula: str | None = None,
+        max_records: int | None = None,
+        max_rows: int = DEFAULT_MAX_ROWS,
+    ) -> "Operation":
+        """Make one operation on this table into a tool for a model, with its JSON Schema.
+
+        The schema describes the arguments a model may send, and `run()` checks them against the
+        same lists before calling the table, so a model can't use anything it wasn't offered. The
+        lists hold only what the client's `ReadRules` and `WriteRules` allow, narrowed by `fields`.
+
+        ```python
+        search = tasks.operation("query", fields=["Title", "Status"])
+        tool = {"name": "search_tasks", "input_schema": search.schema}
+        page = search.run(arguments, scope=F("Project") == project)
+        ```
+
+        See [Using pyquickbase from an AI agent](guides/agents.md#giving-a-model-operations) for
+        what each operation takes.
+
+        Args:
+            name: What the operation does, such as `query` or `insert`. Each runs the method of the
+                same name, and `run_report` and `summary_report` run a report.
+            fields: The only fields it may use, by label or ID. Defaults to every field the client
+                may use for the operation.
+            descriptions: What fields mean, as `{label or ID: text}`, which the schema shows the
+                model. Each must be for a field the operation offers.
+            reports: The reports `run_report` or `summary_report` may run, by ID, or as `{ID:
+                description}`. Defaults to every report of that kind the client may run.
+            formula: For `run_formula`, the formula's text, which your code fixes. The model only
+                chooses the record, as a formula can read any table.
+            max_records: The most records one call may return. Defaults to 100, or for `summarize`,
+                10,000 records read. The client's `ReadRules` can lower it.
+            max_rows: The most records one `insert` or `update` may send.
+
+        Returns:
+            An `Operation`, with its `schema` and `run()`.
+
+        Raises:
+            WriteRefusedError: The client's limits on writes don't allow this operation at all.
+            ReadRefusedError: The client's `ReadRules` don't allow it at all, such as a formula.
+            ConfigurationError: The table has nothing for it, such as no file fields, or
+                `formula` is missing or given for another operation.
+            UnknownFieldError: `fields` or `descriptions` names a field the client can't see, or
+                one the operation doesn't offer.
+            UnknownReportError: `reports` has an ID this table doesn't have.
+        """
+        if name not in operation_names():
+            raise ConfigurationError(f"name must be one of: {', '.join(operation_names())}.")
+        transport = self._transport
+        if name == "run_formula" and transport.read_rules:
+            raise ReadRefusedError(
+                "This client's read rules refuse formulas, as a formula can read other tables "
+                "and fields."
+            )
+        info = self.info()
+        report_ids: Sequence[str] | None = None
+        report_notes: dict[str, str] = {}
+        if isinstance(reports, Mapping):
+            report_notes = {str(key): str(text) for key, text in reports.items()}
+            report_ids = list(report_notes)
+        elif reports is not None:
+            report_ids = [str(item) for item in reports]
+        needs_reports = name in ("run_report", "summary_report")
+        allowed = allowed_for(
+            self.fields(),
+            self.reports() if needs_reports else (),
+            table_id=info.id,
+            key_field_id=info.key_field_id,
+            read_rules=transport.read_rules,
+            write_rules=transport.write_rules,
+            read_only=transport.read_only,
+            wanted=fields,
+            wanted_reports=report_ids if needs_reports else None,
+        )
+        reason = unavailable(name, allowed, formula)
+        if reason is not None:
+            raise refused_operation(
+                name,
+                reason,
+                read_limited=bool(transport.read_rules),
+                write_limited=transport.read_only or bool(transport.write_rules),
+            )
+        spec = make_spec(
+            name,
+            allowed,
+            descriptions=descriptions,
+            report_descriptions=report_notes,
+            max_records=max_records,
+            max_rows=max_rows,
+            formula=formula,
+        )
+        return Operation(self, spec)
+
     def drop(self, *, confirm: str) -> None:
         """Delete this table and all its records.
 
@@ -1593,6 +1705,68 @@ class Report:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._ref!r}, table={self._table!r})"
+
+
+class Operation:
+    """One operation on a table, for a model's tool call. Create one with `table.operation()`."""
+
+    def __init__(self, table: Table, spec: OperationSpec) -> None:
+        self._table = table
+        self._spec = spec
+
+    @property
+    def name(self) -> OperationName:
+        """What the operation does, such as `query`."""
+        return self._spec.name
+
+    @property
+    def schema(self) -> dict[str, Any]:
+        """The JSON Schema of the arguments a model may send, for a tool's input.
+
+        It's self-contained, with no `$ref`, and a new dictionary each time, so you can add to it.
+        """
+        return copy_schema(self._spec.schema)
+
+    def run(self, arguments: Mapping[str, Any], *, scope: Expression | None = None) -> Any:
+        """Check a model's arguments, and run the operation.
+
+        Arguments the schema doesn't allow are refused before anything is sent, with a message that
+        says where the mistake is, and doesn't repeat the values sent.
+
+        Args:
+            arguments: The arguments from the model's tool call.
+            scope: A condition your code fixes, such as the user's project, that every record must
+                match. It's added to every filter. An operation that names records, such as
+                `update`, first checks that they all match it. A report can't take one.
+
+        Returns:
+            What the table method returns, such as a `Page` for `query`, which `tool_result()`
+            takes.
+
+        Raises:
+            QueryError: An argument can't be used, or a record named isn't in `scope`. Nothing was
+                sent, other than the query that checks the scope.
+            InvalidValueError: A record or value can't be written. Nothing was sent.
+        """
+        call = self._spec.plan(arguments, scope)
+        table = self._table
+        if call.record_ids and scope is not None:
+            ids = list(call.record_ids)
+            found = table.count(scope & F(RECORD_ID_FIELD).is_in(ids))
+            if found != len(ids):
+                raise QueryError(
+                    "Some of these records don't exist, or aren't ones this tool may use, so "
+                    "nothing was done."
+                )
+        if call.report_id is not None:
+            report = table.report(call.report_id)
+            return getattr(report, call.method)(**call.arguments)
+        if call.method in ("insert", "update", "preview_update"):
+            return getattr(table, call.method)(call.arguments["rows"])
+        return getattr(table, call.method)(**call.arguments)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self._spec.name!r}, table={self._table!r})"
 
 
 class TypedTable(Generic[R]):

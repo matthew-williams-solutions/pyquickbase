@@ -7,10 +7,10 @@ from typing import Any
 
 import httpx
 
-from .._combine import read_rules_in
+from .._combine import read_rules_in, write_rules_in
 from .._config import build_url, check_read_only, is_read
-from .._policy import WritePolicy, check_policy, describe_write
-from .._read_policy import ReadPolicy, ReadRequest, check_read, describe_read
+from .._policy import WritePolicy, WriteRules, check_policy, describe_write
+from .._read_policy import ReadPolicy, ReadRequest, ReadRules, check_read, describe_read
 from .._response import error_from_response, error_from_transport, parse_response
 from .._retry import RetryPolicy, parse_retry_after
 
@@ -65,6 +65,20 @@ class Transport:
         for rules in self._read_rules:
             payload = rules._trim_response(read, method, path, payload)  # pyright: ignore[reportPrivateUsage]
         return payload
+
+    @property
+    def read_rules(self) -> tuple[ReadRules, ...]:
+        """Every `ReadRules` in the read policy, for describing what a client may read."""
+        return self._read_rules
+
+    @property
+    def write_rules(self) -> tuple[WriteRules, ...]:
+        """Every `WriteRules` in the write policy, for describing what a client may write."""
+        return write_rules_in(self._write_policy)
+
+    @property
+    def read_only(self) -> bool:
+        return self._read_only
 
     def summary_limit(self, table_id: str) -> int | None:
         """The most records the read rules let `summarize()` read from a table, if any."""

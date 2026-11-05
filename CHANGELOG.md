@@ -25,6 +25,18 @@ All notable changes to this project are documented here. The format follows
   and `max_text` cut a result while saying so. Errors carry a fixed `code` from `ToolErrorCode`, a
   `hint` for the model, whether a retry can help, and whether anything was `changed`, which tells a
   partial write from a complete failure. An exception from outside the SDK says nothing about itself.
+- `table.operation()`, which turns one table operation into a tool for a model: an `Operation` with the
+  JSON Schema of the arguments a model may send, and `run()`, which checks them against the same lists
+  before calling the table. It covers queries, counts, summaries, inserts, updates, deletes, their
+  previews, table and summary reports, formulas, and file downloads and deletes. The schema offers only
+  what the client's `ReadRules` and `WriteRules` allow, and an operation the client can't run is refused
+  when it's made. `run()` turns JSON values into dates, times, numbers, and file uploads by field type,
+  and `scope` adds a condition your code fixes to every call. A formula's text is always fixed by your
+  code. `descriptions` tells the model what fields mean.
+- `tool_result()` takes table, field, and report metadata, without `raw`, and a downloaded file, with its
+  text when it's UTF-8 text.
+- `where_schema()` takes `descriptions`, and `where_from_dict()` takes `Field` objects in `fields`, so the
+  same list works for both.
 
 ### Changed
 

@@ -158,6 +158,16 @@ def namespace(
     }
 
 
+# What a page's setup makes beyond `tasks`, written for the async client.
+PAGE_SETUP = {
+    "operation": 'search = await tasks.operation("query", fields=["Title", "Status"])\n',
+}
+
+
+def example_code(path: Path, slug: str) -> str:
+    return PAGE_SETUP.get(slug, "") + path.read_text(encoding="utf-8")
+
+
 def with_real_ids(code: str, scratch: Any, tables: tuple[Any, Any]) -> str:
     return code.replace(PLACEHOLDER_APP, scratch.app_id).replace(
         PLACEHOLDER_TABLE, tables[0].info().id
@@ -165,7 +175,7 @@ def with_real_ids(code: str, scratch: Any, tables: tuple[Any, Any]) -> str:
 
 
 def run_sync(path: Path, slug: str, scratch: Any, tables: tuple[Any, Any], model: Any) -> str:
-    code = with_real_ids(build_reference.to_sync(path.read_text(encoding="utf-8")), scratch, tables)
+    code = with_real_ids(build_reference.to_sync(example_code(path, slug)), scratch, tables)
     printed = io.StringIO()
     with Quickbase(realm=scratch.realm, token=scratch.token) as qb:
         names = namespace(qb, scratch, slug, tables, model)
@@ -178,7 +188,7 @@ async def run_async(
     path: Path, slug: str, scratch: Any, tables: tuple[Any, Any], model: Any
 ) -> str:
     code = compile(
-        with_real_ids(path.read_text(encoding="utf-8"), scratch, tables),
+        with_real_ids(example_code(path, slug), scratch, tables),
         str(path),
         "exec",
         flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT,

@@ -24,6 +24,7 @@ REFERENCE_PAGES = (
     ("App", "app", "An app's details, getting its tables, and creating tables"),
     ("Table", "table", "Reading and writing records, files, and changing a table's fields"),
     ("Report", "report", "Running reports built in the Quickbase interface"),
+    ("Operation", "operation", "One table operation offered to a model, with its JSON Schema"),
     ("TypedTable", "typed-table", "Reading and writing through a generated class"),
     ("Queries", "queries", "`F`, conditions from plain data, and checking hand-written ones"),
     ("Records and results", "records", "What reads and writes return, files, and summaries"),
@@ -33,7 +34,7 @@ REFERENCE_PAGES = (
         "limits",
         "Limiting what a client can write and read, and how it retries",
     ),
-    ("Output for models", "output", "Results and errors as plain data for a model's tool call"),
+    ("Tools for models", "tools", "Results and errors as plain data for a model's tool call"),
     ("Generated classes", "generated", "What supports the classes from `pyquickbase codegen`"),
     ("Errors", "errors", "Everything the SDK raises, and what each one holds"),
 )
