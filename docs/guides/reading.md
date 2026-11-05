@@ -228,6 +228,81 @@ when it's empty.
 a built-in field such as `Record Owner` may be missing. Reading a missing field raises `KeyError`, and
 `3 in record` checks for one first.
 
+## Summarizing records
+
+`summarize()` counts records and finds totals, without needing a report built in the UI. Pass the fields to
+group by, and what to calculate. Every result is keyed by field label.
+
+```python
+from pyquickbase import F, Period
+
+rows = tasks.summarize(
+    group_by=["Status", Period("Due Date", "month")],
+    where=F("Project") == "Roof",
+    total="Amount",
+    average="Amount",
+    maximum="Due Date",
+)
+for row in rows:
+    print(row.group["Status"], row.group["Due Date"], row.count, row.total["Amount"])
+```
+
+Leave out `group_by` for one row covering every matching record:
+
+```python
+overall = tasks.summarize(total="Amount", where=F("Status") == "Open")[0]
+print(overall.count, overall.total["Amount"])
+```
+
+| `SummaryRow` attribute | What it holds |
+|---|---|
+| `group` | The values that define the group. Empty without `group_by`. A user is their email, and an empty value is `None` |
+| `count` | How many records are in the group, including those with empty values |
+| `total` | The sum of each field, which is `0` if every value is empty |
+| `average`, `minimum`, `maximum` | Each field's result, or `None` if every value is empty. Empty values don't count toward an average |
+
+Groups are sorted by their values, with empty ones last. If nothing matches, you get an empty list, or one
+row with a `count` of 0 without `group_by`.
+
+`total` and `average` take numeric fields. `minimum` and `maximum` also take dates, timestamps, and times of
+day. You can't group by a multi-select, multi-user, or file field, because a record can hold several of
+those values at once.
+
+### Grouping dates by period
+
+`Period` groups a date or timestamp field by `day`, `week`, `month`, `quarter`, or `year`, labeled `2026-03-14`,
+`2026-W11`, `2026-03`, `2026-Q1`, and `2026`, so they sort in order. Which day a timestamp falls on depends on
+the time zone, so pass `tz` if you don't want UTC:
+
+```python
+from zoneinfo import ZoneInfo
+
+from pyquickbase import Period
+
+by_week = Period("Date Created", "week", tz=ZoneInfo("America/New_York"))
+print(tasks.summarize(group_by=by_week))
+```
+
+### Large tables
+
+`summarize()` reads every matching record, so it makes one request per 1,000 records. A report built in the UI
+does the calculating in Quickbase, and is faster on a large table. See
+[Reading summary and chart reports](#reading-summary-and-chart-reports).
+
+To refuse a scan larger than you expect, set `max_records`. If more records match, it raises `QueryError` without
+reading them. It never returns a total from only part of the data.
+
+```python
+from pyquickbase import QueryError
+
+try:
+    rows = tasks.summarize(group_by="Status", max_records=50_000)
+except QueryError as error:
+    print(error)
+```
+
+Records can change between pages, so on a table in use, the result may not match any one moment.
+
 ## Running reports
 
 Find a report on its table by name or ID. Like tables, it's checked when first used. The API can't
@@ -259,15 +334,29 @@ The report decides the filter, sort, and columns:
   from. An ID takes priority over a name.
 
 Only table reports can be read as records. Summary, chart, and ask-the-user reports raise
-`UnsupportedReportError` before anything runs. Summary and chart results number their columns by
-position, so a total would otherwise read as a Record ID#. To get their raw results, use
-`qb.request("POST", f"/reports/{report_id}/run", params={"tableId": table_id})`. Quickbase can't run
-ask-the-user reports through the API.
+`UnsupportedReportError` before anything runs, because a summary's column IDs are positions rather than
+fields, so a total could read as a Record ID#.
 
 Running a report adds to its usage count in Quickbase, but changes no records.
 Report details come from the same cache as other metadata, so `usedCount` in `raw` can be out of
 date, and so can the details used to check that a report is a table report. Quickbase's UI doesn't let
 you change a saved report's type.
+
+### Reading summary and chart reports
+
+`summary_rows()` reads a report built in the UI as `{column label: value}` rows, with Quickbase doing the
+calculating. A summary report labels its columns with the kind of total, such as `Hours (tot)`.
+
+```python
+rows = tasks.report("Hours by Project").summary_rows()
+for row in rows:
+    print(row["Project"], row["Hours (tot)"])
+```
+
+Values are what Quickbase returns, so unlike `run()`, dates aren't converted, and a chart's dates are text
+in the app's format, such as `01-01-2026`. A report that asks the user for a value can't run through the API
+at all, and a report with two columns of the same label raises `UnsupportedReportError`, as a row could only
+hold one of them. Each run adds to the report's usage count.
 
 ## When something is refused
 
@@ -284,6 +373,9 @@ These all raise before the query is sent, though the SDK may read table metadata
 | `get()` with something other than a positive integer | `InvalidValueError` |
 | Reading a field the record doesn't hold | `KeyError` |
 | The table has no such report, or several with that name | `UnknownReportError` |
-| A summary, chart, or ask-the-user report | `UnsupportedReportError` |
+| `run()` on a summary, chart, or ask-the-user report, or `summary_rows()` on a table or ask-the-user report, or one with two columns of the same label | `UnsupportedReportError` |
+| `summarize()` with a field it can't use, such as text in `total`, or a multi-select field in `group_by` | `QueryError` |
+| `summarize()` finds more records than `max_records` | `QueryError`, and no records are read |
+| `summarize()` finds a value that isn't what its field's type says | `InvalidResponseError`, and there's no partial result |
 
 See [Handling errors](errors.md) for failures that come from Quickbase, such as a refused token.

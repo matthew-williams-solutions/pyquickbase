@@ -124,7 +124,8 @@ That protects the shape of a query, not its meaning:
 - **A model that chooses the field or operator chooses the result.** `F("Status") != "x"` is a valid
   query that matches almost everything. Fix these in your code.
 - **`delete()` requires `where`,** so leaving it out can't delete everything, but a broad condition
-  still can. Call `count()` with the same condition first, and compare it with what you expect.
+  still can. Call [`preview_delete()`](#checking-a-change-before-making-it) with the same condition first,
+  and compare its `total` with what you expect.
 
 !!! note "`_curuser_` and relative dates"
     On a `user` or `multiuser` field, Quickbase reads `_curuser_` as the token's owner, ignoring case
@@ -207,6 +208,80 @@ delete unchecked.
   fields hold an email too. Decide whether a model or a log should see them.
 - [Don't use a file's name as a path](files.md#downloading). Quickbase stores names as sent,
   including `../../etc/passwd`.
+
+## Counts and totals
+
+Don't have a model count or add up records itself, because it can miss some or get the arithmetic wrong. Give
+it a tool that calls [`summarize()`](reading.md#summarizing-records), and always set `max_records`, so that a
+broad request can't read a whole large table. If the limit is exceeded, nothing is returned but the error, so
+a model can't report a total from only part of the data.
+
+```python
+from pyquickbase import F, Quickbase, where_from_dict
+
+
+def task_totals(project: str, where: dict | None = None) -> list[dict]:
+    """A tool for the agent, which can only choose the project and a filter on Status."""
+    condition = F("Project") == project
+    if where:
+        condition = condition & where_from_dict(where, fields=["Status"])
+    with Quickbase.from_env(read_only=True) as qb:
+        rows = (
+            qb.app("bq1234567")
+            .table("Tasks")
+            .summarize(group_by="Status", where=condition, total="Amount", max_records=5000)
+        )
+    return [
+        {"status": row.group["Status"], "tasks": row.count, "amount": row.total["Amount"]}
+        for row in rows
+    ]
+```
+
+Values such as a date in `minimum` are Python objects, so turn them into text if your tool returns JSON.
+
+## Checking a change before making it
+
+Have a tool show what it would do, and make the change only once someone has approved it. A preview only
+reads, so the tool that shows it can use a read-only client, and only the tool that writes needs more.
+
+```python
+from pyquickbase import F, Quickbase, where_from_dict
+
+
+def preview_status_change(record_id: int, status: str) -> dict:
+    """The tool the model calls first. It changes nothing."""
+    with Quickbase.from_env(read_only=True) as qb:
+        tasks = qb.app("bq1234567").table("Tasks")
+        preview = tasks.preview_update([{"Record ID#": record_id, "Status": status}])
+    return {
+        "changes": [
+            {
+                "record": change.record_id,
+                "fields": {
+                    label: {"before": values.before, "after": values.after}
+                    for label, values in change.fields.items()
+                },
+            }
+            for change in preview.changes
+        ],
+        "already_set": preview.unchanged_ids,
+        "not_found": preview.missing_ids,
+    }
+
+
+def preview_delete_tasks(project: str, where: dict) -> dict:
+    """Shows how many tasks a delete would remove, and the first few."""
+    with Quickbase.from_env(read_only=True) as qb:
+        tasks = qb.app("bq1234567").table("Tasks")
+        condition = (F("Project") == project) & where_from_dict(where, fields=["Status"])
+        page = tasks.preview_delete(condition, select=["Title"], top=10)
+    return {"total": page.total, "first": [task["Title"] for task in page.records]}
+```
+
+The values in a preview are record data, so treat them as [untrusted](#reading-results), and only return
+fields the model should see. A preview isn't a guarantee, as records can change before the write, and
+[it doesn't check](writing.md#previewing-a-write) whether Quickbase will accept it. Compare a delete's
+result with the preview's `total`, and tell the user if they differ.
 
 ## Writes
 

@@ -4,7 +4,7 @@ import importlib.util
 import os
 import subprocess
 import sys
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -23,6 +23,7 @@ from pyquickbase import (
     FormulaResult,
     NotFoundError,
     Page,
+    Period,
     QueryError,
     ReadOnlyError,
     Record,
@@ -33,6 +34,7 @@ from pyquickbase import (
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
+    UnsupportedReportError,
     WriteError,
     all_of,
     parse_where,
@@ -835,3 +837,153 @@ async def test_a_custom_policy_runs_on_real_writes(
         await table.update([{"Record ID#": record, "Title": "Updated"}])
         await table.insert([{"Code": "C9", "Title": "Inserted"}])
     assert seen == ["upsert", "update", "insert"]
+
+
+async def test_previews_match_what_the_write_then_does(
+    qb: AsyncQuickbase, scratch: Any, seeded: str
+) -> None:
+    table = get(qb, scratch, seeded)
+    stamp = datetime(2027, 3, 4, 5, 6, 7, tzinfo=UTC)
+    first = (await one(table, "C1", "Code")).id
+    second = (await one(table, "C2", "Code")).id
+    third = (await one(table, "C3", "Code")).id
+    await table.update(
+        [
+            {
+                "Record ID#": first,
+                "Started": stamp,
+                "Price": Decimal("10.50"),
+                "Done": True,
+                "Tags": ["a", "b"],
+            }
+        ]
+    )
+    # Every value here is what the record already holds, written the way a caller might.
+    same = {
+        "Record ID#": first,
+        "Title": "Row 1",
+        "Due Date": date(2027, 1, 1),
+        "Amount": "1",
+        "Started": stamp,
+        "Price": Decimal("10.5"),
+        "Done": True,
+        "Tags": ["b", "a"],
+    }
+    rows = [
+        same,
+        {"Record ID#": second, "Title": "Changed", "Amount": None, "Due Date": date(2028, 2, 2)},
+        {"Record ID#": third, "Done": False},
+        {"Record ID#": 99999999, "Title": "Gone"},
+    ]
+    before = {r.id: dict(r) async for r in table.query(select=["Title", "Amount"])}
+    preview = await table.preview_update(rows)
+    assert {r.id: dict(r) async for r in table.query(select=["Title", "Amount"])} == before
+    assert preview.missing_ids == (99999999,)
+    assert set(preview.unchanged_ids) == {first, third}
+    assert [change.record_id for change in preview.changes] == [second]
+    fields = preview.changes[0].fields
+    assert fields["Title"].before == "Row 2"
+    assert fields["Title"].after == "Changed"
+    assert fields["Amount"].before == 2
+    assert fields["Amount"].after is None
+    assert fields["Due Date"].before == date(2027, 1, 2)
+
+    with pytest.raises(WriteError) as caught:
+        await table.update(rows)
+    result = caught.value.result
+    assert set(result.updated_ids) == {second}
+    assert set(result.unchanged_ids) == {first, third}
+
+
+async def test_a_delete_preview_matches_the_delete(
+    qb: AsyncQuickbase, scratch: Any, seeded: str
+) -> None:
+    table = get(qb, scratch, seeded)
+    where = where_from_dict({"field": "Amount", "op": ">=", "value": 4})
+    page = await table.preview_delete(where, select=["Code"], top=1)
+    assert page.total == 2
+    assert len(page.records) == 1
+    assert await table.count() == 5
+    assert await table.delete(where) == page.total
+
+
+async def test_a_file_preview_shows_only_names(
+    qb: AsyncQuickbase, scratch: Any, seeded: str
+) -> None:
+    table = get(qb, scratch, seeded)
+    record = (await one(table, "C1", "Code")).id
+    await table.update([{"Record ID#": record, "Attachment": FileUpload("first.txt", b"one")}])
+    await table.update([{"Record ID#": record, "Attachment": FileUpload("second.txt", b"two")}])
+    preview = await table.preview_update(
+        [{"Record ID#": record, "Attachment": FileUpload("third.txt", b"three")}]
+    )
+    change = preview.changes[0].fields["Attachment"]
+    assert (change.before, change.after) == ("second.txt", "third.txt")
+
+
+async def test_summarize_matches_the_records(qb: AsyncQuickbase, scratch: Any, seeded: str) -> None:
+    table = get(qb, scratch, seeded)
+    await table.insert([{"Title": "Row 6", "Code": "C6", "Amount": 10}, {"Code": "C7"}])
+    await table.update(
+        [
+            {"Record ID#": r.id, "Done": True, "Started": datetime(2027, 3, 4, 2, tzinfo=UTC)}
+            async for r in table.query(where=F("Code").is_in(["C1", "C2"]), select=["Code"])
+        ]
+    )
+    overall = await table.summarize(
+        total="Amount", average="Amount", minimum=["Amount", "Due Date"], maximum="Started"
+    )
+    assert len(overall) == 1
+    assert overall[0].count == 7
+    assert overall[0].total == {"Amount": 25}
+    assert overall[0].average == {"Amount": 25 / 6}
+    assert overall[0].minimum == {"Amount": 1, "Due Date": date(2027, 1, 1)}
+    assert overall[0].maximum == {"Started": datetime(2027, 3, 4, 2, tzinfo=UTC)}
+
+    by_done = await table.summarize("Done", total="Amount")
+    assert [(row.group["Done"], row.count, row.total["Amount"]) for row in by_done] == [
+        (False, 5, 22),
+        (True, 2, 3),
+    ]
+
+    by_month = await table.summarize(Period("Due Date", "month"), where=F("Amount") >= 1)
+    assert [(row.group["Due Date"], row.count) for row in by_month] == [("2027-01", 5), (None, 1)]
+
+    west = timezone(timedelta(hours=-5))
+    by_day = await table.summarize(Period("Started", "day", tz=west), where=F("Done") == True)  # noqa: E712
+    assert [row.group["Started"] for row in by_day] == ["2027-03-03"]
+
+    filtered = await table.summarize(
+        where=where_from_dict({"field": "Amount", "op": ">", "value": 3}), total="Amount"
+    )
+    assert (filtered[0].count, filtered[0].total) == (3, {"Amount": 19})
+
+    with pytest.raises(QueryError, match="max_records"):
+        await table.summarize(max_records=6)
+    assert (await table.summarize(max_records=7))[0].count == 7
+
+
+async def test_summary_and_chart_reports_read_as_rows(qb: AsyncQuickbase, scratch: Any) -> None:
+    app = qb.app(scratch.app_id)
+    names = {item.name for item in await app.tables(refresh=True)}
+    if "Sample Tasks" not in names:
+        pytest.skip("This needs the Sample Tasks table and its reports. See CONTRIBUTING.md.")
+    table = app.table("Sample Tasks")
+    reports = {item.name for item in await table.reports(refresh=True)}
+    if not {"API Summary Test", "API Chart Test"} <= reports:
+        pytest.skip("This needs the reports described in CONTRIBUTING.md.")
+
+    summary = await table.report("API Summary Test").summary_rows()
+    assert summary == [
+        {"Task Name": "Book room", "Field Type Sample (tot)": 1, "Field Type Sample (avg)": 1},
+        {"Task Name": "Prepare agenda", "Field Type Sample (tot)": 1, "Field Type Sample (avg)": 1},
+    ]
+    chart = await table.report("API Chart Test").summary_rows()
+    assert chart == [
+        {"Task Name": "Book room", "Field Type Sample (tot)": 1},
+        {"Task Name": "Prepare agenda", "Field Type Sample (tot)": 1},
+    ]
+    assert await table.report("API Summary Test").summary_rows(page_size=1, limit=1) == summary[:1]
+    assert await table.report("API Chart Test").summary_rows(page_size=1) == chart
+    with pytest.raises(UnsupportedReportError, match="summary_rows"):
+        await table.report("API Summary Test").run_page()

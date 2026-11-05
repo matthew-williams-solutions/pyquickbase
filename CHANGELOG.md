@@ -18,6 +18,15 @@ All notable changes to this project are documented here. The format follows
   `TableRules` and `Allow` list what a client may do to each table, by action and by field, and refuse
   everything else. A policy can also be your own function, which takes a `WriteRequest`, and `all_of()`
   requires several to pass. Only a return value of `True` lets a write through.
+- `preview_delete()` and `preview_update()` on tables and typed tables, which show what a delete or
+  update would do without changing anything, so that a person or model can check it first.
+  `preview_update()` returns the new `UpdatePreview`, with each change's before and after values.
+- `summarize()` on tables and typed tables, which counts records and finds totals, averages, minimums,
+  and maximums, overall or per group, with `Period` to group dates by month and so on. It reads every
+  matching record, and `max_records` refuses a scan larger than you expect, rather than returning a
+  partial result.
+- `Report.summary_rows()`, which reads a summary or chart report built in the UI as
+  `{column label: value}` rows. These reports used to need `qb.request()`.
 
 ### Changed
 

@@ -238,7 +238,7 @@ def require_table_report(report: ReportInfo) -> None:
     if report.type != "table":
         raise UnsupportedReportError(
             f"Report {report.name!r} is a {report.type} report, and only table reports can be read "
-            "as records. Use qb.request() for the raw response."
+            "as records. Use summary_rows() for a summary or chart report."
         )
     if report.incomplete:
         raise UnsupportedReportError(
@@ -420,6 +420,36 @@ class Page:
     def next_skip(self) -> int:
         """The `skip` that fetches the following page."""
         return self.skip + len(self.records)
+
+
+def require_summary_report(report: ReportInfo) -> None:
+    """Refuse reports whose rows are records, or that Quickbase can't run through the API."""
+    if report.type not in ("summary", "chart"):
+        raise UnsupportedReportError(
+            f"Report {report.name!r} is a {report.type} report. Use run() for a table report's "
+            "records."
+        )
+    if report.incomplete:
+        raise UnsupportedReportError(
+            f"Quickbase can't run report {report.name!r} through the API because it's incomplete, "
+            "as happens when a report asks the user for a value."
+        )
+
+
+def summary_rows_from_api(data: Mapping[str, Any]) -> tuple[list[dict[str, Any]], int]:
+    """Read a summary or chart report's rows, and how many there are in all.
+
+    Field IDs here are column positions, not fields, so they're only used to match each value to its
+    label. Two columns with the same label would lose a value, so that raises an error.
+    """
+    labels: dict[int, str] = {item["id"]: item["label"] for item in data["fields"]}
+    if len(set(labels.values())) != len(labels):
+        raise UnsupportedReportError(
+            "This report has several columns with the same label, so rows keyed by label would "
+            "lose values. Rename them, or use qb.request() for the raw response."
+        )
+    rows = [{labels[int(key)]: cell["value"] for key, cell in row.items()} for row in data["data"]]
+    return rows, data["metadata"]["totalRecords"]
 
 
 def page_from_api(data: Mapping[str, Any]) -> Page:

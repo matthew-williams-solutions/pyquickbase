@@ -49,6 +49,28 @@ starting with `_` are private and may change at any time.
 
 ::: pyquickbase.RetryPolicy
 
+## Previews
+
+`Table.preview_delete` and `Table.preview_update` return these.
+
+::: pyquickbase.UpdatePreview
+
+::: pyquickbase.RecordChange
+
+::: pyquickbase.FieldChange
+
+## Summaries
+
+`Table.summarize` returns these. `Report.summary_rows` returns plain dictionaries.
+
+::: pyquickbase.SummaryRow
+
+::: pyquickbase.Period
+
+::: pyquickbase.PeriodUnit
+
+::: pyquickbase.SummaryGroups
+
 ## Write policies
 
 ::: pyquickbase.TableRules

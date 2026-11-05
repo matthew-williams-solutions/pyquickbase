@@ -103,6 +103,55 @@ deleted = tasks.delete(F("Status") == "Cancelled")
 print(deleted)
 ```
 
+## Previewing a write
+
+`preview_update()` and `preview_delete()` show what a write would do, and change nothing. They only read,
+so they work on a [read-only client](clients.md#making-a-client-read-only).
+
+`preview_update()` takes the same rows as `update()`:
+
+```python
+created = tasks.insert([{"Title": "Pour slab", "Status": "Open"}]).created_ids[0]
+
+preview = tasks.preview_update([{"Record ID#": created, "Status": "Done", "Title": "Pour slab"}])
+for change in preview.changes:
+    for label, values in change.fields.items():
+        print(change.record_id, label, values.before, "->", values.after)  # Only Status changes
+print(preview.unchanged_ids, preview.missing_ids)
+```
+
+| Attribute | What it holds |
+|---|---|
+| `changes` | The records that would change, each with `{field label: FieldChange}`, which has `before` and `after` |
+| `unchanged_ids` | The records that already hold these values |
+| `missing_ids` | The records that don't exist, or that the token can't see |
+
+An empty field reads as `None` in both `before` and `after`. A file field shows the file's name, and leaves
+out its contents and who uploaded it. If a record is in several rows, a later row wins, as it would in
+`update()`. A value counts as a change whenever the comparison isn't certain, so `update()` could still
+report a listed record as unchanged, but a preview doesn't leave out a change it can detect.
+
+`preview_delete()` takes the same `where` as `delete()`, checked the same way, and returns a page, so
+`total` is how many records would be deleted, however many it returns:
+
+```python
+from pyquickbase import F
+
+page = tasks.preview_delete(F("Status") == "Cancelled", select=["Title"], top=25)
+print(page.total, [task["Title"] for task in page.records])
+```
+
+Both work on a typed table too, where `preview_delete()` returns instances of the class.
+
+A preview can't promise what the write will do:
+
+- **It's a snapshot.** A record can change between the preview and the write, as Quickbase has no
+  transactions. Check `WriteResult` afterward.
+- **It doesn't check whether Quickbase will accept the write.** A formula field, a value outside a field's
+  choices, one of the table's data rules, or a role that can't edit a field all look like a normal change.
+- **It doesn't check a client's limits.** A [write policy](clients.md#limiting-what-a-client-can-do) can still
+  refuse the write that follows.
+
 ## What a write returns
 
 `insert()`, `update()`, and `upsert()` return a `WriteResult`:
@@ -176,6 +225,9 @@ A write that times out isn't retried, because Quickbase may already have applied
 |---|---|---|
 | A row sets `Record ID#` in `insert()`, or leaves it out of `update()` | `InvalidValueError` | Nothing was sent |
 | A row leaves out the `merge_on` field in `upsert()` | `InvalidValueError` | Nothing was sent |
+| A row can't be sent in `preview_update()`, for the same reasons as `update()` | `InvalidValueError` | Nothing was read |
+| `Record ID#` in `preview_update()` isn't a positive integer | `InvalidValueError` | Nothing was read |
+| `preview_delete()` with a `where` that's None or can't be sent as written | `QueryError` | Nothing was read |
 | A row has no real values in `insert()` or `upsert()` | `InvalidValueError` | Nothing was sent |
 | `insert()` on a table whose key field isn't `Record ID#` | `InvalidValueError` | Nothing was sent |
 | A value that can't be written, such as a `datetime` without a timezone | `InvalidValueError` | Nothing was sent |

@@ -27,13 +27,17 @@ from .._models import (
     parse,
     relationship_from_api,
     report_info_from_api,
+    require_summary_report,
     require_table_report,
     role_from_api,
+    summary_rows_from_api,
     table_info_from_api,
     unknown_report_message,
 )
+from .._preview import UpdatePreview, build_update_preview, id_batches, merge_rows
 from .._query import Expression, F, FieldRef, FieldRefs, build_query_body, compile_where
 from .._schema import SchemaCache
+from .._summary import Summary, SummaryGroups, SummaryRow
 from .._typed import (
     OrderBy,
     R,
@@ -672,6 +676,137 @@ class AsyncTable:
         )
         return parse(lambda data: int(data["numberDeleted"]), payload, "delete")
 
+    async def summarize(
+        self,
+        group_by: SummaryGroups | None = None,
+        *,
+        where: Expression | str | None = None,
+        total: FieldRefs | None = None,
+        average: FieldRefs | None = None,
+        minimum: FieldRefs | None = None,
+        maximum: FieldRefs | None = None,
+        max_records: int | None = None,
+        page_size: int = 1000,
+    ) -> list[SummaryRow]:
+        """Count and total records, overall or per group, without a saved report.
+
+        This reads every matching record, so it makes one request per `page_size` records. Records
+        can change between pages, so on a table in use, the result may not match any one moment. A
+        field's values are added exactly, and returned as `float`.
+
+        Args:
+            group_by: The fields to group by, and `Period` for dates. Without this, the result is
+                one row for all the matching records.
+            where: A condition built with `F` or `where_from_dict()`, or a hand-written string.
+            total: Numeric fields to add up. Empty values are skipped.
+            average: Numeric fields to average. Empty values are skipped.
+            minimum: Numeric, date, timestamp, or time of day fields to find the lowest of.
+            maximum: The same, for the highest.
+            max_records: Raise `QueryError` if more records match than this, without reading them.
+                It never returns a partial result. An agent's tool should always set this.
+            page_size: Records to request per call to Quickbase.
+
+        Returns:
+            A `SummaryRow` for each group, sorted by the group's values with empty ones last. If
+            nothing matches, that's an empty list, or without `group_by`, one row with a `count` of
+            0.
+
+        Raises:
+            QueryError: An argument can't be used, such as a text field in `total`, or more records
+                match than `max_records`. No records were read.
+            UnknownFieldError: The table has no such field. No records were read.
+            InvalidResponseError: A value isn't what its field's type says it should be.
+        """
+        _require_positive("page_size", page_size)
+        if max_records is not None:
+            _require_positive("max_records", max_records)
+        summary = await self._with_fields(
+            lambda fields: Summary(
+                fields,
+                group_by=group_by,
+                total=total,
+                average=average,
+                minimum=minimum,
+                maximum=maximum,
+            )
+        )
+        if max_records is not None:
+            found = await self.count(where)
+            if found > max_records:
+                raise QueryError(
+                    f"{found} records match, which is more than max_records of {max_records}. "
+                    "Narrow the filter, or raise the limit."
+                )
+        async for record in self.query(where=where, select=summary.select, page_size=page_size):
+            summary.add(record)
+        return summary.rows()
+
+    async def preview_delete(
+        self,
+        where: Expression | str,
+        *,
+        select: FieldRefs | None = None,
+        order_by: FieldRefs | None = None,
+        top: int = 100,
+    ) -> Page:
+        """Show what `delete()` would delete with the same `where`, without deleting anything.
+
+        This only reads, so it works on a read-only client. Records can change before a delete, so
+        it can't promise what the delete will do, and it can't tell whether the token may delete.
+
+        Args:
+            where: A condition built with `F`, or a hand-written string, checked as `delete()`
+                checks it. It's required, so that leaving it out can't look like a safe preview.
+            select: The fields to return. Defaults to the table's default fields.
+            order_by: Which matching records come first. See `query`.
+            top: The most records to return. `total` still counts every match.
+
+        Returns:
+            A `Page`, whose `total` is how many records would be deleted.
+
+        Raises:
+            QueryError: `where` can't be sent as written, or is None. Nothing was queried.
+            UnknownFieldError: The table has no such field. Nothing was queried.
+        """
+        if where is None:  # pyright: ignore[reportUnnecessaryComparison]
+            raise QueryError("preview_delete() needs where, as delete() does.")
+        return await self.query_page(where=where, select=select, order_by=order_by, top=top)
+
+    async def preview_update(self, rows: Iterable[RowInput]) -> UpdatePreview:
+        """Show what `update()` would change with the same rows, without changing anything.
+
+        This only reads, so it works on a read-only client. Records can change before an update, so
+        it can't promise what the update will do. It also can't tell whether Quickbase will accept
+        a value, such as a role that can't edit a field, or one of the table's data rules.
+
+        Args:
+            rows: The rows you'd pass to `update()`. If a record is in several rows, a later row
+                wins. `Record ID#` must be a positive integer here, even as a string works in
+                `update()`.
+
+        Returns:
+            An `UpdatePreview`, with `changes`, `unchanged_ids`, and `missing_ids`. A value counts
+            as a change whenever the comparison isn't certain, so `update()` may report a listed
+            record as unchanged. A file upload is always a change.
+
+        Raises:
+            InvalidValueError: A row can't be sent, such as one without `Record ID#`. Nothing was
+                read.
+            UnknownFieldError: A row names a field the table doesn't have. Nothing was read.
+        """
+        given = list(rows)
+        built = await self._with_fields(lambda fields: build_rows(given, FieldIndex(fields)))
+        require_field(built, RECORD_ID_FIELD, "so preview_update() can't tell which record")
+        merged = merge_rows(built)
+        current: dict[int, Record] = {}
+        for ids in id_batches(list(merged)):
+            select = sorted({field_id for record_id in ids for field_id in merged[record_id]})
+            page = await self.query_page(
+                where=F(RECORD_ID_FIELD).is_in(ids), select=select, top=len(ids)
+            )
+            current.update({record.id: record for record in page.records})
+        return build_update_preview(merged, current, FieldIndex(await self.fields()))
+
     async def run_formula(self, formula: str, *, record_id: int | None = None) -> FormulaResult:
         """Run a formula against this table, without saving it.
 
@@ -1204,6 +1339,53 @@ class AsyncReport:
             _require_positive("limit", limit)
         return AsyncRecordIterator(self._load_target, self._fetch_page, page_size, limit)
 
+    async def summary_rows(
+        self, *, page_size: int = 1000, limit: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Get a summary or chart report's rows, as `{column label: value}`.
+
+        Quickbase does the calculating, using the report as it was built in the UI. Values are what
+        Quickbase returns, so a chart's dates are text in the app's format, such as `01-01-2026`.
+        Each run adds to the report's usage count in Quickbase.
+
+        Args:
+            page_size: Rows to request per call to Quickbase.
+            limit: Stop after this many rows.
+
+        Returns:
+            The rows. A summary report's total column is labeled like `Hours (tot)`.
+
+        Raises:
+            UnknownReportError: The table has no such report, or several share the name.
+            UnsupportedReportError: It's a table report, which `run()` reads as records. Or
+                Quickbase can't run it, such as a report that asks the user for a value, or two of
+                its columns have the same label.
+            InvalidResponseError: Quickbase stopped returning rows before the end.
+        """
+        _require_positive("page_size", page_size)
+        if limit is not None:
+            _require_positive("limit", limit)
+        info = await self.info()
+        require_summary_report(info)
+        table_id = (await self._table.info()).id
+        rows: list[dict[str, Any]] = []
+        while True:
+            top = page_size if limit is None else min(page_size, limit - len(rows))
+            # Quickbase silently ignores top and skip in the body and returns every row.
+            payload = await self._transport.request(
+                "POST",
+                f"/reports/{info.id}/run",
+                params={"tableId": table_id, "top": top, "skip": len(rows)},
+            )
+            page, total = parse(summary_rows_from_api, payload, "report")
+            rows.extend(page)
+            if len(rows) >= total or len(rows) == limit:
+                return rows
+            if not page:
+                raise InvalidResponseError(
+                    f"Quickbase returned an empty page at {len(rows)} of {total} rows."
+                )
+
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._ref!r}, table={self._table!r})"
 
@@ -1361,6 +1543,58 @@ class AsyncTypedTable(Generic[R]):
         """Delete the matching records and return how many were deleted. See `Table.delete`."""
         await self._check_once()
         return await self._table.delete(where)
+
+    async def summarize(
+        self,
+        group_by: SummaryGroups | None = None,
+        *,
+        where: Expression | str | None = None,
+        total: FieldRefs | None = None,
+        average: FieldRefs | None = None,
+        minimum: FieldRefs | None = None,
+        maximum: FieldRefs | None = None,
+        max_records: int | None = None,
+        page_size: int = 1000,
+    ) -> list[SummaryRow]:
+        """Count and total records, overall or per group. See `Table.summarize`.
+
+        Name fields with the class, such as `Tasks.fields.hours`. Results are keyed by field label,
+        and aren't converted as the class's own values are, so whole numbers read as `float`.
+        """
+        await self._check_once()
+        return await self._table.summarize(
+            group_by,
+            where=where,
+            total=total,
+            average=average,
+            minimum=minimum,
+            maximum=maximum,
+            max_records=max_records,
+            page_size=page_size,
+        )
+
+    async def preview_delete(
+        self, where: Expression | str, *, order_by: OrderBy = None, top: int = 100
+    ) -> TypedPage[R]:
+        """Show what `delete()` would delete, as instances of the class. See `Table.preview_delete`.
+
+        `total` is how many records would be deleted.
+        """
+        await self._check_once()
+        page = await self._table.preview_delete(
+            where, select=column_ids(self._model), order_by=order_refs(order_by), top=top
+        )
+        records = tuple(self._model.from_record(record) for record in page.records)
+        return TypedPage(records=records, total=page.total, skip=page.skip)
+
+    async def preview_update(self, rows: Iterable[Row[R]]) -> UpdatePreview:
+        """Show what `update()` would change. See `Table.preview_update`.
+
+        Raises `InvalidValueError` for a row made by a class for another table.
+        """
+        given = rows_for(self._model, rows)
+        await self._check_once()
+        return await self._table.preview_update(cast(Iterable[RowInput], given))
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._model.__name__})"

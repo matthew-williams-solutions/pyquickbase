@@ -265,7 +265,8 @@ def test_the_current_user_and_how_user_fields_match(scratch: Any) -> None:
 
 def test_relative_dates_and_unreadable_dates(scratch: Any) -> None:
     table = scratch.table(("Due", "date"))
-    today = date.today()
+    # Quickbase's "today" follows the app's time zone, which can differ from this machine's.
+    today = datetime.strptime(table.run_formula("Today()").value, "%m-%d-%Y").date()
     recent, old = table.insert(
         [{"Due": today - timedelta(days=1)}, {"Due": date(2000, 1, 1)}]
     ).created_ids

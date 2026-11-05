@@ -82,6 +82,7 @@ any text you don't control.
 | Matching a `user` field | `TV` and `XTV` with an email or user ID, ignoring case, and with `''` for empty. **`EX` matched nothing**, including the field's real user, and so did `CT` and `HAS`. **`XEX` matched every record, including that user's.** `EX` and `XEX` with `''` do work. `F` sends `TV` and `XTV` for `==` and `!=` here |
 | Matching a `multiuser` field | `EX`, `TV`, or `HAS` with an email or user ID, and `CT` with a name |
 | Text on a date or timestamp field | Read as a date: `today`, `yesterday`, and `1 day ago` matched. Text it can't read, such as `garbage`, `last week`, or `now`, **matched nothing, with no error** |
+| `today` and `yesterday` in a query, and `Today()` in a formula | Follow Quickbase's date rather than the client's, which can differ near midnight: at 00:55 EST on 2026-11-05, `Today()` returned `11-04-2026`. Live API, 2026-11-05 |
 | `TRUE`, `NULL`, `today`, `*`, `%`, `_` on a text field | Literal |
 
 ## Writes
@@ -166,6 +167,8 @@ and chart reports built in the UI. The API can't create reports.
 | Ask-the-user report | `incomplete: true`, and running it returns 400, `Incomplete reports not supported` |
 | Summary and chart reports | **Same response shape as a table report, but `fields` IDs are column positions starting at 2.** The second column has ID 3, the Record ID# field in a table report, so nothing in the response tells them apart. Only `type` on the report does |
 | Chart category values | Dates return as text, `01-01-2026`, not `yyyy-MM-dd` |
+| Summary report column labels | Each total gets the field's label and its kind, so a sum and an average of one field are `Hours (tot)` and `Hours (avg)`. A chart's value column is `Hours (tot)` too. Live API, 2026-11-05 |
+| `top` and `skip` on summary and chart reports | Page the rows as they do on a table report, and `totalRecords` counts every row. Live API, 2026-11-05 |
 | Renaming a column in a report | The UI doesn't offer this |
 
 ## File attachments

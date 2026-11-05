@@ -22,8 +22,10 @@ from ._models import (
     TableInfo,
 )
 from ._policy import Allow, TableRules, WriteAction, WritePolicy, WriteRequest, all_of
+from ._preview import FieldChange, RecordChange, UpdatePreview
 from ._query import Expression, F, FieldRef, FieldRefs, WhereCondition, parse_where
 from ._retry import RetryPolicy
+from ._summary import Period, PeriodUnit, SummaryGroups, SummaryRow
 from ._sync._client import Quickbase
 from ._sync._resources import App, RecordIterator, Report, Table, TypedIterator, TypedTable
 from ._typed import UNSET, Column, OrderBy, Row, TypedField, TypedPage, TypedRecord, Unset
@@ -75,6 +77,7 @@ __all__ = [
     "Expression",
     "F",
     "Field",
+    "FieldChange",
     "FieldRef",
     "FieldRefs",
     "FileDownload",
@@ -86,6 +89,8 @@ __all__ = [
     "NotFoundError",
     "OrderBy",
     "Page",
+    "Period",
+    "PeriodUnit",
     "PermissionDeniedError",
     "QueryError",
     "Quickbase",
@@ -93,6 +98,7 @@ __all__ = [
     "RateLimitError",
     "ReadOnlyError",
     "Record",
+    "RecordChange",
     "RecordIterator",
     "Relationship",
     "Report",
@@ -104,6 +110,8 @@ __all__ = [
     "RowError",
     "SchemaMismatchError",
     "ServerError",
+    "SummaryGroups",
+    "SummaryRow",
     "Table",
     "TableInfo",
     "TableRules",
@@ -117,6 +125,7 @@ __all__ = [
     "UnknownTableError",
     "Unset",
     "UnsupportedReportError",
+    "UpdatePreview",
     "WhereCondition",
     "WriteAction",
     "WriteError",
