@@ -81,6 +81,8 @@ result = tasks.update([{"Record ID#": 7, "Status": "Done", "Notes": None}])
 print(result.updated_ids, result.unchanged_ids)
 ```
 
+[Try it in the playground](../playground-app/index.html#change-records), with simulated data.
+
 ## Upserting records
 
 `merge_on` must name a field marked as unique, and every row must set it. A row whose value doesn't
@@ -104,6 +106,8 @@ from pyquickbase import F
 deleted = tasks.delete(F("Status") == "Cancelled")
 print(deleted)
 ```
+
+[Try it in the playground](../playground-app/index.html#delete-records-safely), with simulated data.
 
 ## Previewing a write
 
@@ -209,6 +213,8 @@ except WriteError as error:
 A write refused by the role raises `WritePermissionError`, whichever way Quickbase reported it. See
 [Errors](errors.md#refused-writes). **An upsert that matches an existing record needs permission to
 modify**, so a role that can only add gets a refusal when a write is repeated.
+
+[Try it in the playground](../playground-app/index.html#an-import-that-loses-a-row), with simulated data.
 
 ## Rows Quickbase could skip
 

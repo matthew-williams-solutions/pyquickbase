@@ -49,11 +49,6 @@ refusal raises and leaves behind. Check new claims in a live test before publish
 
 Give the methods these guides cover full `Args`, `Returns`, and `Raises` docstrings at the same time.
 
-## Docs playground
-
-- Simulate updates and deletes, then add "Try it" links from each guide to its own example.
-- Simulate queries on `user` fields, which `docs/api-notes.md` now records. The simulator refuses them.
-
 ## Demo app
 
 The Quickbase demo app and its Python code page, which is kept outside this repo. Do these before anyone

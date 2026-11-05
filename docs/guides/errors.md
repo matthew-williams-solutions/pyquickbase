@@ -34,6 +34,8 @@ These mean the request wasn't sent, though the SDK may have read table metadata 
 | `WriteRefusedError` | The client's [limits on writes](clients.md#limiting-what-a-client-can-do) don't allow this request |
 | `ReadRefusedError` | The client's [read policy](clients.md#limiting-reads-by-table-field-and-number-of-records) doesn't allow this request |
 
+[Try it in the playground](../playground-app/index.html#catch-mistakes), with simulated data.
+
 ## Refused writes
 
 Quickbase reports the same kind of refusal in two ways. A role with neither add nor modify rights on a

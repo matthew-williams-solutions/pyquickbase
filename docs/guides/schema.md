@@ -84,6 +84,8 @@ link = tasks.create_relationship(projects, foreign_key_label="Project", lookup_f
 - Calling `create_relationship()` again makes another relationship, even with the same label.
   `ensure_relationship()` finds the existing one.
 
+[Try it in the playground](../playground-app/index.html#follow-links-between-tables), with simulated data.
+
 ## Adding lookups and summaries
 
 Use these two methods to add to a relationship, including one that already exists. Call both on the
@@ -122,6 +124,8 @@ We tested these combinations, and others may work. Quickbase refused `SUM` of a 
 
 **A summary with no child records is empty, not 0.** Code that expects a number should read a formula
 that uses `Nz()`, such as `Hours Or Zero` in the example here, rather than the summary.
+
+[Try it in the playground](../playground-app/index.html#watch-computed-fields-update), with simulated data.
 
 ## Setup scripts you can run again
 

@@ -171,6 +171,8 @@ That protects the shape of a query, not its meaning:
     model nothing it couldn't get by naming the date, but text it can't read matches nothing, with no
     error. Convert dates to `date` objects, so a bad one fails right away.
 
+[Try it in the playground](../playground-app/index.html#search-with-text-you-dont-control), with simulated data.
+
 ## Filters from a model
 
 When a model needs to choose its own filters, have it send JSON, and don't let it write query strings.

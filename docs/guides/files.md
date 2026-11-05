@@ -92,6 +92,8 @@ for version in task["Attachment"].versions:
 Each version also names its uploader in `creator`, a `User` with their email address, so take care when
 logging these values or passing them on. A `User`'s `repr` leaves the email out.
 
+[Try it in the playground](../playground-app/index.html#read-users-tags-and-files), with simulated data.
+
 ## Deleting a version
 
 ```python

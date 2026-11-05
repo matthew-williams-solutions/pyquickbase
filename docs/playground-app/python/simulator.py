@@ -1,8 +1,8 @@
 """A simulated Quickbase API, so the docs playground needs no account, token, or server.
 
 It runs inside the visitor's browser and holds a sample app of three linked tables, with lookups,
-a formula, and rollups that stay current as records are added. It covers reading and adding records
-so far.
+a formula, and rollups that stay current as records change. It covers reading, adding, changing,
+and deleting records, but not upserts or writes to user and file fields.
 Its quirks copy what's recorded in docs/api-notes.md, including the mistakes Quickbase accepts,
 because those are what the SDK protects against.
 """
@@ -43,7 +43,8 @@ _EMPTY: dict[str, Any] = {
     "file": {"url": "", "versions": []},
 }
 _NUMERIC_TYPES = {"numeric", "currency", "recordid"}
-_NOT_SIMULATED_IN_QUERIES = {"user", "file"}  # See ROADMAP.md for user fields.
+_NOT_SIMULATED_IN_QUERIES = {"file"}
+_USER_TYPES = {"user", "multiuser"}
 
 
 def _field(
@@ -125,6 +126,7 @@ BEN = _person("Ben Okafor", "60002.ben")
 CHLOE = _person("Chloe Martin", "60003.chl")
 DEV = _person("Dev Patel", "60004.dev")
 ELENA = _person("Elena Novak", "60005.ele")
+TOKEN_OWNER = ANA  # Who `_curuser_` means, as the playground's token is hers.
 
 
 def _attachment(record_id: int, *versions: tuple[str, dict[str, str]]) -> dict[str, Any]:
@@ -449,10 +451,41 @@ def _equal(cell: Any, wanted: str, field_type: str) -> bool:
     return left is not None and left == right
 
 
+def _user_matches(operator: str, cell: Any, wanted: str, field_type: str) -> bool:
+    """Match a user field as docs/api-notes.md records, which differs from text."""
+    negate = operator in _NEGATED
+    base = operator[1:] if negate else operator
+    users: list[dict[str, str]] = cell if field_type == "multiuser" else ([cell] if cell else [])
+    target = wanted.strip().casefold()
+    owner_works = base == "TV" if field_type == "user" else base in {"EX", "TV", "HAS"}
+    if target == "_curuser_" and owner_works:
+        target = TOKEN_OWNER["id"]
+
+    def is_wanted(user: dict[str, str]) -> bool:
+        return target in {user["email"].casefold(), user["id"].casefold()}
+
+    if field_type == "user":
+        if base == "TV":
+            result = not users if target == "" else any(map(is_wanted, users))
+        elif base == "EX":
+            result = target == "" and not users  # EX never matches a user, only an empty field.
+        else:
+            result = False  # CT and HAS matched nothing.
+    elif base in {"EX", "TV", "HAS"}:
+        result = not users if target == "" else any(map(is_wanted, users))
+    elif base == "CT":
+        result = any(target in user["name"].casefold() for user in users)
+    else:
+        result = False
+    return not result if negate else result
+
+
 def _matches(operator: str, cell: Any, wanted: str, field_type: str) -> bool:
     if operator not in _OPERATORS:
         # Quickbase treats a lowercase or unknown operator as "contains", with no error.
         operator = "CT"
+    if field_type in _USER_TYPES:
+        return _user_matches(operator, cell, wanted, field_type)
     if operator in {"IR", "XIR"}:
         raise _ApiError(400, f"The playground doesn't simulate the {operator} operator yet.")
     negate = operator in _NEGATED
@@ -649,7 +682,9 @@ class SimulatedQuickbase:
             payload = {"message": error.message, "description": error.description}
             return httpx.Response(error.status, json=payload, headers={"qb-api-ray": "simulated"})
         # Quickbase saves the rows it can, so a row error still counts as a success status.
-        partial = path == "/records" and payload["metadata"].get("lineErrors")
+        partial = (request.method, path) == ("POST", "/records") and payload["metadata"].get(
+            "lineErrors"
+        )
         return httpx.Response(
             207 if partial else 200, json=payload, headers={"qb-api-ray": "simulated"}
         )
@@ -659,10 +694,10 @@ class SimulatedQuickbase:
         route = (request.method, path)
         if route == ("POST", "/records/query"):
             return self._query(json.loads(request.content))
-        if route == ("POST", "/records") and "mergeFieldId" not in (
-            body := json.loads(request.content)
-        ):
-            return self._insert(body)
+        if route == ("POST", "/records"):
+            return self._write(json.loads(request.content))
+        if route == ("DELETE", "/records"):
+            return self._delete(json.loads(request.content))
         if route == ("GET", "/tables"):
             self._app(params.get("appId"))
             return [table["info"] for table in self._tables.values()]
@@ -682,7 +717,8 @@ class SimulatedQuickbase:
         raise _ApiError(
             403,
             f"The playground doesn't simulate {request.method} {path} yet.",
-            "It covers reading records, schema, table reports, and adding records so far.",
+            "It covers reading records, schema, table reports, and adding, changing, and deleting "
+            "records so far.",
         )
 
     def _app(self, app_id: str | None) -> dict[str, Any]:
@@ -765,41 +801,88 @@ class SimulatedQuickbase:
             result["metadata"]["top"] = top
         return result
 
-    def _insert(self, body: dict[str, Any]) -> dict[str, Any]:
+    def _write(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Add or change records as Quickbase does, where a row with a Record ID# changes it."""
         table = self._table(body.get("to"))
         if not body.get("data"):
             raise _ApiError(400, "Missing data.")
+        merge = body.get("mergeFieldId")
+        if merge is not None and merge not in (RECORD_ID, str(RECORD_ID), float(RECORD_ID)):
+            raise _ApiError(
+                403,
+                "The playground doesn't simulate upserts yet.",
+                "It covers adding records, and changing them by Record ID#.",
+            )
+        if merge is not None and any(str(RECORD_ID) not in row for row in body["data"]):
+            raise _ApiError(400, "Every row needs the merge field.")
         fields = {field["id"]: field for field in table["fields"]}
         created: list[int] = []
+        updated: list[int] = []
+        unchanged: list[int] = []
         errors: dict[str, list[str]] = {}
         for line, row in enumerate(body["data"], start=1):
-            for key in row:
-                _refuse_unsimulated_write(fields.get(int(key)))
+            values = {int(key): cell["value"] for key, cell in row.items()}
+            for field_id in values:
+                _refuse_unsimulated_write(fields.get(field_id))
+            record_id = values.pop(RECORD_ID, None)
             messages = [
                 message
-                for key, cell in row.items()
-                if (message := _write_problem(fields.get(int(key)), key, cell["value"]))
+                for field_id, value in values.items()
+                if (message := _write_problem(fields.get(field_id), str(field_id), value))
             ]
+            existing = None
+            if record_id is not None:
+                existing = next((r for r in table["rows"] if r[RECORD_ID] == record_id), None)
+                if existing is None:
+                    messages.append("Can not find record by ID")  # Quickbase's words.
             if messages:
                 errors[str(line)] = messages
                 continue
-            record_id = max(existing[RECORD_ID] for existing in table["rows"]) + 1
-            values = {int(key): cell["value"] for key, cell in row.items()}
+            # Quickbase silently ignores null, so only "" clears a field.
+            values = {field_id: value for field_id, value in values.items() if value is not None}
+            if existing is not None:
+                changes = {k: v for k, v in values.items() if existing.get(k) != v}
+                if changes:
+                    existing.update(changes)
+                    existing[2] = _now() if 2 in fields else existing.get(2)
+                    updated.append(record_id)  # pyright: ignore[reportArgumentType]
+                else:
+                    unchanged.append(record_id)  # pyright: ignore[reportArgumentType]
+                continue
+            new_id = max((r[RECORD_ID] for r in table["rows"]), default=0) + 1
             defaults = {field_id: _empty_value(field) for field_id, field in fields.items()}
-            created_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-            stamp = {1: created_at} if 1 in fields else {}
-            table["rows"].append({**defaults, **stamp, **values, RECORD_ID: record_id})
-            created.append(record_id)
+            stamps = {key: _now() for key in (1, 2) if key in fields}
+            table["rows"].append({**defaults, **stamps, **values, RECORD_ID: new_id})
+            created.append(new_id)
         self._refresh()
         metadata: dict[str, Any] = {
             "createdRecordIds": created,
-            "updatedRecordIds": [],
-            "unchangedRecordIds": [],
+            "updatedRecordIds": updated,
+            "unchangedRecordIds": unchanged,
             "totalNumberOfRecordsProcessed": len(body["data"]),
         }
         if errors:
             metadata["lineErrors"] = errors
         return {"data": [], "metadata": metadata}
+
+    def _delete(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Delete matching records, with the quirks docs/api-notes.md records."""
+        table = self._table(body.get("from"))
+        where = body.get("where")
+        if not where:
+            raise _ApiError(400, "Missing where.")
+        if not where.strip():
+            return {"numberDeleted": 0}  # Whitespace deletes nothing, with no error.
+        fields = {field["id"]: field for field in table["fields"]}
+        try:
+            predicate = _WhereParser(where, fields).parse()
+        except _ApiError:
+            return {"numberDeleted": 0}  # A malformed filter deletes nothing, with no error.
+        kept = [row for row in table["rows"] if not predicate(row)]
+        deleted = len(table["rows"]) - len(kept)
+        table["rows"] = kept
+        self._refresh()
+        return {"numberDeleted": deleted}
 
     def _run_report(self, report_id: str, params: httpx.QueryParams) -> dict[str, Any]:
         table = self._table(params.get("tableId"))
@@ -822,6 +905,10 @@ class SimulatedQuickbase:
         return self._select(table, query["filter"], query["fields"], query["sortBy"], top, skip)
 
 
+def _now() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _write_problem(field: dict[str, Any] | None, key: str, value: Any) -> str | None:
     """Return Quickbase's row error for a value, or None if it can be written."""
     if field is None:
@@ -842,7 +929,8 @@ def _refuse_unsimulated_write(field: dict[str, Any] | None) -> None:
         raise _ApiError(
             403,
             f"The playground doesn't simulate writing to {field['fieldType']} fields yet.",
-            "It covers reading records, schema, table reports, and adding records so far.",
+            "It covers reading records, schema, table reports, and adding, changing, and deleting "
+            "records so far.",
         )
 
 

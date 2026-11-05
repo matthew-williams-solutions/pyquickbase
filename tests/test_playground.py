@@ -5,6 +5,7 @@ import contextlib
 import importlib
 import io
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -310,7 +311,6 @@ def test_a_failed_report_run_still_counts(api: httpx.Client) -> None:
 @pytest.mark.parametrize(
     ("method", "path"),
     [
-        ("DELETE", "/records"),
         ("POST", "/formula/run"),
         ("GET", "/files/a/1/2/0"),
         ("POST", "/fields"),
@@ -322,9 +322,54 @@ def test_what_isnt_simulated_says_so(api: httpx.Client, method: str, path: str) 
     assert f"doesn't simulate {method} {path}" in response.json()["message"]
 
 
-def test_merging_rows_isnt_simulated_yet(api: httpx.Client) -> None:
-    body = {"to": TASKS, "data": [{"3": {"value": 1}}], "mergeFieldId": 3}
-    assert api.post("/records", json=body).status_code == 403
+def write(api: httpx.Client, *rows: dict[str, Any], **extra: Any) -> httpx.Response:
+    data = [{key: {"value": value} for key, value in row.items()} for row in rows]
+    return api.post("/records", json={"to": TASKS, "data": data, **extra})
+
+
+def project_hours(api: httpx.Client) -> Any:
+    body = {"from": simulator.PROJECTS_ID, "select": [13], "where": "{3.EX.'1'}"}
+    return api.post("/records/query", json=body).json()["data"][0]["13"]["value"]
+
+
+def test_updates_change_records_as_quickbase_reports_them(api: httpx.Client) -> None:
+    before = project_hours(api)
+    hours = api.post(
+        "/records/query", json={"from": TASKS, "select": [8], "where": "{3.EX.'1'}"}
+    ).json()["data"][0]["8"]["value"]
+    changed = write(api, {"3": 1, "8": hours + 5, "10": None}, mergeFieldId=3)
+    assert changed.status_code == 200
+    assert changed.json()["metadata"]["updatedRecordIds"] == [1]
+    assert project_hours(api) == before + 5  # Rollups follow the change.
+    again = write(api, {"3": 1, "8": hours + 5})  # A Record ID# changes it without mergeFieldId.
+    assert again.json()["metadata"]["unchangedRecordIds"] == [1]
+    missing = write(api, {"3": 99999, "7": "Done"}, mergeFieldId=3)
+    assert missing.status_code == 207
+    assert missing.json()["metadata"]["lineErrors"] == {"1": ["Can not find record by ID"]}
+
+
+def test_a_merge_needs_every_row_to_hold_the_merge_field(api: httpx.Client) -> None:
+    assert write(api, {"7": "Done"}, mergeFieldId=3).status_code == 400
+
+
+def test_upserts_arent_simulated_yet(api: httpx.Client) -> None:
+    response = write(api, {"6": "New"}, mergeFieldId=6)
+    assert response.status_code == 403
+    assert "upserts" in response.json()["message"]
+
+
+def delete(api: httpx.Client, **body: Any) -> httpx.Response:
+    return api.request("DELETE", "/records", json={"from": TASKS, **body})
+
+
+def test_deletes_follow_the_recorded_quirks(api: httpx.Client) -> None:
+    total = matches(api, "{3.GT.'0'}")
+    done = matches(api, "{7.EX.'Done'}")
+    assert delete(api).status_code == 400
+    assert delete(api, where="   ").json() == {"numberDeleted": 0}
+    assert delete(api, where="{7.EX.'Done'").json() == {"numberDeleted": 0}
+    assert delete(api, where="{7.ex.'Done'}").json() == {"numberDeleted": done}  # Acts like CT
+    assert matches(api, "{3.GT.'0'}") == total - done
 
 
 def test_sample_tables_line_up_with_their_columns() -> None:
@@ -431,11 +476,26 @@ def test_writing_users_and_files_isnt_simulated(api: httpx.Client, field: int) -
     assert matches(api, "{3.GT.'0'}") == 24
 
 
-@pytest.mark.parametrize("field", [14, 16])
-def test_queries_on_users_and_files_say_they_arent_simulated(api: httpx.Client, field: int) -> None:
-    response = api.post("/records/query", json={"from": TASKS, "where": f"{{{field}.EX.'a'}}"})
+def test_queries_on_files_say_they_arent_simulated(api: httpx.Client) -> None:
+    response = api.post("/records/query", json={"from": TASKS, "where": "{16.EX.'a'}"})
     assert response.status_code == 400
     assert "doesn't simulate" in response.json()["message"]
+
+
+def test_user_fields_match_as_recorded(api: httpx.Client) -> None:
+    rows = api.post("/records/query", json={"from": TASKS, "select": [14]}).json()["data"]
+    total = len(rows)
+    ana = sum(1 for row in rows if (row["14"]["value"] or {}).get("id") == "60001.ana")
+    empty = sum(1 for row in rows if row["14"]["value"] is None)
+    assert 0 < ana < total
+    for wanted in ("ana@example.com", "ANA@EXAMPLE.COM", "60001.ana", " _CURUSER_ "):
+        assert matches(api, f"{{14.TV.'{wanted}'}}") == ana, wanted
+    assert matches(api, "{14.XTV.'ana@example.com'}") == total - ana
+    assert matches(api, "{14.EX.'ana@example.com'}") == 0  # EX never matches a user
+    assert matches(api, "{14.XEX.'ana@example.com'}") == total  # So XEX matches everyone
+    assert matches(api, "{14.EX.''}") == empty
+    assert matches(api, "{14.TV.''}") == empty
+    assert matches(api, "{14.CT.'Ana'}") == 0
 
 
 @pytest.mark.parametrize(
@@ -495,3 +555,22 @@ def test_computed_fields_example_shows_the_change() -> None:
     output = run_example("12_watch_computed_fields_update.py")
     assert "Before: 10.5 hours logged, over estimate: False" in output
     assert "After: 17.5 hours logged, over estimate: True" in output
+
+
+PLAYGROUND_LINK = re.compile(r"playground-app/index\.html#([a-z0-9-]+)")
+
+
+def example_id(path: Path) -> str:
+    return path.stem.split("_", 1)[1].replace("_", "-")
+
+
+def test_try_it_links_open_an_example_and_every_example_is_linked() -> None:
+    docs = APP.parent
+    linked = {
+        found
+        for page in docs.rglob("*.md")
+        for found in PLAYGROUND_LINK.findall(page.read_text(encoding="utf-8"))
+    }
+    ids = {example_id(path) for path in EXAMPLES}
+    assert linked <= ids, sorted(linked - ids)
+    assert ids <= linked, f"No guide links to {sorted(ids - linked)}"

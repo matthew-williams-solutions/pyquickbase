@@ -9,6 +9,8 @@ The clients have the same methods, and the sync client is a true sync client rat
 around asyncio. That means it works in notebooks, in threads, and inside a running event loop.
 One sync client can be shared across threads. The async client works with both asyncio and Trio.
 
+[Try it in the playground](../playground-app/index.html#use-the-async-client), with simulated data.
+
 ## Using several tokens
 
 `Quickbase.from_env()` reads `QB_REALM` and `QB_USER_TOKEN`. A program with more than one token can

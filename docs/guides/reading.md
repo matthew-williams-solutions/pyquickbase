@@ -36,6 +36,8 @@ Metadata is cached for five minutes. Set `schema_ttl` on the client to change th
 `qb.clear_schema_cache()` after changing a table outside this client. A name or label that isn't in
 the cache triggers one refresh before it counts as unknown.
 
+[Try it in the playground](../playground-app/index.html#explore-the-app), with simulated data.
+
 ## Getting one record
 
 `first()` returns the first match, and `get()` finds a record by its Record ID#. Each returns None if
@@ -90,6 +92,8 @@ reads it as query syntax even inside quotes, so `F` handles it for you:
 !!! tip "Use `F` for text you don't control"
     `F` escapes values, so user input can't change the query. A query string gets none of this
     protection: there, `{6.EX.'a OR b'}` means `a` or `b`.
+
+[Try it in the playground](../playground-app/index.html#combine-conditions), with simulated data.
 
 ### Hand-written query strings
 
@@ -176,6 +180,8 @@ Field objects are `F("Status")`, or `Tasks.fields.status` from a
 the label. To sort a generated class's field descending, use `Tasks.fields.status.desc`. A generated
 class's own `order_by` takes only these fields or their IDs, not labels.
 
+[Try it in the playground](../playground-app/index.html#find-open-tasks), with simulated data.
+
 ## Fetching one page at a time
 
 `query_page()` fetches a single page, for when you control the paging yourself, such as behind a list
@@ -207,6 +213,8 @@ Skipping past the end returns no records rather than raising an error, with `tot
 A [generated class](codegen.md#reading-a-page-at-a-time) has its own `query_page()`, which returns
 instances of the class.
 
+[Try it in the playground](../playground-app/index.html#count-and-page), with simulated data.
+
 ## Reading values
 
 Read values by label or ID. `dict(record)` gives you `{label: value}`.
@@ -227,6 +235,8 @@ when it's empty.
 **A record only holds the fields you selected.** Without `select`, that's the table's default fields, so
 a built-in field such as `Record Owner` may be missing. Reading a missing field raises `KeyError`, and
 `3 in record` checks for one first.
+
+[Try it in the playground](../playground-app/index.html#read-values), with simulated data.
 
 ## Summarizing records
 
@@ -267,6 +277,8 @@ row with a `count` of 0 without `group_by`.
 `total` and `average` take numeric fields. `minimum` and `maximum` also take dates, timestamps, and times of
 day. You can't group by a multi-select, multi-user, or file field, because a record can hold several of
 those values at once.
+
+[Try it in the playground](../playground-app/index.html#add-up-time-across-tables), with simulated data.
 
 ### Grouping dates by period
 
@@ -341,6 +353,8 @@ Running a report adds to its usage count in Quickbase, but changes no records.
 Report details come from the same cache as other metadata, so `usedCount` in `raw` can be out of
 date, and so can the details used to check that a report is a table report. Quickbase's UI doesn't let
 you change a saved report's type.
+
+[Try it in the playground](../playground-app/index.html#run-reports), with simulated data.
 
 ### Reading summary and chart reports
 
