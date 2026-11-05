@@ -119,6 +119,13 @@ def prepare(code: str, world: Any, table_name: str, table_id: str) -> str:
         parent = world.app.create_table(f"ZZ Live {secrets.token_hex(4)}")
         parent.create_field("Name", "text")
         code = code.replace('table("Projects")', f"table({parent.info().id!r})")
+    if 'table("Appointments")' in code:
+        # The read limits examples, which name these three fields. The world fixture drops it.
+        visits = world.app.create_table(f"ZZ Live {secrets.token_hex(4)}")
+        visits.create_field("When", "datetime")
+        visits.create_field("Status", "text")
+        visits.create_field("Technician", "user")
+        code = code.replace('table("Appointments")', f"table({visits.info().id!r})")
     code = code.replace('realm="acme"', f"realm={world.scratch.realm!r}")
     code = code.replace('token="your_user_token"', f"token={world.scratch.token!r}")
     code = code.replace("bq1234567", world.scratch.app_id)
