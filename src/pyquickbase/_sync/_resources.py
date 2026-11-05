@@ -105,6 +105,13 @@ def _require_positive(name: str, value: int) -> None:
         raise QueryError(f"{name} must be at least 1.")
 
 
+def _require_timeout(timeout: float | None) -> None:
+    if timeout is not None and (
+        isinstance(timeout, bool) or not isinstance(timeout, int | float) or not timeout > 0  # pyright: ignore[reportUnnecessaryIsInstance]
+    ):
+        raise InvalidValueError("timeout must be a positive number of seconds.")
+
+
 class App:
     """A Quickbase app. Create one with `qb.app(app_id)`. This makes no network calls."""
 
@@ -653,7 +660,11 @@ class Table:
         return (self._fetch_page({**body, "select": [RECORD_ID_FIELD]}, 1, 0)).total
 
     def _write(
-        self, rows: list[dict[str, Any]], merge_field_id: int | None, batch_size: int
+        self,
+        rows: list[dict[str, Any]],
+        merge_field_id: int | None,
+        batch_size: int,
+        timeout: float | None = None,
     ) -> WriteResult:
         info = self.info()
         table_id = info.id
@@ -664,7 +675,7 @@ class Table:
                 body["mergeFieldId"] = merge_field_id
             try:
                 payload = self._transport.request(
-                    "POST", "/records", json=body, key_field_id=info.key_field_id
+                    "POST", "/records", json=body, key_field_id=info.key_field_id, timeout=timeout
                 )
                 rows_sent = end - start if merge_field_id is None else None
                 result = parse(
@@ -686,7 +697,11 @@ class Table:
         return result
 
     def insert(
-        self, rows: Iterable[RowInput], *, batch_size: int = DEFAULT_BATCH_SIZE
+        self,
+        rows: Iterable[RowInput],
+        *,
+        batch_size: int = DEFAULT_BATCH_SIZE,
+        timeout: float | None = None,
     ) -> WriteResult:
         """Create records from `{label or ID: value}` rows. This never changes existing records.
 
@@ -698,6 +713,8 @@ class Table:
                 leaves the field empty, but a row needs at least one real value, because Quickbase
                 can silently skip a row without one.
             batch_size: The most rows to send in one request.
+            timeout: Seconds to allow for each step of each request, instead of the client's
+                `timeout`, such as for a large file. It applies with your own `http_client` too.
 
         Returns:
             A `WriteResult`, whose `row_ids` give each row's new Record ID#.
@@ -710,6 +727,7 @@ class Table:
                 `result`.
         """
         _require_positive("batch_size", batch_size)
+        _require_timeout(timeout)
         given = list(rows)
         built = self._with_fields(lambda fields: build_rows(given, FieldIndex(fields)))
         key_field_id = (self.info()).key_field_id
@@ -717,10 +735,14 @@ class Table:
             raise custom_key_refusal(self._with_fields(FieldIndex), key_field_id)
         refuse_field(built, RECORD_ID_FIELD, "which insert() can't do. Use update() instead")
         refuse_blank_rows(built)
-        return self._write(built, None, batch_size)
+        return self._write(built, None, batch_size, timeout)
 
     def update(
-        self, rows: Iterable[RowInput], *, batch_size: int = DEFAULT_BATCH_SIZE
+        self,
+        rows: Iterable[RowInput],
+        *,
+        batch_size: int = DEFAULT_BATCH_SIZE,
+        timeout: float | None = None,
     ) -> WriteResult:
         """Change existing records. Each row must set `Record ID#`.
 
@@ -730,6 +752,8 @@ class Table:
             rows: The changes, as `{label or ID: value}` dictionaries that each set `Record ID#`.
                 Fields left out of a row keep their values, and a value of `None` clears the field.
             batch_size: The most rows to send in one request.
+            timeout: Seconds to allow for each step of each request, instead of the client's
+                `timeout`, such as for a large file. It applies with your own `http_client` too.
 
         Returns:
             A `WriteResult`. A record whose values didn't change is in `unchanged_ids`, not
@@ -743,10 +767,11 @@ class Table:
                 `result`.
         """
         _require_positive("batch_size", batch_size)
+        _require_timeout(timeout)
         given = list(rows)
         built = self._with_fields(lambda fields: build_rows(given, FieldIndex(fields)))
         require_field(built, RECORD_ID_FIELD, "so update() can't tell which record to change")
-        return self._write(built, RECORD_ID_FIELD, batch_size)
+        return self._write(built, RECORD_ID_FIELD, batch_size, timeout)
 
     def upsert(
         self,
@@ -754,6 +779,7 @@ class Table:
         *,
         merge_on: FieldRef,
         batch_size: int = DEFAULT_BATCH_SIZE,
+        timeout: float | None = None,
     ) -> WriteResult:
         """Update the record whose unique `merge_on` field matches, or create one if none does.
 
@@ -763,6 +789,8 @@ class Table:
             merge_on: The field that identifies a record, by label or ID. Quickbase requires it to
                 be marked as unique.
             batch_size: The most rows to send in one request.
+            timeout: Seconds to allow for each step of each request, instead of the client's
+                `timeout`, such as for a large file. It applies with your own `http_client` too.
 
         Returns:
             A `WriteResult`, with new records in `created_ids`, changed ones in `updated_ids`, and
@@ -778,6 +806,7 @@ class Table:
                 `result`.
         """
         _require_positive("batch_size", batch_size)
+        _require_timeout(timeout)
         given = list(rows)
 
         def build(fields: list[Field]) -> tuple[list[dict[str, Any]], int]:
@@ -787,7 +816,7 @@ class Table:
         built, merge_field_id = self._with_fields(build)
         require_field(built, merge_field_id, "the merge_on field")
         refuse_blank_rows(built)
-        return self._write(built, merge_field_id, batch_size)
+        return self._write(built, merge_field_id, batch_size, timeout)
 
     def delete(self, where: Expression | str) -> int:
         """Delete the matching records and return how many were deleted.
@@ -1004,7 +1033,12 @@ class Table:
         return f"/files/{table_id}/{record_id}/{field_id}/{version}"
 
     def download_file(
-        self, record_id: int, field: FieldRef, *, version: int | None = None
+        self,
+        record_id: int,
+        field: FieldRef,
+        *,
+        version: int | None = None,
+        timeout: float | None = None,
     ) -> FileDownload:
         """Download a file from a record, by default its latest version.
 
@@ -1014,22 +1048,25 @@ class Table:
             record_id: The Record ID# of the record that holds the file.
             field: The file attachment field, by label or ID.
             version: The version to download, starting at 1. Defaults to the latest.
+            timeout: Seconds to allow for each step of the request, instead of the client's
+                `timeout`, such as for a large file. It applies with your own `http_client` too.
 
         Returns:
             A `FileDownload`, with the file's `name`, `data`, and `content_type`. Don't trust
             `name` as a path, or `content_type` as a description of what's in the file.
 
         Raises:
-            InvalidValueError: `record_id` or `version` isn't a positive integer, or `field`
-                isn't a file attachment field. Nothing was sent.
+            InvalidValueError: `record_id` or `version` isn't a positive integer, `timeout` isn't
+                a positive number, or `field` isn't a file attachment field. Nothing was sent.
             UnknownFieldError: The table has no such field. Nothing was sent.
             NotFoundError: The record, version, or file doesn't exist.
         """
+        _require_timeout(timeout)
         if version is not None:
             require_id("version", version)
         # Version 0 means the latest to Quickbase.
         path = self._file_path(record_id, field, version or 0)
-        response = self._transport.get_raw(path)
+        response = self._transport.get_raw(path, timeout=timeout)
         return parse(file_download_from_response, response, "file")
 
     def delete_file_version(self, record_id: int, field: FieldRef, *, version: int) -> None:
@@ -1980,13 +2017,19 @@ class TypedTable(Generic[R]):
         return self._table.count(where)
 
     def insert(
-        self, rows: Iterable[Row[R]], *, batch_size: int = DEFAULT_BATCH_SIZE
+        self,
+        rows: Iterable[Row[R]],
+        *,
+        batch_size: int = DEFAULT_BATCH_SIZE,
+        timeout: float | None = None,
     ) -> WriteResult:
         """Create records from rows made with `Tasks.new()`. See `Table.insert`.
 
         Args:
             rows: The rows, from `Tasks.new()`.
             batch_size: The most rows to send in one request.
+            timeout: Seconds to allow for each step of each request, instead of the client's
+                `timeout`, such as for a large file. It applies with your own `http_client` too.
 
         Returns:
             A `WriteResult`, whose `row_ids` give each row's new Record ID#.
@@ -1999,16 +2042,24 @@ class TypedTable(Generic[R]):
         """
         given = rows_for(self._model, rows)
         self._check_once()
-        return self._table.insert(cast(Iterable[RowInput], given), batch_size=batch_size)
+        return self._table.insert(
+            cast(Iterable[RowInput], given), batch_size=batch_size, timeout=timeout
+        )
 
     def update(
-        self, rows: Iterable[Row[R]], *, batch_size: int = DEFAULT_BATCH_SIZE
+        self,
+        rows: Iterable[Row[R]],
+        *,
+        batch_size: int = DEFAULT_BATCH_SIZE,
+        timeout: float | None = None,
     ) -> WriteResult:
         """Change records from rows made with `Tasks.change()`. See `Table.update`.
 
         Args:
             rows: The rows, from `Tasks.change()`. Fields you leave out keep their values.
             batch_size: The most rows to send in one request.
+            timeout: Seconds to allow for each step of each request, instead of the client's
+                `timeout`, such as for a large file. It applies with your own `http_client` too.
 
         Returns:
             A `WriteResult`. A record whose values didn't change is in `unchanged_ids`, not
@@ -2022,10 +2073,17 @@ class TypedTable(Generic[R]):
         """
         given = rows_for(self._model, rows)
         self._check_once()
-        return self._table.update(cast(Iterable[RowInput], given), batch_size=batch_size)
+        return self._table.update(
+            cast(Iterable[RowInput], given), batch_size=batch_size, timeout=timeout
+        )
 
     def upsert(
-        self, rows: Iterable[Row[R]], *, merge_on: TypedField, batch_size: int = DEFAULT_BATCH_SIZE
+        self,
+        rows: Iterable[Row[R]],
+        *,
+        merge_on: TypedField,
+        batch_size: int = DEFAULT_BATCH_SIZE,
+        timeout: float | None = None,
     ) -> WriteResult:
         """Update the record whose unique `merge_on` field matches. See `Table.upsert`.
 
@@ -2033,6 +2091,8 @@ class TypedTable(Generic[R]):
             rows: The rows, from `Tasks.new()`, which must each set `merge_on`.
             merge_on: A field marked as unique, such as `Tasks.fields.code`.
             batch_size: The most rows to send in one request.
+            timeout: Seconds to allow for each step of each request, instead of the client's
+                `timeout`, such as for a large file. It applies with your own `http_client` too.
 
         Returns:
             A `WriteResult`, with new records in `created_ids`, changed ones in `updated_ids`, and
@@ -2047,7 +2107,10 @@ class TypedTable(Generic[R]):
         given = rows_for(self._model, rows)
         self._check_once()
         return self._table.upsert(
-            cast(Iterable[RowInput], given), merge_on=merge_on.id, batch_size=batch_size
+            cast(Iterable[RowInput], given),
+            merge_on=merge_on.id,
+            batch_size=batch_size,
+            timeout=timeout,
         )
 
     def delete(self, where: Expression | str) -> int:

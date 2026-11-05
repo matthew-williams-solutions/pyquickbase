@@ -58,6 +58,7 @@ class Transport:
         key_field_id: int | None = None,
         report_type: str | None = None,
         summarizing: bool = False,
+        timeout: float | None = None,
     ) -> Any:
         """Send a request, and return its decoded body, trimmed by any `ReadRules`.
 
@@ -67,7 +68,7 @@ class Transport:
         method = method.upper()
         self._check_write(method, path, json, key_field_id)
         read = self._check_read(method, path, params, json, report_type, summarizing)
-        response = self._send(method, path, params, json)
+        response = self._send(method, path, params, json, timeout)
         payload = parse_response(response, method, path)
         for rules in self._read_rules:
             payload = rules._trim_response(read, method, path, payload)  # pyright: ignore[reportPrivateUsage]
@@ -131,11 +132,11 @@ class Transport:
             check_read(self._read_policy, read)
         return read
 
-    def get_raw(self, path: str) -> httpx.Response:
+    def get_raw(self, path: str, *, timeout: float | None = None) -> httpx.Response:
         """GET something that isn't JSON, such as a file, with the usual retries and errors."""
         self._check_write("GET", path, None, None)
         self._check_read("GET", path, None, None, None, False)
-        response = self._send("GET", path, None, None)
+        response = self._send("GET", path, None, None, timeout)
         if not response.is_success:
             raise error_from_response(response, "GET", path)
         return response
@@ -146,14 +147,23 @@ class Transport:
         path: str,
         params: Mapping[str, Any] | None,
         json: Any,
+        timeout: float | None = None,
     ) -> httpx.Response:
         url = build_url(self._base_url, path)
+        # httpx reads timeout=None as "never time out", so only a value given is passed on.
+        extra: dict[str, Any] = {} if timeout is None else {"timeout": timeout}
         read = is_read(method, path)
         attempt = 0
         while True:
             try:
                 response = self._http.request(
-                    method, url, params=params, json=json, headers=self._headers, auth=self._auth
+                    method,
+                    url,
+                    params=params,
+                    json=json,
+                    headers=self._headers,
+                    auth=self._auth,
+                    **extra,
                 )
             except httpx.RequestError as exc:
                 retryable = isinstance(exc, _NOT_SENT) or (read and isinstance(exc, _READ_FAILURES))

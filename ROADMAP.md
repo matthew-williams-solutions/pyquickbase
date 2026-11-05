@@ -31,7 +31,6 @@ Nothing here should break anyone.
 - Find out how `COUNT` summaries work. `ensure_summary_field()` always sends a child field, and
   Quickbase refused `COUNT` on every field tried, so the SDK may need to leave it out.
 - A way to set `fieldHelp` and the other field settings the API takes outside `properties`.
-- A per-call timeout for uploads and downloads.
 - A small config file to choose generated names.
 - `select` on typed tables, which needs a design, because a generated class requires every column.
 - A setting that repeats a typed table's schema check after a set time.

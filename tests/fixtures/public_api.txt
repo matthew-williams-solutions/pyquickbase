@@ -57,7 +57,7 @@ class AsyncTable(object)
     async def delete(self, where: Expression | str) -> int
     async def delete_fields(self, fields: str | int | Sequence[str | int]) -> None
     async def delete_file_version(self, record_id: int, field: str | int, *, version: int) -> None
-    async def download_file(self, record_id: int, field: str | int, *, version: int | None = None) -> FileDownload
+    async def download_file(self, record_id: int, field: str | int, *, version: int | None = None, timeout: float | None = None) -> FileDownload
     async def drop(self, *, confirm: str) -> None
     async def ensure_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None) -> Field
     async def ensure_lookup_field(self, relationship: Relationship, parent_field: str | int, *, label: str | None = None) -> Field
@@ -67,7 +67,7 @@ class AsyncTable(object)
     async def first(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None) -> Record | None
     async def get(self, record_id: int, *, select: str | int | F | Sequence[str | int | F] | None = None) -> Record | None
     async def info(self) -> TableInfo
-    async def insert(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000) -> WriteResult
+    async def insert(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     async def operation(self, name: Literal['query', 'count', 'summarize', 'insert', 'update', 'delete', 'preview_update', 'preview_delete', 'run_report', 'summary_report', 'run_formula', 'download_file', 'delete_file_version'], *, fields: Sequence[str | int] | None = None, descriptions: Mapping[str | int, str] | None = None, reports: Sequence[str] | Mapping[str, str] | None = None, formula: str | None = None, max_records: int | None = None, max_rows: int = 100) -> 'AsyncOperation'
     async def preview_delete(self, where: Expression | str, *, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, top: int = 100) -> Page
     async def preview_update(self, rows: Iterable[Mapping[str | int, Any]]) -> UpdatePreview
@@ -79,9 +79,9 @@ class AsyncTable(object)
     async def resolve_field_ids(self, fields: Sequence[str | int]) -> list[int]
     async def run_formula(self, formula: str, *, record_id: int | None = None) -> FormulaResult
     async def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, total: str | int | F | Sequence[str | int | F] | None = None, average: str | int | F | Sequence[str | int | F] | None = None, minimum: str | int | F | Sequence[str | int | F] | None = None, maximum: str | int | F | Sequence[str | int | F] | None = None, max_records: int | None = None, page_size: int = 1000) -> list[SummaryRow]
-    async def update(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000) -> WriteResult
+    async def update(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     async def update_field(self, field: str | int, *, label: str | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None) -> Field
-    async def upsert(self, rows: Iterable[Mapping[str | int, Any]], *, merge_on: str | int, batch_size: int = 1000) -> WriteResult
+    async def upsert(self, rows: Iterable[Mapping[str | int, Any]], *, merge_on: str | int, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
 class AsyncTypedIterator(Generic)
     def __aiter__(self) -> Self
     async def __anext__(self) -> ~R
@@ -91,15 +91,15 @@ class AsyncTypedTable(Generic)
     async def delete(self, where: Expression | str) -> int
     async def first(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None) -> ~R | None
     async def get(self, record_id: int) -> ~R | None
-    async def insert(self, rows: Iterable[Row[~R]], *, batch_size: int = 1000) -> WriteResult
+    async def insert(self, rows: Iterable[Row[~R]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     async def preview_delete(self, where: Expression | str, *, order_by: TypedField | int | Sequence[TypedField | int] | None = None, top: int = 100) -> TypedPage[~R]
     async def preview_update(self, rows: Iterable[Row[~R]]) -> UpdatePreview
     def query(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, limit: int | None = None) -> 'AsyncTypedIterator[R]'
     async def query_page(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, top: int = 100, skip: int = 0) -> TypedPage[~R]
     async def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, total: str | int | F | Sequence[str | int | F] | None = None, average: str | int | F | Sequence[str | int | F] | None = None, minimum: str | int | F | Sequence[str | int | F] | None = None, maximum: str | int | F | Sequence[str | int | F] | None = None, max_records: int | None = None, page_size: int = 1000) -> list[SummaryRow]
     property table -> AsyncTable
-    async def update(self, rows: Iterable[Row[~R]], *, batch_size: int = 1000) -> WriteResult
-    async def upsert(self, rows: Iterable[Row[~R]], *, merge_on: TypedField, batch_size: int = 1000) -> WriteResult
+    async def update(self, rows: Iterable[Row[~R]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
+    async def upsert(self, rows: Iterable[Row[~R]], *, merge_on: TypedField, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
 class AuthenticationError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
 class BadRequestError(APIError)
@@ -339,7 +339,7 @@ class Table(object)
     def delete(self, where: Expression | str) -> int
     def delete_fields(self, fields: str | int | Sequence[str | int]) -> None
     def delete_file_version(self, record_id: int, field: str | int, *, version: int) -> None
-    def download_file(self, record_id: int, field: str | int, *, version: int | None = None) -> FileDownload
+    def download_file(self, record_id: int, field: str | int, *, version: int | None = None, timeout: float | None = None) -> FileDownload
     def drop(self, *, confirm: str) -> None
     def ensure_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None) -> Field
     def ensure_lookup_field(self, relationship: Relationship, parent_field: str | int, *, label: str | None = None) -> Field
@@ -349,7 +349,7 @@ class Table(object)
     def first(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None) -> Record | None
     def get(self, record_id: int, *, select: str | int | F | Sequence[str | int | F] | None = None) -> Record | None
     def info(self) -> TableInfo
-    def insert(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000) -> WriteResult
+    def insert(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     def operation(self, name: Literal['query', 'count', 'summarize', 'insert', 'update', 'delete', 'preview_update', 'preview_delete', 'run_report', 'summary_report', 'run_formula', 'download_file', 'delete_file_version'], *, fields: Sequence[str | int] | None = None, descriptions: Mapping[str | int, str] | None = None, reports: Sequence[str] | Mapping[str, str] | None = None, formula: str | None = None, max_records: int | None = None, max_rows: int = 100) -> 'Operation'
     def preview_delete(self, where: Expression | str, *, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, top: int = 100) -> Page
     def preview_update(self, rows: Iterable[Mapping[str | int, Any]]) -> UpdatePreview
@@ -361,9 +361,9 @@ class Table(object)
     def resolve_field_ids(self, fields: Sequence[str | int]) -> list[int]
     def run_formula(self, formula: str, *, record_id: int | None = None) -> FormulaResult
     def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, total: str | int | F | Sequence[str | int | F] | None = None, average: str | int | F | Sequence[str | int | F] | None = None, minimum: str | int | F | Sequence[str | int | F] | None = None, maximum: str | int | F | Sequence[str | int | F] | None = None, max_records: int | None = None, page_size: int = 1000) -> list[SummaryRow]
-    def update(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000) -> WriteResult
+    def update(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     def update_field(self, field: str | int, *, label: str | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None) -> Field
-    def upsert(self, rows: Iterable[Mapping[str | int, Any]], *, merge_on: str | int, batch_size: int = 1000) -> WriteResult
+    def upsert(self, rows: Iterable[Mapping[str | int, Any]], *, merge_on: str | int, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
 class TableInfo(object)
     def __eq__(self, other)
     def __init__(self, *, id: str, name: str, description: str, key_field_id: int | None, raw: Mapping[str, Any]) -> None
@@ -408,15 +408,15 @@ class TypedTable(Generic)
     def delete(self, where: Expression | str) -> int
     def first(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None) -> ~R | None
     def get(self, record_id: int) -> ~R | None
-    def insert(self, rows: Iterable[Row[~R]], *, batch_size: int = 1000) -> WriteResult
+    def insert(self, rows: Iterable[Row[~R]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     def preview_delete(self, where: Expression | str, *, order_by: TypedField | int | Sequence[TypedField | int] | None = None, top: int = 100) -> TypedPage[~R]
     def preview_update(self, rows: Iterable[Row[~R]]) -> UpdatePreview
     def query(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, limit: int | None = None) -> 'TypedIterator[R]'
     def query_page(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, top: int = 100, skip: int = 0) -> TypedPage[~R]
     def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, total: str | int | F | Sequence[str | int | F] | None = None, average: str | int | F | Sequence[str | int | F] | None = None, minimum: str | int | F | Sequence[str | int | F] | None = None, maximum: str | int | F | Sequence[str | int | F] | None = None, max_records: int | None = None, page_size: int = 1000) -> list[SummaryRow]
     property table -> Table
-    def update(self, rows: Iterable[Row[~R]], *, batch_size: int = 1000) -> WriteResult
-    def upsert(self, rows: Iterable[Row[~R]], *, merge_on: TypedField, batch_size: int = 1000) -> WriteResult
+    def update(self, rows: Iterable[Row[~R]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
+    def upsert(self, rows: Iterable[Row[~R]], *, merge_on: TypedField, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
 value UNSET = UNSET
 class UnknownFieldError(QuickbaseError, LookupError)
 class UnknownReportError(QuickbaseError, LookupError)

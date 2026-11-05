@@ -253,3 +253,31 @@ async def test_read_only_client_downloads_but_cant_change_files() -> None:
         with pytest.raises(WriteRefusedError):
             await table.insert([{"Attachment": FileUpload("a.txt", b"x")}])
     assert [r.method for r in server.sent("/files")] == ["GET"]
+
+
+async def test_a_call_can_set_its_own_timeout() -> None:
+    server = FakeFiles()
+    http = httpx.AsyncClient(transport=httpx.MockTransport(server), timeout=5)
+    async with AsyncQuickbase(realm="acme", token="t", http_client=http) as qb:
+        table = qb.app(APP).table("Tasks")
+        await table.insert([{"Attachment": FileUpload("a.txt", b"x")}], timeout=120)
+        await table.download_file(7, "Attachment", timeout=90)
+        await table.insert([{"Title": "plain"}])
+    upload, plain = server.sent("/records")
+    (download,) = server.sent("/files/")
+    assert upload.extensions["timeout"]["read"] == 120
+    assert download.extensions["timeout"]["read"] == 90
+    assert plain.extensions["timeout"]["read"] == 5
+
+
+@pytest.mark.parametrize("timeout", [0, -1, True, "30"])
+async def test_a_timeout_that_isnt_a_positive_number_is_refused(timeout: Any) -> None:
+    server = FakeFiles()
+    async with client(server) as qb:
+        table = qb.app(APP).table("Tasks")
+        with pytest.raises(InvalidValueError, match="timeout"):
+            await table.insert([{"Title": "a"}], timeout=timeout)
+        with pytest.raises(InvalidValueError, match="timeout"):
+            await table.download_file(7, "Attachment", timeout=timeout)
+    assert server.sent("/records") == []
+    assert server.sent("/files/") == []

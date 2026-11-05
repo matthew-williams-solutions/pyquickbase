@@ -250,3 +250,31 @@ def test_read_only_client_downloads_but_cant_change_files() -> None:
         with pytest.raises(WriteRefusedError):
             table.insert([{"Attachment": FileUpload("a.txt", b"x")}])
     assert [r.method for r in server.sent("/files")] == ["GET"]
+
+
+def test_a_call_can_set_its_own_timeout() -> None:
+    server = FakeFiles()
+    http = httpx.Client(transport=httpx.MockTransport(server), timeout=5)
+    with Quickbase(realm="acme", token="t", http_client=http) as qb:
+        table = qb.app(APP).table("Tasks")
+        table.insert([{"Attachment": FileUpload("a.txt", b"x")}], timeout=120)
+        table.download_file(7, "Attachment", timeout=90)
+        table.insert([{"Title": "plain"}])
+    upload, plain = server.sent("/records")
+    (download,) = server.sent("/files/")
+    assert upload.extensions["timeout"]["read"] == 120
+    assert download.extensions["timeout"]["read"] == 90
+    assert plain.extensions["timeout"]["read"] == 5
+
+
+@pytest.mark.parametrize("timeout", [0, -1, True, "30"])
+def test_a_timeout_that_isnt_a_positive_number_is_refused(timeout: Any) -> None:
+    server = FakeFiles()
+    with client(server) as qb:
+        table = qb.app(APP).table("Tasks")
+        with pytest.raises(InvalidValueError, match="timeout"):
+            table.insert([{"Title": "a"}], timeout=timeout)
+        with pytest.raises(InvalidValueError, match="timeout"):
+            table.download_file(7, "Attachment", timeout=timeout)
+    assert server.sent("/records") == []
+    assert server.sent("/files/") == []

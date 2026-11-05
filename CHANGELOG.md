@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `timeout` on `insert()`, `update()`, `upsert()`, and `download_file()`, and on a typed table's
+  writes, which replaces the client's timeout for that call, such as for a large file. It applies with
+  your own `http_client` too.
 - Generated classes type `vCardButton` and `ICalendarButton` fields as read-only `str`, and
   `predecessor` fields as a writable `str`, rather than `Any`. Run `pyquickbase codegen` again to get
   them. Operations can write a `predecessor` field as text.

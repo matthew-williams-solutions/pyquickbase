@@ -330,7 +330,6 @@ def test_insert_converts_json_values() -> None:
     assert upload.data == b"hello"
 
 
-
 def test_insert_writes_a_predecessor_as_text_and_never_offers_a_link() -> None:
     fields = [
         *FIELDS,
@@ -352,6 +351,7 @@ def test_insert_writes_a_predecessor_as_text_and_never_offers_a_link() -> None:
     assert "Card" not in record
     rows = insert.plan({"records": [{"Title": "a", "Depends On": "1;2"}]}, None).arguments["rows"]
     assert rows[0]["Depends On"] == "1;2"
+
 
 def test_insert_schema_requires_required_fields() -> None:
     record = spec("insert").schema["properties"]["records"]["items"]
