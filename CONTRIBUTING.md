@@ -32,9 +32,36 @@ fail if the record count of any other table changed.
 QB_LIVE=1 QB_REALM=... QB_USER_TOKEN=... QB_APP_ID=... uv run pytest tests/_async/live tests/_sync/live tests/live
 ```
 
+Tests about reaching across apps also need `QB_SECOND_APP_ID`, another sandbox app the same token can
+reach, and skip without it. The same rules apply to that app.
+
+Tests of a restricted user skip without these, which take a one-time setup in the UI:
+
+- `QB_RESTRICTED_TOKEN`: a token for a second user with no admin rights, assigned to `QB_APP_ID`.
+- `QB_VIEWABLE_TABLE_ID`: a table in that app that the user's role can view, set up as described below.
+- `QB_DENIED_TABLE_ID`: a table in that app the role has no access to, with a text field named `Confidential Note`
+  and at least one record that has a value in it.
+
+The viewable table needs:
+
+- A text field named `Category`, with records holding `Alpha`, `Beta`, and `Gamma`.
+- A numeric field named `Internal Rank`, with values.
+- Two reports: `Records by Internal Rank`, sorted on that field, and `Top Ranked Records`, filtered on it.
+- In the role: a View rule of `Category` is not `Gamma`, a Modify rule of `Category` is `Alpha`, Add but
+  not Delete, and no view or modify access to `Internal Rank`.
+
+`QB_FIELD_TYPES_TABLE_ID` is a table for field types only the UI can create, and its test skips without
+it. It needs a text field named `Name`, then these fields, added in the UI: `Contact Card` (vCard),
+`Calendar Entry` (iCalendar), `Depends On` (Predecessor), and `Team Members` (a list-user formula), with
+at least one record.
+
+These tests add a temporary field to the viewable table as the main token. The restricted user only
+tries writes that should be refused, and the run fails if either table's record count changes. Give
+anything you keep in these apps a clear, professional name and description.
+
 To test a published release instead of this checkout, install it in a separate environment and set
 `QB_LIVE_VERSION` to its version. Running a report adds to its usage count, so these tests only run
-reports on the tables they create.
+reports on the tables they create, and the two reports above.
 
 ## Docs
 

@@ -31,6 +31,12 @@ pass them on to whoever downloads the file.
 limit.** New fields keep 3 versions, set by `maxVersions` in the field's properties. Uploading
 identical contents still adds a version, so repeating an upload can push out a version you wanted.
 
+To keep a different number, pass `properties={"maxVersions": 10}` to `create_field()`. To keep every
+version, pass `properties={"versionMode": "keepallversions"}`, which ignores `maxVersions`.
+
+Lowering `maxVersions` on an existing field removes nothing until the next upload, which then trims
+the field to the new limit. Raising it doesn't bring back versions already removed.
+
 ### Size limits
 
 Quickbase rejects any request body over 40 MiB, with a 413 error that raises `APIError`. Base64 adds

@@ -24,10 +24,14 @@ class Scratch:
     token: str = field(repr=False)
     app_id: str
     client: Any
+    second_app_id: str | None = None
     created: list[Any] = field(default_factory=list)
 
-    def table(self, *fields: tuple[Any, ...]) -> Any:
-        app = self.client.app(self.app_id)
+    def table(self, *fields: tuple[Any, ...], second_app: bool = False) -> Any:
+        """Make a table, in the second app if asked. Without QB_SECOND_APP_ID, that test skips."""
+        if second_app and not self.second_app_id:
+            pytest.skip("Set QB_SECOND_APP_ID to run this.")
+        app = self.client.app(self.second_app_id if second_app else self.app_id)
         table = app.create_table(f"ZZ Live {secrets.token_hex(4)}")
         self.created.append(table)
         for label, field_type, *rest in fields:
@@ -47,15 +51,24 @@ def scratch() -> Iterator[Scratch]:
     from pyquickbase import Quickbase
 
     realm, token, app_id = (os.environ[n] for n in ("QB_REALM", "QB_USER_TOKEN", "QB_APP_ID"))
+    second_app_id = os.environ.get("QB_SECOND_APP_ID")
     with Quickbase(realm=realm, token=token) as client:
-        app = client.app(app_id)
-        before = {item.id: app.table(item.id).count() for item in app.tables(refresh=True)}
-        helper = Scratch(realm, token, app_id, client)
+        apps = [client.app(item) for item in (app_id, second_app_id) if item]
+
+        def record_counts() -> dict[str, int]:
+            return {
+                item.id: app.table(item.id).count()
+                for app in apps
+                for item in app.tables(refresh=True)
+            }
+
+        before = record_counts()
+        helper = Scratch(realm, token, app_id, client, second_app_id=second_app_id)
         try:
             yield helper
         finally:
             for table in helper.created:
                 info = table.info()
                 table.drop(confirm=info.name)
-        after = {item.id: app.table(item.id).count() for item in app.tables(refresh=True)}
+        after = record_counts()
     assert after == before, "A table this run didn't create has changed."
