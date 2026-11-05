@@ -12,6 +12,7 @@ import pyquickbase
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 build_llms = importlib.import_module("build_llms")
+build_reference = importlib.import_module("build_reference")
 
 CONFIG = build_llms.read_config()
 SITE = CONFIG.site_url
@@ -36,9 +37,16 @@ def source_text() -> str:
 
 
 def test_the_nav_lists_every_page() -> None:
-    pages = {path.relative_to(ROOT / "docs").as_posix() for path in (ROOT / "docs").rglob("*.md")}
-    assert {page.path for page in CONFIG.pages} == pages
-    assert "playground.md" in pages
+    """Every written page, and every reference page, which is generated and so may not exist yet."""
+    docs = ROOT / "docs"
+    written = {
+        path.relative_to(docs).as_posix()
+        for path in docs.rglob("*.md")
+        if path.parent != docs / "reference"
+    }
+    generated = {f"reference/{page.slug}.md" for page in build_reference.ALL_PAGES}
+    assert {page.path for page in CONFIG.pages} == written | generated
+    assert "playground.md" in written
 
 
 def test_the_nav_keeps_its_sections() -> None:
