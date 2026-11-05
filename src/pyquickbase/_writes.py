@@ -249,17 +249,22 @@ class WriteResult:
     """What a write did. If rows fail, `WriteError.result` holds this, including what succeeded.
 
     Attributes:
-        created_ids: The Record ID# of each new record. For `insert()`, these are in the same order
-            as your rows.
+        created_ids: The Record ID# of each new record, in the order of the rows that succeeded.
+            Use `row_ids` to match them to your rows.
         updated_ids: The records whose values changed.
         unchanged_ids: The records that already held these values.
         errors: A `RowError` for each row that failed.
+        row_ids: For `insert()`, the new Record ID# of each row, in the order of your rows, or
+            None for a row that failed. It stops short at a batch that wasn't sent, or whose
+            response can't be matched to its rows, so compare its length with your rows. Empty for
+            `update()` and `upsert()`.
     """
 
     created_ids: tuple[int, ...] = ()
     updated_ids: tuple[int, ...] = ()
     unchanged_ids: tuple[int, ...] = ()
     errors: tuple[RowError, ...] = ()
+    row_ids: tuple[int | None, ...] = ()
 
 
 def write_result_summary(result: WriteResult) -> str:
@@ -298,17 +303,33 @@ def refused_write(exc: PermissionDeniedError, result: WriteResult, start: int) -
     )
 
 
-def merge_write_result(result: WriteResult, payload: Mapping[str, Any], offset: int) -> WriteResult:
-    """Add one request's response. `offset` is the position of its first row."""
+def _row_ids(
+    result: WriteResult, created: Sequence[int], failed: set[int], offset: int, rows: int | None
+) -> tuple[int | None, ...]:
+    """Match an insert's new IDs to its rows. Quickbase lists them in the order of the rows that
+    succeeded, so that only works when there's one for each of those rows."""
+    if rows is None or len(result.row_ids) != offset or len(created) != rows - len(failed):
+        return result.row_ids
+    found = iter(created)
+    return (*result.row_ids, *(None if row in failed else next(found) for row in range(rows)))
+
+
+def merge_write_result(
+    result: WriteResult, payload: Mapping[str, Any], offset: int, rows: int | None = None
+) -> WriteResult:
+    """Add one request's response. `offset` is the position of its first row, and `rows` is how
+    many rows an insert sent, for matching new IDs to rows."""
     metadata = payload["metadata"]
     line_errors: Mapping[str, list[str]] = metadata.get("lineErrors") or {}
     errors = tuple(
         row_error(int(line) - 1 + offset, tuple(messages)) for line, messages in line_errors.items()
     )
+    failed = {int(line) - 1 for line in line_errors}
     return replace(
         result,
         created_ids=(*result.created_ids, *metadata["createdRecordIds"]),
         updated_ids=(*result.updated_ids, *metadata["updatedRecordIds"]),
         unchanged_ids=(*result.unchanged_ids, *metadata["unchangedRecordIds"]),
         errors=(*result.errors, *errors),
+        row_ids=_row_ids(result, metadata["createdRecordIds"], failed, offset, rows),
     )

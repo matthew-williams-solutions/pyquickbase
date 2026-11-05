@@ -13,6 +13,9 @@ from pyquickbase import (
     F,
     InvalidResponseError,
     QueryError,
+    ReadAccess,
+    ReadRefusedError,
+    ReadRules,
     TypedRecord,
     UnknownFieldError,
     UnknownReportError,
@@ -158,6 +161,25 @@ async def test_max_records_allows_exactly_that_many() -> None:
     async with client(fake) as qb:
         rows = await qb.app("bq1234567").table("Tasks").summarize(max_records=10)
     assert rows[0].count == 10
+
+
+class Growing(Fake):
+    """Gains records after the first query, the count, as a table in use can."""
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        response = super().__call__(request)
+        if request.url.path.endswith("/records/query"):
+            self.total = 12
+        return response
+
+
+async def test_records_added_past_the_read_rules_limit_refuse_rather_than_cut_short() -> None:
+    fake = Growing(total=10)
+    rules = ReadRules({TASKS: ReadAccess(fields=True, max_summary_records=10)})
+    async with client(fake, read_policy=rules) as qb:
+        with pytest.raises(ReadRefusedError, match="no partial result"):
+            await qb.app("bq1234567").table("Tasks").summarize("Status", page_size=5)
+    assert [query["options"]["top"] for query in fake.queries] == [1, 5, 5]
 
 
 @pytest.mark.parametrize(

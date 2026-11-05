@@ -669,7 +669,12 @@ class AsyncTable:
                 payload = await self._transport.request(
                     "POST", "/records", json=body, key_field_id=info.key_field_id
                 )
-                result = parse(partial(merge_write_result, result, offset=start), payload, "write")
+                rows_sent = end - start if merge_field_id is None else None
+                result = parse(
+                    partial(merge_write_result, result, offset=start, rows=rows_sent),
+                    payload,
+                    "write",
+                )
             except PermissionDeniedError as exc:
                 raise refused_write(exc, result, start) from exc
             except QuickbaseError as exc:
@@ -698,7 +703,7 @@ class AsyncTable:
             batch_size: The most rows to send in one request.
 
         Returns:
-            A `WriteResult`, whose `created_ids` are in the same order as `rows`.
+            A `WriteResult`, whose `row_ids` give each row's new Record ID#.
 
         Raises:
             InvalidValueError: A row can't be sent, such as one that sets `Record ID#` or has no
@@ -887,6 +892,11 @@ class AsyncTable:
         )
         async for record in records:
             summary.add(record)
+        if not records._done:  # pyright: ignore[reportPrivateUsage]
+            raise ReadRefusedError(
+                f"More records matched while summarizing than this client's read rules allow, "
+                f"{allowed}, so no partial result was returned. Narrow the filter."
+            )
         return summary.rows()
 
     async def preview_delete(
@@ -1990,7 +2000,7 @@ class AsyncTypedTable(Generic[R]):
             batch_size: The most rows to send in one request.
 
         Returns:
-            A `WriteResult`, whose `created_ids` are in the same order as `rows`.
+            A `WriteResult`, whose `row_ids` give each row's new Record ID#.
 
         Raises:
             SchemaMismatchError: The class no longer matches the table.

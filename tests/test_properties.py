@@ -394,11 +394,15 @@ def test_a_file_name_cant_hold_a_path_or_control_characters(name: str, data: byt
 
 @given(
     st.one_of(
-        st.text(max_size=5), st.integers(), st.floats(allow_nan=False), st.booleans(), st.none()
+        st.text(max_size=5),
+        st.integers(),
+        st.floats(allow_nan=False, allow_infinity=False),
+        st.booleans(),
+        st.none(),
     )
 )
 def test_a_written_value_is_valid_json(value: Any) -> None:
-    json.dumps(to_api_value(value))
+    json.dumps(to_api_value(value), allow_nan=False)
 
 
 LABELS = st.one_of(

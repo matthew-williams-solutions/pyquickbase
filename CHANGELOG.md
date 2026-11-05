@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `WriteResult.row_ids`, which gives each row of an `insert()` its new Record ID#, in the order of
+  your rows, with None for a row that failed. `created_ids` leaves failed rows out, so it only lines up
+  with your rows when none failed.
+
 ### Changed
 
 - pyquickbase now needs httpx 0.28 or later, whose request bodies the SDK measures to keep each
@@ -21,6 +27,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `summarize()` on a client with `ReadRules` raises `ReadRefusedError` if more records match while it
+  reads than `max_summary_records`, rather than returning a summary of only some of them.
 - `tool_error()` reports `changed: "some"` when a failed call still changed something: when
   `delete_fields()` deleted some of the fields, and when `create_field()` created the field but
   couldn't set `required` or `unique`. That error's message now says the field was created.

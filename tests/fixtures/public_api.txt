@@ -460,9 +460,10 @@ class WriteRequest(object)
     field table_id: str | None
 class WriteResult(object)
     def __eq__(self, other)
-    def __init__(self, *, created_ids: tuple[int, ...] = (), updated_ids: tuple[int, ...] = (), unchanged_ids: tuple[int, ...] = (), errors: tuple[RowError, ...] = ()) -> None
+    def __init__(self, *, created_ids: tuple[int, ...] = (), updated_ids: tuple[int, ...] = (), unchanged_ids: tuple[int, ...] = (), errors: tuple[RowError, ...] = (), row_ids: tuple[int | None, ...] = ()) -> None
     field created_ids: tuple[int, ...]
     field errors: tuple[RowError, ...]
+    field row_ids: tuple[int | None, ...]
     field unchanged_ids: tuple[int, ...]
     field updated_ids: tuple[int, ...]
 class WriteRules(object)

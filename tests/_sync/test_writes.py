@@ -413,6 +413,35 @@ def test_create_field_says_it_was_created_when_setting_unique_fails() -> None:
     assert tool_error(caught.value)["error"]["changed"] == "some"
 
 
+def test_row_ids_match_new_records_to_rows_when_some_fail() -> None:
+    server = FakeQuickbase()
+    server.line_errors = {0: {"2": ["bad"]}, 1: {"1": ["bad"]}}
+    rows = [{"Title": name} for name in "abcd"]
+    with client(server) as qb:
+        with pytest.raises(WriteError) as caught:
+            qb.app(APP).table("Tasks").insert(rows, batch_size=2)
+    result = caught.value.result
+    assert result.created_ids == (0, 1000)
+    assert result.row_ids == (0, None, None, 1000)
+
+
+def test_row_ids_stop_at_a_batch_that_failed() -> None:
+    server = FakeQuickbase()
+    server.failures = {1: httpx.Response(500, json={"message": "down"})}
+    with client(server) as qb:
+        with pytest.raises(WriteError) as caught:
+            qb.app(APP).table("Tasks").insert([{"Title": n} for n in "abc"], batch_size=2)
+    assert caught.value.result.row_ids == (0, 1)
+    assert isinstance(caught.value.__cause__, ServerError)
+
+
+def test_row_ids_are_empty_for_an_update() -> None:
+    server = FakeQuickbase()
+    with client(server) as qb:
+        result = qb.app(APP).table("Tasks").update([{"Record ID#": 1, "Title": "a"}])
+    assert result.row_ids == ()
+
+
 def test_create_relationship() -> None:
     server = FakeQuickbase()
     with client(server) as qb:

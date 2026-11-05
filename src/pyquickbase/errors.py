@@ -60,6 +60,9 @@ class InvalidValueError(QuickbaseError, ValueError):
 class WriteError(QuickbaseError):
     """Part of a write failed, and the rest may have been applied.
 
+    When a later batch of a large write fails, `__cause__` holds that batch's own error, such as a
+    `RateLimitError` or `RequestTimeoutError`.
+
     Attributes:
         result: A `WriteResult` with the records that were written and the rows that failed, when
             Quickbase reported them.

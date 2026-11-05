@@ -50,7 +50,9 @@ result = tasks.insert(
 print(result.created_ids)
 ```
 
-`created_ids` are in the same order as your rows. A row that sets `Record ID#` raises
+`result.row_ids` holds each row's new Record ID#, in the order of your rows, with None for a row that
+failed. `created_ids` leaves failed rows out, so it lines up with your rows only when none failed. A row
+that sets `Record ID#` raises
 `InvalidValueError`, because that would update a record.
 
 ### Tables with a custom key field
@@ -162,12 +164,14 @@ A preview can't promise what the write will do:
 | `updated_ids` | Record IDs of records that changed |
 | `unchanged_ids` | Record IDs of records whose values were already the same |
 | `errors` | The rows that failed. This is only ever set on `WriteError.result`, because a failure raises |
+| `row_ids` | For `insert()`, each row's new Record ID#, or None for a row that failed |
 
 ## When rows fail
 
 Quickbase writes the rows it can and reports the rest, so a `WriteError` doesn't mean nothing
 changed. Its `result` lists both what was written and what failed, and `index` is the row's position
-in the list you passed.
+in the list you passed. When a later batch of a large write fails, the error's `__cause__` is that
+batch's own error, such as a `RateLimitError`.
 
 ```python
 from pyquickbase import WriteError
@@ -175,7 +179,8 @@ from pyquickbase import WriteError
 try:
     tasks.insert(rows)
 except WriteError as error:
-    print(error.result.created_ids)
+    for row, record_id in zip(rows, error.result.row_ids):
+        print(row, record_id)  # None for a row that failed
     for failed in error.result.errors:
         print(rows[failed.index], failed.messages)
 ```
