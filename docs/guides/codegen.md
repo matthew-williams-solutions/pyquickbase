@@ -26,18 +26,21 @@ Pass a generated class to `app.typed()`. A class is named after its table, and a
 field's label, so the `Tasks` table with a `Due Date` field gives you `Tasks` and `due_date`.
 
 ```python
+from pyquickbase import Quickbase
+
 from myapp.tables import Tasks
 
-tasks = qb.app("bq1234567").typed(Tasks)
+with Quickbase(realm="acme", token="your_user_token") as qb:
+    tasks = qb.app("bq1234567").typed(Tasks)
 
-for task in tasks.query(
-    where=Tasks.fields.status == "Open",
-    order_by=[Tasks.fields.due_date.desc, Tasks.fields.title],
-    limit=50,
-):
-    print(task.id, task.title, task.due_date)
+    for task in tasks.query(
+        where=Tasks.fields.status == "Open",
+        order_by=[Tasks.fields.due_date.desc, Tasks.fields.title],
+        limit=50,
+    ):
+        print(task.id, task.title, task.due_date)
 
-print(tasks.count(Tasks.fields.status == "Open"))
+    print(tasks.count(Tasks.fields.status == "Open"))
 ```
 
 `Tasks.fields` works like `F`, by field ID. `order_by` takes these fields or their IDs, and raises
@@ -132,6 +135,9 @@ IDs would mean different fields here. `insert()`, `update()`, and `upsert()` als
 Its `where`, `select`, and `order_by` also accept `Tasks.fields`, but its records aren't converted, so
 money reads as a `float`.
 
+The other examples on this page use `tasks`, a typed table made in the same way. Every method is also on
+the async client, where you `await` it, or use `async for` on `query()`.
+
 ## Keeping it up to date
 
 A generated class is compared with its table the first time it's used, and `SchemaMismatchError` lists
@@ -174,3 +180,17 @@ name. Record ID# is always `id`. Renaming a label renames its attribute the next
 when you generate again, so `due_date` can come to mean a different field with no error. Class names work
 the same way, and a clash between them is settled only among the tables you generate, so `--table` can
 change a class's name. Review the diff when you generate again, and use `--check` in CI.
+
+## When something is refused
+
+| What happened | Exception | What's left behind |
+|---|---|---|
+| The class no longer matches its table, or a field is hidden from this token | `SchemaMismatchError` | Nothing was sent |
+| `select` or `order_by` with a label or a value that isn't a field of the class | `QueryError` | Nothing was sent |
+| Reading an attribute that `select` left out | `AttributeError` | Nothing was sent |
+| A row made by a class for another table | `InvalidValueError` | Nothing was written |
+| Setting a field that can't be written, through `new()` or `change()` | `TypeError` | The row wasn't made |
+| A record holding a fraction in a field generated as `int` | `InvalidResponseError` | Nothing was changed |
+| A row Quickbase refuses | `WriteError` | The other rows were written |
+| `codegen` with an output file it didn't generate | The command fails | The file is unchanged |
+| `codegen --check` with a file that's out of date | The command fails | The file is unchanged |
