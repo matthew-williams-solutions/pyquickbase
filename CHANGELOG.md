@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- An operation's `scope` now holds for what a write sets, not only for what it filters. `insert`,
+  `update`, and `preview_update` refuse a row that sets a field the scope uses, which could move a
+  record out of it. `insert` fills those fields in from the scope, and refuses to run when the scope
+  isn't only `==` conditions joined with `&`, as a new record couldn't be made to match it.
+- The `delete` operation counts what its filter matches first, and refuses the call, deleting nothing,
+  when that's more than `max_records`, 100 by default.
+- The `preview_update` operation offers only fields the client may both read and change, so it no
+  longer offers a write-only field that every call would be refused for.
+
+### Fixed
+
+- `preview_update()` reads in batches no larger than the client's `ReadRules` `max_records`, so a
+  preview of more records than that is no longer refused.
+
 ## [1.0.0rc7] - 2026-11-05
 
 This candidate adds limits on what a client can read, output for a model's tool call, and table

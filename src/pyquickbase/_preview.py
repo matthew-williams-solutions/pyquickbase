@@ -81,9 +81,11 @@ def merge_rows(rows: Sequence[Mapping[str, Mapping[str, Any]]]) -> dict[int, dic
     return merged
 
 
-def id_batches(ids: Sequence[int]) -> Iterator[Sequence[int]]:
-    for start in range(0, len(ids), PREVIEW_BATCH_SIZE):
-        yield ids[start : start + PREVIEW_BATCH_SIZE]
+def id_batches(ids: Sequence[int], limit: int | None = None) -> Iterator[Sequence[int]]:
+    """Split record IDs into queries, each reaching no more than `limit` records."""
+    size = PREVIEW_BATCH_SIZE if limit is None else min(PREVIEW_BATCH_SIZE, limit)
+    for start in range(0, len(ids), size):
+        yield ids[start : start + size]
 
 
 def _is_empty(value: Any) -> bool:

@@ -8,6 +8,7 @@ that those mistakes raise an error instead. See docs/api-notes.md for the tested
 import re
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, ClassVar
@@ -95,11 +96,24 @@ class Expression:
         raise NotImplementedError
 
 
+class _NoValue:
+    """Marks a condition whose original value isn't known, as `None` is a value."""
+
+    __slots__ = ()
+
+
+NO_VALUE: Any = _NoValue()
+
+
 @dataclass(frozen=True, slots=True)
 class Condition(Expression):
+    """`value` is the text sent to Quickbase. `original` is the Python value it came from, when
+    `F` made it, so that an operation's scope can be written into a new record."""
+
     field: FieldRef
     operator: str
     value: str
+    original: Any = dataclass_field(default=NO_VALUE, compare=False, repr=False)
 
     def compile(self, fields: FieldIndex) -> str:
         item = fields.resolve(self.field)
@@ -161,7 +175,7 @@ class F:
         self._field = field
 
     def _condition(self, operator: str, value: Any) -> Condition:
-        return Condition(self._field, operator, format_value(value))
+        return Condition(self._field, operator, format_value(value), value)
 
     def _compare(self, operator: str, date_operator: str, value: Any) -> Condition:
         return self._condition(date_operator if isinstance(value, date) else operator, value)

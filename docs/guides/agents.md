@@ -295,7 +295,7 @@ The schema goes in your framework's tool definition, under the name it uses, suc
 | `summarize` | `where`, `group_by`, `total`, `average`, `minimum`, `maximum` | `summarize()` | A list of `SummaryRow` |
 | `insert` | `records` | `insert()` | `WriteResult` |
 | `update` | `records`, each with `Record ID#` | `update()` | `WriteResult` |
-| `delete` | `where`, which is required | `delete()` | `int` |
+| `delete` | `where`, which is required. It's refused if it matches more than `max_records` | `delete()` | `int` |
 | `preview_update` | As `update` | `preview_update()` | `UpdatePreview` |
 | `preview_delete` | `where`, `select`, `limit` | `preview_delete()` | `Page` |
 | `run_report` | `report`, `limit`, `skip` | `Report.run_page()` | `Page` |
@@ -353,7 +353,13 @@ becomes `scope AND (A OR B)`.
 
 An operation that names records, such as `update`, `run_formula`, or `download_file`, first counts how
 many of them match the scope, with one query, and refuses the whole call if any don't. A record can still
-change between that check and the call. A report runs with its own filter, so it can't take a scope, and
+change between that check and the call.
+
+A write can't set a field the scope uses, so `update` can't move a record out of it, and `run()` raises
+`QueryError` for a row that tries. `insert` fills those fields in from the scope, so with
+`scope=F("Project") == project`, every new record gets that project. That needs a scope of only `==`
+conditions joined with `&`, and `insert` refuses any other scope, as a new record couldn't be made to
+match it. Pass `fields=` without the scope's fields, so the model isn't offered them at all. A report runs with its own filter, so it can't take a scope, and
 `run()` refuses one rather than ignore it. With `ReadRules`, fields in a scope must be ones the client
 may filter on.
 
@@ -393,6 +399,8 @@ async def list_fields(table_id: str) -> dict:
 | An argument the schema doesn't allow, such as an unknown key or field, or a `limit` too high | `QueryError`, from `run()` | Nothing was sent |
 | A value that can't be written, such as `today` for a date | `InvalidValueError`, from `run()` | Nothing was sent |
 | A record named isn't in the scope, or doesn't exist | `QueryError`, from `run()` | Only the query that checks the scope |
+| A write sets a field the scope uses, or `insert` has a scope it can't fill in | `QueryError`, from `run()` | Nothing was sent |
+| A delete matches more than `max_records` | `QueryError`, from `run()` | Only the query that counts it |
 | Anything the table method raises | The same exception | As that method says |
 
 Return each one with `tool_error()`. Its message says where the mistake is, and doesn't repeat the values

@@ -22,7 +22,7 @@ from typing import Any, Literal, cast, get_args
 from ._codegen import _WRITE_TYPES  # pyright: ignore[reportPrivateUsage]
 from ._models import RECORD_ID_FIELD, Field, FieldIndex, ReportInfo
 from ._policy import WriteRules
-from ._query import Expression, FieldRef
+from ._query import NO_VALUE, Condition, Expression, FieldRef, Group
 from ._read_policy import ReadRules, _allows  # pyright: ignore[reportPrivateUsage]
 from ._summary import Period, PeriodUnit
 from ._typed import is_writable
@@ -87,6 +87,7 @@ class Allowed:
     sortable: tuple[Field, ...] = ()
     insertable: tuple[Field, ...] = ()
     updatable: tuple[Field, ...] = ()
+    previewable: tuple[Field, ...] = ()
     downloadable: tuple[Field, ...] = ()
     file_deletable: tuple[Field, ...] = ()
     can_delete: bool = False
@@ -336,12 +337,14 @@ class Call:
 
     `method` is a table method, or a report method when `report_id` is set. `record_ids` are the
     records a call names directly, which a scope has to be checked against before it runs.
+    `most` is how many records its `where` may match, which is counted before it runs.
     """
 
     method: str
     arguments: dict[str, Any] = field(default_factory=dict[str, Any])
     report_id: str | None = None
     record_ids: tuple[int, ...] = ()
+    most: int | None = None
 
 
 # Parts of a schema, each with the check that reads it back.
@@ -404,6 +407,15 @@ def _order_by(ctx: Context) -> dict[str, Any]:
             + _glossary(sortable, ctx.descriptions),
         }
     }
+
+
+def _delete_where(ctx: Context) -> dict[str, Any]:
+    found = _where(ctx, required=True)
+    if found:
+        found["where"]["description"] += (
+            f" A delete that matches more than {ctx.limit} records is refused, and deletes nothing."
+        )
+    return found
 
 
 def _limit(ctx: Context, what: str = "records") -> dict[str, Any]:
@@ -471,8 +483,8 @@ def _read_report(value: Any, reports: Sequence[ReportInfo]) -> str:
     return cast(str, value)
 
 
-def _records(ctx: Context, *, update: bool) -> dict[str, Any]:
-    offered = ctx.allowed.updatable if update else ctx.allowed.insertable
+def _records(ctx: Context, *, update: bool, group: str) -> dict[str, Any]:
+    offered: Sequence[Field] = getattr(ctx.allowed, group)
     properties: dict[str, Any] = {}
     if update:
         properties[_RECORD_ID_LABEL] = {**_RECORD_ID_SCHEMA, "description": "The record to change."}
@@ -498,7 +510,7 @@ def _records(ctx: Context, *, update: bool) -> dict[str, Any]:
     }
 
 
-def _read_records(ctx: Context, value: Any, *, update: bool) -> list[dict[str, Any]]:
+def _read_records(ctx: Context, value: Any, *, update: bool, group: str) -> list[dict[str, Any]]:
     if not isinstance(value, list) or not value:
         raise InvalidValueError("records must be a list with at least one record.")
     rows = cast(list[Any], value)
@@ -506,7 +518,7 @@ def _read_records(ctx: Context, value: Any, *, update: bool) -> list[dict[str, A
         raise InvalidValueError(
             f"records can have at most {ctx.max_rows} records. Send the rest separately."
         )
-    offered = ctx.allowed.updatable if update else ctx.allowed.insertable
+    offered: Sequence[Field] = getattr(ctx.allowed, group)
     converters = {item.label: _Converter(item) for item in offered}
     built: list[dict[str, Any]] = []
     for index, row in enumerate(rows):
@@ -652,10 +664,10 @@ def _plan_query(ctx: Context, arguments: Mapping[str, Any], scope: Expression | 
     return Call(method="query_page", arguments=found)
 
 
-def _plan_where(method: str, *, required: bool) -> Plan:
+def _plan_where(method: str, *, required: bool, capped: bool = False) -> Plan:
     def build(ctx: Context, arguments: Mapping[str, Any], scope: Expression | None) -> Call:
         where = _read_where(ctx, arguments.get("where"), scope, required=required)
-        return Call(method=method, arguments={"where": where})
+        return Call(method=method, arguments={"where": where}, most=ctx.limit if capped else None)
 
     return build
 
@@ -666,9 +678,9 @@ def _plan_summarize(ctx: Context, arguments: Mapping[str, Any], scope: Expressio
     return Call(method="summarize", arguments=found)
 
 
-def _plan_records(method: str, *, update: bool) -> Plan:
+def _plan_records(method: str, *, update: bool, group: str) -> Plan:
     def build(ctx: Context, arguments: Mapping[str, Any], scope: Expression | None) -> Call:
-        rows = _read_records(ctx, arguments["records"], update=update)
+        rows = _read_records(ctx, arguments["records"], update=update, group=group)
         ids = tuple(sorted({row[_RECORD_ID_LABEL] for row in rows})) if update else ()
         return Call(method=method, arguments={"rows": rows}, record_ids=ids)
 
@@ -774,30 +786,30 @@ _KINDS: dict[OperationName, Kind] = {
     ),
     "insert": Kind(
         fields=("insertable",),
-        properties=lambda ctx: _records(ctx, update=False),
+        properties=lambda ctx: _records(ctx, update=False, group="insertable"),
         required=("records",),
-        plan=_plan_records("insert", update=False),
+        plan=_plan_records("insert", update=False, group="insertable"),
         available=_needs("insertable", "it may not insert records into this table"),
     ),
     "update": Kind(
         fields=("updatable",),
-        properties=lambda ctx: _records(ctx, update=True),
+        properties=lambda ctx: _records(ctx, update=True, group="updatable"),
         required=("records",),
-        plan=_plan_records("update", update=True),
+        plan=_plan_records("update", update=True, group="updatable"),
         available=_needs("updatable", "it may not change any field of this table"),
     ),
     "preview_update": Kind(
-        fields=("updatable",),
-        properties=lambda ctx: _records(ctx, update=True),
+        fields=("previewable",),
+        properties=lambda ctx: _records(ctx, update=True, group="previewable"),
         required=("records",),
-        plan=_plan_records("preview_update", update=True),
-        available=_needs("updatable", "it may not change any field of this table"),
+        plan=_plan_records("preview_update", update=True, group="previewable"),
+        available=_needs("previewable", "it may not both read and change any field of this table"),
     ),
     "delete": Kind(
         fields=("filterable",),
-        properties=lambda ctx: _where(ctx, required=True),
+        properties=_delete_where,
         required=("where",),
-        plan=_plan_where("delete", required=True),
+        plan=_plan_where("delete", required=True, capped=True),
         available=lambda allowed, formula: (
             None
             if allowed.can_delete and allowed.filterable
@@ -974,6 +986,8 @@ def allowed_for(
         access is not None and access.delete_files for access in writes
     )
     insertable = write("insert")
+    updatable = write("update")
+    shown = {item.id for item in readable("fields")}
     if key_field_id not in (None, RECORD_ID_FIELD):
         insertable = ()  # insert() refuses a table whose key field isn't Record ID#.
     offered = _offered_reports(reports, wanted_reports)
@@ -984,7 +998,8 @@ def allowed_for(
         filterable=readable("filter"),
         sortable=readable("sort"),
         insertable=insertable,
-        updatable=write("update"),
+        updatable=updatable,
+        previewable=tuple(item for item in updatable if item.id in shown),
         downloadable=downloadable,
         file_deletable=tuple(files) if can_delete_files else (),
         can_delete=can_delete,
@@ -1092,3 +1107,56 @@ def refused_operation(
     if name == "run_formula":
         return ConfigurationError(message)
     return ReadRefusedError(message) if read_limited else ConfigurationError(message)
+
+
+_SCOPED_WRITES = frozenset({"insert", "update", "preview_update"})
+
+
+def _scope_conditions(scope: Expression) -> list[Condition]:
+    if isinstance(scope, Condition):
+        return [scope]
+    if isinstance(scope, Group):
+        return [item for part in scope.parts for item in _scope_conditions(part)]
+    raise QueryError("scope must be a condition built with F.")
+
+
+def _scope_values(scope: Expression, index: FieldIndex) -> dict[int, Any] | None:
+    """What a new record must hold to match the scope, or None if the scope isn't only `==`
+    conditions joined with `&`, which a record can't be made to match by filling in fields."""
+    if isinstance(scope, Group) and scope.joiner != "AND":
+        return None
+    values: dict[int, Any] = {}
+    for item in _scope_conditions(scope):
+        if item.operator != "EX" or item.original is NO_VALUE:
+            return None
+        field_id = index.resolve(item.field).id
+        if field_id in values and values[field_id] != item.original:
+            return None
+        values[field_id] = item.original
+    return values
+
+
+def scope_rows(call: Call, scope: Expression | None, index: FieldIndex) -> Call:
+    """Keep a write inside its scope: refuse rows that set a field the scope uses, as that could
+    move a record out of it, and fill those fields into new records from an `==` scope."""
+    if scope is None or call.method not in _SCOPED_WRITES:
+        return call
+    fixed = {index.resolve(item.field).id for item in _scope_conditions(scope)}
+    rows: list[dict[str | int, Any]] = call.arguments["rows"]
+    for position, row in enumerate(rows):
+        for key in row:
+            if key != _RECORD_ID_LABEL and index.resolve(key).id in fixed:
+                raise QueryError(
+                    f"records[{position}] sets {key!r}, which this tool's scope fixes, so it can't "
+                    "be written. Leave it out."
+                )
+    if call.method != "insert":
+        return call
+    values = _scope_values(scope, index)
+    if values is None:
+        raise QueryError(
+            "This tool is limited to a scope that a new record can't be made to match, so it "
+            "can't insert records."
+        )
+    filled = [{**row, **values} for row in rows]
+    return Call(method=call.method, arguments={**call.arguments, "rows": filled})

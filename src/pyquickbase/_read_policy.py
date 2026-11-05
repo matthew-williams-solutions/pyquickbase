@@ -529,6 +529,11 @@ class ReadRules:
                 raise _refused(request, f"table {request.table_id} doesn't allow downloading it.")
         return True
 
+    def _record_limit(self, table_id: str) -> int | None:
+        """The most records one query may reach in a table, or None if it isn't listed."""
+        access = self._tables.get(table_id)
+        return None if access is None else access.max_records
+
     def _summary_limit(self, table_id: str) -> int | None:
         """The most records `summarize()` may read from a table, or None if it isn't listed."""
         access = self._tables.get(table_id)

@@ -202,6 +202,89 @@ async def test_a_scope_that_matches_lets_the_call_run() -> None:
     ]
 
 
+async def test_insert_fills_in_an_equality_scope() -> None:
+    fake = Fake()
+    async with client(fake) as qb:
+        insert = await qb.app("bq1234567").table("Tasks").operation("insert", fields=["Title"])
+        scope = (F("Project") == "Alpha") & (F("Status") == "Open")
+        await insert.run({"records": [{"Title": "Pour slab"}]}, scope=scope)
+    (body,) = fake.requests("POST /records")
+    assert body["data"] == [
+        {"6": {"value": "Pour slab"}, "9": {"value": "Alpha"}, "7": {"value": "Open"}}
+    ]
+
+
+@pytest.mark.parametrize(
+    "scope",
+    [
+        F("Project") != "Alpha",
+        (F("Project") == "Alpha") | (F("Project") == "Beta"),
+        F("Project").contains("Al"),
+        (F("Project") == "Alpha") & (F("Project") == "Beta"),
+    ],
+)
+async def test_insert_refuses_a_scope_a_new_record_cant_match(scope: Any) -> None:
+    fake = Fake()
+    async with client(fake) as qb:
+        insert = await qb.app("bq1234567").table("Tasks").operation("insert", fields=["Title"])
+        with pytest.raises(QueryError, match="can't insert records"):
+            await insert.run({"records": [{"Title": "Pour slab"}]}, scope=scope)
+    assert fake.requests("POST /records") == []
+
+
+@pytest.mark.parametrize("name", ["insert", "update", "preview_update"])
+async def test_a_write_cant_set_a_field_the_scope_uses(name: str) -> None:
+    fake = Fake()
+    async with client(fake) as qb:
+        operation = await qb.app("bq1234567").table("Tasks").operation(name)  # type: ignore[arg-type]
+        row: dict[str, Any] = {"Project": "Beta"}
+        if name != "insert":
+            row["Record ID#"] = 1
+        with pytest.raises(QueryError, match=r"records\[0\] sets 'Project'"):
+            await operation.run({"records": [row]}, scope=F("Project") == "Alpha")
+    assert fake.requests("POST /records") == []
+    assert fake.requests("POST /records/query") == []
+
+
+async def test_a_delete_that_matches_too_many_records_is_refused() -> None:
+    fake = Fake(matching=11)
+    async with client(fake) as qb:
+        delete = await qb.app("bq1234567").table("Tasks").operation("delete", max_records=10)
+        assert "more than 10 records" in delete.schema["properties"]["where"]["description"]
+        with pytest.raises(QueryError, match="11 records match"):
+            await delete.run({"where": OPEN}, scope=F("Project") == "Alpha")
+    assert fake.requests("DELETE /records") == []
+    (count,) = fake.requests("POST /records/query")
+    assert count["where"] == "{9.EX.'Alpha'}AND{7.EX.'Open'}"
+
+
+async def test_preview_update_offers_only_fields_it_can_read() -> None:
+    reads = ReadRules({TASKS: ReadAccess(fields=[6, 7], write_only=[9])})
+    writes = WriteRules({TASKS: WriteAccess(update=[7, 9])})
+    async with client(Fake(), read_policy=reads, write_policy=writes) as qb:
+        tasks = qb.app("bq1234567").table("Tasks")
+        preview = await tasks.operation("preview_update")
+        record = preview.schema["properties"]["records"]["items"]
+        assert list(record["properties"]) == ["Record ID#", "Status"]
+        update = await tasks.operation("update")
+        assert list(update.schema["properties"]["records"]["items"]["properties"]) == [
+            "Record ID#",
+            "Status",
+            "Project",
+        ]
+        with pytest.raises(WriteRefusedError, match="both read and change"):
+            await tasks.operation("preview_update", fields=["Project"])
+
+
+async def test_preview_update_reads_within_the_read_rules_limit() -> None:
+    fake = Fake()
+    reads = ReadRules({TASKS: ReadAccess(fields=True, max_records=2)})
+    async with client(fake, read_policy=reads) as qb:
+        rows = [{"Record ID#": record_id, "Status": "Done"} for record_id in (1, 2, 3)]
+        await qb.app("bq1234567").table("Tasks").preview_update(rows)
+    assert [body["options"]["top"] for body in fake.requests("POST /records/query")] == [2, 1]
+
+
 async def test_reports() -> None:
     fake = Fake()
     async with client(fake, read_only=True) as qb:

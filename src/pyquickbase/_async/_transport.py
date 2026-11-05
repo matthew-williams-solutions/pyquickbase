@@ -88,6 +88,15 @@ class AsyncTransport:
         ]
         return min(limits, default=None)
 
+    def record_limit(self, table_id: str) -> int | None:
+        """The most records the read rules let one query reach in a table, if any."""
+        limits = [
+            found
+            for rules in self._read_rules
+            if (found := rules._record_limit(table_id)) is not None  # pyright: ignore[reportPrivateUsage]
+        ]
+        return min(limits, default=None)
+
     def _check_write(self, method: str, path: str, json: Any, key_field_id: int | None) -> None:
         """Apply the limits on writes, which come first, so a refused write says so."""
         if self._read_only:

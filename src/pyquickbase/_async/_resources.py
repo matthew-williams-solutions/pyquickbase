@@ -43,6 +43,7 @@ from .._operations import (
     make_spec,
     operation_names,
     refused_operation,
+    scope_rows,
     unavailable,
 )
 from .._preview import UpdatePreview, build_update_preview, id_batches, merge_rows
@@ -946,7 +947,8 @@ class AsyncTable:
         require_field(built, RECORD_ID_FIELD, "so preview_update() can't tell which record")
         merged = merge_rows(built)
         current: dict[int, Record] = {}
-        for ids in id_batches(list(merged)):
+        limit = self._transport.record_limit((await self.info()).id)
+        for ids in id_batches(list(merged), limit):
             select = sorted({field_id for record_id in ids for field_id in merged[record_id]})
             page = await self.query_page(
                 where=F(RECORD_ID_FIELD).is_in(ids), select=select, top=len(ids)
@@ -1488,8 +1490,9 @@ class AsyncTable:
                 description}`. Defaults to every report of that kind the client may run.
             formula: For `run_formula`, the formula's text, which your code fixes. The model only
                 chooses the record, as a formula can read any table.
-            max_records: The most records one call may return. Defaults to 100, or for `summarize`,
-                10,000 records read. The client's `ReadRules` can lower it.
+            max_records: The most records one call may return, or for `delete`, may match. A
+                delete that matches more is refused. Defaults to 100, or for `summarize`, 10,000
+                records read. The client's `ReadRules` can lower it.
             max_rows: The most records one `insert` or `update` may send.
 
         Returns:
@@ -1746,19 +1749,31 @@ class AsyncOperation:
             arguments: The arguments from the model's tool call.
             scope: A condition your code fixes, such as the user's project, that every record must
                 match. It's added to every filter. An operation that names records, such as
-                `update`, first checks that they all match it. A report can't take one.
+                `update`, first checks that they all match it. A write can't set a field the scope
+                uses, and `insert` fills those fields in from the scope, which must then be only
+                `==` conditions joined with `&`. A report can't take one.
 
         Returns:
             What the table method returns, such as a `Page` for `query`, which `tool_result()`
             takes.
 
         Raises:
-            QueryError: An argument can't be used, or a record named isn't in `scope`. Nothing was
-                sent, other than the query that checks the scope.
+            QueryError: An argument can't be used, a record named isn't in `scope`, a write sets
+                a field the scope uses, or a delete matches more than `max_records`. Nothing was
+                sent, other than the query that checks the scope or counts a delete.
             InvalidValueError: A record or value can't be written. Nothing was sent.
         """
         call = self._spec.plan(arguments, scope)
         table = self._table
+        if scope is not None and "rows" in call.arguments:
+            call = scope_rows(call, scope, FieldIndex(await table.fields()))
+        if call.most is not None:
+            matching = await table.count(call.arguments["where"])
+            if matching > call.most:
+                raise QueryError(
+                    f"{matching} records match, and this tool may delete at most {call.most} at "
+                    "once, so nothing was deleted. Narrow the filter."
+                )
         if call.record_ids and scope is not None:
             ids = list(call.record_ids)
             found = await table.count(scope & F(RECORD_ID_FIELD).is_in(ids))
