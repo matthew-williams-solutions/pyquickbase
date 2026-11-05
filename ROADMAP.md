@@ -23,8 +23,6 @@ Nothing here should break anyone.
   `mkdocs.yml`, so update it if the config moves.
 - `llms.txt` is at `/pyquickbase/llms.txt`, not the domain root where some tools look, because the
   site is served from a subpath. Only a custom domain would change that.
-- Find out how `COUNT` summaries work. `ensure_summary_field()` always sends a child field, and
-  Quickbase refused `COUNT` on every field tried, so the SDK may need to leave it out.
 - A way to set `fieldHelp` and the other field settings the API takes outside `properties`.
 - A small config file to choose generated names.
 - A setting that repeats a typed table's schema check after a set time.

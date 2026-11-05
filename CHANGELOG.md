@@ -8,6 +8,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `ensure_count_field()`, which counts a child table's records on the parent. `COUNT` takes no field,
+  so `ensure_summary_field()` now raises `InvalidValueError` for it, where Quickbase refused every field.
 - Operations can write `duration` fields, as whole milliseconds. Table writes and generated classes also
   take a `timedelta` for one.
 - `User`, `FileAttachment`, and `FileVersion`, frozen dataclasses that user, `multiuser`, and file

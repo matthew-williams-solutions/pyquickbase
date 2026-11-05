@@ -254,6 +254,7 @@ RESOURCES = (
                     "ensure_relationship",
                     "ensure_lookup_field",
                     "ensure_summary_field",
+                    "ensure_count_field",
                     "drop",
                 ),
             ),

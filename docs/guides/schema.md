@@ -93,6 +93,7 @@ child table.
 
 - `ensure_lookup_field()` shows a parent's field on the child.
 - `ensure_summary_field()` calculates a value from the child's records, and puts it on the parent.
+- `ensure_count_field()` counts the child's records, and puts the count on the parent.
 
 ```python
 app = qb.app("bq1234567")
@@ -105,6 +106,7 @@ tasks.ensure_lookup_field(link, "Name", label="Project Name")
 tasks.ensure_field("Hours", "numeric")
 tasks.ensure_summary_field(link, "Hours", "Total Hours")
 tasks.ensure_summary_field(link, "Hours", "Longest Task", function="MAX")
+tasks.ensure_count_field(link, "Task Count")
 projects.ensure_field("Hours Or Zero", "numeric", formula="Nz([Total Hours])")
 ```
 
@@ -119,10 +121,11 @@ projects.ensure_field("Hours Or Zero", "numeric", formula="Nz([Total Hours])")
 | `COMBINED-TEXT` | `text` | `multitext` |
 | `COMBINED-USER` | `user` | `multiuser` |
 
-We tested these combinations, and others may work. Quickbase refused `SUM` of a `checkbox`, `MAX` of
-`text`, and `COUNT` of every field we tried it on, with `BadRequestError`.
+We tested these combinations, and others may work. Quickbase refused `SUM` of a `checkbox` and `MAX` of
+`text`, with `BadRequestError`. `COUNT` takes no field, so it has its own method, `ensure_count_field()`,
+and `ensure_summary_field()` raises `InvalidValueError` for it.
 
-**A summary with no child records is empty, not 0.** Code that expects a number should read a formula
+**A summary with no child records is empty, not 0**, except a count, which is 0. Code that expects a number should read a formula
 that uses `Nz()`, such as `Hours Or Zero` in the example here, rather than the summary.
 
 [Try it in the playground](../playground-app/index.html#watch-computed-fields-update), with simulated data.
@@ -155,6 +158,7 @@ projects.ensure_field("Total Hours", "numeric", formula="Nz([Hours Sum])")
 | `ensure_relationship()` | The parent, and the foreign key's label ignoring case | Returns it unchanged |
 | `ensure_lookup_field()` | The parent's field it points at, so a renamed lookup is still found | Applies `label` if you passed one |
 | `ensure_summary_field()` | Its label on the parent, ignoring case | Returns it. Raises `SchemaMismatchError` if that field isn't this same summary |
+| `ensure_count_field()` | Its label on the parent, ignoring case | Returns it. Raises `SchemaMismatchError` if that field isn't a count of this relationship |
 
 `required=True` in `ensure_field()` follows
 [the same rules as anywhere else](#making-a-field-required-or-unique), so a script that adds a required

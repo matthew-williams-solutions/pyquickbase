@@ -59,6 +59,7 @@ class AsyncTable(object)
     async def delete_file_version(self, record_id: int, field: str | int, *, version: int) -> None
     async def download_file(self, record_id: int, field: str | int, *, version: int | None = None, timeout: float | None = None) -> FileDownload
     async def drop(self, *, confirm: str) -> None
+    async def ensure_count_field(self, relationship: Relationship, label: str) -> Field
     async def ensure_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None) -> Field
     async def ensure_lookup_field(self, relationship: Relationship, parent_field: str | int, *, label: str | None = None) -> Field
     async def ensure_relationship(self, parent: 'AsyncTable', *, foreign_key_label: str) -> Relationship
@@ -355,6 +356,7 @@ class Table(object)
     def delete_file_version(self, record_id: int, field: str | int, *, version: int) -> None
     def download_file(self, record_id: int, field: str | int, *, version: int | None = None, timeout: float | None = None) -> FileDownload
     def drop(self, *, confirm: str) -> None
+    def ensure_count_field(self, relationship: Relationship, label: str) -> Field
     def ensure_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None) -> Field
     def ensure_lookup_field(self, relationship: Relationship, parent_field: str | int, *, label: str | None = None) -> Field
     def ensure_relationship(self, parent: 'Table', *, foreign_key_label: str) -> Relationship

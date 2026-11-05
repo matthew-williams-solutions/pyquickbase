@@ -6,7 +6,13 @@ from typing import Any
 import httpx
 import pytest
 
-from pyquickbase import AsyncQuickbase, InvalidResponseError, Relationship, SchemaMismatchError
+from pyquickbase import (
+    AsyncQuickbase,
+    InvalidResponseError,
+    InvalidValueError,
+    Relationship,
+    SchemaMismatchError,
+)
 from pyquickbase._models import relationship_from_api
 
 pytestmark = pytest.mark.anyio
@@ -129,7 +135,7 @@ class FakeSchema:
                 {"id": self.new_id(), "label": summary["label"], "fieldType": "numeric",
                  "mode": "summary",
                  "properties": {"summaryReferenceFieldId": 7,
-                                "summaryTargetFieldId": summary["summaryFid"],
+                                "summaryTargetFieldId": summary.get("summaryFid", 0),
                                 "summaryFunction": summary["accumulationType"]}},
             ]  # fmt: skip
 
@@ -288,6 +294,32 @@ async def test_ensure_summary_refuses_a_label_used_by_something_else(
     with pytest.raises(SchemaMismatchError):
         await tasks.ensure_summary_field(project(fake), "Hours", "Total Hours", function="AVG")
 
+
+
+async def test_ensure_count_creates_once_without_a_field(app: Any, fake: FakeSchema) -> None:
+    tasks = app.table("Tasks")
+    rel = project(fake)
+    created = await tasks.ensure_count_field(rel, "Task Count")
+    assert (created.mode, created.summary_function) == ("summary", "COUNT")
+    assert created.summary_target_field_id == 0
+    again = await tasks.ensure_count_field(rel, "task count")
+    assert again.id == created.id
+    assert fake.writes() == [
+        (
+            f"/tables/{CHILD}/relationship/7",
+            {"summaryFields": [{"label": "Task Count", "accumulationType": "COUNT"}]},
+        )
+    ]
+
+
+async def test_count_is_its_own_method(app: Any, fake: FakeSchema) -> None:
+    tasks = app.table("Tasks")
+    with pytest.raises(InvalidValueError, match="ensure_count_field"):
+        await tasks.ensure_summary_field(project(fake), "Hours", "Count", function="COUNT")
+    await tasks.ensure_summary_field(project(fake), "Hours", "Total Hours")
+    with pytest.raises(SchemaMismatchError):
+        await tasks.ensure_count_field(project(fake), "Total Hours")
+    assert len(fake.writes()) == 1
 
 async def test_ensure_summary_reports_one_quickbase_did_not_create(
     app: Any, fake: FakeSchema

@@ -1463,6 +1463,7 @@ class AsyncTable:
 
         Call this on the child table, and the new field is on the parent. **A summary with no child
         records is empty, not 0**, so wrap it in `Nz()` in a formula if your code expects a number.
+        To count the child records, use `ensure_count_field()`.
 
         Args:
             relationship: The relationship, from `ensure_relationship()`.
@@ -1475,20 +1476,52 @@ class AsyncTable:
             The summary `Field`, on the parent.
 
         Raises:
+            InvalidValueError: `function` is `COUNT`, which takes no field. Nothing was sent.
             UnknownFieldError: This table has no such field. Nothing was sent.
             SchemaMismatchError: The label is already used on the parent by anything but this
                 summary. It wasn't changed.
             BadRequestError: Quickbase can't apply `function` to this field, such as `SUM` of a
                 checkbox.
         """
-        parent = self._app.table(relationship.parent_table_id)
+        if function == "COUNT":
+            raise InvalidValueError(
+                "COUNT counts the child records rather than summarizing a field, so use "
+                "ensure_count_field()."
+            )
         target_id = (await self.resolve_field_ids([child_field]))[0]
+        return await self._ensure_summary(relationship, label, function, target_id)
+
+    async def ensure_count_field(self, relationship: Relationship, label: str) -> Field:
+        """Return the count of this table's records for each parent, creating it if needed.
+
+        Call this on the child table, and the new field is on the parent. Unlike other summaries,
+        a parent with no child records counts 0, not empty.
+
+        Args:
+            relationship: The relationship, from `ensure_relationship()`.
+            label: The label of the count field on the parent.
+
+        Returns:
+            The count `Field`, on the parent.
+
+        Raises:
+            SchemaMismatchError: The label is already used on the parent by anything but this
+                count. It wasn't changed.
+        """
+        return await self._ensure_summary(relationship, label, "COUNT", None)
+
+    async def _ensure_summary(
+        self, relationship: Relationship, label: str, function: str, target_id: int | None
+    ) -> Field:
+        """Find or create a summary on the parent. A count has no target, which Quickbase records
+        as field 0."""
+        parent = self._app.table(relationship.parent_table_id)
         fields = await parent.fields(refresh=True)
         found = next((item for item in fields if item.label.casefold() == label.casefold()), None)
         if found is not None:
             if (
                 found.mode != "summary"
-                or found.summary_target_field_id != target_id
+                or (found.summary_target_field_id or 0) != (target_id or 0)
                 or found.summary_reference_field_id != relationship.foreign_key_field_id
                 or found.summary_function != function
             ):
@@ -1497,19 +1530,18 @@ class AsyncTable:
                 )
             return found
         table_id = (await self.info()).id
+        summary: dict[str, Any] = {"label": label, "accumulationType": function}
+        if target_id is not None:
+            summary["summaryFid"] = target_id
         await self._transport.request(
             "POST",
             f"/tables/{table_id}/relationship/{relationship.id}",
-            json={
-                "summaryFields": [
-                    {"summaryFid": target_id, "label": label, "accumulationType": function}
-                ]
-            },
+            json={"summaryFields": [summary]},
         )
         self._forget_fields(table_id)
         self._forget_fields(relationship.parent_table_id)
         fields = await parent.fields(refresh=True)
-        created = next((item for item in fields if item.label == label), None)
+        created = next((item for item in fields if item.label.casefold() == label.casefold()), None)
         if created is None:
             raise InvalidResponseError(
                 f"Quickbase accepted summary {label!r}, but it can't be found."
