@@ -6,7 +6,17 @@ from dataclasses import dataclass
 from decimal import Decimal as _Decimal
 from typing import Any, ClassVar, Self
 
-from pyquickbase import UNSET, Column, FileUpload, Row, TypedField, TypedRecord, Unset
+from pyquickbase import (
+    UNSET,
+    Column,
+    FileAttachment,
+    FileUpload,
+    Row,
+    TypedField,
+    TypedRecord,
+    Unset,
+    User,
+)
 
 
 class TasksFieldsFields:
@@ -130,9 +140,9 @@ class Tasks(TypedRecord):
     a_timestamp: _dt.datetime | None
     a_checkbox: bool
     a_multitext: list[str]
-    a_user: dict[str, Any] | None
-    a_multiuser: list[dict[str, Any]]
-    a_file: dict[str, Any]
+    a_user: User | None
+    a_multiuser: list[User]
+    a_file: FileAttachment | None
     a_some_new_type: Any
     a_formula: float | None
     a_lookup: str
@@ -161,8 +171,8 @@ class Tasks(TypedRecord):
         a_timestamp: _dt.datetime | None | Unset = UNSET,
         a_checkbox: bool | None | Unset = UNSET,
         a_multitext: list[str] | None | Unset = UNSET,
-        a_user: Any | Unset = UNSET,
-        a_multiuser: Any | Unset = UNSET,
+        a_user: User | None | Unset = UNSET,
+        a_multiuser: list[User] | None | Unset = UNSET,
         a_file: FileUpload | Unset = UNSET,
         class_: str | None | Unset = UNSET,
         a_text_103: str | None | Unset = UNSET,
@@ -191,8 +201,8 @@ class Tasks(TypedRecord):
         a_timestamp: _dt.datetime | None | Unset = UNSET,
         a_checkbox: bool | None | Unset = UNSET,
         a_multitext: list[str] | None | Unset = UNSET,
-        a_user: Any | Unset = UNSET,
-        a_multiuser: Any | Unset = UNSET,
+        a_user: User | None | Unset = UNSET,
+        a_multiuser: list[User] | None | Unset = UNSET,
         a_file: FileUpload | Unset = UNSET,
         class_: str | None | Unset = UNSET,
         a_text_103: str | None | Unset = UNSET,

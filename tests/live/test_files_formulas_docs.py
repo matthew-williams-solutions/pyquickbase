@@ -17,7 +17,7 @@ from pyquickbase.errors import (
 
 def versions_kept(table: Any, record_id: int) -> list[int]:
     record = next(iter(table.query(where=f"{{3.EX.{record_id}}}", select=["File"])))
-    return [version["versionNumber"] for version in record["File"]["versions"]]
+    return [version.number for version in record["File"].versions]
 
 
 def upload(table: Any, record_id: int, times: int) -> None:

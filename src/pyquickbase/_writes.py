@@ -15,7 +15,7 @@ from decimal import Decimal
 from typing import Any, Literal
 from unicodedata import category
 
-from ._models import Field, FieldIndex
+from ._models import Field, FieldIndex, User
 from ._query import plain_number
 from .errors import (
     InvalidValueError,
@@ -124,6 +124,10 @@ def to_api_value(value: Any) -> Any:
     """Render a Python value for writing. `None` clears the field, which null doesn't do."""
     if value is None:
         return ""
+    if isinstance(value, User):
+        return {"id": value.id}
+    if isinstance(value, list) and any(isinstance(item, User) for item in value):  # pyright: ignore[reportUnknownVariableType]
+        return [to_api_value(item) if isinstance(item, User) else item for item in value]  # pyright: ignore[reportUnknownVariableType]
     if isinstance(value, float) and not math.isfinite(value):
         raise InvalidValueError("A number must be finite, as JSON can't hold NaN or infinity.")
     if isinstance(value, bool | int | float | str | list | dict):

@@ -12,7 +12,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from ._models import RECORD_ID_FIELD, Field, FieldIndex, Record
+from ._models import RECORD_ID_FIELD, Field, FieldIndex, FileAttachment, Record, User
 from ._writes import FILE_FIELD_TYPE, require_id
 
 # Records to read in one query. Quickbase's limit on a query's length isn't confirmed.
@@ -102,13 +102,16 @@ def _same_number(before: Any, after: Any) -> bool:
 
 
 def _same_user(before: Any, after: Any) -> bool:
-    if not isinstance(before, Mapping):
+    if not isinstance(before, User):
         return False
-    wanted = after.get("id") if isinstance(after, Mapping) else after  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+    if isinstance(after, User):
+        wanted: Any = after.id
+    else:
+        wanted = after.get("id") if isinstance(after, Mapping) else after  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
     if not isinstance(wanted, str):
         return False
-    held: list[Any] = [before.get("email"), before.get("id")]  # pyright: ignore[reportUnknownMemberType]
-    return wanted.casefold() in {item.casefold() for item in held if isinstance(item, str)}
+    held = [before.email, before.id]
+    return wanted.casefold() in {item.casefold() for item in held if item}
 
 
 def _same_users(before: Any, after: Any) -> bool:
@@ -186,14 +189,7 @@ def _written_file_name(value: Any) -> Any:
 
 def _stored_file_name(value: Any) -> Any:
     """Only the name, as a stored file's value also holds who uploaded each version."""
-    versions = value.get("versions") if isinstance(value, Mapping) else None  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-    if not isinstance(versions, list) or not versions:
-        return None
-    usable: list[Mapping[str, Any]] = [item for item in versions if isinstance(item, Mapping)]  # pyright: ignore[reportUnknownVariableType]
-    if not usable:
-        return None
-    newest = max(usable, key=lambda item: item.get("versionNumber") or 0)
-    return newest.get("fileName")
+    return value.latest.file_name if isinstance(value, FileAttachment) else None
 
 
 def build_update_preview(

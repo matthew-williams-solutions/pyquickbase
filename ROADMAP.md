@@ -33,7 +33,6 @@ Nothing here should break anyone.
 - A way to set `fieldHelp` and the other field settings the API takes outside `properties`.
 - A small config file to choose generated names.
 - A setting that repeats a typed table's schema check after a set time.
-- Typed access to file and user values, as a dictionary subclass, which could leave out uploader emails.
 
 ## Guides
 

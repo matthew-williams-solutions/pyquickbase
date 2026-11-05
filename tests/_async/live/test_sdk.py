@@ -391,12 +391,12 @@ async def test_files(qb: AsyncQuickbase, scratch: Any, seeded: str) -> None:
     assert (await table.download_file(record_id, "Attachment")).data == b"second"
     assert (await table.download_file(record_id, "Attachment", version=1)).data == data
     value = (await one(table, "C1", "Attachment"))["Attachment"]
-    assert [v["versionNumber"] for v in value["versions"]] == [1, 2]
+    assert [v.number for v in value.versions] == [1, 2]
     await table.delete_file_version(record_id, "Attachment", version=1)
     with pytest.raises(NotFoundError):
         await table.download_file(record_id, "Attachment", version=1)
     await table.delete_file_version(record_id, "Attachment", version=2)
-    assert (await one(table, "C1", "Attachment"))["Attachment"]["versions"] == []
+    assert (await one(table, "C1", "Attachment"))["Attachment"] is None
 
 
 async def test_formulas(qb: AsyncQuickbase, scratch: Any, seeded: str) -> None:

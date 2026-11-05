@@ -10,9 +10,11 @@ import pytest
 from pyquickbase import (
     F,
     Field,
+    FileAttachment,
     InvalidResponseError,
     QueryError,
     UnknownFieldError,
+    User,
     WhereCondition,
     parse_where,
 )
@@ -507,3 +509,41 @@ def test_the_current_user_stays_literal_elsewhere_and_allowed_in_strings() -> No
         "{4.TV.'a@example.com'}"
     )
     assert compile_where("{4.TV.'_curuser_'}", USER_FIELDS) == "{4.TV.'_curuser_'}"
+
+
+def test_a_user_is_compared_by_id() -> None:
+
+    assert format_value(User(id="1.a", name="A", email="a@example.com")) == "1.a"
+
+
+def test_user_and_file_values_read_as_objects_and_hide_emails() -> None:
+
+    page = page_from_api(
+        {
+            "fields": [
+                {"id": 3, "label": "Record ID#", "type": "recordid"},
+                {"id": 6, "label": "Owner", "type": "user"},
+                {"id": 7, "label": "Team", "type": "multiuser"},
+                {"id": 8, "label": "Spec", "type": "file"},
+                {"id": 9, "label": "Odd", "type": "user"},
+            ],
+            "data": [
+                {
+                    "3": {"value": 1},
+                    "6": {"value": {"id": "1.a", "name": "A", "email": "a@example.com"}},
+                    "7": {"value": [{"id": "2.b", "name": "B"}]},
+                    "8": {"value": {"url": "", "versions": []}},
+                    "9": {"value": {"name": "no id"}},
+                }
+            ],
+            "metadata": {"totalRecords": 1, "skip": 0},
+        }
+    )
+    (record,) = page.records
+    owner = record["Owner"]
+    assert owner == User(id="1.a", name="A", email="a@example.com")
+    assert "a@example.com" not in repr(owner)
+    assert record["Team"] == [User(id="2.b", name="B")]
+    assert record["Spec"] is None
+    assert record["Odd"] == {"name": "no id"}  # Unexpected shapes are left as they are
+    assert not isinstance(record["Spec"], FileAttachment)

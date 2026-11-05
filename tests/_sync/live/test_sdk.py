@@ -377,12 +377,12 @@ def test_files(qb: Quickbase, scratch: Any, seeded: str) -> None:
     assert (table.download_file(record_id, "Attachment")).data == b"second"
     assert (table.download_file(record_id, "Attachment", version=1)).data == data
     value = (one(table, "C1", "Attachment"))["Attachment"]
-    assert [v["versionNumber"] for v in value["versions"]] == [1, 2]
+    assert [v.number for v in value.versions] == [1, 2]
     table.delete_file_version(record_id, "Attachment", version=1)
     with pytest.raises(NotFoundError):
         table.download_file(record_id, "Attachment", version=1)
     table.delete_file_version(record_id, "Attachment", version=2)
-    assert (one(table, "C1", "Attachment"))["Attachment"]["versions"] == []
+    assert (one(table, "C1", "Attachment"))["Attachment"] is None
 
 
 def test_formulas(qb: Quickbase, scratch: Any, seeded: str) -> None:

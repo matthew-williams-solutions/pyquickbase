@@ -13,7 +13,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, ClassVar
 
-from ._models import RECORD_ID_FIELD, Field, FieldIndex
+from ._models import RECORD_ID_FIELD, Field, FieldIndex, User
 from .errors import QueryError, UnknownFieldError
 
 FieldRef = str | int
@@ -71,6 +71,8 @@ def format_value(value: Any) -> str:
         return "true" if value else "false"
     if isinstance(value, int):
         return str(value)
+    if isinstance(value, User):
+        value = value.id
     if isinstance(value, float | Decimal):
         found = plain_number(value)
         if found is None:

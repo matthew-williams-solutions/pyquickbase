@@ -52,9 +52,9 @@ tasks.create_field("Priority", "text-multiple-choice", choices=["Low", "High"])
 | `field_type` | Holds | Write | Reads as | Empty reads as | Takes a formula |
 |---|---|---|---|---|---|
 | `checkbox` | True or false | `bool` | `bool` | `False`, so empty and unchecked look the same | Yes |
-| `user` | One Quickbase user | `{"id": ...}` | `{"email", "id", "name"}` | `None` | Not tested |
-| `multiuser` | Several users | `[{"id": ...}]` | A list of `{"email", "id", "name"}` | `[]` | Not tested |
-| `file` | An attachment | [`FileUpload`](guides/files.md) | `{"url", "versions"}` | `{"url": "", "versions": []}` | Not tested |
+| `user` | One Quickbase user | A `User`, or `{"id": ...}` | `User` | `None` | Not tested |
+| `multiuser` | Several users | A list of `User`, or of `{"id": ...}` | A list of `User` | `[]` | Not tested |
+| `file` | An attachment | [`FileUpload`](guides/files.md) | `FileAttachment` | `None` | Not tested |
 | `address` | An address, as display text | Read-only: write its subfields | `str` | `""` | Not tested |
 
 A query only returns a table's default fields unless you pass `select`, and built-in fields such as

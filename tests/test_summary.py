@@ -16,6 +16,7 @@ from pyquickbase import (
     QueryError,
     SummaryRow,
     UnknownFieldError,
+    User,
 )
 from pyquickbase._models import Record, field_from_api
 from pyquickbase._summary import Summary
@@ -139,9 +140,9 @@ def test_groups_with_a_missing_field_read_as_empty() -> None:
 def test_users_group_by_email_or_id() -> None:
     rows = summarize(
         [
-            rec(Owner={"email": "a@example.com", "id": "1.a", "name": "A"}),
-            rec(Owner={"email": "a@example.com", "id": "1.a", "name": "Renamed"}),
-            rec(Owner={"id": "2.b"}),
+            rec(Owner=User(email="a@example.com", id="1.a", name="A")),
+            rec(Owner=User(email="a@example.com", id="1.a", name="Renamed")),
+            rec(Owner=User(id="2.b", name="")),
             rec(Owner=None),
         ],
         group_by="Owner",

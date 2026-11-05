@@ -14,7 +14,9 @@ from ._combine import all_of
 from ._models import (
     AppInfo,
     Field,
+    FileAttachment,
     FileDownload,
+    FileVersion,
     FormulaResult,
     Page,
     Record,
@@ -22,6 +24,7 @@ from ._models import (
     ReportInfo,
     Role,
     TableInfo,
+    User,
 )
 from ._operations import OperationName
 from ._output import ToolErrorCode, tool_error, tool_result
@@ -105,8 +108,10 @@ __all__ = [
     "FieldChange",
     "FieldRef",
     "FieldRefs",
+    "FileAttachment",
     "FileDownload",
     "FileUpload",
+    "FileVersion",
     "FormulaResult",
     "InvalidResponseError",
     "InvalidValueError",
@@ -160,6 +165,7 @@ __all__ = [
     "Unset",
     "UnsupportedReportError",
     "UpdatePreview",
+    "User",
     "WhereCondition",
     "WriteAccess",
     "WriteAction",

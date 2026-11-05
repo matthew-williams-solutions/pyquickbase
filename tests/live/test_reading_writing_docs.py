@@ -81,7 +81,7 @@ def test_reading_values_and_pages(scratch: Any) -> None:
     # Without select, a built-in field that isn't a default isn't returned.
     with pytest.raises(KeyError):
         table.first()["Record Owner"]
-    assert table.first(select=["Record Owner"])["Record Owner"]["id"]
+    assert table.first(select=["Record Owner"])["Record Owner"].id
 
     seen: list[str] = []
     skip = 0
@@ -230,7 +230,7 @@ def test_the_current_user_and_how_user_fields_match(scratch: Any) -> None:
     table = scratch.table(("Who", "user"), ("Many", "multiuser"), ("Note", "text"))
     table.insert([{"Note": "_curuser_"}])
     me = next(iter(table.query(select=["Record Owner"])))["Record Owner"]
-    mine = table.insert([{"Who": {"id": me["id"]}, "Many": [{"id": me["id"]}]}]).created_ids[0]
+    mine = table.insert([{"Who": me, "Many": [me]}]).created_ids[0]
 
     def found(where: Any) -> list[int]:
         return [record.id for record in table.query(where=where, select=[3])]
@@ -241,16 +241,17 @@ def test_the_current_user_and_how_user_fields_match(scratch: Any) -> None:
     assert found(f"{{{who_id}.XEX.'{me['email']}'}}") == [1, mine]
 
     # What the docs tell you to use.
-    assert found(F("Who") == me["email"]) == [mine]
-    assert found(F("Who") == me["id"]) == [mine]
-    assert found(F("Who") == me["email"].upper()) == [mine]
+    assert found(F("Who") == me.email) == [mine]
+    assert found(F("Who") == me.id) == [mine]
+    assert found(F("Who") == me) == [mine]
+    assert found(F("Who") == me.email.upper()) == [mine]
     assert found(F("Who") == "nobody@example.com") == []
-    assert found(F("Who") != me["email"]) == [1]
+    assert found(F("Who") != me.email) == [1]
     assert found(F("Who") != "nobody@example.com") == [1, mine]
     assert found(F("Who") == None) == [1]  # noqa: E711
     assert found(F("Who") != None) == [mine]  # noqa: E711
-    assert found(F("Who").is_in([me["email"], "nobody@example.com"])) == [mine]
-    assert found(F("Many") == me["email"]) == [mine]
+    assert found(F("Who").is_in([me.email, "nobody@example.com"])) == [mine]
+    assert found(F("Many") == me.email) == [mine]
     assert found(F("Note") == "_curuser_") == [1]
 
     # Why F refuses this, and that a query string still means it.

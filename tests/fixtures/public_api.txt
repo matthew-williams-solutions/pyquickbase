@@ -161,6 +161,12 @@ class FieldChange(object)
     field before: Any
 value FieldRef = str | int
 value FieldRefs = str | int | F | Sequence[str | int | F]
+class FileAttachment(object)
+    def __eq__(self, other)
+    def __init__(self, *, url: str, versions: tuple[FileVersion, ...]) -> None
+    property latest -> FileVersion
+    field url: str
+    field versions: tuple[FileVersion, ...]
 class FileDownload(object)
     def __eq__(self, other)
     def __init__(self, *, name: str, data: bytes, content_type: str | None) -> None
@@ -172,6 +178,13 @@ class FileUpload(object)
     def __init__(self, name: str, data: bytes) -> None
     field data: bytes
     field name: str
+class FileVersion(object)
+    def __eq__(self, other)
+    def __init__(self, *, number: int, file_name: str, uploaded: datetime.datetime | None, creator: User | None) -> None
+    field creator: User | None
+    field file_name: str
+    field number: int
+    field uploaded: datetime.datetime | None
 class FormulaResult(object)
     def __eq__(self, other)
     def __init__(self, *, text: str, type: str) -> None
@@ -430,6 +443,13 @@ class UpdatePreview(object)
     field changes: tuple[RecordChange, ...]
     field missing_ids: tuple[int, ...]
     field unchanged_ids: tuple[int, ...]
+class User(object)
+    def __eq__(self, other)
+    def __init__(self, *, id: str, name: str, email: str | None = None, user_name: str | None = None) -> None
+    field email: str | None
+    field id: str
+    field name: str
+    field user_name: str | None
 class WhereCondition(object)
     def __eq__(self, other)
     def __init__(self, field_id: int, operator: str, value: str) -> None

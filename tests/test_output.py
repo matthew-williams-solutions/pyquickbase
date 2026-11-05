@@ -49,6 +49,7 @@ from pyquickbase import (
     UnknownTableError,
     UnsupportedReportError,
     UpdatePreview,
+    User,
     WriteError,
     WritePermissionError,
     WriteRefusedError,
@@ -56,6 +57,7 @@ from pyquickbase import (
     tool_error,
     tool_result,
 )
+from pyquickbase._models import file_from_api
 
 LABELS = {"Record ID#": 3, "Title": 6, "Due Date": 7, "Started": 8, "Owner": 9, "Spec": 10}
 USER = {"id": "1.ab", "name": "Ann"}
@@ -526,3 +528,44 @@ def test_a_text_file_has_its_text_and_a_binary_one_says_so() -> None:
     assert long["text_shortened"] is True
     empty = tool_result(FileDownload(name="a.txt", data=b"", content_type=None))
     assert empty["file"]["text"] == ""
+
+
+def test_users_and_files_are_written_with_fixed_keys() -> None:
+
+    attachment = file_from_api(
+        {
+            "url": "/files/x",
+            "versions": [
+                {
+                    "versionNumber": 1,
+                    "fileName": "a.txt",
+                    "uploaded": "2027-01-15T14:30:00Z",
+                    "creator": {"id": "1.a", "name": "A", "email": "a@example.com"},
+                },
+                {"versionNumber": 2, "fileName": "b.txt", "uploaded": ""},
+            ],
+        }
+    )
+    owner = User(id="1.a", name="A")
+    row = Record({3: 1, 6: owner, 7: attachment}, {"Record ID#": 3, "Owner": 6, "Spec": 7})
+    assert tool_result([row])["records"] == [
+        {
+            "Record ID#": 1,
+            "Owner": {"id": "1.a", "name": "A", "email": None},
+            "Spec": {
+                "url": "/files/x",
+                "versions": [
+                    {
+                        "number": 1,
+                        "file_name": "a.txt",
+                        "uploaded": "2027-01-15T14:30:00Z",
+                        "creator": {"id": "1.a", "name": "A", "email": "a@example.com"},
+                    },
+                    {"number": 2, "file_name": "b.txt", "uploaded": None, "creator": None},
+                ],
+            },
+        }
+    ]
+    assert tool_result([row], compact=True)["rows"] == [
+        [1, {"id": "1.a", "name": "A", "email": None}, "b.txt"]
+    ]

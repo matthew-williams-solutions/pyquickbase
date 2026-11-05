@@ -8,8 +8,8 @@ with Quickbase(realm="demo", token="demo") as qb:
     task = next(iter(tasks.query(where=F("Record ID#") == 1, select=columns)))
 
     print(task["Title"], "in", task["Project Name"])
-    print("Assigned to:", task["Assignee"]["name"])  # A user is a dictionary
+    print("Assigned to:", task["Assignee"].name)  # A user is a User
     print("Tags:", task["Tags"])  # A list of text
 
-    for version in task["Attachment"]["versions"]:  # Each version names who uploaded it
-        print(version["versionNumber"], version["fileName"], version["creator"]["email"])
+    for version in task["Attachment"].versions:  # Each version names who uploaded it
+        print(version.number, version.file_name, version.creator.email)

@@ -8,11 +8,11 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from pyquickbase import FieldChange, InvalidValueError, RecordChange, UpdatePreview
-from pyquickbase._models import FieldIndex, Record, field_from_api
+from pyquickbase import FieldChange, InvalidValueError, RecordChange, UpdatePreview, User
+from pyquickbase._models import FieldIndex, Record, field_from_api, file_from_api
 from pyquickbase._preview import build_update_preview, id_batches, is_same, merge_rows
 
-USER = {"email": "a@example.com", "id": "123.abc", "name": "A"}
+USER = User(id="123.abc", name="A", email="a@example.com")
 
 
 def field(kind: str) -> Any:
@@ -98,8 +98,12 @@ def test_values_that_wouldnt_change(kind: str, before: Any, after: Any) -> None:
         ("multiuser", [USER], ["a@example.com", "b@example.com"]),
         ("multitext", ["a"], ["a", "b"]),
         ("multitext", ["a"], "a"),
-        ("file", {"versions": []}, {"fileName": "a.txt", "data": ""}),
-        ("file", {"versions": [{"fileName": "a.txt"}]}, {"fileName": "a.txt", "data": ""}),
+        ("file", None, {"fileName": "a.txt", "data": ""}),
+        (
+            "file",
+            file_from_api({"versions": [{"versionNumber": 1, "fileName": "a.txt"}]}),
+            {"fileName": "a.txt", "data": ""},
+        ),
     ],
 )
 def test_values_that_would_change_or_arent_certain(kind: str, before: Any, after: Any) -> None:
@@ -192,13 +196,23 @@ def test_a_field_the_response_left_out_counts_as_a_change() -> None:
 
 
 def test_a_file_shows_only_its_name() -> None:
-    stored = {
-        "url": "/files/x",
-        "versions": [
-            {"versionNumber": 2, "fileName": "new.txt", "creator": {"email": "s3cret@example.com"}},
-            {"versionNumber": 1, "fileName": "old.txt", "creator": {"email": "s3cret@example.com"}},
-        ],
-    }
+    stored = file_from_api(
+        {
+            "url": "/files/x",
+            "versions": [
+                {
+                    "versionNumber": 2,
+                    "fileName": "new.txt",
+                    "creator": {"email": "s3cret@example.com"},
+                },
+                {
+                    "versionNumber": 1,
+                    "fileName": "old.txt",
+                    "creator": {"email": "s3cret@example.com"},
+                },
+            ],
+        }
+    )
     written = {"fileName": "up.txt", "data": "czNjcmV0"}
     preview = build_update_preview({1: {13: written}}, {1: record(Attachment=stored)}, FIELDS)
     change = preview.changes[0].fields["Attachment"]
@@ -208,7 +222,7 @@ def test_a_file_shows_only_its_name() -> None:
 
 
 @pytest.mark.parametrize(
-    "stored", [{"url": "", "versions": []}, None, "x", {"versions": "x"}, {"versions": ["x"]}]
+    "stored", [file_from_api({"url": "", "versions": []}), None, "x", {"versions": ["x"]}]
 )
 def test_a_file_field_with_nothing_usable_reads_as_none(stored: Any) -> None:
     preview = build_update_preview(

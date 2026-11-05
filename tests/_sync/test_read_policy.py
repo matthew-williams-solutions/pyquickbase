@@ -22,6 +22,7 @@ from pyquickbase import (
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
+    User,
     WriteAccess,
     WriteRefusedError,
     WriteRules,
@@ -151,8 +152,9 @@ def test_default_select_only_holds_returned_fields() -> None:
         "F3": 1,
         "F6": "Pour slab",
         "F7": "Open",
-        "F10": {"id": "1.ab", "name": "Ann"},
+        "F10": User(id="1.ab", name="Ann"),
     }
+    assert record["F10"].email is None  # Left out without user_emails
 
 
 def test_filtering_and_sorting_outside_the_lists_are_refused_without_sending() -> None:

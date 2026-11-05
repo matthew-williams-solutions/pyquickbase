@@ -55,9 +55,9 @@ be sensitive.
 | `timestamp` | `datetime \| None` |
 | `checkbox` | `bool`, which is false when empty |
 | `multitext` | `list[str]` |
-| `user` | `dict[str, Any] \| None` |
-| `multiuser` | `list[dict[str, Any]]` |
-| `file` | `dict[str, Any]`, as described in [File attachments](files.md) |
+| `user` | `User \| None`, which you can also write |
+| `multiuser` | `list[User]`, which you can also write |
+| `file` | `FileAttachment \| None`, as described in [File attachments](files.md) |
 | `vCardButton` and `ICalendarButton` | `str`, a relative link, and read-only |
 | `predecessor` | `str`, the record IDs it links to, such as `1;2`. Write it as one ID or several separated by commas |
 | Anything else | `Any` |

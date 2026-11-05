@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `User`, `FileAttachment`, and `FileVersion`, frozen dataclasses that user, `multiuser`, and file
+  fields now read as, in records and generated classes. A `User`'s `repr` leaves out the email address.
+  Write a `User` to a user field, or compare one in `F`.
 - `select` on a typed table's `query()`, `query_page()`, `first()`, and `get()`, which reads only the
   fields of the class you list. The other attributes are left unset, so reading one raises
   `AttributeError` saying it wasn't selected. `Select` is its type.
@@ -23,6 +26,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Breaking:** user and file values are no longer dictionaries. A user field reads as a `User`, a
+  `multiuser` field as a list of them, and a file field as a `FileAttachment`, or None when empty,
+  where it used to be `{"url": "", "versions": []}`. Read `owner.email` rather than `owner["email"]`,
+  and `attachment.latest.file_name` rather than `attachment["versions"][-1]["fileName"]`.
+  `tool_result()` writes a file version as `{"number", "file_name", "uploaded", "creator"}`.
 - Reads, meaning GET requests, record queries, report runs, and formula runs, are now retried after a
   timeout, a dropped connection, or a 502, 503, or 504, as sending one again changes nothing. A write
   still isn't. Any request is also retried after httpx's `PoolTimeout`, as nothing was sent.

@@ -79,18 +79,18 @@ are whatever was uploaded. Treat both as untrusted, especially before opening or
 
 ## Listing versions
 
-Reading a file field in a query returns Quickbase's value unchanged, as a plain dictionary. `url` is an
-empty string, and `versions` an empty list, when the field has no file.
+Reading a file field in a query gives a `FileAttachment`, or None when the field has no file. Its
+`versions` are `FileVersion` objects, oldest first, and `latest` is the newest.
 
 ```python
-task = next(iter(tasks.query(where="{3.EX.7}", select=["Attachment"])))
+task = tasks.get(7, select=["Attachment"])
 
-for version in task["Attachment"]["versions"]:
-    print(version["versionNumber"], version["fileName"], version["uploaded"])
+for version in task["Attachment"].versions:
+    print(version.number, version.file_name, version.uploaded)
 ```
 
-Each version also names its uploader in `creator`, including their email address, so take care when
-logging these values or passing them on.
+Each version also names its uploader in `creator`, a `User` with their email address, so take care when
+logging these values or passing them on. A `User`'s `repr` leaves the email out.
 
 ## Deleting a version
 

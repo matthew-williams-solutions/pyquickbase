@@ -464,8 +464,10 @@ way whatever their field:
 - Every kind of empty value is null. Quickbase returns `""` for an empty text field, null for an empty
   number, and `{"url": "", "versions": []}` for an empty file, so a model would otherwise have to know each.
 - A `Decimal` is a number when that's exact, and text when a number would lose digits.
-- User and file values stay as Quickbase sends them, less what a client's
-  [read rules](#limiting-what-it-reads) leave out.
+- A user is `{"id", "name", "email"}`, with a null email when a client's
+  [read rules](#limiting-what-it-reads) leave it out. A file is
+  `{"url", "versions": [{"number", "file_name", "uploaded", "creator"}]}`, or with `compact`, the latest
+  file's name.
 
 ### Paging and long results
 

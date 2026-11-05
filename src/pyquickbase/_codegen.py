@@ -42,9 +42,9 @@ _READ_TYPES = {
     "timestamp": _DATETIME,
     "checkbox": "bool",
     "multitext": "list[str]",
-    "user": "dict[str, Any] | None",
-    "multiuser": "list[dict[str, Any]]",
-    "file": "dict[str, Any]",
+    "user": "User | None",
+    "multiuser": "list[User]",
+    "file": "FileAttachment | None",
     # Relative links, on every record, even with nothing to show. Only the UI can create these.
     "vCardButton": "str",
     "ICalendarButton": "str",
@@ -60,6 +60,8 @@ _WRITE_TYPES = {
     "checkbox": "bool | None",
     "multitext": "list[str] | None",
     "file": "FileUpload",
+    "user": "User | None",
+    "multiuser": "list[User] | None",
     # A record ID, or several separated by commas or semicolons. Quickbase stores it as written.
     "predecessor": "str | None",
 }
@@ -261,7 +263,17 @@ def render(
         *(["from decimal import Decimal as _Decimal"] if uses_decimal else []),
         "from typing import Any, ClassVar, Self",
         "",
-        "from pyquickbase import UNSET, Column, FileUpload, Row, TypedField, TypedRecord, Unset",
+        "from pyquickbase import (",
+        "    UNSET,",
+        "    Column,",
+        "    FileAttachment,",
+        "    FileUpload,",
+        "    Row,",
+        "    TypedField,",
+        "    TypedRecord,",
+        "    Unset,",
+        "    User,",
+        ")",
     ]
     for section in sections:
         lines += ["", "", *section]

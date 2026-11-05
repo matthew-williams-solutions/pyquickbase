@@ -8,7 +8,7 @@ with Quickbase(realm="demo", token="demo") as qb:
 
     billable = Counter()
     for entry in app.table("Time Entries").query(where=F("Billable") == True):
-        billable[entry["Person"]["name"]] += entry["Hours"]
+        billable[entry["Person"].name] += entry["Hours"]
     for name, hours in billable.most_common():
         print(f"{name}: {hours} billable hours")
 

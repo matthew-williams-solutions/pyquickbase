@@ -11,6 +11,7 @@ from pyquickbase import (
     InvalidValueError,
     RowError,
     UnknownFieldError,
+    User,
     WriteError,
     WriteResult,
 )
@@ -169,3 +170,10 @@ def test_a_row_with_no_values_is_refused(value: Any) -> None:
 
 def test_a_row_with_one_value_is_fine() -> None:
     refuse_blank_rows(build_rows([{"Title": "", "Due": date(2027, 1, 1)}, {"Title": "x"}], INDEX))
+
+
+def test_a_user_is_written_by_id() -> None:
+
+    me = User(id="1.a", name="A", email="a@example.com")
+    assert to_api_value(me) == {"id": "1.a"}
+    assert to_api_value([me, {"id": "2.b"}]) == [{"id": "1.a"}, {"id": "2.b"}]

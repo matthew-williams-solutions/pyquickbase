@@ -59,15 +59,15 @@ def test_field_types_read_back_as_documented(scratch: Any) -> None:
         assert type(read(table, record_id, label)) is type(expected), kind
         assert read(table, blank, label) == empty, kind
 
-    record_id = table.insert([{"V user": {"id": owner["id"]}}]).created_ids[0]
-    assert read(table, record_id, "V user")["id"] == owner["id"]
+    record_id = table.insert([{"V user": owner}]).created_ids[0]
+    assert read(table, record_id, "V user").id == owner.id
     assert read(table, blank, "V user") is None
-    record_id = table.insert([{"V multiuser": [{"id": owner["id"]}]}]).created_ids[0]
-    assert read(table, record_id, "V multiuser")[0]["id"] == owner["id"]
+    record_id = table.insert([{"V multiuser": [owner]}]).created_ids[0]
+    assert read(table, record_id, "V multiuser")[0].id == owner.id
     assert read(table, blank, "V multiuser") == []
     record_id = table.insert([{"V file": FileUpload("a.txt", b"hi")}]).created_ids[0]
-    assert read(table, record_id, "V file")["versions"][0]["fileName"] == "a.txt"
-    assert read(table, blank, "V file") == {"url": "", "versions": []}
+    assert read(table, record_id, "V file").latest.file_name == "a.txt"
+    assert read(table, blank, "V file") is None
 
 
 def test_a_datetime_field_reports_timestamp(scratch: Any) -> None:

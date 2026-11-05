@@ -22,6 +22,7 @@ from pyquickbase import (
     UnknownTableError,
     WriteAccess,
     WriteRules,
+    tool_result,
 )
 
 pytestmark = pytest.mark.anyio
@@ -96,13 +97,13 @@ async def test_values_leave_out_emails_and_uploaders(
         record = await tasks.get(1, select=["Title", "Record Owner", "Attachment"])
     assert record is not None
     owner = record["Record Owner"]
-    assert set(owner) == {"id", "name"}
+    assert owner.id
+    assert owner.email is None
     attachment = record["Attachment"]
-    assert attachment["versions"]
-    assert all(
-        set(item) <= {"versionNumber", "fileName", "uploaded"} for item in attachment["versions"]
-    )
-    assert "@" not in json.dumps(dict(record), default=str)
+    assert attachment.versions
+    assert all(item.creator is None for item in attachment.versions)
+    assert "@" not in repr(dict(record))
+    assert "@" not in json.dumps(tool_result([record]))
 
 
 async def test_user_emails_are_kept_when_asked(
@@ -112,7 +113,7 @@ async def test_user_emails_are_kept_when_asked(
         tasks = qb.app(scratch.app_id).table(table.info().id)
         record = await tasks.get(1, select=["Record Owner"])
     assert record is not None
-    assert "@" in record["Record Owner"]["email"]
+    assert "@" in (record["Record Owner"].email or "")
 
 
 async def test_default_queries_return_only_allowed_fields(

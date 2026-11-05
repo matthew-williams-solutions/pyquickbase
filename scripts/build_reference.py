@@ -362,9 +362,19 @@ SYMBOL_PAGES = (
         _SYMBOL_NOTE,
         *_setup(_TABLE_LINE),
         (
-            Group("Read results", "read-results", _READING, ("Record", "RecordIterator", "Page")),
+            Group(
+                "Read results",
+                "read-results",
+                _READING,
+                ("Record", "RecordIterator", "Page", "User"),
+            ),
             Group("Write results", "write-results", _WRITING, ("WriteResult", "RowError")),
-            Group("Files", "files", _FILES, ("FileUpload", "FileDownload")),
+            Group(
+                "Files",
+                "files",
+                _FILES,
+                ("FileUpload", "FileDownload", "FileAttachment", "FileVersion"),
+            ),
             Group("Formula results", "formula-results", _FORMULAS, ("FormulaResult",)),
             Group(
                 "Previews of writes",

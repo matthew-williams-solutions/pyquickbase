@@ -68,7 +68,7 @@ _RANGE_TYPES = _NUMERIC_TYPES | _DATE_TYPES | {"timeofday", "recordid"}
 _UNGROUPABLE_TYPES = frozenset({"multitext", "multiuser", "file"})
 # The types a generated class writes, and a file sent as text. A duration's unit for writing isn't
 # confirmed, so a model couldn't be told what number to send.
-_JSON_WRITE_TYPES = frozenset(_WRITE_TYPES) - {"duration"}
+_JSON_WRITE_TYPES = frozenset(_WRITE_TYPES) - {"duration", "user", "multiuser"}
 _TEXT_TYPES = frozenset(
     {
         "text",

@@ -14,4 +14,4 @@ with Quickbase(realm="demo", token="demo") as qb:
 
         blocked = (F("Related Project") == project.id) & (F("Status") == "Blocked")
         for task in tasks.query(where=blocked, select=["Title", "Assignee"]):
-            print(f"  Blocked: {task['Title']} ({task['Assignee']['name']})")
+            print(f"  Blocked: {task['Title']} ({task['Assignee'].name})")

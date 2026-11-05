@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 from urllib.parse import unquote
 
 from .errors import (
@@ -342,10 +342,126 @@ class FieldIndex:
         )
 
 
+@dataclass(frozen=True, slots=True, kw_only=True, repr=False)
+class User:
+    """A Quickbase user, as a `user` or `multiuser` field holds one.
+
+    `repr` leaves out the email address, because reprs end up in logs. Pass a `User` as a value to
+    write it to a user field, or to compare with one in `F`.
+
+    Attributes:
+        id: The user's ID.
+        name: The user's name, as Quickbase shows it.
+        email: The user's email address, or None if the client's `ReadRules` leave it out.
+        user_name: The user's Quickbase user name, if Quickbase sent one.
+    """
+
+    id: str
+    name: str
+    email: str | None = None
+    user_name: str | None = None
+
+    def __repr__(self) -> str:
+        return f"User(id={self.id!r}, name={self.name!r})"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FileVersion:
+    """One version of a file in a file attachment field.
+
+    Attributes:
+        number: The version's number, starting at 1. Numbers aren't reused after a delete.
+        file_name: The file's name. Quickbase stores names as sent, such as `../../x`, so don't use
+            this as a path without cleaning it.
+        uploaded: When it was uploaded, or None if Quickbase didn't say.
+        creator: Who uploaded it, or None if the client's `ReadRules` leave it out.
+    """
+
+    number: int
+    file_name: str
+    uploaded: datetime | None
+    creator: User | None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FileAttachment:
+    """A file attachment field's value, which holds each version Quickbase keeps.
+
+    An empty field reads as None, so a `FileAttachment` always has at least one version. Download
+    the contents with `table.download_file()`.
+
+    Attributes:
+        url: The file's path in Quickbase, relative to the realm.
+        versions: Each version Quickbase keeps, oldest first.
+    """
+
+    url: str
+    versions: tuple[FileVersion, ...]
+
+    @property
+    def latest(self) -> FileVersion:
+        """The newest version."""
+        return max(self.versions, key=lambda version: version.number)
+
+
+def user_from_api(data: Mapping[str, Any]) -> User:
+    return User(
+        id=str(data["id"]),
+        name=data.get("name") or "",
+        email=data.get("email") or None,
+        user_name=data.get("userName") or None,
+    )
+
+
+def _uploaded(value: Any) -> datetime | None:
+    try:
+        return datetime.fromisoformat(value) if isinstance(value, str) and value else None
+    except ValueError:
+        return None
+
+
+def _creator(value: Any) -> User | None:
+    """Who uploaded a version. A version is still readable without one."""
+    if isinstance(value, Mapping) and "id" in value:
+        return user_from_api(cast(Mapping[str, Any], value))
+    return None
+
+
+def file_from_api(data: Mapping[str, Any]) -> FileAttachment | None:
+    versions = tuple(
+        FileVersion(
+            number=int(item["versionNumber"]),
+            file_name=item.get("fileName") or "",
+            uploaded=_uploaded(item.get("uploaded")),
+            creator=_creator(item.get("creator")),
+        )
+        for item in data.get("versions") or ()
+    )
+    return FileAttachment(url=data.get("url") or "", versions=versions) if versions else None
+
+
+def _convert_users(value: Any, field_type: str) -> Any:
+    if field_type == "user" and isinstance(value, Mapping):
+        return user_from_api(cast(Mapping[str, Any], value))
+    if field_type == "multiuser" and isinstance(value, list):
+        items = cast(list[Any], value)
+        if all(isinstance(item, Mapping) for item in items):
+            return [user_from_api(item) for item in items]
+    return cast(Any, value)
+
+
 def _convert(value: Any, field_type: str) -> Any:
-    """Turn dates and timestamps into Python objects, leaving anything unexpected unchanged."""
+    """Turn dates, timestamps, users, and files into Python objects, leaving anything unexpected
+    unchanged."""
     if value == "" and field_type in ("date", "timestamp"):
         return None  # how Quickbase returns an empty date
+    try:
+        if field_type in ("user", "multiuser"):
+            return _convert_users(value, field_type)
+        if field_type == "file" and isinstance(value, Mapping):
+            return file_from_api(cast(Mapping[str, Any], value))
+    except (KeyError, TypeError, ValueError):
+        return cast(Any, value)
     if isinstance(value, str):
         try:
             if field_type == "date":
@@ -361,7 +477,9 @@ class Record(Mapping[str | int, Any]):
     """One record. Read values by field label or ID: `record["Status"]` or `record[7]`.
 
     Iterating yields labels, so `dict(record)` gives `{label: value}`. Date fields are `date`
-    objects and timestamp fields are timezone-aware `datetime` objects, or None when empty.
+    objects and timestamp fields are timezone-aware `datetime` objects, or None when empty. A user
+    field holds a `User`, a `multiuser` field a list of them, and a file field a `FileAttachment`,
+    or None when empty.
     """
 
     __slots__ = ("_labels", "_values")

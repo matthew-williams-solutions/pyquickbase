@@ -11,7 +11,7 @@ from datetime import UTC, date, datetime, tzinfo
 from decimal import Decimal
 from typing import Any, Literal, get_args
 
-from ._models import Field, FieldIndex, Record
+from ._models import Field, FieldIndex, Record, User
 from ._query import F, FieldRef, FieldRefs, _as_list, _named  # pyright: ignore[reportPrivateUsage]
 from .errors import InvalidResponseError, QueryError
 
@@ -223,10 +223,8 @@ class Summary:
             if isinstance(value, date):
                 return _period_label(value, period.unit)
             raise _unexpected(item)
-        if item.type == "user" and isinstance(value, Mapping):
-            found = value.get("email") or value.get("id")  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-            if isinstance(found, str):
-                return found
+        if isinstance(value, User):
+            return value.email or value.id
         if isinstance(value, list | dict):
             raise _unexpected(item)
         return value  # pyright: ignore[reportUnknownVariableType]

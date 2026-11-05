@@ -16,7 +16,18 @@ from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Any, Literal, cast
 
-from ._models import Field, FileDownload, FormulaResult, Page, Record, ReportInfo, TableInfo
+from ._models import (
+    Field,
+    FileAttachment,
+    FileDownload,
+    FileVersion,
+    FormulaResult,
+    Page,
+    Record,
+    ReportInfo,
+    TableInfo,
+    User,
+)
 from ._preview import UpdatePreview
 from ._summary import SummaryRow
 from ._typed import TypedPage, TypedRecord
@@ -280,10 +291,33 @@ def _file(value: Mapping[str, Any], state: _State) -> Any:
     return {"url": value.get("url"), "versions": [_value(item, state) for item in versions]}
 
 
+def _user(value: User, state: _State) -> dict[str, Any]:
+    return {"id": value.id, "name": _text(value.name, state), "email": value.email}
+
+
+def _version(value: FileVersion, state: _State) -> dict[str, Any]:
+    return {
+        "number": value.number,
+        "file_name": _text(value.file_name, state),
+        "uploaded": _value(value.uploaded, state),
+        "creator": None if value.creator is None else _user(value.creator, state),
+    }
+
+
+def _attachment(value: FileAttachment, state: _State) -> Any:
+    if state.compact:
+        return _text(value.latest.file_name, state)
+    return {"url": value.url, "versions": [_version(item, state) for item in value.versions]}
+
+
 def _value(value: Any, state: _State) -> Any:
     """Write one value the same way everywhere. Every kind of empty value becomes None."""
     if value is None or isinstance(value, bool | int):
         return value
+    if isinstance(value, User):
+        return _user(value, state)
+    if isinstance(value, FileAttachment):
+        return _attachment(value, state)
     if isinstance(value, float):
         return value if math.isfinite(value) else None
     if isinstance(value, str):
