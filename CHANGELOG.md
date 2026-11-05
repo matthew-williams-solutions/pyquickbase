@@ -6,72 +6,110 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0rc8] - 2026-11-05
+
+This candidate holds the fixes from a review before 1.0. Most important, it closes gaps in what a model's
+tools could do: an operation's `scope` limited what a write filtered but not what it wrote, and the
+`delete` operation had no limit. It also reads user and file values as dataclasses, adds `select` to
+typed tables, retries reads after more kinds of failure, and fills in what the API was missing, such as
+`COUNT` summaries, duration writes, and field settings. Each was checked against the live API.
+
+**Upgrading.** These changes can break working code:
+
+- **User and file values are dataclasses, not dictionaries.** Read `owner.email` rather than
+  `owner["email"]`, and `attachment.latest.file_name` rather than
+  `attachment["versions"][-1]["fileName"]`. An empty file field is None, where it was
+  `{"url": "", "versions": []}`.
+- **A `duration` field takes whole milliseconds or a `timedelta`.** A fraction, such as `1.5`, or text,
+  such as `"1:30:00"`, raises `InvalidValueError`.
+- **An operation's write can't set a field its scope uses**, and `insert` needs a scope of `==`
+  conditions joined with `&`.
+- **httpx 0.28 or later is required.**
+
+### Security
+
+- An operation's `scope` now holds for what a write sets, not only for what it filters. Before, a model
+  with an `insert` tool scoped to one project could create records in another, and an `update` tool could
+  move a record out of its scope. `insert`, `update`, and `preview_update` now refuse a row that sets a
+  field the scope uses, and `insert` fills those fields in from the scope. It refuses to run when the
+  scope isn't only `==` conditions joined with `&`, as a new record couldn't be made to match it.
+- The `delete` operation counts what its filter matches first, and refuses the call, deleting nothing,
+  when that's more than `max_records`, 100 by default. Before, one call could delete every record in its
+  scope. The tool's schema tells the model the limit.
+
 ### Added
 
-- `help_text`, `bold`, `no_wrap`, `find_enabled`, and `appears_by_default` on `create_field()`,
-  `update_field()`, and `ensure_field()`, and `add_to_forms` on `create_field()`, for the settings
-  Quickbase takes beside `properties`. `Field.help_text` reads a field's help, and `ReadRules` keep it.
-- `ensure_count_field()`, which counts a child table's records on the parent. `COUNT` takes no field,
-  so `ensure_summary_field()` now raises `InvalidValueError` for it, where Quickbase refused every field.
-- Operations can write `duration` fields, as whole milliseconds. Table writes and generated classes also
-  take a `timedelta` for one.
-- `User`, `FileAttachment`, and `FileVersion`, frozen dataclasses that user, `multiuser`, and file
-  fields now read as, in records and generated classes. A `User`'s `repr` leaves out the email address.
-  Write a `User` to a user field, or compare one in `F`.
+Typed tables and values:
+
+- `User`, `FileAttachment`, and `FileVersion`, the frozen dataclasses that user, `multiuser`, and file
+  fields read as, in records and generated classes. A `User`'s `repr` leaves out the email address, and a
+  `User` can be written to a user field or compared in `F`.
 - `select` on a typed table's `query()`, `query_page()`, `first()`, and `get()`, which reads only the
   fields of the class you list. The other attributes are left unset, so reading one raises
   `AttributeError` saying it wasn't selected. `Select` is its type.
-- `timeout` on `insert()`, `update()`, `upsert()`, and `download_file()`, and on a typed table's
-  writes, which replaces the client's timeout for that call, such as for a large file. It applies with
-  your own `http_client` too.
-- Generated classes type `vCardButton` and `ICalendarButton` fields as read-only `str`, and
-  `predecessor` fields as a writable `str`, rather than `Any`. Run `pyquickbase codegen` again to get
-  them. Operations can write a `predecessor` field as text.
-- `WriteResult.row_ids`, which gives each row of an `insert()` its new Record ID#, in the order of
-  your rows, with None for a row that failed. `created_ids` leaves failed rows out, so it only lines up
-  with your rows when none failed.
+- Generated classes type `vCardButton` and `ICalendarButton` fields as read-only `str`, and `predecessor`
+  fields as a writable `str`, rather than `Any`. Run `pyquickbase codegen` again to get them.
+
+Writing:
+
+- `WriteResult.row_ids`, which gives each row of an `insert()` its new Record ID#, in the order of your
+  rows, with None for a row that failed. `created_ids` leaves failed rows out, so it only lines up with
+  your rows when none failed.
+- Operations can write `duration` fields, as whole milliseconds, and `predecessor` fields, as text.
+  Table writes and generated classes also take a `timedelta` for a duration.
+- `timeout` on `insert()`, `update()`, `upsert()`, and `download_file()`, and on a typed table's writes,
+  which replaces the client's timeout for that call, such as for a large file. It applies with your own
+  `http_client` too.
+
+Schema:
+
+- `ensure_count_field()`, which counts a child table's records on the parent, and counts 0 for a parent
+  with none. `COUNT` takes no field, so `ensure_summary_field()` now raises `InvalidValueError` for it,
+  where Quickbase refused every field it was sent.
+- `help_text`, `bold`, `no_wrap`, `find_enabled`, and `appears_by_default` on `create_field()`,
+  `update_field()`, and `ensure_field()`, and `add_to_forms` on `create_field()`, for the settings
+  Quickbase takes beside `properties`. `Field.help_text` reads a field's help, and `ReadRules` keep it.
 
 ### Changed
 
-- **Breaking:** a `duration` field takes whole milliseconds or a `timedelta`, and anything else, such as
-  `1.5` or `"1:30:00"`, raises `InvalidValueError`. Quickbase drops a fraction of a millisecond without
-  saying so, and guesses at text.
-- **Breaking:** user and file values are no longer dictionaries. A user field reads as a `User`, a
-  `multiuser` field as a list of them, and a file field as a `FileAttachment`, or None when empty,
-  where it used to be `{"url": "", "versions": []}`. Read `owner.email` rather than `owner["email"]`,
-  and `attachment.latest.file_name` rather than `attachment["versions"][-1]["fileName"]`.
-  `tool_result()` writes a file version as `{"number", "file_name", "uploaded", "creator"}`.
-- Reads, meaning GET requests, record queries, report runs, and formula runs, are now retried after a
+- **Breaking:** user and file values are no longer dictionaries, as described under Upgrading.
+  `tool_result()` writes a user as `{"id", "name", "email"}`, and a file version as
+  `{"number", "file_name", "uploaded", "creator"}`.
+- **Breaking:** a `duration` field refuses fractions and text, because Quickbase drops a fraction of a
+  millisecond without saying so, and guesses at text.
+- **Breaking:** pyquickbase needs httpx 0.28 or later, whose request bodies it measures to keep each
+  batch under Quickbase's 40 MiB limit. httpx 0.27 sent larger bodies than were measured.
+- Reads, meaning GET requests, record queries, report runs, and formula runs, are retried after a
   timeout, a dropped connection, or a 502, 503, or 504, as sending one again changes nothing. A write
   still isn't. Any request is also retried after httpx's `PoolTimeout`, as nothing was sent.
-- pyquickbase now needs httpx 0.28 or later, whose request bodies the SDK measures to keep each
-  batch under Quickbase's 40 MiB limit.
-- An operation's `scope` now holds for what a write sets, not only for what it filters. `insert`,
-  `update`, and `preview_update` refuse a row that sets a field the scope uses, which could move a
-  record out of it. `insert` fills those fields in from the scope, and refuses to run when the scope
-  isn't only `==` conditions joined with `&`, as a new record couldn't be made to match it.
-- The `delete` operation counts what its filter matches first, and refuses the call, deleting nothing,
-  when that's more than `max_records`, 100 by default.
-- The `preview_update` operation offers only fields the client may both read and change, so it no
-  longer offers a write-only field that every call would be refused for.
+- The `preview_update` operation offers only fields the client may both read and change, so it no longer
+  offers a write-only field that every call would be refused for.
 
 ### Fixed
 
-- `UnknownReportError` says the report may be hidden from the token's role, as Quickbase hides one whose
-  filter or sort uses a field the role can't see. Running such a report by ID through `qb.request()`
-  gives `Internal error`, and that error now says why.
 - `summarize()` on a client with `ReadRules` raises `ReadRefusedError` if more records match while it
   reads than `max_summary_records`, rather than returning a summary of only some of them.
 - `tool_error()` reports `changed: "some"` when a failed call still changed something: when
-  `delete_fields()` deleted some of the fields, and when `create_field()` created the field but
-  couldn't set `required` or `unique`. That error's message now says the field was created.
-- `insert()`, `update()`, and `upsert()` raise `InvalidValueError` for a NaN or infinite number,
-  rather than a `ValueError` from httpx.
+  `delete_fields()` deleted some of the fields, and when `create_field()` created the field but couldn't
+  set `required` or `unique`. That error's message now says the field was created.
+- `insert()`, `update()`, and `upsert()` raise `InvalidValueError` for a NaN or infinite number, rather
+  than a `ValueError` from httpx.
 - `Decimal` values, in writes and queries, and `float` values in queries, are written without an
-  exponent, so `Decimal("1E+3")` is sent as `1000`. A NaN, infinite, or enormous number in a query
-  raises `QueryError`.
-- `preview_update()` reads in batches no larger than the client's `ReadRules` `max_records`, so a
-  preview of more records than that is no longer refused.
+  exponent, so `Decimal("1E+3")` is sent as `1000`. A NaN, infinite, or enormous number in a query raises
+  `QueryError`.
+- `preview_update()` reads in batches no larger than the client's `ReadRules` `max_records`, so a preview
+  of more records than that is no longer refused.
+- `UnknownReportError` says the report may be hidden from the token's role, as Quickbase hides one whose
+  filter or sort uses a field the role can't see. Running such a report by ID through `qb.request()`
+  gives `Internal error`, and that error now says why.
+
+### Documentation
+
+- The guides to errors, files, and formulas are rewritten by task, and the codegen and clients guides
+  gain complete first examples. Each ends with a table of what each refusal raises and leaves behind.
+- The playground simulates updates, deletes, and queries on user fields, with two new examples, and each
+  guide section links to the example that shows it.
+- The API notes record how Quickbase writes durations, counts child records, and takes field settings.
 
 ## [1.0.0rc7] - 2026-11-05
 
