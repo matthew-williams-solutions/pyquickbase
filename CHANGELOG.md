@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0rc6] - 2026-11-05
+
+This candidate adds what an AI agent or MCP server needs to use Quickbase safely: filters from plain
+data, limits on what a client can write, previews of writes, and summaries. It has one breaking change,
+to `insert()`, so check the list under Changed before upgrading.
+
 ### Added
 
 - `where_from_dict()`, which builds a query condition from plain data, such as the JSON from an AI
