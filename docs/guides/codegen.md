@@ -53,7 +53,8 @@ be sensitive.
 | Text types, `email`, `url`, `phone`, `address`, and `timeofday` | `str`, which is `""` when empty |
 | `currency` | `Decimal \| None` |
 | Foreign keys, and `numeric` fields set to 0 decimal places | `int \| None` |
-| Other `numeric` fields, `rating`, `percent`, and `duration` (in milliseconds) | `float \| None` |
+| Other `numeric` fields, `rating`, and `percent` | `float \| None` |
+| `duration` | `float \| None`, in milliseconds. Write it as a `timedelta` or whole milliseconds |
 | `date` | `date \| None` |
 | `timestamp` | `datetime \| None` |
 | `checkbox` | `bool`, which is false when empty |

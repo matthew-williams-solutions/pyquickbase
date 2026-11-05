@@ -8,6 +8,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Operations can write `duration` fields, as whole milliseconds. Table writes and generated classes also
+  take a `timedelta` for one.
 - `User`, `FileAttachment`, and `FileVersion`, frozen dataclasses that user, `multiuser`, and file
   fields now read as, in records and generated classes. A `User`'s `repr` leaves out the email address.
   Write a `User` to a user field, or compare one in `F`.
@@ -26,6 +28,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Breaking:** a `duration` field takes whole milliseconds or a `timedelta`, and anything else, such as
+  `1.5` or `"1:30:00"`, raises `InvalidValueError`. Quickbase drops a fraction of a millisecond without
+  saying so, and guesses at text.
 - **Breaking:** user and file values are no longer dictionaries. A user field reads as a `User`, a
   `multiuser` field as a list of them, and a file field as a `FileAttachment`, or None when empty,
   where it used to be `{"url": "", "versions": []}`. Read `owner.email` rather than `owner["email"]`,

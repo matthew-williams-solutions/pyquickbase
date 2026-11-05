@@ -177,3 +177,27 @@ def test_a_user_is_written_by_id() -> None:
     me = User(id="1.a", name="A", email="a@example.com")
     assert to_api_value(me) == {"id": "1.a"}
     assert to_api_value([me, {"id": "2.b"}]) == [{"id": "1.a"}, {"id": "2.b"}]
+
+
+DURATIONS = FieldIndex([field_from_api({"id": 6, "label": "Spent", "fieldType": "duration"})])
+
+
+@pytest.mark.parametrize(
+    ("value", "sent"),
+    [
+        (90000, 90000),
+        (3600000.0, 3600000),
+        (timedelta(hours=1, milliseconds=5), 3600005),
+        (None, ""),
+    ],
+)
+def test_a_duration_is_written_as_whole_milliseconds(value: Any, sent: Any) -> None:
+    assert build_rows([{"Spent": value}], DURATIONS) == [{"6": {"value": sent}}]
+
+
+@pytest.mark.parametrize(
+    "value", [1.5, timedelta(microseconds=1500), "1:30:00", True, float("inf")]
+)
+def test_a_duration_that_would_lose_a_fraction_or_be_guessed_is_refused(value: Any) -> None:
+    with pytest.raises(InvalidValueError, match="'Spent' is a duration"):
+        build_rows([{"Spent": value}], DURATIONS)

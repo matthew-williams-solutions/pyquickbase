@@ -66,9 +66,9 @@ _NUMERIC_TYPES = frozenset({"numeric", "currency", "percent", "rating", "duratio
 _DATE_TYPES = frozenset({"date", "timestamp"})
 _RANGE_TYPES = _NUMERIC_TYPES | _DATE_TYPES | {"timeofday", "recordid"}
 _UNGROUPABLE_TYPES = frozenset({"multitext", "multiuser", "file"})
-# The types a generated class writes, and a file sent as text. A duration's unit for writing isn't
-# confirmed, so a model couldn't be told what number to send.
-_JSON_WRITE_TYPES = frozenset(_WRITE_TYPES) - {"duration", "user", "multiuser"}
+# The types a generated class writes, and a file sent as text, but not users, as a model can't be
+# offered them as choices.
+_JSON_WRITE_TYPES = frozenset(_WRITE_TYPES) - {"user", "multiuser"}
 _TEXT_TYPES = frozenset(
     {
         "text",
@@ -197,6 +197,13 @@ class _Converter:
             if _closed_choices(item) and value not in item.choices:
                 raise InvalidValueError(f"{path} must be one of the field's choices.")
             return value
+        if kind == "duration":
+            whole = isinstance(value, int) or (isinstance(value, float) and value.is_integer())
+            if isinstance(value, bool) or not whole:
+                raise InvalidValueError(
+                    f"{path} must be whole milliseconds, such as 3600000 for an hour."
+                )
+            return int(value)
         if kind in _NUMERIC_TYPES:
             if isinstance(value, bool) or not isinstance(value, int | float):
                 raise InvalidValueError(f"{path} must be a number.")
@@ -257,6 +264,11 @@ def _value_schema(item: Field, description: str | None) -> dict[str, Any]:
         schema = {"type": ["string", "null"]}
         if _closed_choices(item):
             schema = {"enum": [*item.choices, None]}
+    elif kind == "duration":
+        schema = {
+            "type": ["integer", "null"],
+            "description": "A length of time in whole milliseconds, so an hour is 3600000.",
+        }
     elif kind in _NUMERIC_TYPES:
         schema = {"type": ["number", "null"]}
     elif kind == "checkbox":

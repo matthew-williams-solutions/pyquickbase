@@ -13,11 +13,6 @@ to keep are explained in the guides, not here.
     the exact version. If the pins go too, update `test_install_pins_match_the_version`.
   - If codegen's output has changed, refresh `tests/fixtures/generated_tables.py` one last time.
 
-## Agent features
-
-- Confirm what unit Quickbase takes when writing a `duration` field, then let operations write them.
-  Reading one returns milliseconds, and operations leave them out of `records` until then.
-
 ## After 1.0
 
 Nothing here should break anyone.

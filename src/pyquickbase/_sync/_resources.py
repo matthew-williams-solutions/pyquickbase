@@ -220,7 +220,8 @@ class App:
             A `Table` for the existing or new table.
 
         Raises:
-            AuthenticationError: Quickbase doesn't recognize the app ID, or the token can't reach it.
+            AuthenticationError: Quickbase doesn't recognize the app ID, or the token can't reach
+                it.
             BadRequestError: Quickbase refused to create the table.
             WriteRefusedError: The client's limits on writes don't allow creating a table. Nothing
                 was created.

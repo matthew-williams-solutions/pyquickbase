@@ -54,7 +54,9 @@ _READ_TYPES = {
 _WRITE_TYPES = {
     **dict.fromkeys(("text", "text-multiple-choice", "text-multi-line", "rich-text"), "str | None"),
     **dict.fromkeys(("email", "url", "phone", "timeofday"), "str | None"),
-    **dict.fromkeys(("numeric", "currency", "rating", "percent", "duration"), _NUMBER),
+    **dict.fromkeys(("numeric", "currency", "rating", "percent"), _NUMBER),
+    # Whole milliseconds, or a timedelta, as Quickbase drops a fraction of a millisecond.
+    "duration": "_dt.timedelta | int | None",
     "date": _DATE,
     "timestamp": _DATETIME,
     "checkbox": "bool | None",

@@ -34,7 +34,7 @@ tasks.create_field("Priority", "text-multiple-choice", choices=["Low", "High"])
 | `currency` | An amount of money | `float` or `int` | `float` | `None` | Yes |
 | `percent` | A percentage: write `0.5` and it reads as `0.5` | `float` or `int` | `float` | `None` | Yes |
 | `rating` | A rating | `float` or `int` | `float` | `None` | Yes |
-| `duration` | A length of time, in milliseconds | `int` | `int` | `None` | Yes |
+| `duration` | A length of time, in milliseconds | Whole milliseconds as an `int`, or a `timedelta`. A fraction raises `InvalidValueError`, as Quickbase would drop it | `int` | `None` | Yes |
 
 [Generated classes](guides/codegen.md) read these more strictly, such as `currency` as `Decimal`.
 

@@ -353,6 +353,28 @@ def test_insert_writes_a_predecessor_as_text_and_never_offers_a_link() -> None:
     assert rows[0]["Depends On"] == "1;2"
 
 
+def test_insert_writes_a_duration_as_whole_milliseconds() -> None:
+    fields = [*FIELDS, field_from_api({"id": 18, "label": "Spent", "fieldType": "duration"})]
+    options: dict[str, Any] = {
+        "table_id": TASKS,
+        "key_field_id": 3,
+        "read_rules": (),
+        "write_rules": (),
+        "read_only": False,
+        "wanted": None,
+        "wanted_reports": None,
+    }
+    insert = spec("insert", allowed_for(fields, REPORTS, **options))
+    record = insert.schema["properties"]["records"]["items"]["properties"]
+    assert record["Spent"]["type"] == ["integer", "null"]
+    assert "3600000" in record["Spent"]["description"]
+    rows = insert.plan({"records": [{"Title": "a", "Spent": 3600000.0}]}, None).arguments["rows"]
+    assert rows[0]["Spent"] == 3600000
+    for bad in (1.5, "1:30:00", True):
+        with pytest.raises(InvalidValueError, match="whole milliseconds"):
+            insert.plan({"records": [{"Title": "a", "Spent": bad}]}, None)
+
+
 def test_insert_schema_requires_required_fields() -> None:
     record = spec("insert").schema["properties"]["records"]["items"]
     assert record["required"] == ["Title"]

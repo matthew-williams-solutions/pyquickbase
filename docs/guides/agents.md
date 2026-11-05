@@ -320,7 +320,7 @@ The schema lists only what the client may do, so a model isn't offered a field t
 | `select`, `group_by`, totals | Fields it may return | `ReadRules` `fields` |
 | `order_by` | Fields it may sort by | `ReadRules` `sort` |
 | `limit` | Up to `max_records`, 100 by default | `ReadRules` `max_records`, if lower |
-| `records` | Fields the SDK can write, other than formula, lookup, summary, built-in, user, and duration fields | `WriteRules` `insert` or `update` |
+| `records` | Fields the SDK can write, other than formula, lookup, summary, built-in, and user fields | `WriteRules` `insert` or `update` |
 | `report` | Table reports, or summary and chart reports, that can run through the API | `ReadRules` `reports` or `summary_reports`, and `reports=` |
 | `field`, for files | File fields | `ReadRules` `files`, or `WriteRules` `delete_files` |
 
@@ -337,6 +337,7 @@ they can't be asked about a field without a request, so one may refuse more than
 |---|---|
 | Text, email, URL, phone, predecessor | Text. A multiple-choice field that doesn't allow new choices offers only its choices |
 | Number, currency, percent, rating | A number |
+| Duration | Whole milliseconds, so an hour is `3600000`. A fraction is refused, as Quickbase would drop it |
 | Checkbox | `true` or `false` |
 | Date | `YYYY-MM-DD`, so `today` is refused |
 | Timestamp | ISO 8601 with a time zone, like `2026-12-01T09:30:00Z` |

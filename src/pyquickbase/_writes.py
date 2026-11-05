@@ -10,7 +10,7 @@ import math
 import re
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Literal
 from unicodedata import category
@@ -147,6 +147,26 @@ def to_api_value(value: Any) -> Any:
     raise InvalidValueError(f"Can't write a value of type {type(value).__name__}.")
 
 
+def duration_value(value: Any, label: str) -> int | str:
+    """Milliseconds as a whole number, which Quickbase takes, as it drops a fraction silently."""
+    if value is None:
+        return ""
+    if isinstance(value, timedelta):
+        milliseconds = value / timedelta(milliseconds=1)
+    elif isinstance(value, int | float) and not isinstance(value, bool):
+        milliseconds = value
+    else:
+        raise InvalidValueError(
+            f"Field {label!r} is a duration. Write a timedelta, or whole milliseconds as an int."
+        )
+    if not math.isfinite(milliseconds) or milliseconds != int(milliseconds):
+        raise InvalidValueError(
+            f"Field {label!r} is a duration in whole milliseconds, and Quickbase would drop the "
+            "fraction without saying so."
+        )
+    return int(milliseconds)
+
+
 def _cell_value(item: Field, value: Any, row: int) -> Any:
     """Check file values here, since Quickbase accepts the mistakes and silently loses the file."""
     if item.type == FILE_FIELD_TYPE:
@@ -158,6 +178,8 @@ def _cell_value(item: Field, value: Any, row: int) -> Any:
         )
     if isinstance(value, FileUpload):
         raise InvalidValueError(f"Row {row} sends a file to {item.label!r}, not a file field.")
+    if item.type == "duration":
+        return duration_value(value, item.label)
     return to_api_value(value)
 
 
