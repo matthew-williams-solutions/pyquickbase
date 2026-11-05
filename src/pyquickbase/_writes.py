@@ -15,7 +15,13 @@ from typing import Any, Literal
 from unicodedata import category
 
 from ._models import Field, FieldIndex
-from .errors import InvalidValueError, PermissionDeniedError, WriteError, WritePermissionError
+from .errors import (
+    InvalidValueError,
+    PermissionDeniedError,
+    UnknownFieldError,
+    WriteError,
+    WritePermissionError,
+)
 
 RowInput = Mapping[str | int, Any]
 FILE_FIELD_TYPE = "file"
@@ -151,6 +157,19 @@ def build_rows(rows: Iterable[RowInput], fields: FieldIndex) -> list[dict[str, d
             cells[key] = {"value": _cell_value(item, value, index)}
         built.append(cells)
     return built
+
+
+def custom_key_refusal(fields: FieldIndex, key_field_id: int) -> InvalidValueError:
+    """The error for insert() on a table where a row can change a record instead of creating one."""
+    try:
+        name = repr(fields.resolve(key_field_id).label)
+    except UnknownFieldError:
+        name = f"with ID {key_field_id}"
+    return InvalidValueError(
+        f"This table's key field is {name}, not Record ID#, so Quickbase would change a record "
+        f"with the same key instead of creating one. Use upsert() with merge_on={key_field_id}, "
+        "which does that on purpose."
+    )
 
 
 def require_field(rows: Sequence[Mapping[str, Any]], field_id: int, purpose: str) -> None:

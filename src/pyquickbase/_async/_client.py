@@ -19,6 +19,7 @@ from .._config import (
     validate_base_url,
     validate_token,
 )
+from .._policy import WritePolicy, validate_write_policy
 from .._retry import RetryPolicy
 from .._schema import SchemaCache
 from ..errors import ConfigurationError
@@ -48,6 +49,10 @@ class AsyncQuickbase:
             records.
         allowed_writes: Like `read_only`, but also allow these `(method, path)` pairs, such as
             `{("POST", "/records")}`. Paths must match exactly.
+        write_policy: A function that decides on each write, usually `TableRules`, for limits by
+            table, action, and field. It takes a `WriteRequest`, and only a return value of `True`
+            lets the write through. Otherwise, it raises `ReadOnlyError` and isn't sent. Reads
+            aren't affected. Use it with `allowed_writes` to require both.
     """
 
     def __init__(
@@ -63,6 +68,7 @@ class AsyncQuickbase:
         schema_ttl: float = DEFAULT_SCHEMA_TTL,
         read_only: bool = False,
         allowed_writes: Collection[tuple[str, str]] | None = None,
+        write_policy: WritePolicy | None = None,
     ) -> None:
         self._realm = normalize_realm(realm)
         self._transport = AsyncTransport(
@@ -74,6 +80,7 @@ class AsyncQuickbase:
             user_agent=build_user_agent(user_agent),
             http_client=http_client,
             allowed_writes=normalize_allowed_writes(read_only, allowed_writes),
+            write_policy=validate_write_policy(write_policy, read_only=read_only),
         )
         self._schema = SchemaCache(schema_ttl)
 
@@ -89,6 +96,7 @@ class AsyncQuickbase:
         schema_ttl: float = DEFAULT_SCHEMA_TTL,
         read_only: bool = False,
         allowed_writes: Collection[tuple[str, str]] | None = None,
+        write_policy: WritePolicy | None = None,
         token_env: str = ENV_TOKEN,
     ) -> Self:
         """Create a client from the `QB_REALM` and `QB_USER_TOKEN` environment variables.
@@ -107,6 +115,7 @@ class AsyncQuickbase:
             schema_ttl=schema_ttl,
             read_only=read_only,
             allowed_writes=allowed_writes,
+            write_policy=write_policy,
         )
 
     @property

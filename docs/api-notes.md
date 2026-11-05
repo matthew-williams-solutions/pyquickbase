@@ -95,6 +95,15 @@ Tested on 2026-11-02 against temporary tables in a sandbox app.
 | `{"value": ""}` | Clears text, date, timestamp, numeric, choice, and checkbox fields |
 | Row with an existing Record ID# | Updates it, or reports it in `unchangedRecordIds` if nothing changed |
 | Row with a missing Record ID#, with or without `mergeFieldId` | Row error, and no record is created |
+| Row with an existing Record ID#, without `mergeFieldId` | Updates it, as it does with `mergeFieldId: 3`. Live API, 2026-11-05 |
+| `mergeFieldId` of `"3"` or `3.0` | Accepted, as field 3. Live API, 2026-11-05 |
+| A row's field key with padding, such as `"07"`, `" 7"`, or `"7 "` | **Accepted as field 7, and the value is written.** So check field IDs only in their usual form. Live API, 2026-11-05 |
+| `keyFieldId` in `POST /tables/{id}` | 200, and **ignored**, so the key field stays 3. A table's key field can't be changed through the API. In the UI, select the field on the table's fields page and click **Set key**. Live API, 2026-11-05 |
+| Custom key field: a row with an existing key value, without `mergeFieldId` | **Updates that record, and creates nothing.** A batch can do both, leaving `createdRecordIds` shorter than the rows. So `insert()` refuses these tables. Live API, 2026-11-05 |
+| Custom key field: a row with a new key value, without `mergeFieldId` | Creates a record. Live API, 2026-11-05 |
+| Custom key field: a row without the key field, without `mergeFieldId` | Row error, `Missing value for required field`, though it wasn't set as required. Live API, 2026-11-05 |
+| Custom key field: a row with a Record ID#, without `mergeFieldId` | **500**, `You cannot include the record ID if it is not the key field`. Live API, 2026-11-05 |
+| Custom key field: a row with a Record ID# and `mergeFieldId: 3` | Updates that record, and a Record ID# that doesn't exist is a row error, as on any table. Live API, 2026-11-05 |
 | `mergeFieldId` on a unique field, value doesn't match | **Creates a record** |
 | `mergeFieldId` on a non-unique field, or a row without the merge field | 400 for the whole request |
 | Unknown field, formula field, built-in field | Row error |

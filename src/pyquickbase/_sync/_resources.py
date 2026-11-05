@@ -51,6 +51,7 @@ from .._writes import (
     RowInput,
     WriteResult,
     build_rows,
+    custom_key_refusal,
     field_properties,
     merge_write_result,
     refuse_blank_rows,
@@ -520,14 +521,17 @@ class Table:
     def _write(
         self, rows: list[dict[str, Any]], merge_field_id: int | None, batch_size: int
     ) -> WriteResult:
-        table_id = (self.info()).id
+        info = self.info()
+        table_id = info.id
         result = WriteResult()
         for start, end in split_batches(rows, batch_size):
             body: dict[str, Any] = {"to": table_id, "data": rows[start:end]}
             if merge_field_id is not None:
                 body["mergeFieldId"] = merge_field_id
             try:
-                payload = self._transport.request("POST", "/records", json=body)
+                payload = self._transport.request(
+                    "POST", "/records", json=body, key_field_id=info.key_field_id
+                )
                 result = parse(partial(merge_write_result, result, offset=start), payload, "write")
             except PermissionDeniedError as exc:
                 raise refused_write(exc, result, start) from exc
@@ -547,6 +551,9 @@ class Table:
     ) -> WriteResult:
         """Create records from `{label or ID: value}` rows. This never changes existing records.
 
+        So it refuses a table whose key field isn't `Record ID#`, where Quickbase would change the
+        record when a row has an existing value in that field. Use `upsert()` on those tables.
+
         Args:
             rows: The rows. A value of `None` leaves the field empty, but a row needs at least one
                 real value, because Quickbase can silently skip a row without one.
@@ -557,7 +564,7 @@ class Table:
 
         Raises:
             InvalidValueError: A row can't be sent, such as one that sets `Record ID#` or has no
-                real values. Nothing was written.
+                real values, or the table's key field isn't `Record ID#`. Nothing was written.
             UnknownFieldError: A row names a field the table doesn't have. Nothing was written.
             WriteError: A row failed. Other rows are still written, and are listed in the error's
                 `result`.
@@ -565,6 +572,9 @@ class Table:
         _require_positive("batch_size", batch_size)
         given = list(rows)
         built = self._with_fields(lambda fields: build_rows(given, FieldIndex(fields)))
+        key_field_id = (self.info()).key_field_id
+        if key_field_id not in (None, RECORD_ID_FIELD):
+            raise custom_key_refusal(self._with_fields(FieldIndex), key_field_id)
         refuse_field(built, RECORD_ID_FIELD, "which insert() can't do. Use update() instead")
         refuse_blank_rows(built)
         return self._write(built, None, batch_size)

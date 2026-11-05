@@ -46,6 +46,22 @@ class Scratch:
             table.insert(rows)
 
 
+def _drop_all(tables: list[Any], attempts: int = 3) -> list[str]:
+    """Try every table, so that one failure can't strand the rest. Returns what's left."""
+    from pyquickbase import QuickbaseError
+
+    stranded: list[str] = []
+    for table in tables:
+        for attempt in range(attempts):
+            try:
+                table.drop(confirm=table.info().name)
+                break
+            except QuickbaseError as error:
+                if attempt == attempts - 1:
+                    stranded.append(f"{table!r}: {type(error).__name__}")
+    return stranded
+
+
 @pytest.fixture(scope="session")
 def scratch() -> Iterator[Scratch]:
     from pyquickbase import Quickbase
@@ -67,8 +83,7 @@ def scratch() -> Iterator[Scratch]:
         try:
             yield helper
         finally:
-            for table in helper.created:
-                info = table.info()
-                table.drop(confirm=info.name)
+            stranded = _drop_all(helper.created)
         after = record_counts()
+    assert not stranded, f"These scratch tables couldn't be dropped: {stranded}"
     assert after == before, "A table this run didn't create has changed."

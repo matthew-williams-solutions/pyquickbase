@@ -32,30 +32,45 @@ def open_tasks(project: str) -> list[dict]:
 
 ## Limiting access
 
-`read_only=True` sends only GET requests, record queries, report runs, and formula runs. To allow
-specific writes as well, pass `allowed_writes`, whose paths must match exactly. See [Limiting what a
-client can do](clients.md#limiting-what-a-client-can-do).
+Give an agent the narrowest client that does its job. `read_only=True` is the place to start, and it
+only sends GET requests, record queries, report runs, and formula runs. If the agent also needs to
+write, list exactly what it can change with
+[`TableRules`](clients.md#limiting-writes-by-table-action-and-field). Anything else raises
+`ReadOnlyError` and is never sent, which also applies to `qb.request()`.
 
 ```python
-qb = Quickbase.from_env(allowed_writes={("POST", "/records")})
+from pyquickbase import Allow, Quickbase, TableRules
+
+with Quickbase.from_env() as setup:
+    tasks = setup.app("bq1234567").table("Tasks")
+    tasks_id = tasks.info().id
+    status, notes = tasks.resolve_field_ids(["Status", "Notes"])
+
+# It can add tasks and change these two fields, on this table only. It can't delete anything.
+rules = TableRules({tasks_id: Allow(insert=True, update=[status, notes])})
+agent_client = Quickbase.from_env(write_policy=rules)
 ```
 
-Both limits also apply to `qb.request()`. Anything else raises `ReadOnlyError` and is never sent,
-although a table method may read the table's metadata before getting that far.
+Return a `ReadOnlyError` to the model as the tool's result. Its message says what was refused and why,
+such as a field that isn't allowed, and doesn't repeat the values it sent.
+
+You can add rules of your own, such as a limit on how many records one call can change, with a
+[custom policy](clients.md#writing-your-own-policy). `allowed_writes` is also available, but it limits
+the kind of request and not the table, so `{("POST", "/records")}` allows that request on any table the
+token can reach, and also covers `insert()`, `update()`, `upsert()`, and file uploads.
 
 ### What these limits don't do
 
-- **They aren't per-table boundaries.** `allowed_writes={("POST", "/records")}` allows that request
-  for any table the token can reach, because the table is in the request's body. The same request
-  also covers `insert()`, `update()`, `upsert()`, and file uploads.
 - **They don't limit reads.** These clients can read whatever the token can.
 - **`read_only` promises only that it changes no records.** It still runs reports, which adds to
   their usage count in Quickbase, and formulas.
-- **Formulas reach further than the table you run them on.** A formula can read other tables in the
-  same app with `GetRecord()` and `GetRecords()`, and can return the realm and the token owner's
-  email. A table in another app, or one the token's role can't access, comes back empty. Don't run
+- **Formulas reach further than the table you run them on.** A formula can read other tables with
+  `GetRecord()` and `GetRecords()`, and can return the realm and the token owner's email. Don't run
   formula text from a model or another person, even on a read-only client. See the [warning in
   Formulas](formulas.md#running-a-formula).
+- **They can't limit by record.** To keep an agent to certain records, use a role with
+  [record-level rules](../api-notes.md#record-level-rules), and [fix the scope](#filters-from-a-model)
+  of what it reads in your code.
 - **They aren't a sandbox.** They apply to one client. If an agent can run code of its own, it can
   create another client with the same token, or call the API directly.
 

@@ -813,3 +813,38 @@ def test_get_table_needs_its_app(api: Api, scratch: Any, table: str) -> None:
     assert api.call("GET", f"/tables/{table}").status_code != 200
     params = {"appId": scratch.app_id}
     assert api.call("GET", f"/tables/{table}", params=params).status_code == 200
+
+
+def test_how_a_row_with_a_record_id_writes_without_a_merge_field(api: Api, table: str) -> None:
+    record = api.add(table, {TEXT: "before"})
+    response = api.write(table, [{3: record, TEXT: "after"}])
+    assert response.json()["metadata"]["updatedRecordIds"] == [record]
+    assert api.value(table, record, TEXT) == "after"
+    missing = api.write(table, [{3: 99999999, TEXT: "new"}])
+    assert missing.status_code == 207
+    assert missing.json()["metadata"]["createdRecordIds"] == []
+
+
+@pytest.mark.parametrize("key", ["0{}", " {}", "{} "])
+def test_field_keys_can_be_padded(api: Api, table: str, key: str) -> None:
+    record = api.add(table, {TEXT: "before"})
+    data = [{"3": {"value": record}, key.format(TEXT): {"value": f"after {key!r}"}}]
+    response = api.post("/records", {"to": table, "data": data})
+    assert response.status_code == 200, response.text
+    assert api.value(table, record, TEXT) == f"after {key!r}"
+
+
+@pytest.mark.parametrize("merge", ["3", 3.0])
+def test_merging_on_record_id_written_another_way(api: Api, table: str, merge: Any) -> None:
+    record = api.add(table, {TEXT: "before"})
+    response = api.write(table, [{3: record, TEXT: "after"}], mergeFieldId=merge)
+    assert response.json()["metadata"]["updatedRecordIds"] == [record]
+
+
+def test_a_table_key_field_cant_be_set_through_the_api(api: Api, scratch: Any, table: str) -> None:
+    response = api.post(f"/tables/{table}?appId={scratch.app_id}", {"keyFieldId": UNIQUE})
+    assert response.status_code == 200
+    assert (
+        api.call("GET", f"/tables/{table}", params={"appId": scratch.app_id}).json()["keyFieldId"]
+        == 3
+    )

@@ -7,7 +7,8 @@ from typing import Any
 
 import httpx
 
-from .._config import build_url, check_allowed
+from .._config import build_url, check_allowed, is_read
+from .._policy import WritePolicy, check_policy, describe_write
 from .._response import error_from_response, error_from_transport, parse_response
 from .._retry import RetryPolicy, parse_retry_after
 
@@ -24,8 +25,10 @@ class Transport:
         user_agent: str,
         http_client: httpx.Client | None,
         allowed_writes: frozenset[tuple[str, str]] | None = None,
+        write_policy: WritePolicy | None = None,
     ) -> None:
         self._allowed_writes = allowed_writes
+        self._write_policy = write_policy
         self._auth = auth
         self._base_url = base_url
         self._retry = retry
@@ -40,9 +43,10 @@ class Transport:
         *,
         params: Mapping[str, Any] | None = None,
         json: Any = None,
+        key_field_id: int | None = None,
     ) -> Any:
         method = method.upper()
-        response = self._send(method, path, params, json)
+        response = self._send(method, path, params, json, key_field_id)
         return parse_response(response, method, path)
 
     def get_raw(self, path: str) -> httpx.Response:
@@ -53,11 +57,19 @@ class Transport:
         return response
 
     def _send(
-        self, method: str, path: str, params: Mapping[str, Any] | None, json: Any
+        self,
+        method: str,
+        path: str,
+        params: Mapping[str, Any] | None,
+        json: Any,
+        key_field_id: int | None = None,
     ) -> httpx.Response:
         url = build_url(self._base_url, path)
         if self._allowed_writes is not None:
             check_allowed(method, path, self._allowed_writes)
+        if self._write_policy is not None and not is_read(method, path):
+            request = describe_write(method, path, json, key_field_id=key_field_id)
+            check_policy(self._write_policy, request)
         attempt = 0
         while True:
             try:

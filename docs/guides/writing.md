@@ -53,6 +53,21 @@ print(result.created_ids)
 `created_ids` are in the same order as your rows. A row that sets `Record ID#` raises
 `InvalidValueError`, because that would update a record.
 
+### Tables with a custom key field
+
+A table's key field is `Record ID#` unless someone has changed it in the Quickbase UI. If they have,
+Quickbase [changes the record](../api-notes.md#writes) when a row has an existing value in that field,
+rather than creating one, and there's no way to ask it to only create. So `insert()` raises
+`InvalidValueError` on those tables, and sends nothing. Use `upsert()` instead, which updates a matching
+record or creates one, and tells you which it did.
+
+```python
+print(tasks.info().key_field_id)  # 3 is Record ID#
+
+result = tasks.upsert([{"Code": "A-100", "Title": "Pour slab"}], merge_on="Code")
+print(result.created_ids, result.updated_ids)
+```
+
 ## Updating records
 
 Each row needs a `Record ID#`. Fields you leave out keep their values. A Record ID# that doesn't exist
@@ -162,13 +177,14 @@ A write that times out isn't retried, because Quickbase may already have applied
 | A row sets `Record ID#` in `insert()`, or leaves it out of `update()` | `InvalidValueError` | Nothing was sent |
 | A row leaves out the `merge_on` field in `upsert()` | `InvalidValueError` | Nothing was sent |
 | A row has no real values in `insert()` or `upsert()` | `InvalidValueError` | Nothing was sent |
+| `insert()` on a table whose key field isn't `Record ID#` | `InvalidValueError` | Nothing was sent |
 | A value that can't be written, such as a `datetime` without a timezone | `InvalidValueError` | Nothing was sent |
 | A row names a field the table doesn't have, or the token can't see | `UnknownFieldError` | Nothing was sent |
 | `batch_size` below 1, or a `delete()` condition that can't be sent as written | `QueryError` | Nothing was sent |
-| The client is read-only, or doesn't allow this write | `ReadOnlyError` | Nothing was sent |
+| The client is read-only, or its [limits](clients.md#limiting-what-a-client-can-do) don't allow this write | `ReadOnlyError` | Nothing was sent, unless it's a later batch, below |
 | `merge_on` isn't a unique field | `BadRequestError` | Nothing was written |
 | Some rows failed, such as a duplicate or a formula field | `WriteError` | **The other rows were written** |
-| A later batch failed outright | `WriteError` | **Earlier batches were written** |
+| A later batch failed outright, or a [write policy](clients.md#writing-your-own-policy) refused it | `WriteError` | **Earlier batches were written** |
 | The role refused the write | `WritePermissionError` | Check `error.result` for earlier rows |
 | The request timed out | `RequestTimeoutError` | **It may have been applied.** It isn't retried |
 

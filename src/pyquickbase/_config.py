@@ -67,11 +67,16 @@ def normalize_allowed_writes(
     return frozenset() if read_only else None
 
 
+def is_read(method: str, path: str) -> bool:
+    """Whether a request is a known read. Queries are POSTs, so method alone isn't enough."""
+    return method == "GET" or (
+        method == "POST" and (path in _READ_ONLY_POSTS or bool(_REPORT_RUN.fullmatch(path)))
+    )
+
+
 def check_allowed(method: str, path: str, allowed_writes: frozenset[tuple[str, str]]) -> None:
-    """Allow only known reads and listed writes. Queries are POSTs, so method alone isn't enough."""
-    if method == "GET" or (
-        method == "POST" and (path in _READ_ONLY_POSTS or _REPORT_RUN.fullmatch(path))
-    ):
+    """Allow only known reads and listed writes."""
+    if is_read(method, path):
         return
     if (method, path) not in allowed_writes:
         limit = "limited to reads and specific writes" if allowed_writes else "read-only"

@@ -21,6 +21,7 @@ from ._models import (
     Role,
     TableInfo,
 )
+from ._policy import Allow, TableRules, WriteAction, WritePolicy, WriteRequest, all_of
 from ._query import Expression, F, FieldRef, FieldRefs, WhereCondition, parse_where
 from ._retry import RetryPolicy
 from ._sync._client import Quickbase
@@ -57,6 +58,7 @@ from .errors import (
 __all__ = [
     "UNSET",
     "APIError",
+    "Allow",
     "App",
     "AppInfo",
     "AsyncApp",
@@ -104,6 +106,7 @@ __all__ = [
     "ServerError",
     "Table",
     "TableInfo",
+    "TableRules",
     "TypedField",
     "TypedIterator",
     "TypedPage",
@@ -115,10 +118,14 @@ __all__ = [
     "Unset",
     "UnsupportedReportError",
     "WhereCondition",
+    "WriteAction",
     "WriteError",
     "WritePermissionError",
+    "WritePolicy",
+    "WriteRequest",
     "WriteResult",
     "__version__",
+    "all_of",
     "parse_where",
     "where_from_dict",
     "where_schema",

@@ -49,6 +49,20 @@ starting with `_` are private and may change at any time.
 
 ::: pyquickbase.RetryPolicy
 
+## Write policies
+
+::: pyquickbase.TableRules
+
+::: pyquickbase.Allow
+
+::: pyquickbase.all_of
+
+::: pyquickbase.WriteRequest
+
+::: pyquickbase.WriteAction
+
+::: pyquickbase.WritePolicy
+
 ## Generated classes
 
 These support the classes from `pyquickbase codegen`, and you rarely need them directly.

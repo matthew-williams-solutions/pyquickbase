@@ -14,6 +14,8 @@ minor release.
 - The promise that a `read_only` client changes no records. It can still run reports, which adds to
   their usage count in Quickbase, and formulas.
 - File and user values staying plain dictionaries. Their contents come from Quickbase.
+- `TableRules` refusing whatever it doesn't list. A later version can add a new `WriteAction` or a new
+  attribute on `WriteRequest`, so have your own policy refuse an action it doesn't recognize.
 
 ## What isn't covered
 

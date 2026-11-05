@@ -172,7 +172,16 @@ queries, report runs, and formula runs, including through `qb.request()`, and ra
 for anything else without sending it, though a table method may read the table's metadata first.
 Running a report adds to its usage count in Quickbase, but changes no records.
 
-To allow specific writes and nothing else, pass `allowed_writes={("POST", "/records")}` instead.
+To limit writes by table, action, and field, such as for an AI agent, pass `TableRules`. Anything it
+doesn't list is refused. See [Limiting what a client can do](https://matthew-williams-solutions.github.io/pyquickbase/guides/clients/#limiting-what-a-client-can-do)
+for this, your own policies, and what these limits don't do.
+
+```python
+from pyquickbase import Allow, Quickbase, TableRules
+
+rules = TableRules({"bqtasks123": Allow(insert=True, update=[7, 12])})
+qb = Quickbase(realm="acme", token="your_user_token", write_policy=rules)
+```
 
 ## Customizing
 

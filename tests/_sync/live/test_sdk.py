@@ -16,6 +16,7 @@ import pytest
 import pyquickbase
 from pyquickbase import (
     UNSET,
+    Allow,
     AppInfo,
     F,
     FileUpload,
@@ -29,10 +30,12 @@ from pyquickbase import (
     RetryPolicy,
     SchemaMismatchError,
     TableInfo,
+    TableRules,
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
     WriteError,
+    all_of,
     parse_where,
     where_from_dict,
     where_schema,
@@ -751,3 +754,56 @@ def test_the_filter_schema_offers_the_tables_fields(
     table = get(qb, scratch, seeded)
     schema = where_schema(fields=table.fields(), max_depth=0)
     assert "Due Date" in schema["properties"]["field"]["enum"]
+
+
+def test_write_rules_limit_tables_actions_and_fields(
+    scratch: Any, table_id: str, seeded: str
+) -> None:
+    other = scratch.table(("Title", "text"))
+    other_id = other.info().id
+    other.insert([{"Title": "Untouched"}])
+    status_field = scratch.client.app(scratch.app_id).table(table_id).resolve_field_ids(["Title"])
+    rules = TableRules({table_id: Allow(insert=True, update=status_field)})
+    with Quickbase(realm=scratch.realm, token=scratch.token, write_policy=rules) as limited:
+        table = limited.app(scratch.app_id).table(table_id)
+        record = (one(table, "C1", "Code")).id
+
+        table.insert([{"Title": "New", "Code": "N1"}])
+        table.update([{"Record ID#": record, "Title": "Changed"}])
+        assert (one(table, "C1", "Title"))["Title"] == "Changed"
+
+        with pytest.raises(ReadOnlyError, match="doesn't allow fields"):
+            table.update([{"Record ID#": record, "Code": "Nope"}])
+        with pytest.raises(ReadOnlyError, match="deleting isn't allowed"):
+            table.delete(F("Code") == "C2")
+        with pytest.raises(ReadOnlyError, match="only record and file"):
+            table.create_field("Nope", "text")
+        with pytest.raises(ReadOnlyError, match="isn't listed"):
+            limited.app(scratch.app_id).table(other_id).insert([{"Title": "Nope"}])
+        limited.request(
+            "POST", "/records/query", json={"from": other_id, "select": [3]}
+        )  # Reads aren't limited.
+
+    plain = scratch.client.app(scratch.app_id)
+    assert plain.table(table_id).count(F("Code") == "C2") == 1
+    assert [dict(r)["Title"] for r in plain.table(other_id).query(select=["Title"])] == [
+        "Untouched"
+    ]
+    assert plain.table(table_id).count(F("Code") == "Nope") == 0
+
+
+def test_a_custom_policy_runs_on_real_writes(scratch: Any, table_id: str, seeded: str) -> None:
+    seen: list[str] = []
+
+    def record_actions(request: Any) -> bool:
+        seen.append(request.action)
+        return True
+
+    policy = all_of(record_actions, TableRules({table_id: Allow(insert=True, update=True)}))
+    with Quickbase(realm=scratch.realm, token=scratch.token, write_policy=policy) as limited:
+        table = limited.app(scratch.app_id).table(table_id)
+        table.upsert([{"Code": "C1", "Title": "Upserted"}], merge_on="Code")
+        record = (one(table, "C1", "Code")).id
+        table.update([{"Record ID#": record, "Title": "Updated"}])
+        table.insert([{"Code": "C9", "Title": "Inserted"}])
+    assert seen == ["upsert", "update", "insert"]

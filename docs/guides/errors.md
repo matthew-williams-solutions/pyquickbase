@@ -31,7 +31,7 @@ These mean the request wasn't sent, though the SDK may have read table metadata 
 | `UnknownFieldError` | No field with that label or ID in this table, or the token's role can't see it |
 | `UnknownReportError` | No report with that name or ID on this table, or several with that name |
 | `UnsupportedReportError` | A report that can't be read as records, such as a summary or chart |
-| `ReadOnlyError` | The client isn't allowed to send this request |
+| `ReadOnlyError` | The client's [limits](clients.md#limiting-what-a-client-can-do) don't allow this request |
 
 ## Refused writes
 

@@ -59,6 +59,10 @@ These tests add a temporary field to the viewable table as the main token. The r
 tries writes that should be refused, and the run fails if either table's record count changes. Give
 anything you keep in these apps a clear, professional name and description.
 
+The full suite takes about 20 minutes. pytest shows its progress as it goes, so to run it in the
+background, add `> live.log 2>&1` and check it with `tail -n 3 live.log`. Piping the output through
+`tail` hides the progress until the end.
+
 To test a published release instead of this checkout, install it in a separate environment and set
 `QB_LIVE_VERSION` to its version. Running a report adds to its usage count, so these tests only run
 reports on the tables they create, and the two reports above.

@@ -14,6 +14,17 @@ All notable changes to this project are documented here. The format follows
   argument limits which fields a filter may use.
 - `where_schema()`, which describes that format as JSON Schema with no `$ref`, for a tool's input in
   MCP or any other LLM tool system.
+- `write_policy` on `Quickbase` and `AsyncQuickbase`, which decides on each write before it's sent.
+  `TableRules` and `Allow` list what a client may do to each table, by action and by field, and refuse
+  everything else. A policy can also be your own function, which takes a `WriteRequest`, and `all_of()`
+  requires several to pass. Only a return value of `True` lets a write through.
+
+### Changed
+
+- **Breaking:** `insert()` now raises `InvalidValueError`, and sends nothing, on a table whose key field
+  isn't `Record ID#`. Before, a row with an existing value in that field silently changed that record
+  rather than creating one, and `created_ids` could end up shorter than the rows. Use `upsert()` on those
+  tables. Changing the key field in the UI can take as long as `schema_ttl` to be noticed.
 
 ## [1.0.0rc5] - 2026-11-04
 

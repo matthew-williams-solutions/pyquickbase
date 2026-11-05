@@ -278,6 +278,7 @@ These all raise before the query is sent, though the SDK may read table metadata
 | The app has no such table, or the table is in another app | `UnknownTableError` |
 | `select`, `order_by`, or `where` names a field the table doesn't have, or the token can't see | `UnknownFieldError` |
 | `where` can't be sent as written, such as a lowercase operator in a query string, or `_curuser_` on a user field through `F` | `QueryError` |
+| `where_from_dict()` got data it can't use, such as an unknown operator, a missing `value`, or `today` on a date field | `QueryError` |
 | `top`, `page_size`, or `limit` below 1, or a negative `skip` | `QueryError` |
 | `select` or `order_by` isn't a field or a list of them | `QueryError` |
 | `get()` with something other than a positive integer | `InvalidValueError` |

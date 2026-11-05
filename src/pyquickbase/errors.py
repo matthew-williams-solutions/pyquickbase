@@ -24,7 +24,7 @@ class InvalidResponseError(QuickbaseError):
 
 
 class ReadOnlyError(QuickbaseError):
-    """The client is read-only, and this request could change data. It wasn't sent."""
+    """The client's limits don't allow this request, which could change data. It wasn't sent."""
 
 
 class QueryError(QuickbaseError, ValueError):
