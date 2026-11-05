@@ -237,8 +237,8 @@ def test_the_current_user_and_how_user_fields_match(scratch: Any) -> None:
 
     # What Quickbase does with the operators that `==` and `!=` would otherwise send.
     who_id = table.resolve_field_ids(["Who"])[0]
-    assert found(f"{{{who_id}.EX.'{me['email']}'}}") == []
-    assert found(f"{{{who_id}.XEX.'{me['email']}'}}") == [1, mine]
+    assert found(f"{{{who_id}.EX.'{me.email}'}}") == []
+    assert found(f"{{{who_id}.XEX.'{me.email}'}}") == [1, mine]
 
     # What the docs tell you to use.
     assert found(F("Who") == me.email) == [mine]

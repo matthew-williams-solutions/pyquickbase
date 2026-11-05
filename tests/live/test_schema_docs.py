@@ -252,23 +252,27 @@ def test_summary_functions(scratch: Any) -> None:
     refused = [
         ("Done", "SUM"),
         ("Title", "MAX"),
-        ("Hours", "COUNT"),
-        ("Title", "COUNT"),
-        ("Done", "COUNT"),
-        ("Record ID#", "COUNT"),
         ("Hours", "sum"),
     ]
     for number, (field, function) in enumerate(refused):
         with pytest.raises(BadRequestError):
             child.ensure_summary_field(link, field, f"Refused {number}", function=function)
+    # COUNT takes no field, which Quickbase refuses for every one, so it has its own method.
+    with pytest.raises(InvalidValueError, match="ensure_count_field"):
+        child.ensure_summary_field(link, "Hours", "Refused count", function="COUNT")
+    count = child.ensure_count_field(link, "Task Count")
+    assert (count.type, count.mode, count.summary_function) == ("numeric", "summary", "COUNT")
+    assert child.ensure_count_field(link, "task count").id == count.id
     with pytest.raises(SchemaMismatchError):
         child.ensure_summary_field(link, "Hours", "Name")
 
     total = child.ensure_summary_field(link, "Hours", "Total")
     record_id = parent.insert([{"Name": "P"}]).created_ids[0]
     assert read(parent, record_id, "Total") is None
+    assert read(parent, record_id, count.label) == 0  # Unlike the others, a count is never empty
     child.insert([{"Hours": 2, "Project": record_id}, {"Hours": 3, "Project": record_id}])
     assert read(parent, record_id, total.label) == 5
+    assert read(parent, record_id, count.label) == 2
 
 
 def test_a_required_field_is_enforced_on_insert(scratch: Any) -> None:

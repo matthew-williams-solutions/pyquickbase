@@ -80,7 +80,10 @@ that isn't true.
 ```python
 for task in tasks.query(select=[Tasks.fields.title, Tasks.fields.due_date]):
     print(task.id, task.title, task.due_date)
-    task.status  # AttributeError: Tasks.status wasn't selected in the query that read this record
+    try:
+        task.status
+    except AttributeError as error:
+        print(error)  # Tasks.status wasn't selected in the query that read this record, ...
 ```
 
 Comparing two such records with `==` raises `AttributeError` too, and `tool_result()` leaves the unset

@@ -566,7 +566,7 @@ def test_generated_classes_read_and_write(
     assert found[0].doubled == 10
     assert found[0].started is None
     assert found[0].tags == []
-    assert found[0].attachment == {"url": "", "versions": []}
+    assert found[0].attachment is None
     assert "Row" not in repr(found[0])
     assert tasks.count(Tasks.fields.code == "C1") == 1
 
