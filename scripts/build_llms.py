@@ -19,8 +19,14 @@ ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
 CONFIG = ROOT / "mkdocs.yml"
 
-# An interactive page, which means nothing as text, and a page with its own plain Markdown file.
-LEFT_OUT = {"playground.md", "reference/table.md"}
+# Reference pages with their own plain Markdown files, as `(title, name, what's in it)`.
+REFERENCE_PAGES = (
+    ("Quickbase", "quickbase", "Creating and closing a client, and calling any endpoint"),
+    ("App", "app", "An app's details, getting its tables, and creating tables"),
+    ("Table", "table", "Reading and writing records, files, and changing a table's fields"),
+)
+# An interactive page, which means nothing as text, and the pages above.
+LEFT_OUT = {"playground.md", *(f"reference/{page[1]}.md" for page in REFERENCE_PAGES)}
 # What each page is for, shown in llms.txt. A page missing from here stops the build.
 DESCRIPTIONS = {
     "index.md": "What the SDK is, why to use it, and how to install it",
@@ -346,8 +352,11 @@ def build_index(config: Config) -> str:
         "Docs": [
             f"- [All the docs in one file]({site_url}llms-full.txt): Every page below as one "
             "Markdown document, with the API reference written out",
-            f"- [API reference: Table]({site_url}reference/table.txt): Every `Table` method as "
-            "Markdown, with its parameters, return value, errors, and tested examples",
+            *(
+                f"- [API reference: {title}]({site_url}reference/{name}.txt): {about}, as "
+                "Markdown, with parameters, return values, errors, and tested examples"
+                for title, name, about in REFERENCE_PAGES
+            ),
         ]
     }
     for page in _covered_pages(config):

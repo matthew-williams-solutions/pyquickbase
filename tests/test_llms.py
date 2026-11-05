@@ -82,7 +82,7 @@ def test_the_index_follows_the_format() -> None:
 
 def test_every_link_in_the_index_is_under_the_site() -> None:
     found = links(INDEX)
-    assert len(found) == len(COVERED) + 2
+    assert len(found) == len(COVERED) + 1 + len(build_llms.REFERENCE_PAGES)
     assert all(link.startswith(SITE) for link in found)
 
 

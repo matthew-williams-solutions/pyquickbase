@@ -3,6 +3,9 @@
 Everything listed here is public, as described in [Stability and versioning](stability.md). Modules
 starting with `_` are private and may change at any time.
 
+[`Quickbase`](reference/quickbase.md), [`App`](reference/app.md), and [`Table`](reference/table.md) also
+have their own pages, with tested examples for both clients.
+
 ## Clients
 
 `Quickbase` is documented in full here. `AsyncQuickbase`, `AsyncApp`, `AsyncTable`, `AsyncReport`,

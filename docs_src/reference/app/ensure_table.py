@@ -1,0 +1,5 @@
+sites = await app.ensure_table("Job Sites")
+again = await app.ensure_table("Job Sites")
+first_info = await sites.info()
+again_info = await again.info()
+print(first_info.id == again_info.id)

@@ -53,6 +53,10 @@ class AsyncQuickbase:
             table, action, and field. It takes a `WriteRequest`, and only a return value of `True`
             lets the write through. Otherwise, it raises `ReadOnlyError` and isn't sent. Reads
             aren't affected. Use it with `allowed_writes` to require both.
+
+    Raises:
+        ConfigurationError: `realm`, `token`, or `base_url` can't be used, or the limits on writes
+            conflict, such as `read_only` with `write_policy`.
     """
 
     def __init__(
@@ -101,7 +105,17 @@ class AsyncQuickbase:
     ) -> Self:
         """Create a client from the `QB_REALM` and `QB_USER_TOKEN` environment variables.
 
-        `token_env` names a different variable for the token, for a program that has several.
+        It takes the same options as the constructor, other than `realm` and `token`.
+
+        Args:
+            token_env: The name of the variable that holds the token, for a program that has
+                several.
+
+        Returns:
+            A new client.
+
+        Raises:
+            ConfigurationError: A variable is missing or empty, or an option can't be used.
         """
         realm, token = read_env(token_env=token_env)
         return cls(
@@ -124,13 +138,27 @@ class AsyncQuickbase:
         return self._realm
 
     def app(self, app_id: str) -> AsyncApp:
-        """Get an app by ID, the `bq...` part of its URL. This makes no network calls."""
+        """Get an app by ID, the `bq...` part of its URL. This makes no network calls.
+
+        Args:
+            app_id: The app's ID, which contains only letters and numbers.
+
+        Returns:
+            An `App`. An ID that doesn't exist only fails on first use.
+
+        Raises:
+            ConfigurationError: `app_id` contains anything but letters and numbers.
+        """
         if not _APP_ID.fullmatch(app_id):
             raise ConfigurationError("An app ID contains only letters and numbers.")
         return AsyncApp(self._transport, self._schema, app_id)
 
     def clear_schema_cache(self) -> None:
-        """Forget cached metadata, for example after changing a table's fields."""
+        """Forget cached metadata, for example after changing a table's fields.
+
+        Use this after a change made outside this client, such as in the Quickbase interface. The
+        client's own schema methods keep the cache current.
+        """
         self._schema.clear()
 
     async def request(
@@ -143,8 +171,22 @@ class AsyncQuickbase:
     ) -> Any:
         """Call any Quickbase endpoint directly and return its decoded JSON body.
 
-        This is the escape hatch for endpoints without a dedicated method. `path` is relative
-        to the API root, such as `/tables/abc123`, and the body is None if the response is empty.
+        This is the escape hatch for endpoints without a dedicated method. The client's retries
+        and limits on writes still apply.
+
+        Args:
+            method: The HTTP method, such as `GET`.
+            path: The endpoint, relative to the API root, such as `/tables/abc123`.
+            params: Values to send in the query string.
+            json: The value to send as the JSON body.
+
+        Returns:
+            The decoded JSON body, or None if the response is empty.
+
+        Raises:
+            ReadOnlyError: The client's limits don't allow this request. It wasn't sent.
+            APIError: Quickbase returned an error. This is a subclass such as `NotFoundError` or
+                `PermissionDeniedError`, for the status it returned.
         """
         return await self._transport.request(method, path, params=params, json=json)
 

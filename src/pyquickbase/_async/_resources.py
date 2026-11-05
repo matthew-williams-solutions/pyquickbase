@@ -100,10 +100,20 @@ class AsyncApp:
 
     @property
     def id(self) -> str:
+        """The app's ID, as passed to `qb.app()`."""
         return self._id
 
     async def info(self) -> AppInfo:
-        """Get the app's metadata."""
+        """Get the app's metadata, from the client's cache if it's there.
+
+        Returns:
+            An `AppInfo`, with the app's `id`, `name`, `description`, `time_zone`, and
+            `date_format`.
+
+        Raises:
+            AuthenticationError: Quickbase doesn't recognize the app ID. It answers with a 401
+                here, rather than a 404.
+        """
         key = f"app:{self._id}"
         cached = self._cache.get(key)
         if cached is not None:
@@ -114,7 +124,20 @@ class AsyncApp:
         return info
 
     async def tables(self, *, refresh: bool = False) -> list[TableInfo]:
-        """List the app's tables, from the cache unless `refresh` is set."""
+        """List the app's tables, from the cache unless `refresh` is set.
+
+        Args:
+            refresh: Ask Quickbase instead of using the client's cache, which keeps metadata for
+                five minutes by default. A change made through this client updates the cache, so
+                this is for changes made elsewhere, such as in the Quickbase interface.
+
+        Returns:
+            A `TableInfo` for each table the token can see.
+
+        Raises:
+            AuthenticationError: Quickbase doesn't recognize the app ID. It answers with a 401
+                here, rather than a 404.
+        """
         key = f"tables:{self._id}"
         cached = None if refresh else self._cache.get(key)
         if cached is not None:
@@ -129,8 +152,18 @@ class AsyncApp:
     async def roles(self, *, refresh: bool = False) -> list[Role]:
         """List the app's roles, from the cache unless `refresh` is set.
 
-        This needs an administrator's token: Quickbase returns 403 for a restricted role, and it
-        has no API for reading or changing what a role can do.
+        Quickbase has no API for reading or changing what a role can do.
+
+        Args:
+            refresh: Ask Quickbase instead of using the client's cache, which keeps metadata for
+                five minutes by default. A change made through this client updates the cache, so
+                this is for changes made elsewhere, such as in the Quickbase interface.
+
+        Returns:
+            A `Role` for each role in the app.
+
+        Raises:
+            PermissionDeniedError: The token isn't an administrator's.
         """
         key = f"roles:{self._id}"
         cached = None if refresh else self._cache.get(key)
@@ -160,7 +193,7 @@ class AsyncApp:
             plural_record_name: What the new table calls several records, such as `Projects`.
 
         Returns:
-            The existing or new table.
+            A `Table` for the existing or new table.
         """
         tables = await self.tables(refresh=True)
         for item in tables:
@@ -190,7 +223,7 @@ class AsyncApp:
             plural_record_name: What the table calls several records, such as `Projects`.
 
         Returns:
-            The new table.
+            A `Table` for the new table.
 
         Raises:
             BadRequestError: The app already has a table with this name.
@@ -208,7 +241,17 @@ class AsyncApp:
         return self.table(parse(lambda data: table_info_from_api(data).id, payload, "table"))
 
     def table(self, name_or_id: str) -> "AsyncTable":
-        """Get a table in this app by name or ID. It's checked when first used."""
+        """Get a table in this app by name or ID. It's checked when first used.
+
+        This doesn't contact Quickbase, so a table that doesn't exist raises `UnknownTableError`
+        on first use.
+
+        Args:
+            name_or_id: The table's name, or its ID.
+
+        Returns:
+            A `Table`.
+        """
         return AsyncTable(self._transport, self._cache, self, name_or_id)
 
     def typed(self, model: type[R]) -> "AsyncTypedTable[R]":
@@ -216,6 +259,12 @@ class AsyncApp:
 
         The class is compared with the table when first used, raising `SchemaMismatchError`
         if it's out of date.
+
+        Args:
+            model: A class from the module that `pyquickbase codegen` wrote.
+
+        Returns:
+            A `TypedTable`, whose records are instances of `model`.
         """
         return AsyncTypedTable(self.table(model.__table_id__), model)
 

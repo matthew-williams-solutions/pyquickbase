@@ -28,6 +28,11 @@ body:has(.ref-row) .md-grid {
   font-size: 0.7rem;
 }
 
+.md-typeset .ref-links--pages {
+  font-size: 0.75rem;
+  margin-bottom: 0;
+}
+
 .ref-copy {
   color: var(--md-typeset-a-color);
   cursor: pointer;

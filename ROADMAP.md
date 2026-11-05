@@ -54,8 +54,8 @@ Give the methods these guides cover full `Args`, `Returns`, and `Raises` docstri
 
 ## API reference
 
-`scripts/build_reference.py` writes `Table` in the two-column layout, with live-tested examples. If that
-page is kept:
+`scripts/build_reference.py` writes `Quickbase`, `App`, and `Table` in the two-column layout, with live-tested
+examples.
 
 - Convert the other resources, then replace `docs/reference.md` with an overview that links to them, and add
   each page's Markdown file to `llms.txt`.

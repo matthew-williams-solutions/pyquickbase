@@ -41,7 +41,10 @@ nav:
       - Configuring clients: guides/clients.md
       - Using pyquickbase from an AI agent: guides/agents.md
   - API reference: reference.md
-  - "API reference: Table": reference/table.md
+  - API reference by class:
+      - Quickbase: reference/quickbase.md
+      - App: reference/app.md
+      - Table: reference/table.md
   - Field types: field-types.md
   - Stability and versioning: stability.md
   - Quickbase API notes: api-notes.md
