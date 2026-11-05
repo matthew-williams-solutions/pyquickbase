@@ -74,8 +74,8 @@ and the average of that field. The chart is a bar chart of the same total.
 
 ## Docs
 
-Preview the docs site with `uv run --group docs mkdocs serve`. Every public name needs an entry in
-`docs/reference.md`, and a test checks this.
+Preview the docs site with `uv run --group docs mkdocs serve`. Every public name needs a place on a
+page in `scripts/build_reference.py`, and in the table in `docs/reference.md`, and tests check both.
 
 The playground in `docs/playground-app/` needs `uv run scripts/build_playground.py` once before
 previewing it, and again after changing the SDK or an example. It downloads pinned copies of Pyodide
@@ -85,15 +85,15 @@ and CodeMirror and builds the SDK's wheel, none of which is committed. Its simul
 `uv run scripts/build_llms.py` writes `docs/llms.txt` and `docs/llms-full.txt`, which aren't
 committed. Run it once before previewing or building the docs, because the home page links to them,
 and again to see a change in them. It reads the pages from the `nav` in `mkdocs.yml`, so a new page
-needs a description in the script, and it writes the API reference from the SDK with `inspect`. It
-deliberately uses no docs plugin or anything from the `docs` dependency group.
+needs a description in the script. It deliberately uses no docs plugin or anything from the `docs`
+dependency group.
 
-`uv run scripts/build_reference.py` writes the two-column API reference in `docs/reference/`, which
-also isn't committed, so run it once before previewing or building the docs. Its examples are in
+`uv run scripts/build_reference.py` writes the API reference in `docs/reference/`, which also isn't
+committed, so run it once before previewing or building the docs. Its examples are in
 `docs_src/reference/`, written for the async client, with the sync version derived from them. A new
-public method stops the build until it and its arguments have descriptions, and it has an example. The live tests run every
-example with both clients and compare what it prints to the `.out` file beside it, which
-`QB_UPDATE_REFERENCE_OUTPUT=1` records.
+public name stops the build until it has a place on a page and an example, and it and its arguments
+and attributes have descriptions. The live tests run every example with both clients and compare
+what it prints to the `.out` file beside it, which `QB_UPDATE_REFERENCE_OUTPUT=1` records.
 
 ## Sync and async code
 

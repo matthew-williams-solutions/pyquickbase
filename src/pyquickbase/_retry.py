@@ -40,7 +40,14 @@ class RetryPolicy:
             raise ConfigurationError("Retry delays can't be negative.")
 
     def backoff(self, attempt: int) -> float:
-        """Exponential backoff with jitter, so parallel clients don't retry in lockstep."""
+        """Exponential backoff with jitter, so parallel clients don't retry in lockstep.
+
+        Args:
+            attempt: Which retry this is, starting from 0.
+
+        Returns:
+            The seconds to wait.
+        """
         ceiling = min(self.max_delay, self.base_delay * 2 ** min(attempt, _MAX_EXPONENT))
         return random.uniform(ceiling / 2, ceiling)
 
@@ -49,6 +56,13 @@ class RetryPolicy:
 
         Quickbase can send a wait of 0 while it's still limiting, so an immediate retry could use up
         the retries, and that's treated like no wait at all.
+
+        Args:
+            attempt: Which retry this is, starting from 0.
+            retry_after: The wait Quickbase asked for, in seconds, if it did.
+
+        Returns:
+            The seconds to wait, or None to stop retrying and raise `RateLimitError`.
         """
         if not retry_after:
             return self.backoff(attempt)

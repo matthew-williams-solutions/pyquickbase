@@ -102,6 +102,7 @@ def test_links_to_other_sites_come_from_the_docs_unchanged() -> None:
 def test_links_between_pages_reach_real_pages() -> None:
     pages = {build_llms.page_url(SITE, page.path) for page in CONFIG.pages}
     files = {f"{SITE}llms.txt", f"{SITE}llms-full.txt"}
+    files |= {f"{SITE}reference/{page[1]}.txt" for page in build_llms.REFERENCE_PAGES}
     for link in links(FULL):
         if link.startswith(SITE) and "/playground-app/" not in link:
             assert link.partition("#")[0] in pages | files
@@ -109,7 +110,7 @@ def test_links_between_pages_reach_real_pages() -> None:
 
 @pytest.mark.parametrize("name", sorted(set(pyquickbase.__all__) - {"__version__"}))
 def test_every_public_name_is_written_out(name: str) -> None:
-    assert re.search(rf"^#### `{name}`$", FULL, re.MULTILINE)
+    assert f"`{name}`" in FULL
 
 
 def test_the_version_is_stated() -> None:
@@ -118,11 +119,12 @@ def test_the_version_is_stated() -> None:
 
 
 def test_the_reference_holds_real_signatures_and_docstrings() -> None:
-    assert "```python\nquery(*, where: Expression | str | None = None" in FULL
-    assert "- `limit`: Stop after this many records." in FULL
-    assert "- `read_only`: Refuse any request that could change data" in FULL
-    assert "```python\nrealm: str\n```" in FULL
-    assert "```python\nfrom_env(*, base_url: str" in FULL
+    assert "## API reference: Table" in FULL
+    assert "query(\n    *,\n    where: Expression | str | None = None" in FULL
+    assert "Stop after this many records." in FULL
+    assert "Refuse any request that could change data" in FULL
+    assert "`Quickbase.realm`" in FULL
+    assert "`WriteResult`" in FULL
 
 
 def test_private_names_stay_out_of_the_reference() -> None:
@@ -133,10 +135,8 @@ def test_private_names_stay_out_of_the_reference() -> None:
 
 
 def test_async_methods_are_not_repeated() -> None:
-    assert "##### `Table.query`" in FULL
-    assert "#### `AsyncTable`" in FULL
-    assert "`AsyncTable.query`" not in FULL
-    assert "have the same methods, which you\n`await`." in FULL
+    assert "`Table.query()`" in FULL
+    assert "`AsyncTable.query" not in FULL
     assert "`aclose()`" in FULL
 
 

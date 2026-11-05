@@ -30,6 +30,7 @@ against a real app before depending on it. Questions we haven't answered yet are
 | Timestamps can also be compared with `AF` and `BF` using a date, such as `2027-03-01` | Live API, 2026-11-04 |
 | With no `select`, only fields in the table's default set return, and Record ID# may not be one | Live API, 2026-11-02 |
 | Timestamps return as `2026-10-21T11:49:56Z`, dates as `2026-10-18` | Live API, 2026-11-02 |
+| A bad token, a nonexistent app, and an app the token can't reach all return 401 with the same message, `Access denied: User token is invalid`, so they can't be told apart | Live API, 2026-11-05 |
 | A nonexistent app or table returns 401 with a valid token, not 404. An ID of the wrong shape, such as `abc` or one that's too long, returns 400, `Invalid request` | Live API, 2026-11-02 |
 | `GET /tables/{id}/relationships` lists only relationships where the table is the child. A parent table returns none | Live API, 2026-11-02 |
 | Creating a table with a name already in the app, ignoring case, returns 400, `Invalid input` | Live API, 2026-11-02 |

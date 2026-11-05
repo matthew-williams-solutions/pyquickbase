@@ -7,9 +7,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
 import pyquickbase
+from pyquickbase._response import error_from_response
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -19,13 +21,27 @@ build_llms = importlib.import_module("build_llms")
 RESOURCES = {resource.name: resource for resource in build_reference.RESOURCES}
 TABLE = RESOURCES["Table"]
 METHODS = {name: build_reference.read_methods(item) for name, item in RESOURCES.items()}
-PAGES = {name: build_reference.build_page(RESOURCES[name], METHODS[name]) for name in RESOURCES}
-MARKDOWN = {
-    name: build_reference.build_markdown(
-        RESOURCES[name], METHODS[name], "https://example.com/docs/"
-    )
-    for name in RESOURCES
+SYMBOL_PAGES = {page.name: page for page in build_reference.SYMBOL_PAGES}
+SYMBOLS = {page.name: build_reference.read_symbols(page) for page in SYMBOL_PAGES.values()}
+SITE = "https://example.com/docs/"
+PAGES = {
+    **{name: build_reference.build_page(RESOURCES[name], METHODS[name]) for name in RESOURCES},
+    **{
+        name: build_reference.build_symbol_page(SYMBOL_PAGES[name], SYMBOLS[name])
+        for name in SYMBOLS
+    },
 }
+MARKDOWN = {
+    **{
+        name: build_reference.build_markdown(RESOURCES[name], METHODS[name], SITE)
+        for name in RESOURCES
+    },
+    **{
+        name: build_reference.build_symbol_markdown(SYMBOL_PAGES[name], SYMBOLS[name], SITE)
+        for name in SYMBOLS
+    },
+}
+EVERY_SYMBOL = [(page, name) for page in SYMBOLS for name in SYMBOLS[page]]
 EVERY_METHOD = [(name, method) for name in RESOURCES for method in METHODS[name]]
 
 
@@ -55,28 +71,102 @@ def test_examples_fit_in_the_code_column(name: str, member: str) -> None:
     assert max(len(line) for line in method.async_code.splitlines()) <= 62
 
 
-@pytest.mark.parametrize("name", RESOURCES)
+@pytest.mark.parametrize(("page", "name"), EVERY_SYMBOL, ids=ids(EVERY_SYMBOL))
+def test_every_name_is_on_both_versions_of_its_page(page: str, name: str) -> None:
+    assert f"### `{name}` {{#{name}}}" in PAGES[page]
+    assert f"### `{name}`" in MARKDOWN[page]
+
+
+@pytest.mark.parametrize(("page", "name"), EVERY_SYMBOL, ids=ids(EVERY_SYMBOL))
+def test_a_name_has_an_example_unless_there_is_a_reason(page: str, name: str) -> None:
+    symbol = SYMBOLS[page][name]
+    excused = name in build_reference.NO_EXAMPLE or name in build_reference.ALIASES
+    assert bool(symbol.sync_code) != excused
+    if symbol.sync_code:
+        compile(symbol.async_code, name, "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+        compile(symbol.sync_code, name, "exec")
+        assert max(len(line) for line in symbol.async_code.splitlines()) <= 62
+        for text in ("await ", "async ", "Async", "aclose"):
+            assert text not in symbol.sync_code
+    else:
+        assert symbol.definition, "Something must fill the code column."
+
+
+@pytest.mark.parametrize("name", sorted(set(pyquickbase.__all__) - {"__version__"}))
+def test_every_public_name_is_in_the_overview(name: str) -> None:
+    overview = (ROOT / "docs/reference.md").read_text()
+    assert f"`{name}`" in overview
+    assert name in build_reference.NAME_LINKS
+
+
+def test_the_overview_lists_only_public_names() -> None:
+    overview = (ROOT / "docs/reference.md").read_text()
+    table = overview[overview.index("| Page |") :]
+    listed = {
+        name
+        for row in table.splitlines()[2:]
+        for name in re.findall(r"`(\w+)`", row.rsplit("|", 2)[1])
+    }
+    assert listed == set(pyquickbase.__all__) - {"__version__"}
+
+
+def test_a_public_name_without_a_page_stops_the_build(monkeypatch: pytest.MonkeyPatch) -> None:
+    links = {**build_reference.NAME_LINKS}
+    del links["WriteResult"]
+    monkeypatch.setattr(build_reference, "NAME_LINKS", links)
+    with pytest.raises(SystemExit, match="WriteResult"):
+        build_reference.check_every_name_is_covered()
+
+
+def test_an_attribute_without_a_description_stops_the_build() -> None:
+    doc = build_reference.parse_docstring("A thing.", "Page")
+    with pytest.raises(SystemExit, match=r"Page\.records has no description"):
+        build_reference._attributes(pyquickbase.Page, doc, has_constructor=False)
+
+
+def test_the_full_file_uses_sync_examples_only() -> None:
+    pages = build_reference.full_text(SITE)
+    assert [title for title, _, _ in pages] == [item[0] for item in build_llms.REFERENCE_PAGES]
+    for _, _, text in pages:
+        assert "Async example" not in text
+
+
+def test_a_401_explains_what_it_can_mean() -> None:
+    response = httpx.Response(401, json={"message": "Access denied"})
+    error = error_from_response(response, "GET", "/apps/bq1")
+    assert isinstance(error, pyquickbase.AuthenticationError)
+    assert "doesn't exist" in str(error)
+    assert "bad token" in str(error)
+    assert error.message == "Access denied"
+
+
+def test_other_statuses_leave_out_the_hint_about_tokens() -> None:
+    error = error_from_response(httpx.Response(404, json={}), "GET", "/x")
+    assert "token" not in str(error)
+
+
+@pytest.mark.parametrize("name", PAGES)
 def test_anchors_are_unique(name: str) -> None:
     anchors = re.findall(r"\{#([\w-]+)\}", PAGES[name])
     assert len(anchors) == len(set(anchors))
 
 
-@pytest.mark.parametrize("name", RESOURCES)
+@pytest.mark.parametrize("name", PAGES)
 def test_in_page_links_reach_an_anchor(name: str) -> None:
     anchors = set(re.findall(r"\{#([\w-]+)\}", PAGES[name]))
     assert set(re.findall(r"\]\(#([\w-]+)\)", PAGES[name])) <= anchors
 
 
-@pytest.mark.parametrize("name", RESOURCES)
+@pytest.mark.parametrize("name", PAGES)
 def test_each_page_links_to_the_others(name: str) -> None:
-    for other in RESOURCES.values():
+    for other in build_reference.ALL_PAGES:
         if other.name != name:
             assert f"[{other.name}]({other.slug}.md)" in PAGES[name]
             assert f"reference/{other.slug}.txt" in MARKDOWN[name]
     assert f"**{name}**" in PAGES[name]
 
 
-@pytest.mark.parametrize("name", RESOURCES)
+@pytest.mark.parametrize("name", PAGES)
 def test_the_markdown_version_is_plain(name: str) -> None:
     for text in ("<div", "markdown>", '=== "', "{#"):
         assert text not in MARKDOWN[name]
@@ -85,8 +175,8 @@ def test_the_markdown_version_is_plain(name: str) -> None:
 
 
 def test_links_go_to_a_class_page_where_there_is_one() -> None:
-    assert "`WriteResult`](../reference.md#pyquickbase.WriteResult)" in PAGES["Table"]
-    assert "(https://example.com/docs/reference/#pyquickbase.WriteResult)" in MARKDOWN["Table"]
+    assert "[`WriteResult`](records.md#WriteResult)" in PAGES["Table"]
+    assert "(https://example.com/docs/reference/records/#WriteResult)" in MARKDOWN["Table"]
     assert "[`Table`](table.md)" in PAGES["App"]
     assert "[`App.table()`](app.md#table)" in PAGES["Table"]
     assert "(https://example.com/docs/reference/app/#table)" in MARKDOWN["Table"]
@@ -129,7 +219,7 @@ def test_an_example_for_no_method_stops_the_build(
         (folder / path.name).write_bytes(path.read_bytes())
     (folder / "gone.py").write_text("print(1)")
     monkeypatch.setattr(build_reference, "EXAMPLES", tmp_path)
-    with pytest.raises(SystemExit, match="aren't for a public method"):
+    with pytest.raises(SystemExit, match="aren't for anything public"):
         build_reference.read_methods(RESOURCES["App"])
 
 
@@ -189,11 +279,11 @@ def test_method_links_only_follow_the_call_form() -> None:
 
 def test_llms_index_points_at_each_page() -> None:
     index = build_llms.build_index(build_llms.read_config())
-    for resource in RESOURCES.values():
-        assert f"reference/{resource.slug}.txt): " in index
+    for page in build_reference.ALL_PAGES:
+        assert f"reference/{page.slug}.txt): " in index
 
 
 def test_the_pages_match_the_list_in_build_llms() -> None:
     assert [item[:2] for item in build_llms.REFERENCE_PAGES] == [
-        (item.name, item.slug) for item in RESOURCES.values()
+        (item.name, item.slug) for item in build_reference.ALL_PAGES
     ]

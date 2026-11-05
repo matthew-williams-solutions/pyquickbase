@@ -146,6 +146,9 @@ class F:
     this is the safe way to use text you don't control. `== None` matches empty fields.
 
     On a `user` or `multiuser` field, compare with an email or user ID.
+
+    Args:
+        field: The field's label or ID.
     """
 
     __slots__ = ("_field",)
@@ -181,26 +184,79 @@ class F:
         return self._compare("GTE", "OAF", value)
 
     def contains(self, value: Any) -> Condition:
+        """Match records whose value contains this text.
+
+        Args:
+            value: The text to look for.
+
+        Returns:
+            A condition to pass as `where`.
+        """
         return self._condition("CT", value)
 
     def not_contains(self, value: Any) -> Condition:
+        """Match records whose value doesn't contain this text.
+
+        Args:
+            value: The text to look for.
+
+        Returns:
+            A condition to pass as `where`.
+        """
         return self._condition("XCT", value)
 
     def starts_with(self, value: Any) -> Condition:
+        """Match records whose value starts with this text.
+
+        Args:
+            value: The text to look for.
+
+        Returns:
+            A condition to pass as `where`.
+        """
         return self._condition("SW", value)
 
     def not_starts_with(self, value: Any) -> Condition:
+        """Match records whose value doesn't start with this text.
+
+        Args:
+            value: The text to look for.
+
+        Returns:
+            A condition to pass as `where`.
+        """
         return self._condition("XSW", value)
 
     def is_in(self, values: Iterable[Any]) -> Expression:
-        """Match any of the values, as a series of `EX` conditions joined with `OR`."""
+        """Match any of the values, as a series of `EX` conditions joined with `OR`.
+
+        Args:
+            values: The values to match. There must be at least one.
+
+        Returns:
+            A condition to pass as `where`.
+
+        Raises:
+            QueryError: There are no values.
+        """
         conditions = [self._condition("EX", value) for value in values]
         if not conditions:
             raise QueryError("is_in() needs at least one value.")
         return conditions[0] if len(conditions) == 1 else Group.of("OR", *conditions)
 
     def op(self, operator: str, value: Any) -> Condition:
-        """Use any Quickbase operator directly, such as `HAS` or `IR`."""
+        """Use any Quickbase operator directly, such as `HAS` or `IR`.
+
+        Args:
+            operator: The operator, in capitals. Quickbase treats a lowercase one as "contains".
+            value: The value to compare with.
+
+        Returns:
+            A condition to pass as `where`.
+
+        Raises:
+            QueryError: Quickbase has no such operator.
+        """
         if operator not in OPERATORS:
             raise QueryError(f"Unknown operator {operator!r}. Operators must be uppercase.")
         return self._condition(operator, value)
@@ -214,7 +270,13 @@ def _where_error(where: str, position: int, problem: str) -> QueryError:
 
 @dataclass(frozen=True, slots=True)
 class WhereCondition:
-    """One condition from a `where` string, with its value unquoted and unescaped."""
+    """One condition from a `where` string, with its value unquoted and unescaped.
+
+    Attributes:
+        field_id: The ID of the field it tests.
+        operator: Quickbase's operator, such as `EX`.
+        value: The value it compares with, as text.
+    """
 
     field_id: int
     operator: str
@@ -279,8 +341,18 @@ def validate_where(where: str, fields: FieldIndex) -> str:
 def parse_where(where: str, fields: Iterable[Field]) -> list[WhereCondition]:
     """Check a hand-written `where` string and return its conditions.
 
-    Raises `QueryError` for the same mistakes that `table.query()` would. Useful for extra checks
-    of your own, or for finding out which fields a string refers to.
+    Useful for extra checks of your own, or for finding out which fields a string refers to.
+
+    Args:
+        where: The string, such as `{7.EX.'Open'}`.
+        fields: The table's fields, from `Table.fields()`.
+
+    Returns:
+        A `WhereCondition` for each condition in the string.
+
+    Raises:
+        QueryError: It has the same mistakes that `table.query()` would refuse.
+        UnknownFieldError: It names a field that isn't in `fields`.
     """
     return _scan_where(where.strip(), FieldIndex(fields))
 

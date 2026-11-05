@@ -46,9 +46,3 @@ def test_install_pins_match_the_version() -> None:
 
 def test_the_changelog_covers_this_version() -> None:
     assert f"## [{pyquickbase.__version__}]" in (ROOT / "CHANGELOG.md").read_text()
-
-
-def test_every_public_name_is_in_the_reference() -> None:
-    reference = (ROOT / "docs/reference.md").read_text()
-    documented = set(re.findall(r"^::: pyquickbase\.(\w+)$", reference, re.MULTILINE))
-    assert documented == set(pyquickbase.__all__) - {"__version__"}

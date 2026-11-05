@@ -1450,8 +1450,12 @@ class AsyncReport:
     async def info(self) -> ReportInfo:
         """Get the report's metadata, from the table's cached list of reports.
 
-        Raises `UnknownReportError` if the table has no such report, or if several share the name.
-        An ID takes priority over a name.
+        Returns:
+            A `ReportInfo`.
+
+        Raises:
+            UnknownReportError: The table has no such report, or several share the name. An ID takes
+                priority over a name.
         """
         reports = await self._table.reports()
         found = find_report(reports, self._ref)
@@ -1478,7 +1482,23 @@ class AsyncReport:
         return parse(page_from_api, payload, "report")
 
     async def run_page(self, *, top: int = 100, skip: int = 0) -> Page:
-        """Fetch one page of the report's records. See `run`."""
+        """Fetch one page of the report's records, for controlling paging yourself.
+
+        Records hold only the report's columns, and each run adds to the report's usage count in
+        Quickbase.
+
+        Args:
+            top: The most records to return.
+            skip: How many records to pass over first. Use the previous page's `next_skip`.
+
+        Returns:
+            A `Page`, whose `total` counts every record in the report.
+
+        Raises:
+            UnknownReportError: The table has no such report, or several share the name.
+            UnsupportedReportError: It isn't a complete table report, such as a summary, chart, or
+                ask-the-user report.
+        """
         _require_positive("top", top)
         if skip < 0:
             raise QueryError("skip can't be negative.")
@@ -1490,12 +1510,17 @@ class AsyncReport:
         Records hold only the report's columns, so `record.id` raises `KeyError` if Record ID#
         isn't one of them. Each run adds to the report's usage count in Quickbase.
 
-        Raises `UnsupportedReportError` for anything but a complete table report, including summary,
-        chart, and ask-the-user reports. Their raw results are available through `qb.request()`.
-
         Args:
             page_size: Records to request per call to Quickbase.
             limit: Stop after this many records.
+
+        Returns:
+            An iterator of `Record`, which only contacts Quickbase once you start iterating.
+
+        Raises:
+            UnknownReportError: The table has no such report, or several share the name.
+            UnsupportedReportError: It isn't a complete table report, such as a summary, chart, or
+                ask-the-user report. Their raw results are available through `qb.request()`.
         """
         _require_positive("page_size", page_size)
         if limit is not None:
@@ -1571,6 +1596,9 @@ class AsyncTypedTable(Generic[R]):
 
         This always fetches the table's fields again. Other methods only check once, on first
         use, against cached metadata, so a long-running process can call this to look again.
+
+        Raises:
+            SchemaMismatchError: The class no longer matches the table.
         """
         self._checked = False
         fields = await self._table.fields(refresh=True)
@@ -1595,8 +1623,23 @@ class AsyncTypedTable(Generic[R]):
     ) -> "AsyncTypedIterator[R]":
         """Iterate over matching records as instances of the class. See `Table.query`.
 
-        Every field in the class is selected. Sort with `Tasks.fields.title`, or
-        `Tasks.fields.title.desc` for descending.
+        Every field in the class is selected.
+
+        Args:
+            where: A condition built with `Tasks.fields` or `F`, or a hand-written string.
+            order_by: A field or list of fields, such as `Tasks.fields.title`, or
+                `Tasks.fields.title.desc` for descending. Without this, records come back in
+                Record ID# order.
+            page_size: Records to request per call to Quickbase.
+            limit: Stop after this many records.
+
+        Returns:
+            A `TypedIterator`, which only contacts Quickbase once you start iterating.
+
+        Raises:
+            SchemaMismatchError: The class no longer matches the table.
+            QueryError: `where`, `page_size`, or `limit` can't be sent as written. Nothing was sent.
+            InvalidResponseError: A record has a fraction in a whole number field.
         """
         records = self._table.query(
             where=where,
@@ -1649,7 +1692,21 @@ class AsyncTypedTable(Generic[R]):
     async def first(
         self, *, where: Expression | str | None = None, order_by: OrderBy = None
     ) -> R | None:
-        """Get the first matching record as an instance of the class, or None if there isn't one."""
+        """Get the first matching record as an instance of the class, or None if there isn't one.
+
+        Args:
+            where: A condition built with `Tasks.fields` or `F`, or a hand-written string.
+            order_by: A field or list of fields, such as `Tasks.fields.title`, or
+                `Tasks.fields.title.desc` for descending. Without this, records come back in
+                Record ID# order.
+
+        Returns:
+            An instance of the class, or None.
+
+        Raises:
+            SchemaMismatchError: The class no longer matches the table.
+            QueryError: `where` can't be sent as written. Nothing was sent.
+        """
         await self._check_once()
         record = await self._table.first(
             where=where, select=column_ids(self._model), order_by=order_refs(order_by)
@@ -1657,13 +1714,36 @@ class AsyncTypedTable(Generic[R]):
         return None if record is None else self._model.from_record(record)
 
     async def get(self, record_id: int) -> R | None:
-        """Get a record by its Record ID# as an instance of the class, or None if there's none."""
+        """Get a record by its Record ID# as an instance of the class, or None if there's none.
+
+        Args:
+            record_id: The record's Record ID#.
+
+        Returns:
+            An instance of the class, or None.
+
+        Raises:
+            SchemaMismatchError: The class no longer matches the table.
+            InvalidValueError: `record_id` isn't a positive integer. Nothing was sent.
+        """
         await self._check_once()
         record = await self._table.get(record_id, select=column_ids(self._model))
         return None if record is None else self._model.from_record(record)
 
     async def count(self, where: Expression | str | None = None) -> int:
-        """Count the matching records without fetching them."""
+        """Count the matching records without fetching them.
+
+        Args:
+            where: A condition built with `Tasks.fields` or `F`, or a hand-written string.
+                Defaults to every record.
+
+        Returns:
+            The number of matching records.
+
+        Raises:
+            SchemaMismatchError: The class no longer matches the table.
+            QueryError: `where` can't be sent as written. Nothing was sent.
+        """
         await self._check_once()
         return await self._table.count(where)
 
@@ -1672,7 +1752,18 @@ class AsyncTypedTable(Generic[R]):
     ) -> WriteResult:
         """Create records from rows made with `Tasks.new()`. See `Table.insert`.
 
-        Raises `InvalidValueError` for a row made by a class for another table.
+        Args:
+            rows: The rows, from `Tasks.new()`.
+            batch_size: The most rows to send in one request.
+
+        Returns:
+            A `WriteResult`, whose `created_ids` are in the same order as `rows`.
+
+        Raises:
+            SchemaMismatchError: The class no longer matches the table.
+            InvalidValueError: A row was made by a class for another table. Nothing was written.
+            WriteError: A row failed. Other rows are still written, and are listed in the error's
+                `result`.
         """
         given = rows_for(self._model, rows)
         await self._check_once()
@@ -1683,7 +1774,19 @@ class AsyncTypedTable(Generic[R]):
     ) -> WriteResult:
         """Change records from rows made with `Tasks.change()`. See `Table.update`.
 
-        Raises `InvalidValueError` for a row made by a class for another table.
+        Args:
+            rows: The rows, from `Tasks.change()`. Fields you leave out keep their values.
+            batch_size: The most rows to send in one request.
+
+        Returns:
+            A `WriteResult`. A record whose values didn't change is in `unchanged_ids`, not
+            `updated_ids`.
+
+        Raises:
+            SchemaMismatchError: The class no longer matches the table.
+            InvalidValueError: A row was made by a class for another table. Nothing was written.
+            WriteError: A row failed. Other rows are still written, and are listed in the error's
+                `result`.
         """
         given = rows_for(self._model, rows)
         await self._check_once()
@@ -1694,7 +1797,20 @@ class AsyncTypedTable(Generic[R]):
     ) -> WriteResult:
         """Update the record whose unique `merge_on` field matches. See `Table.upsert`.
 
-        Raises `InvalidValueError` for a row made by a class for another table.
+        Args:
+            rows: The rows, from `Tasks.new()`, which must each set `merge_on`.
+            merge_on: A field marked as unique, such as `Tasks.fields.code`.
+            batch_size: The most rows to send in one request.
+
+        Returns:
+            A `WriteResult`, with new records in `created_ids`, changed ones in `updated_ids`, and
+            ones that already matched in `unchanged_ids`.
+
+        Raises:
+            SchemaMismatchError: The class no longer matches the table.
+            InvalidValueError: A row was made by a class for another table. Nothing was written.
+            WriteError: A row failed. Other rows are still written, and are listed in the error's
+                `result`.
         """
         given = rows_for(self._model, rows)
         await self._check_once()
@@ -1703,7 +1819,19 @@ class AsyncTypedTable(Generic[R]):
         )
 
     async def delete(self, where: Expression | str) -> int:
-        """Delete the matching records and return how many were deleted. See `Table.delete`."""
+        """Delete the matching records and return how many were deleted. See `Table.delete`.
+
+        Args:
+            where: A condition built with `Tasks.fields` or `F`, or a hand-written string. It's
+                required and is checked first.
+
+        Returns:
+            The number of records deleted, which is 0 if none matched.
+
+        Raises:
+            SchemaMismatchError: The class no longer matches the table.
+            QueryError: `where` can't be sent as written. Nothing was deleted.
+        """
         await self._check_once()
         return await self._table.delete(where)
 
@@ -1721,8 +1849,26 @@ class AsyncTypedTable(Generic[R]):
     ) -> list[SummaryRow]:
         """Count and total records, overall or per group. See `Table.summarize`.
 
-        Name fields with the class, such as `Tasks.fields.hours`. Results are keyed by field label,
-        and aren't converted as the class's own values are, so whole numbers read as `float`.
+        Results are keyed by field label, and aren't converted as the class's own values are, so
+        whole numbers read as `float`.
+
+        Args:
+            group_by: The fields to group by, such as `Tasks.fields.status`, and `Period` for dates.
+                Without this, the result is one row for all the matching records.
+            where: A condition built with `Tasks.fields` or `F`, or a hand-written string.
+            total: Numeric fields to add up, such as `Tasks.fields.hours`.
+            average: Numeric fields to average.
+            minimum: Numeric, date, timestamp, or time of day fields to find the lowest of.
+            maximum: Numeric, date, timestamp, or time of day fields to find the highest of.
+            max_records: Raise `QueryError` if more records match than this, without reading them.
+            page_size: Records to request per call to Quickbase.
+
+        Returns:
+            A `SummaryRow` for each group.
+
+        Raises:
+            SchemaMismatchError: The class no longer matches the table.
+            QueryError: An argument can't be used, or more records match than `max_records`.
         """
         await self._check_once()
         return await self._table.summarize(
@@ -1741,7 +1887,17 @@ class AsyncTypedTable(Generic[R]):
     ) -> TypedPage[R]:
         """Show what `delete()` would delete, as instances of the class. See `Table.preview_delete`.
 
-        `total` is how many records would be deleted.
+        Args:
+            where: A condition built with `Tasks.fields` or `F`, or a hand-written string.
+            order_by: Which matching records come first, as for `query()`.
+            top: The most records to return. `total` still counts every match.
+
+        Returns:
+            A `TypedPage`, whose `total` is how many records would be deleted.
+
+        Raises:
+            SchemaMismatchError: The class no longer matches the table.
+            QueryError: `where` can't be sent as written, or is None. Nothing was queried.
         """
         await self._check_once()
         page = await self._table.preview_delete(
@@ -1753,7 +1909,15 @@ class AsyncTypedTable(Generic[R]):
     async def preview_update(self, rows: Iterable[Row[R]]) -> UpdatePreview:
         """Show what `update()` would change. See `Table.preview_update`.
 
-        Raises `InvalidValueError` for a row made by a class for another table.
+        Args:
+            rows: The rows you'd pass to `update()`, from `Tasks.change()`.
+
+        Returns:
+            An `UpdatePreview`, with `changes`, `unchanged_ids`, and `missing_ids`.
+
+        Raises:
+            SchemaMismatchError: The class no longer matches the table.
+            InvalidValueError: A row was made by a class for another table. Nothing was read.
         """
         given = rows_for(self._model, rows)
         await self._check_once()

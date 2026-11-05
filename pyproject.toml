@@ -47,7 +47,6 @@ dev = [
 docs = [
     "mkdocs>=1.6,<2",
     "mkdocs-material>=9.6,<10",
-    "mkdocstrings[python]>=0.30",
 ]
 
 [build-system]
@@ -83,7 +82,7 @@ select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "PT", "RUF", "T20"]
 
 [tool.ruff.lint.per-file-ignores]
 "docs/playground-app/examples/*" = ["E711", "E712", "F704", "T20"]  # top-level await, F == None
-"docs_src/*" = ["E402", "F704", "F821", "T20"]  # fragments that use the page's setup
+"docs_src/*" = ["E402", "E711", "F704", "F821", "T20"]  # fragments that use the page's setup
 "scripts/*" = ["T20"]
 "src/pyquickbase/_sync/*" = ["UP028"]  # generated from async code, which can't use `yield from`
 "tests/*" = ["SIM117"]  # generated sync tests can't merge what async tests must nest

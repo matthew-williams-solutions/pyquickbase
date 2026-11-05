@@ -3,15 +3,14 @@
 uv run scripts/build_llms.py
 
 llms.txt lists the docs, and llms-full.txt holds them in one Markdown file, with the API reference
-written out from the SDK itself. This uses only the standard library and `inspect`, not a docs
-plugin, so it doesn't depend on which tool builds the site. None of this is committed.
+from build_reference.py. This uses only the standard library, not a docs plugin, so it doesn't
+depend on which tool builds the site. None of this is committed.
 """
 
-import inspect
 import posixpath
 import re
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 import pyquickbase
 
@@ -24,6 +23,14 @@ REFERENCE_PAGES = (
     ("Quickbase", "quickbase", "Creating and closing a client, and calling any endpoint"),
     ("App", "app", "An app's details, getting its tables, and creating tables"),
     ("Table", "table", "Reading and writing records, files, and changing a table's fields"),
+    ("Report", "report", "Running reports built in the Quickbase interface"),
+    ("TypedTable", "typed-table", "Reading and writing through a generated class"),
+    ("Queries", "queries", "`F`, conditions from plain data, and checking hand-written ones"),
+    ("Records and results", "records", "What reads and writes return, files, and summaries"),
+    ("Metadata", "metadata", "What describes apps, tables, fields, relationships, and reports"),
+    ("Write limits and retries", "limits", "Limiting what a client can write, and how it retries"),
+    ("Generated classes", "generated", "What supports the classes from `pyquickbase codegen`"),
+    ("Errors", "errors", "Everything the SDK raises, and what each one holds"),
 )
 # An interactive page, which means nothing as text, and the pages above.
 LEFT_OUT = {"playground.md", *(f"reference/{page[1]}.md" for page in REFERENCE_PAGES)}
@@ -45,34 +52,17 @@ DESCRIPTIONS = {
     "guides/clients.md": "Read-only clients, allowed writes, retries, proxies, and other settings",
     "guides/agents.md": "Limiting what an agent can do, untrusted values, and reading results as "
     "data",
-    "reference.md": "Every public name, with its signature and docstring",
+    "reference.md": "An overview of the API reference, with where to find every public name",
     "field-types.md": "Every field type, what to write, what it reads as, and field settings",
     "stability.md": "What 1.x promises, and what it doesn't",
     "api-notes.md": "How Quickbase's REST API behaves, as confirmed against a live app",
     "changelog.md": "What changed in each release",
-}
-# The client makes these, and their constructors aren't covered by the stability policy.
-CLIENT_MADE = {
-    "App",
-    "AsyncApp",
-    "AsyncRecordIterator",
-    "AsyncReport",
-    "AsyncTable",
-    "AsyncTypedIterator",
-    "AsyncTypedTable",
-    "Record",
-    "RecordIterator",
-    "Report",
-    "Table",
-    "TypedIterator",
-    "TypedTable",
 }
 # Text that means a page wasn't fully converted.
 UNCONVERTED = (":::", "--8<--", "!!!")
 
 _NAV_ITEM = re.compile(r"""^( +)- ["']?(.+?)["']?:\s*(\S+\.md)?$""")
 _FENCE = re.compile(r"^[>\s]*(`{3,}|~{3,})")
-_DIRECTIVE = re.compile(r"^::: pyquickbase\.(\w+)$")
 _SNIPPET = re.compile(r'^--8<-- "(.+)"$', re.MULTILINE)
 _BLOCK = re.compile(r'^(!!!|===)\s*(\w+)?\s*(?:"(.*)")?\s*$')
 _LINK = re.compile(r"(\]\()([^)\s]+)")
@@ -81,8 +71,6 @@ _CODE_SPAN = re.compile(r"(`[^`]*`)")
 _HEADING = re.compile(r"^(#{1,5}) ")
 _MODULE_PREFIX = re.compile(r"\b(?:collections\.abc|typing|pyquickbase(?:\.\w+)*)\.")
 _QUOTED_TYPE = re.compile(r"'([A-Z][\w\[\], ]*)'")
-_DOCSTRING_SECTIONS = {"Args:", "Raises:", "Returns:", "Yields:", "Attributes:"}
-_DOCSTRING_ITEM = re.compile(r"(\w+): (.*)")
 
 
 class Page(NamedTuple):
@@ -143,95 +131,6 @@ def _next_fence(line: str, fence: str | None) -> str | None:
 def clean_types(text: str) -> str:
     """Show types by their public names, as in `Expression`, not `pyquickbase._query.Expression`."""
     return _QUOTED_TYPE.sub(r"\1", _MODULE_PREFIX.sub("", text)).replace("~", "")
-
-
-def _signature(function: Any) -> str:
-    """Return a function's signature, without `self` or `cls`."""
-    signature = inspect.signature(function)
-    parameters = list(signature.parameters.values())
-    if parameters and parameters[0].name in ("self", "cls"):
-        signature = signature.replace(parameters=parameters[1:])
-    return clean_types(str(signature))
-
-
-def _docstring(item: Any) -> str:
-    """Return a docstring as Markdown. Its indented `Args:` would otherwise become a code block."""
-    text = inspect.getdoc(item)
-    if not text:
-        return ""
-    out: list[str] = []
-    in_section = False
-    for line in text.splitlines():
-        if line.strip() in _DOCSTRING_SECTIONS:
-            in_section = True
-            out += [f"**{line.strip().removesuffix(':')}:**", ""]
-        elif in_section and line.startswith("        "):
-            out[-1] += f" {line.strip()}"
-        elif in_section and line.startswith("    "):
-            entry = _DOCSTRING_ITEM.fullmatch(line.strip())
-            out.append(f"- `{entry[1]}`: {entry[2]}" if entry else f"- {line.strip()}")
-        else:
-            in_section = False
-            out.append(line)
-    return "\n".join(out).strip()
-
-
-def _code_and_docs(code: str, item: Any) -> list[str]:
-    docs = _docstring(item)
-    return [f"```python\n{code}\n```", "", *([docs, ""] if docs else [])]
-
-
-def _member(class_name: str, name: str, member: Any) -> list[str]:
-    heading = [f"#### `{class_name}.{name}`", ""]
-    if isinstance(member, property):
-        returns = _signature(member.fget).partition(" -> ")[2]
-        return heading + _code_and_docs(f"{name}: {returns}" if returns else name, member)
-    function = getattr(member, "__func__", member)
-    return heading + _code_and_docs(f"{name}{_signature(function)}", function)
-
-
-def _describe(name: str, *, members: bool) -> list[str]:
-    """Write out one public name, as `::: pyquickbase.X` would in the docs site."""
-    item = getattr(pyquickbase, name)
-    heading = [f"### `{name}`", ""]
-    if not inspect.isclass(item):
-        if inspect.isfunction(item):
-            return heading + _code_and_docs(f"{name}{_signature(item)}", item)
-        return heading + _code_and_docs(f"{name}: {item.__class__.__name__}", item.__class__)
-    has_constructor = "__init__" in vars(item) and name not in CLIENT_MADE
-    if has_constructor:
-        signature = clean_types(str(inspect.signature(item))).removesuffix(" -> None")
-        out = heading + _code_and_docs(f"{name}{signature}", item)
-    else:
-        docs = _docstring(item)
-        out = heading + ([docs, ""] if docs else [])
-    if members:
-        for member_name, member in vars(item).items():
-            is_method = inspect.isfunction(member) or isinstance(
-                member, property | classmethod | staticmethod
-            )
-            if is_method and not member_name.startswith("_"):
-                out += _member(name, member_name, member)
-    return out
-
-
-def expand_reference(text: str) -> str:
-    """Replace each `::: pyquickbase.X` directive, and its indented options, with real content."""
-    lines = text.splitlines()
-    out: list[str] = []
-    index = 0
-    while index < len(lines):
-        directive = _DIRECTIVE.match(lines[index])
-        index += 1
-        if directive is None:
-            out.append(lines[index - 1])
-            continue
-        options: list[str] = []
-        while index < len(lines) and lines[index].startswith(" "):
-            options.append(lines[index].strip())
-            index += 1
-        out += _describe(directive[1], members="members: false" not in options)
-    return "\n".join(out)
 
 
 def _resolve_snippets(text: str) -> str:
@@ -324,7 +223,7 @@ def convert_page(page: Page, site_url: str) -> str:
     """Return one nav page as plain Markdown."""
     text = _resolve_snippets((DOCS / page.path).read_text(encoding="utf-8"))
     text = _without_title(text, page.path)
-    text = convert_blocks(expand_reference(text))
+    text = convert_blocks(text)
     text = demote_headings(rewrite_links(text, page.path, site_url)).strip()
     return f"## {page.title}\n\nSource: <{page_url(site_url, page.path)}>\n\n{text}\n"
 
@@ -332,6 +231,18 @@ def convert_page(page: Page, site_url: str) -> str:
 _NOT_AFFILIATED = (
     "pyquickbase is unofficial. It isn't affiliated with or endorsed by Quickbase, Inc."
 )
+
+
+def _reference_pages(site_url: str) -> list[str]:
+    """Return the API reference's pages, under the combined file's headings."""
+    # build_reference.py uses this module's helpers, so it can only be imported once they exist.
+    import build_reference
+
+    return [
+        f"## API reference: {title}\n\nSource: <{page_url(site_url, f'reference/{slug}.md')}>\n\n"
+        + demote_headings(text).strip()
+        for title, slug, text in build_reference.full_text(site_url)
+    ]
 
 
 def _covered_pages(config: Config) -> list[Page]:
@@ -351,7 +262,7 @@ def build_index(config: Config) -> str:
     sections: dict[str, list[str]] = {
         "Docs": [
             f"- [All the docs in one file]({site_url}llms-full.txt): Every page below as one "
-            "Markdown document, with the API reference written out",
+            "Markdown document, including the API reference",
             *(
                 f"- [API reference: {title}]({site_url}reference/{name}.txt): {about}, as "
                 "Markdown, with parameters, return values, errors, and tested examples"
@@ -382,6 +293,7 @@ def build_full(config: Config) -> str:
         f"> {config.summary}",
         f"{_NOT_AFFILIATED} {intro}",
         *(convert_page(page, site_url).strip() for page in _covered_pages(config)),
+        *_reference_pages(site_url),
     ]
     full = re.sub(r"\n{3,}", "\n\n", "\n\n".join(parts)) + "\n"
     for text in UNCONVERTED:

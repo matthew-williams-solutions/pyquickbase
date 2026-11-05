@@ -34,8 +34,15 @@ class FileUpload:
     """A file to write to a file attachment field, as a value in `insert()`, `update()`, or
     `upsert()`.
 
-    `name` can't contain a path or control characters, because Quickbase stores them as sent and
-    could pass them to whoever downloads the file later.
+    `repr` leaves out the contents, because they may be sensitive and reprs end up in logs.
+
+    Args:
+        name: The file's name. It can't contain a path or control characters, because Quickbase
+            stores them as sent and could pass them to whoever downloads the file later.
+        data: The file's contents.
+
+    Raises:
+        InvalidValueError: `name` is empty, or contains a path or control characters.
     """
 
     name: str
@@ -199,13 +206,17 @@ _ROW_ERROR_KINDS: tuple[tuple[RowErrorKind, re.Pattern[str]], ...] = (
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class RowError:
-    """Why one row failed. `index` is its position in the rows you passed, starting from 0.
+    """Why one row failed.
 
-    Use `kind` instead of reading `messages`, whose wording can change. It's `duplicate` for a value
-    already in a unique field, `permission` for a refusal by the token's role, `invalid_choice` for
-    a value outside a field's choices, `rule` for a refusal by one of the table's custom data rules,
-    whose message is in `messages`, and `other` for anything else, including wording this version
-    doesn't recognize. `field_id` is the field Quickbase named, for the first and third of these.
+    Attributes:
+        index: The row's position in the rows you passed, starting from 0.
+        messages: Quickbase's wording, which can change, so use `kind` to decide what to do. For a
+            `rule` failure, this holds the rule's message.
+        kind: `duplicate` for a value already in a unique field, `permission` for a refusal by the
+            token's role, `invalid_choice` for a value outside a field's choices, `rule` for a
+            refusal by one of the table's custom data rules, and `other` for anything else,
+            including wording this version doesn't recognize.
+        field_id: The field Quickbase named, for `duplicate` and `invalid_choice`.
     """
 
     index: int
@@ -227,7 +238,15 @@ def row_error(index: int, messages: tuple[str, ...]) -> RowError:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class WriteResult:
-    """What a write did. If rows fail, `WriteError.result` holds this, including what succeeded."""
+    """What a write did. If rows fail, `WriteError.result` holds this, including what succeeded.
+
+    Attributes:
+        created_ids: The Record ID# of each new record. For `insert()`, these are in the same order
+            as your rows.
+        updated_ids: The records whose values changed.
+        unchanged_ids: The records that already held these values.
+        errors: A `RowError` for each row that failed.
+    """
 
     created_ids: tuple[int, ...] = ()
     updated_ids: tuple[int, ...] = ()

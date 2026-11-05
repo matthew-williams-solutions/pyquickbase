@@ -70,10 +70,12 @@ class TypedField(F):
 
     @property
     def id(self) -> int:
+        """The field's ID."""
         return self._field  # pyright: ignore[reportReturnType]
 
     @property
     def desc(self) -> int:
+        """This field in `order_by`, sorted descending."""
         return -self.id
 
 
@@ -113,7 +115,13 @@ def order_refs(order_by: OrderBy) -> list[int] | None:
 class Column:
     """How a generated attribute maps to a field. `field_type` is what codegen saw.
 
-    `read_as` is `int` or `decimal` when a number gets converted, and empty otherwise.
+    Attributes:
+        name: The attribute's name on the generated class.
+        id: The field's ID.
+        field_type: The field's type when the class was generated.
+        writable: Whether the class lets you write this field.
+        label: The field's label when the class was generated.
+        read_as: `int` or `decimal` when a number gets converted, and empty otherwise.
     """
 
     name: str
@@ -131,7 +139,10 @@ class Row(dict[int, Any], Generic[R]):
     """Values to write, by field ID, from a generated class's `new()` or `change()`.
 
     It's tied to its class, so a type checker refuses a row meant for another table, and a typed
-    table raises `InvalidValueError` for one. `table_id` is the table it was made for.
+    table raises `InvalidValueError` for one.
+
+    Attributes:
+        table_id: The table it was made for.
     """
 
     def __init__(
@@ -143,7 +154,13 @@ class Row(dict[int, Any], Generic[R]):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class TypedPage(Generic[R]):
-    """One page of records as instances of a generated class. `total` counts every match."""
+    """One page of records as instances of a generated class.
+
+    Attributes:
+        records: The records on this page, as instances of the class.
+        total: How many records match, not just the ones on this page.
+        skip: How many matching records came before this page.
+    """
 
     records: tuple[R, ...]
     total: int
@@ -151,6 +168,7 @@ class TypedPage(Generic[R]):
 
     @property
     def has_more(self) -> bool:
+        """Whether more matching records come after this page."""
         return self.next_skip < self.total
 
     @property
@@ -191,7 +209,14 @@ class TypedRecord:
 
     @classmethod
     def from_record(cls, record: Record) -> Self:
-        """Build an instance from a record that holds every column."""
+        """Build an instance from a record that holds every column.
+
+        Args:
+            record: A `Record` with every field of the class, such as from `Table.query()`.
+
+        Returns:
+            An instance of the class.
+        """
         try:
             return cls(
                 **{column.name: _converted(column, record[column.id]) for column in cls.__columns__}

@@ -20,6 +20,11 @@ from .errors import (
 
 REQUEST_ID_HEADER = "qb-api-ray"
 _MAX_DETAIL_CHARS = 500
+# Quickbase says "User token is invalid" for all of these, so the status alone can't separate them.
+_UNAUTHORIZED_HINT = (
+    "Quickbase answers this way for a bad token, and also for an app or table that doesn't exist "
+    "or that the token can't reach, so check the ID as well."
+)
 _ERRORS_BY_STATUS: dict[int, type[APIError]] = {
     400: BadRequestError,
     401: AuthenticationError,
@@ -58,6 +63,8 @@ def error_from_response(response: httpx.Response, method: str, path: str) -> API
         summary += f": {detail}"
     if request_id:
         summary += f" (request ID: {request_id})"
+    if status == 401:
+        summary += f" {_UNAUTHORIZED_HINT}"
     common = {
         "status_code": status,
         "method": method,

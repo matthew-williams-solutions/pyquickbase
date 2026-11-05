@@ -52,14 +52,6 @@ refusal raises and leaves behind. Check new claims in a live test before publish
 
 Give the methods these guides cover full `Args`, `Returns`, and `Raises` docstrings at the same time.
 
-## API reference
-
-`scripts/build_reference.py` writes `Quickbase`, `App`, and `Table` in the two-column layout, with live-tested
-examples.
-
-- Convert the other resources, then replace `docs/reference.md` with an overview that links to them, and add
-  each page's Markdown file to `llms.txt`.
-
 ## Docs playground
 
 - Simulate updates and deletes, then add "Try it" links from each guide to its own example.

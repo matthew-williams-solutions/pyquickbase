@@ -34,7 +34,16 @@ def parse(parser: Callable[[Any], T], payload: Any, what: str) -> T:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class AppInfo:
-    """An app's metadata. `raw` holds everything Quickbase returned."""
+    """An app's metadata.
+
+    Attributes:
+        id: The app's ID.
+        name: The app's name.
+        description: The app's description, which may be empty.
+        time_zone: The app's time zone, such as `(UTC) Coordinated Universal Time`, if reported.
+        date_format: How the app writes dates, such as `MM-DD-YYYY`, if reported.
+        raw: Everything Quickbase returned, for anything not listed here.
+    """
 
     id: str
     name: str
@@ -46,7 +55,14 @@ class AppInfo:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Role:
-    """A role in an app. `access` is Quickbase's name for its level, such as `Basic Access`."""
+    """A role in an app.
+
+    Attributes:
+        id: The role's ID.
+        name: The role's name.
+        access: Quickbase's name for its level, such as `Basic Access`.
+        raw: Everything Quickbase returned, for anything not listed here.
+    """
 
     id: int
     name: str
@@ -77,7 +93,16 @@ def app_info_from_api(data: Mapping[str, Any]) -> AppInfo:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class TableInfo:
-    """A table's metadata. `raw` holds everything Quickbase returned."""
+    """A table's metadata.
+
+    Attributes:
+        id: The table's ID.
+        name: The table's name.
+        description: The table's description, which may be empty.
+        key_field_id: The ID of the table's key field, which is 3, `Record ID#`, unless someone
+            changed it in the Quickbase interface. None if Quickbase left it out.
+        raw: Everything Quickbase returned, for anything not listed here.
+    """
 
     id: str
     name: str
@@ -98,14 +123,28 @@ def table_info_from_api(data: Mapping[str, Any]) -> TableInfo:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Field:
-    """A field's metadata. `mode` is `formula`, `lookup`, `summary`, or None for plain fields.
+    """A field's metadata.
 
-    `formula` is the formula's text, or None if the field doesn't have one.
-    `decimal_places` is only how a number is displayed: Quickbase still stores `1.5` in a field set
-    to 0 places. `is_foreign_key` means it links to a parent table's record. The `lookup_` and
-    `summary_` attributes say what those fields point at: `*_reference_field_id` is the foreign key
-    field, on this table for a lookup and on the child table for a summary, and
-    `*_target_field_id` is the field they read, on the parent or the child.
+    Attributes:
+        id: The field's ID.
+        label: The field's label.
+        type: Quickbase's name for the field's type, such as `text` or `numeric`.
+        mode: `formula`, `lookup`, `summary`, or None for a plain field.
+        required: Whether the field must have a value.
+        unique: Whether values must be different on every record.
+        appears_by_default: Whether a query returns the field when `select` is left out.
+        choices: The options of a multiple-choice field, or empty for other fields.
+        allow_new_choices: Quickbase's `allowNewChoices` setting, or False if it isn't reported.
+        formula: The formula's text, or None if the field doesn't have one.
+        decimal_places: Only how a number is displayed: Quickbase still stores `1.5` in a field set
+            to 0 places.
+        is_foreign_key: Whether the field links to a parent table's record.
+        lookup_reference_field_id: For a lookup, the foreign key field on this table.
+        lookup_target_field_id: For a lookup, the field it reads on the parent.
+        summary_reference_field_id: For a summary, the foreign key field on the child table.
+        summary_target_field_id: For a summary, the field it reads on the child.
+        summary_function: For a summary, Quickbase's name for its calculation, such as `SUM`.
+        raw: Everything Quickbase returned, for anything not listed here.
     """
 
     id: int
@@ -156,8 +195,18 @@ def field_from_api(data: Mapping[str, Any]) -> Field:
 class Relationship:
     """A parent-child link between two tables.
 
-    `lookup_field_ids` are fields on the child, and `summary_field_ids` are fields on the parent.
-    `create_relationship()` and `ensure_lookup_field()` instead take the parent's field to look up.
+    `create_relationship()` and `ensure_lookup_field()` take the parent's field to look up, which
+    isn't what `lookup_field_ids` holds.
+
+    Attributes:
+        id: The relationship's ID.
+        parent_table_id: The parent table's ID.
+        child_table_id: The child table's ID.
+        foreign_key_field_id: The child's field that holds the parent's Record ID#, if reported.
+        lookup_field_ids: The lookup fields, which are on the child.
+        summary_field_ids: The summary fields, which are on the parent.
+        is_cross_app: Whether Quickbase reports the parent as being in another app.
+        raw: Everything Quickbase returned, for anything not listed here.
     """
 
     id: int
@@ -186,10 +235,16 @@ def relationship_from_api(data: Mapping[str, Any]) -> Relationship:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ReportInfo:
-    """A report's metadata. `type` is `table`, `summary`, `chart`, or another Quickbase type.
+    """A report's metadata.
 
-    `incomplete` is true when Quickbase can't run the report through the API, as with one that asks
-    the user for a value. `raw` holds everything Quickbase returned.
+    Attributes:
+        id: The report's ID.
+        name: The report's name.
+        type: `table`, `summary`, `chart`, or another Quickbase type.
+        description: The report's description, which may be empty.
+        incomplete: Whether Quickbase can't run the report through the API, as with one that asks
+            the user for a value.
+        raw: Everything Quickbase returned, for anything not listed here.
     """
 
     id: str
@@ -343,9 +398,14 @@ class Record(Mapping[str | int, Any]):
 class FileDownload:
     """A file downloaded from a file attachment field.
 
-    `name` and `content_type` aren't trustworthy. Quickbase stores names as sent, such as
-    `../../x`, so don't use `name` as a path without cleaning it, and `content_type` is based on
-    the name rather than the contents.
+    `repr` leaves out the contents, because they may be sensitive and reprs end up in logs.
+
+    Attributes:
+        name: The file's name. Quickbase stores names as sent, such as `../../x`, so don't use this
+            as a path without cleaning it.
+        data: The file's contents.
+        content_type: The media type, if reported. It's based on the name rather than the contents,
+            so it doesn't tell you what's in the file.
     """
 
     name: str
@@ -373,8 +433,9 @@ def file_download_from_response(response: Any) -> FileDownload:
 class FormulaResult:
     """The result of `table.run_formula()`.
 
-    `text` is exactly what Quickbase sent, which is always a string, and `type` is Quickbase's name
-    for its type, such as `number`, `bool`, or `date`.
+    Attributes:
+        text: Exactly what Quickbase sent, which is always a string.
+        type: Quickbase's name for its type, such as `number`, `bool`, or `date`.
     """
 
     text: str = field(repr=False)
@@ -406,7 +467,13 @@ def formula_result_from_api(data: Mapping[str, Any]) -> FormulaResult:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Page:
-    """One page of query results. `total` counts every match, not just this page."""
+    """One page of query results.
+
+    Attributes:
+        records: The `Record` objects on this page.
+        total: How many records match, not just the ones on this page.
+        skip: How many matching records came before this page.
+    """
 
     records: tuple[Record, ...]
     total: int
@@ -414,6 +481,7 @@ class Page:
 
     @property
     def has_more(self) -> bool:
+        """Whether more matching records come after this page."""
         return self.next_skip < self.total
 
     @property

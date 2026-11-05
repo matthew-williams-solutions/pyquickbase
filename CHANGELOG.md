@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The message of `AuthenticationError` now says that a 401 may mean a wrong ID rather than a bad token.
+  Quickbase uses the same wording for a bad token, an app or table that doesn't exist, and one the token
+  can't reach, so the error's type stays the same.
+
+### Documentation
+
+- The API reference is now a set of pages, one for each class or topic, with a description of every
+  argument and attribute and an example for both clients, which live tests run. Each page has a plain
+  Markdown copy, listed in `llms.txt`.
+- Links to anchors in the old reference page, such as `reference/#pyquickbase.Table`, no longer work.
+
 ## [1.0.0rc6] - 2026-11-05
 
 This candidate adds what an AI agent or MCP server needs to use Quickbase safely: filters from plain

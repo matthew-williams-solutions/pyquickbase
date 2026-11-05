@@ -30,8 +30,12 @@ class Period:
     """Group by a date or timestamp field's day, week, month, quarter, or year.
 
     Groups are labeled `2026-03-14`, `2026-W11` (an ISO week), `2026-03`, `2026-Q1`, and `2026`, so
-    they sort in order. A timestamp's date depends on its time zone, so `tz` sets that, and defaults
-    to UTC. It has no effect on a date field.
+    they sort in order.
+
+    Args:
+        field: The date or timestamp field, by label, ID, or field object.
+        unit: `day`, `week`, `month`, `quarter`, or `year`.
+        tz: The time zone that decides a timestamp's date. It has no effect on a date field.
 
     Raises:
         QueryError: `unit` isn't one of these, or `field` isn't a field.

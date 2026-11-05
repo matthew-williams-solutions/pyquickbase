@@ -38,8 +38,9 @@ class InvalidValueError(QuickbaseError, ValueError):
 class WriteError(QuickbaseError):
     """Part of a write failed, and the rest may have been applied.
 
-    `result` is a `WriteResult` with the records that were written and the rows that failed, when
-    Quickbase reported them.
+    Attributes:
+        result: A `WriteResult` with the records that were written and the rows that failed, when
+            Quickbase reported them.
     """
 
     def __init__(self, summary: str, *, result: Any = None) -> None:
@@ -74,8 +75,16 @@ class SchemaMismatchError(QuickbaseError):
 class APIError(QuickbaseError):
     """Quickbase answered with an unsuccessful status code.
 
-    `message` and `description` are Quickbase's own wording, when it sent any.
-    Include `request_id` when reporting a problem to Quickbase support.
+    This is the base of the errors for each status, so it's what you catch for any of them.
+
+    Attributes:
+        status_code: The HTTP status.
+        method: The request's HTTP method.
+        path: The request's path.
+        message: Quickbase's wording, when it sent any. It can contain HTML, so escape it before
+            showing it in a web page.
+        description: Quickbase's further explanation, when it sent any.
+        request_id: Include this when reporting a problem to Quickbase support.
     """
 
     def __init__(
@@ -103,7 +112,10 @@ class BadRequestError(APIError):
 
 
 class AuthenticationError(APIError):
-    """401: the token is missing, invalid, or expired."""
+    """401: the token is invalid, or the app or table doesn't exist or is out of the token's reach.
+
+    Quickbase gives the same answer for all of these, so this can't say which one happened.
+    """
 
 
 class PermissionDeniedError(APIError):
@@ -111,11 +123,15 @@ class PermissionDeniedError(APIError):
 
 
 class NotFoundError(APIError):
-    """404: the app, table, field, or record does not exist."""
+    """404: what was asked for doesn't exist. An app that doesn't exist is a 401 instead."""
 
 
 class RateLimitError(APIError):
-    """429: retries ran out, or Quickbase asked for a longer wait than the retry policy allows."""
+    """429: retries ran out, or Quickbase asked for a longer wait than the retry policy allows.
+
+    Attributes:
+        retry_after: The wait Quickbase asked for, in seconds, if it did.
+    """
 
     def __init__(self, summary: str, *, retry_after: float | None = None, **kwargs: object) -> None:
         super().__init__(summary, **kwargs)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]
@@ -132,8 +148,11 @@ class WritePermissionError(WriteError, PermissionDeniedError):
     Quickbase refuses some writes with a 403, and reports others as row errors in a successful
     response, depending on the role. Both raise this, so `except PermissionDeniedError` and
     `except WriteError` each catch it. `result` holds what earlier batches or rows did write.
-    `status_code` is 403 for a refused request, and 207 for row errors. If some rows failed for
-    other reasons as well, you get a plain `WriteError`, whose rows each have a `kind`.
+    If some rows failed for other reasons as well, you get a plain `WriteError`, whose rows each
+    have a `kind`.
+
+    Attributes:
+        status_code: 403 for a refused request, and 207 for row errors.
     """
 
     def __init__(

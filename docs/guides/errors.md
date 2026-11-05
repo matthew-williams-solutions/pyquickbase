@@ -59,9 +59,10 @@ and `request_id`. Include `request_id` when reporting a problem to Quickbase sup
 | `ServerError` | 5xx |
 
 !!! note "A missing app is a 401"
-    Quickbase answers with a 401 rather than a 404 for an app or table that doesn't exist, so
-    `AuthenticationError` can mean either a bad token or a wrong ID. A bad realm or app can also
-    return a 400.
+    Quickbase answers with a 401 rather than a 404 for an app or table that doesn't exist, or that
+    the token can't reach, with the same wording it uses for a bad token. So `AuthenticationError`
+    can mean any of these, and the SDK can't tell which, so its message says to check the ID too. A
+    bad realm or app can also return a 400.
 
 !!! warning "Messages can contain HTML"
     Quickbase's formula error messages can include HTML, such as a `javascript:` link, and errors

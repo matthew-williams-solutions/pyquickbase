@@ -25,8 +25,11 @@ _MISSING = object()
 class FieldChange:
     """One field's value before and after a write, with an empty field as None.
 
-    A file field shows the file's name, never its contents. `repr` hides both values, because they
-    may be sensitive and reprs end up in logs.
+    `repr` hides both values, because they may be sensitive and reprs end up in logs.
+
+    Attributes:
+        before: The value now. A file field shows the file's name, never its contents.
+        after: The value the write would set. A file field shows the file's name here too.
     """
 
     before: Any = field(repr=False)
@@ -35,7 +38,12 @@ class FieldChange:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class RecordChange:
-    """What a write would change on one record, as `{field label: FieldChange}`."""
+    """What a write would change on one record.
+
+    Attributes:
+        record_id: The record's Record ID#.
+        fields: What would change, as `{field label: FieldChange}`.
+    """
 
     record_id: int
     fields: Mapping[str, FieldChange]

@@ -1,205 +1,23 @@
 # API reference
 
-Everything listed here is public, as described in [Stability and versioning](stability.md). Modules
-starting with `_` are private and may change at any time.
-
-[`Quickbase`](reference/quickbase.md), [`App`](reference/app.md), and [`Table`](reference/table.md) also
-have their own pages, with tested examples for both clients.
-
-## Clients
-
-`Quickbase` is documented in full here. `AsyncQuickbase`, `AsyncApp`, `AsyncTable`, `AsyncReport`,
-`AsyncRecordIterator`, `AsyncTypedTable`, and `AsyncTypedIterator` have the same methods, which you
-`await`. The one difference is that `AsyncQuickbase` closes with `aclose()`, not `close()`.
-
-::: pyquickbase.Quickbase
-
-::: pyquickbase.App
-
-::: pyquickbase.Table
-
-::: pyquickbase.Report
-
-::: pyquickbase.RecordIterator
-
-::: pyquickbase.AsyncQuickbase
-    options:
-      members: false
-
-::: pyquickbase.AsyncApp
-    options:
-      members: false
-
-::: pyquickbase.AsyncTable
-    options:
-      members: false
-
-::: pyquickbase.AsyncReport
-    options:
-      members: false
-
-::: pyquickbase.AsyncRecordIterator
-    options:
-      members: false
-
-::: pyquickbase.AsyncTypedTable
-    options:
-      members: false
-
-::: pyquickbase.AsyncTypedIterator
-    options:
-      members: false
-
-::: pyquickbase.RetryPolicy
-
-## Previews
-
-`Table.preview_delete` and `Table.preview_update` return these.
-
-::: pyquickbase.UpdatePreview
-
-::: pyquickbase.RecordChange
-
-::: pyquickbase.FieldChange
-
-## Summaries
-
-`Table.summarize` returns these. `Report.summary_rows` returns plain dictionaries.
-
-::: pyquickbase.SummaryRow
-
-::: pyquickbase.Period
-
-::: pyquickbase.PeriodUnit
-
-::: pyquickbase.SummaryGroups
-
-## Write policies
-
-::: pyquickbase.TableRules
-
-::: pyquickbase.Allow
-
-::: pyquickbase.all_of
-
-::: pyquickbase.WriteRequest
-
-::: pyquickbase.WriteAction
-
-::: pyquickbase.WritePolicy
-
-## Generated classes
-
-These support the classes from `pyquickbase codegen`, and you rarely need them directly.
-
-::: pyquickbase.TypedTable
-
-::: pyquickbase.TypedIterator
-
-::: pyquickbase.TypedPage
-
-::: pyquickbase.OrderBy
-
-::: pyquickbase.TypedRecord
-
-::: pyquickbase.TypedField
-
-::: pyquickbase.Row
-
-::: pyquickbase.Column
-
-::: pyquickbase.Unset
-
-::: pyquickbase.UNSET
-
-## Queries
-
-::: pyquickbase.F
-
-::: pyquickbase.Expression
-
-::: pyquickbase.FieldRef
-
-::: pyquickbase.FieldRefs
-
-::: pyquickbase.parse_where
-
-::: pyquickbase.WhereCondition
-
-::: pyquickbase.where_from_dict
-
-::: pyquickbase.where_schema
-
-## Records and metadata
-
-::: pyquickbase.Record
-
-::: pyquickbase.Page
-
-::: pyquickbase.WriteResult
-
-::: pyquickbase.RowError
-
-::: pyquickbase.FileUpload
-
-::: pyquickbase.FileDownload
-
-::: pyquickbase.FormulaResult
-
-::: pyquickbase.AppInfo
-
-::: pyquickbase.TableInfo
-
-::: pyquickbase.Field
-
-::: pyquickbase.Relationship
-
-::: pyquickbase.Role
-
-::: pyquickbase.ReportInfo
-
-## Exceptions
-
-::: pyquickbase.QuickbaseError
-
-::: pyquickbase.ConfigurationError
-
-::: pyquickbase.QueryError
-
-::: pyquickbase.InvalidValueError
-
-::: pyquickbase.SchemaMismatchError
-
-::: pyquickbase.UnknownTableError
-
-::: pyquickbase.UnknownFieldError
-
-::: pyquickbase.UnknownReportError
-
-::: pyquickbase.UnsupportedReportError
-
-::: pyquickbase.ReadOnlyError
-
-::: pyquickbase.WriteError
-
-::: pyquickbase.WritePermissionError
-
-::: pyquickbase.NetworkError
-
-::: pyquickbase.RequestTimeoutError
-
-::: pyquickbase.InvalidResponseError
-
-::: pyquickbase.APIError
-
-::: pyquickbase.BadRequestError
-
-::: pyquickbase.AuthenticationError
-
-::: pyquickbase.PermissionDeniedError
-
-::: pyquickbase.NotFoundError
-
-::: pyquickbase.RateLimitError
-
-::: pyquickbase.ServerError
+Each page below covers part of the SDK, with a tested example for both clients, and has a plain
+Markdown copy for AI tools. Everything listed is public, as described in
+[Stability and versioning](stability.md). Modules starting with `_` are private and may change at any
+time.
+
+The async classes have the same methods as the sync ones, which you `await`. They're described with
+their sync versions.
+
+| Page | What it covers | Public names |
+|---|---|---|
+| [Quickbase](reference/quickbase.md) | Creating and closing a client, and calling any endpoint | `Quickbase`, `AsyncQuickbase` |
+| [App](reference/app.md) | An app's details, getting its tables, and creating tables | `App`, `AsyncApp` |
+| [Table](reference/table.md) | Reading and writing records, files, and changing a table's fields | `Table`, `AsyncTable` |
+| [Report](reference/report.md) | Running reports built in the Quickbase interface | `Report`, `AsyncReport` |
+| [TypedTable](reference/typed-table.md) | Reading and writing through a generated class | `TypedTable`, `AsyncTypedTable` |
+| [Queries](reference/queries.md) | Building conditions, including from plain data | `F`, `Expression`, `where_from_dict`, `where_schema`, `parse_where`, `WhereCondition`, `FieldRef`, `FieldRefs` |
+| [Records and results](reference/records.md) | What reads and writes return, files, previews, and summaries | `Record`, `RecordIterator`, `AsyncRecordIterator`, `Page`, `WriteResult`, `RowError`, `FileUpload`, `FileDownload`, `FormulaResult`, `UpdatePreview`, `RecordChange`, `FieldChange`, `SummaryRow`, `Period`, `PeriodUnit`, `SummaryGroups` |
+| [Metadata](reference/metadata.md) | What describes apps, tables, fields, relationships, and reports | `AppInfo`, `Role`, `TableInfo`, `ReportInfo`, `Field`, `Relationship` |
+| [Write limits and retries](reference/limits.md) | Limiting what a client can write, and how it retries | `TableRules`, `Allow`, `WriteRequest`, `all_of`, `WritePolicy`, `WriteAction`, `RetryPolicy` |
+| [Generated classes](reference/generated.md) | What supports the classes from `pyquickbase codegen` | `TypedRecord`, `Column`, `TypedField`, `OrderBy`, `TypedIterator`, `AsyncTypedIterator`, `TypedPage`, `Row`, `Unset`, `UNSET` |
+| [Errors](reference/errors.md) | Everything the SDK raises, and what each one holds | `QuickbaseError`, `ConfigurationError`, `QueryError`, `InvalidValueError`, `ReadOnlyError`, `UnknownTableError`, `UnknownFieldError`, `UnknownReportError`, `UnsupportedReportError`, `SchemaMismatchError`, `WriteError`, `WritePermissionError`, `APIError`, `BadRequestError`, `AuthenticationError`, `PermissionDeniedError`, `NotFoundError`, `RateLimitError`, `ServerError`, `NetworkError`, `RequestTimeoutError`, `InvalidResponseError` |
