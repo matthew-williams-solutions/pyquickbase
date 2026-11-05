@@ -19,6 +19,7 @@ from pyquickbase import (
     SchemaMismatchError,
     TypedPage,
     WriteError,
+    tool_result,
 )
 from pyquickbase._codegen import render
 from pyquickbase._models import field_from_api, table_info_from_api
@@ -145,6 +146,45 @@ async def test_query_checks_arguments_before_sending() -> None:
         with pytest.raises(QueryError):
             qb.app(APP).typed(Tasks).query(limit=0)
     assert server.requests == []
+
+
+async def test_select_reads_only_some_fields_and_leaves_the_rest_unset() -> None:
+    server = Server(total=2)
+    async with client(server) as qb:
+        tasks = qb.app(APP).typed(Tasks)
+        found = [task async for task in tasks.query(select=[Tasks.fields.title])]
+        page = await tasks.query_page(select=Tasks.fields.due_date, top=1)
+        first = await tasks.first(select=[Tasks.fields.title])
+        got = await tasks.get(1, select=[Tasks.fields.title])
+    assert [body["select"] for body in server.sent("/records/query")] == [[3, 6]] + [[3, 7]] + [
+        [3, 6]
+    ] * 2
+    assert [(task.id, task.title) for task in found] == [(1, "Item 1"), (2, "Item 2")]
+    with pytest.raises(AttributeError, match=r"Tasks\.due_date wasn't selected"):
+        _ = found[0].due_date
+    assert page.records[0].due_date == date(2027, 1, 2)
+    assert first is not None
+    assert got is not None
+    assert first.title == got.title == "Item 1"
+    assert not hasattr(got, "total")
+    assert tool_result(found)["records"] == [
+        {"id": 1, "title": "Item 1"},
+        {"id": 2, "title": "Item 2"},
+    ]
+    with pytest.raises(AttributeError, match="has no attribute 'nope'"):
+        _ = found[0].nope
+
+
+@pytest.mark.parametrize("select", [["Title"], [6], "Title", [], [F("Title")]])
+async def test_select_takes_only_fields_of_the_class(select: Any) -> None:
+    server = Server()
+    async with client(server) as qb:
+        tasks = qb.app(APP).typed(Tasks)
+        with pytest.raises(QueryError, match="select"):
+            await tasks.query_page(select=select)
+        with pytest.raises(QueryError, match="select"):
+            tasks.query(select=select)
+    assert server.sent("/records/query") == []
 
 
 async def test_insert_update_and_upsert_send_rows_by_id() -> None:

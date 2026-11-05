@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `select` on a typed table's `query()`, `query_page()`, `first()`, and `get()`, which reads only the
+  fields of the class you list. The other attributes are left unset, so reading one raises
+  `AttributeError` saying it wasn't selected. `Select` is its type.
 - `timeout` on `insert()`, `update()`, `upsert()`, and `download_file()`, and on a typed table's
   writes, which replaces the client's timeout for that call, such as for a large file. It applies with
   your own `http_client` too.

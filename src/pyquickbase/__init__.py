@@ -41,7 +41,17 @@ from ._sync._resources import (
     TypedIterator,
     TypedTable,
 )
-from ._typed import UNSET, Column, OrderBy, Row, TypedField, TypedPage, TypedRecord, Unset
+from ._typed import (
+    UNSET,
+    Column,
+    OrderBy,
+    Row,
+    Select,
+    TypedField,
+    TypedPage,
+    TypedRecord,
+    Unset,
+)
 from ._version import __version__
 from ._where_data import where_from_dict, where_schema
 from ._writes import FileUpload, RowError, WriteResult
@@ -132,6 +142,7 @@ __all__ = [
     "Row",
     "RowError",
     "SchemaMismatchError",
+    "Select",
     "ServerError",
     "SummaryGroups",
     "SummaryRow",

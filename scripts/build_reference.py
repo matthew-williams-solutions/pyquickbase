@@ -63,6 +63,8 @@ ALIASES = {
     "through. `WriteRules` is one, or you can write your own.",
     "OrderBy": "What a generated class's methods take as `order_by`, which is fields rather than "
     "labels, so that renaming a label can't break it.",
+    "Select": "What a generated class's methods take as `select`: fields of the class, alone or in "
+    "a list. The attributes it leaves out are unset.",
 }
 # What can't be shown happening in an example, and why.
 NO_EXAMPLE = {
@@ -458,7 +460,7 @@ SYMBOL_PAGES = (
         *_setup('app = qb.app("bq1234567")'),
         (
             Group("Generated records", "records", _CODEGEN, ("TypedRecord", "Column")),
-            Group("Queries", "queries", _CODEGEN, ("TypedField", "OrderBy")),
+            Group("Queries", "queries", _CODEGEN, ("TypedField", "OrderBy", "Select")),
             Group("Results", "results", _CODEGEN, ("TypedIterator", "TypedPage")),
             Group("Writes", "writes", _CODEGEN, ("Row", "Unset")),
         ),

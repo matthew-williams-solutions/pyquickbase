@@ -312,7 +312,12 @@ def _value(value: Any, state: _State) -> Any:
 def _items(record: Any) -> list[tuple[str, Any]]:
     """A record's values by label, or by attribute name for a generated class."""
     if isinstance(record, TypedRecord):
-        return [(column.name, getattr(record, column.name)) for column in record.__columns__]
+        # A record read with `select` leaves the other attributes unset.
+        return [
+            (column.name, getattr(record, column.name))
+            for column in record.__columns__
+            if hasattr(record, column.name)
+        ]
     if isinstance(record, Mapping):
         found = cast(Mapping[Any, Any], record)
         return [(str(key), found[key]) for key in found]

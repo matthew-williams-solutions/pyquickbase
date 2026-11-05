@@ -54,6 +54,7 @@ from .._typed import (
     OrderBy,
     R,
     Row,
+    Select,
     TypedField,
     TypedPage,
     column_ids,
@@ -61,6 +62,7 @@ from .._typed import (
     raise_for_problems,
     rows_for,
     schema_problems,
+    select_ids,
 )
 from .._writes import (
     RowInput,
@@ -1897,16 +1899,18 @@ class AsyncTypedTable(Generic[R]):
         self,
         *,
         where: Expression | str | None = None,
+        select: Select = None,
         order_by: OrderBy = None,
         page_size: int = 1000,
         limit: int | None = None,
     ) -> "AsyncTypedIterator[R]":
         """Iterate over matching records as instances of the class. See `Table.query`.
 
-        Every field in the class is selected.
-
         Args:
             where: A condition built with `Tasks.fields` or `F`, or a hand-written string.
+            select: The fields to read, such as `[Tasks.fields.title]`, for records that only
+                need some. Record ID# is always read. The other attributes are left unset, so
+                reading one raises `AttributeError`. Defaults to every field in the class.
             order_by: A field or list of fields, such as `Tasks.fields.title`, or
                 `Tasks.fields.title.desc` for descending. Without this, records come back in
                 Record ID# order.
@@ -1918,32 +1922,36 @@ class AsyncTypedTable(Generic[R]):
 
         Raises:
             SchemaMismatchError: The class no longer matches the table.
-            QueryError: `where`, `page_size`, or `limit` can't be sent as written. Nothing was sent.
+            QueryError: `where`, `select`, `page_size`, or `limit` can't be sent as written.
+                Nothing was sent.
             InvalidResponseError: A record has a fraction in a whole number field.
         """
+        only = select_ids(self._model, select)
         records = self._table.query(
             where=where,
-            select=column_ids(self._model),
+            select=column_ids(self._model) if only is None else only,
             order_by=order_refs(order_by),
             page_size=page_size,
             limit=limit,
         )
-        return AsyncTypedIterator(self._check_once, self._model, records)
+        return AsyncTypedIterator(self._check_once, self._model, records, only)
 
     async def query_page(
         self,
         *,
         where: Expression | str | None = None,
+        select: Select = None,
         order_by: OrderBy = None,
         top: int = 100,
         skip: int = 0,
     ) -> TypedPage[R]:
         """Fetch one page of records as instances of the class, for controlling paging yourself.
 
-        Every field in the class is selected.
-
         Args:
             where: A condition built with `Tasks.fields` or `F`, or a query string.
+            select: The fields to read, such as `[Tasks.fields.title]`, for records that only
+                need some. Record ID# is always read. The other attributes are left unset, so
+                reading one raises `AttributeError`. Defaults to every field in the class.
             order_by: A field or list of fields, such as `Tasks.fields.title`, or
                 `Tasks.fields.title.desc` for descending. Without this, records come back in
                 Record ID# order.
@@ -1955,27 +1963,36 @@ class AsyncTypedTable(Generic[R]):
 
         Raises:
             SchemaMismatchError: The class no longer matches the table.
-            QueryError: `where`, `top`, or `skip` can't be sent as written. Nothing was sent.
+            QueryError: `where`, `select`, `top`, or `skip` can't be sent as written. Nothing was
+                sent.
             InvalidResponseError: A record has a fraction in a whole number field.
         """
+        only = select_ids(self._model, select)
         await self._check_once()
         page = await self._table.query_page(
             where=where,
-            select=column_ids(self._model),
+            select=column_ids(self._model) if only is None else only,
             order_by=order_refs(order_by),
             top=top,
             skip=skip,
         )
-        records = tuple(self._model.from_record(record) for record in page.records)
+        records = tuple(self._model.from_record(record, only=only) for record in page.records)
         return TypedPage(records=records, total=page.total, skip=page.skip)
 
     async def first(
-        self, *, where: Expression | str | None = None, order_by: OrderBy = None
+        self,
+        *,
+        where: Expression | str | None = None,
+        select: Select = None,
+        order_by: OrderBy = None,
     ) -> R | None:
         """Get the first matching record as an instance of the class, or None if there isn't one.
 
         Args:
             where: A condition built with `Tasks.fields` or `F`, or a hand-written string.
+            select: The fields to read, such as `[Tasks.fields.title]`, for records that only
+                need some. Record ID# is always read. The other attributes are left unset, so
+                reading one raises `AttributeError`. Defaults to every field in the class.
             order_by: A field or list of fields, such as `Tasks.fields.title`, or
                 `Tasks.fields.title.desc` for descending. Without this, records come back in
                 Record ID# order.
@@ -1987,17 +2004,23 @@ class AsyncTypedTable(Generic[R]):
             SchemaMismatchError: The class no longer matches the table.
             QueryError: `where` can't be sent as written. Nothing was sent.
         """
+        only = select_ids(self._model, select)
         await self._check_once()
         record = await self._table.first(
-            where=where, select=column_ids(self._model), order_by=order_refs(order_by)
+            where=where,
+            select=column_ids(self._model) if only is None else only,
+            order_by=order_refs(order_by),
         )
-        return None if record is None else self._model.from_record(record)
+        return None if record is None else self._model.from_record(record, only=only)
 
-    async def get(self, record_id: int) -> R | None:
+    async def get(self, record_id: int, *, select: Select = None) -> R | None:
         """Get a record by its Record ID# as an instance of the class, or None if there's none.
 
         Args:
             record_id: The record's Record ID#.
+            select: The fields to read, such as `[Tasks.fields.title]`, for records that only
+                need some. Record ID# is always read. The other attributes are left unset, so
+                reading one raises `AttributeError`. Defaults to every field in the class.
 
         Returns:
             An instance of the class, or None.
@@ -2006,9 +2029,12 @@ class AsyncTypedTable(Generic[R]):
             SchemaMismatchError: The class no longer matches the table.
             InvalidValueError: `record_id` isn't a positive integer. Nothing was sent.
         """
+        only = select_ids(self._model, select)
         await self._check_once()
-        record = await self._table.get(record_id, select=column_ids(self._model))
-        return None if record is None else self._model.from_record(record)
+        record = await self._table.get(
+            record_id, select=column_ids(self._model) if only is None else only
+        )
+        return None if record is None else self._model.from_record(record, only=only)
 
     async def count(self, where: Expression | str | None = None) -> int:
         """Count the matching records without fetching them.
@@ -2237,15 +2263,20 @@ class AsyncTypedIterator(Generic[R]):
     """Yields records from a query as instances of a generated class."""
 
     def __init__(
-        self, check: Callable[[], Any], model: type[R], records: AsyncRecordIterator
+        self,
+        check: Callable[[], Any],
+        model: type[R],
+        records: AsyncRecordIterator,
+        only: Sequence[int] | None = None,
     ) -> None:
         self._check = check
         self._model = model
         self._records = records
+        self._only = only
 
     def __aiter__(self) -> Self:
         return self
 
     async def __anext__(self) -> R:
         await self._check()
-        return self._model.from_record(await self._records.__anext__())
+        return self._model.from_record(await self._records.__anext__(), only=self._only)

@@ -42,8 +42,8 @@ print(tasks.count(Tasks.fields.status == "Open"))
 
 `Tasks.fields` works like `F`, by field ID. `order_by` takes these fields or their IDs, and raises
 `QueryError` for a label such as `"Title"`, because the class uses IDs so that renaming a label can't
-break it. Each record is a frozen dataclass, and `query()` and
-`query_page()` always select all of its fields. A record's `repr` leaves out its values, because they may be sensitive.
+break it. Each record is a frozen dataclass, and a record's `repr` leaves out its values, because they may
+be sensitive.
 
 | Field type | Attribute type |
 |---|---|
@@ -65,6 +65,22 @@ break it. Each record is a frozen dataclass, and `query()` and
 An ordinary `Record` holds every number as a `float`. Generated classes convert them, so money reads
 exactly. **Quickbase uses decimal places only for display**, and stores `1.5` in a field set to 0 places.
 A value like that raises `InvalidResponseError`, without showing the value, rather than being rounded.
+
+### Reading only some fields
+
+`query()`, `query_page()`, `first()`, and `get()` read every field of the class unless you pass `select`,
+which takes fields of the class, alone or in a list. Record ID# is always read. The other attributes are
+left unset, so reading one raises `AttributeError`, saying it wasn't selected, rather than holding a value
+that isn't true.
+
+```python
+for task in tasks.query(select=[Tasks.fields.title, Tasks.fields.due_date]):
+    print(task.id, task.title, task.due_date)
+    task.status  # AttributeError: Tasks.status wasn't selected in the query that read this record
+```
+
+Comparing two such records with `==` raises `AttributeError` too, and `tool_result()` leaves the unset
+attributes out.
 
 ## Reading a page at a time
 

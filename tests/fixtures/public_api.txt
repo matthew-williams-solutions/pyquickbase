@@ -89,13 +89,13 @@ class AsyncTypedTable(Generic)
     async def check_schema(self) -> None
     async def count(self, where: Expression | str | None = None) -> int
     async def delete(self, where: Expression | str) -> int
-    async def first(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None) -> ~R | None
-    async def get(self, record_id: int) -> ~R | None
+    async def first(self, *, where: Expression | str | None = None, select: TypedField | Sequence[TypedField] | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None) -> ~R | None
+    async def get(self, record_id: int, *, select: TypedField | Sequence[TypedField] | None = None) -> ~R | None
     async def insert(self, rows: Iterable[Row[~R]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     async def preview_delete(self, where: Expression | str, *, order_by: TypedField | int | Sequence[TypedField | int] | None = None, top: int = 100) -> TypedPage[~R]
     async def preview_update(self, rows: Iterable[Row[~R]]) -> UpdatePreview
-    def query(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, limit: int | None = None) -> 'AsyncTypedIterator[R]'
-    async def query_page(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, top: int = 100, skip: int = 0) -> TypedPage[~R]
+    def query(self, *, where: Expression | str | None = None, select: TypedField | Sequence[TypedField] | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, limit: int | None = None) -> 'AsyncTypedIterator[R]'
+    async def query_page(self, *, where: Expression | str | None = None, select: TypedField | Sequence[TypedField] | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, top: int = 100, skip: int = 0) -> TypedPage[~R]
     async def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, total: str | int | F | Sequence[str | int | F] | None = None, average: str | int | F | Sequence[str | int | F] | None = None, minimum: str | int | F | Sequence[str | int | F] | None = None, maximum: str | int | F | Sequence[str | int | F] | None = None, max_records: int | None = None, page_size: int = 1000) -> list[SummaryRow]
     property table -> AsyncTable
     async def update(self, rows: Iterable[Row[~R]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
@@ -320,6 +320,7 @@ class RowError(object)
     field kind: Literal['duplicate', 'permission', 'invalid_choice', 'rule', 'other']
     field messages: tuple[str, ...]
 class SchemaMismatchError(QuickbaseError)
+value Select = TypedField | Sequence[TypedField] | None
 class ServerError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
 value SummaryGroups = str | int | F | Period | Sequence[str | int | F | Period]
@@ -401,18 +402,18 @@ class TypedPage(Generic)
     field skip: int
     field total: int
 class TypedRecord(object)
-    classmethod def from_record(cls, record: Record) -> Self
+    classmethod def from_record(cls, record: Record, *, only: Collection[int] | None = None) -> Self
 class TypedTable(Generic)
     def check_schema(self) -> None
     def count(self, where: Expression | str | None = None) -> int
     def delete(self, where: Expression | str) -> int
-    def first(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None) -> ~R | None
-    def get(self, record_id: int) -> ~R | None
+    def first(self, *, where: Expression | str | None = None, select: TypedField | Sequence[TypedField] | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None) -> ~R | None
+    def get(self, record_id: int, *, select: TypedField | Sequence[TypedField] | None = None) -> ~R | None
     def insert(self, rows: Iterable[Row[~R]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     def preview_delete(self, where: Expression | str, *, order_by: TypedField | int | Sequence[TypedField | int] | None = None, top: int = 100) -> TypedPage[~R]
     def preview_update(self, rows: Iterable[Row[~R]]) -> UpdatePreview
-    def query(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, limit: int | None = None) -> 'TypedIterator[R]'
-    def query_page(self, *, where: Expression | str | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, top: int = 100, skip: int = 0) -> TypedPage[~R]
+    def query(self, *, where: Expression | str | None = None, select: TypedField | Sequence[TypedField] | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, limit: int | None = None) -> 'TypedIterator[R]'
+    def query_page(self, *, where: Expression | str | None = None, select: TypedField | Sequence[TypedField] | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, top: int = 100, skip: int = 0) -> TypedPage[~R]
     def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, total: str | int | F | Sequence[str | int | F] | None = None, average: str | int | F | Sequence[str | int | F] | None = None, minimum: str | int | F | Sequence[str | int | F] | None = None, maximum: str | int | F | Sequence[str | int | F] | None = None, max_records: int | None = None, page_size: int = 1000) -> list[SummaryRow]
     property table -> Table
     def update(self, rows: Iterable[Row[~R]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
