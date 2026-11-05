@@ -27,6 +27,7 @@ against a real app before depending on it. Questions we haven't answered yet are
 | `EX ''` matches empty fields and `XEX ''` matches non-empty ones | Live API, 2026-11-02 |
 | On a date field, `LT`, `LTE`, `GT`, and `GTE` match the same records as `BF`, `OBF`, `AF`, and `OAF` | Live API, 2026-11-02 |
 | Timestamps can be compared with `AF` and `BF` using milliseconds | Live API, 2026-11-02 |
+| Timestamps can also be compared with `AF` and `BF` using a date, such as `2027-03-01` | Live API, 2026-11-04 |
 | With no `select`, only fields in the table's default set return, and Record ID# may not be one | Live API, 2026-11-02 |
 | Timestamps return as `2026-10-21T11:49:56Z`, dates as `2026-10-18` | Live API, 2026-11-02 |
 | A nonexistent app or table returns 401 with a valid token, not 404. An ID of the wrong shape, such as `abc` or one that's too long, returns 400, `Invalid request` | Live API, 2026-11-02 |

@@ -87,6 +87,10 @@ These support the classes from `pyquickbase codegen`, and you rarely need them d
 
 ::: pyquickbase.WhereCondition
 
+::: pyquickbase.where_from_dict
+
+::: pyquickbase.where_schema
+
 ## Records and metadata
 
 ::: pyquickbase.Record

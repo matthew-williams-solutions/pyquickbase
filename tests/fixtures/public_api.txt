@@ -354,6 +354,8 @@ class WriteResult(object)
     field unchanged_ids: tuple[int, ...]
     field updated_ids: tuple[int, ...]
 def parse_where(where: str, fields: Iterable[Field]) -> list[WhereCondition]
+def where_from_dict(data: Mapping[str, Any], *, fields: Iterable[str | int] | None = None) -> Expression
+def where_schema(*, fields: Iterable[str | int] | Iterable[Field] | None = None, max_depth: int = 2) -> dict[str, Any]
 command pyquickbase codegen
     --app (StoreAction, required)
     --output (StoreAction, required)

@@ -36,6 +36,7 @@ Changelog = "https://github.com/matthew-williams-solutions/pyquickbase/blob/main
 [dependency-groups]
 dev = [
     "hypothesis>=6.100",
+    "jsonschema>=4.23",
     "pyright>=1.1.390",
     "pytest>=8.3",
     "pytest-cov>=6.0",

@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `where_from_dict()`, which builds a query condition from plain data, such as the JSON from an AI
+  model's tool call or a web form. It refuses anything it doesn't recognize, and checks each value
+  against its field's type, so `today` or `garbage` on a date field raises `QueryError`. Its `fields`
+  argument limits which fields a filter may use.
+- `where_schema()`, which describes that format as JSON Schema with no `$ref`, for a tool's input in
+  MCP or any other LLM tool system.
+
 ## [1.0.0rc5] - 2026-11-04
 
 This candidate closes gaps that would be hard to change after 1.0, and has four more breaking

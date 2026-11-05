@@ -113,6 +113,33 @@ for condition in parse_where("{7.EX.'Done'}", tasks.fields()):
     print(condition.field_id, condition.operator, condition.value)
 ```
 
+### Filters as plain data
+
+An AI model or a web form can't send `F`, only JSON. `where_from_dict()` turns that into the same kind
+of condition, and works anywhere `F` does.
+
+```python
+from pyquickbase import where_from_dict
+
+where = where_from_dict(
+    {
+        "all": [
+            {"field": "Status", "op": "==", "value": "Open"},
+            {
+                "any": [
+                    {"field": "Due Date", "op": "<", "value": "2027-01-01"},
+                    {"field": "Amount", "op": ">", "value": 100},
+                ]
+            },
+        ]
+    }
+)
+print(tasks.count(where))
+```
+
+It's stricter than `F`, because plain data can't hold a `date` object. For a model's filters, see
+[Filters from a model](agents.md#filters-from-a-model).
+
 ## Fetching records
 
 `query()` fetches further pages as you iterate, so you can stop at any point.

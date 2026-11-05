@@ -34,6 +34,8 @@ from pyquickbase import (
     UnknownTableError,
     WriteError,
     parse_where,
+    where_from_dict,
+    where_schema,
 )
 
 FIELDS = (
@@ -667,3 +669,85 @@ def test_setup_methods_create_once_and_read_back_exactly(qb: Quickbase, scratch:
     assert caught.value.result.errors[0].field_id == field.id
 
     assert any(role.access for role in app.roles())
+
+
+def _filter_codes(table: Any, data: Any, **kwargs: Any) -> set[str]:
+    where = where_from_dict(data, **kwargs)
+    return {r["Code"] for r in table.query(where=where, select=["Code"])}
+
+
+def _cond(field: Any, op: str, value: Any) -> dict[str, Any]:
+    return {"field": field, "op": op, "value": value}
+
+
+def test_filters_from_data_match_the_records_they_say(
+    qb: Quickbase, scratch: Any, seeded: str
+) -> None:
+    table = get(qb, scratch, seeded)
+    table.update(
+        [
+            {"Record ID#": r.id, "Done": True, "Started": datetime(2027, 3, 4, 5, 6, 7, tzinfo=UTC)}
+            for r in table.query(where=F("Code").is_in(["C1", "C2"]), select=["Code"])
+        ]
+    )
+    table.insert([{"Title": "Blank", "Code": "C6"}])
+    cases: list[tuple[Any, set[str]]] = [
+        (_cond("Code", "==", "C1"), {"C1"}),
+        (_cond("Code", "!=", "C1"), {"C2", "C3", "C4", "C5", "C6"}),
+        (_cond("Code", "in", ["C1", "C3"]), {"C1", "C3"}),
+        (_cond("Code", "not_in", ["C1", "C3"]), {"C2", "C4", "C5", "C6"}),
+        (_cond("Title", "contains", "Row"), {"C1", "C2", "C3", "C4", "C5"}),
+        (_cond("Title", "not_contains", "Row"), {"C6"}),
+        (_cond("Title", "starts_with", "Bl"), {"C6"}),
+        (_cond("Amount", ">", 3), {"C4", "C5"}),
+        (_cond("Amount", "<=", "2"), {"C1", "C2"}),
+        (_cond("Amount", "==", None), {"C6"}),
+        (_cond("Amount", "!=", None), {"C1", "C2", "C3", "C4", "C5"}),
+        (_cond("Amount", "in", [1, None]), {"C1", "C6"}),
+        (_cond("Due Date", "<", "2027-01-02"), {"C1"}),
+        (_cond("Due Date", "<=", "2027-01-02"), {"C1", "C2"}),
+        (_cond("Due Date", ">", "2027-01-04"), {"C5"}),
+        (_cond("Due Date", ">=", "2027-01-04"), {"C4", "C5"}),
+        (_cond("Due Date", "==", "2027-01-03"), {"C3"}),
+        (_cond("Due Date", "==", None), {"C6"}),
+        (_cond("Done", "==", True), {"C1", "C2"}),
+        (_cond("Done", "!=", True), {"C3", "C4", "C5", "C6"}),
+        (_cond("Started", "<", "2027-03-04T05:06:08Z"), {"C1", "C2"}),
+        (_cond("Started", "<", "2027-03-04T05:06:07Z"), set()),
+        (_cond("Started", ">=", "2027-03-04T00:06:07-05:00"), {"C1", "C2"}),
+        (_cond("Started", ">", "2027-03-04T05:06:07Z"), set()),
+        (_cond("Started", "<", "2027-03-01"), set()),
+        (_cond("Started", ">", "2027-03-01"), {"C1", "C2"}),
+        (_cond("Started", "==", None), {"C3", "C4", "C5", "C6"}),
+        (_cond(4, "!=", None), {"C1", "C2", "C3", "C4", "C5", "C6"}),
+        (_cond(4, "==", None), set()),
+        (_cond("Record ID#", ">", 0), {"C1", "C2", "C3", "C4", "C5", "C6"}),
+        (
+            {
+                "all": [
+                    _cond("Done", "==", True),
+                    {"any": [_cond("Code", "==", "C1"), _cond("Amount", ">", 4)]},
+                ]
+            },
+            {"C1"},
+        ),
+    ]
+    for data, expected in cases:
+        assert _filter_codes(table, data) == expected, data
+
+
+def test_filters_from_data_delete_only_what_they_match(
+    qb: Quickbase, scratch: Any, seeded: str
+) -> None:
+    table = get(qb, scratch, seeded)
+    data = {"all": [_cond("Amount", ">=", 2), _cond("Amount", "<", 4)]}
+    assert table.delete(where_from_dict(data)) == 2
+    assert _filter_codes(table, _cond("Record ID#", ">", 0)) == {"C1", "C4", "C5"}
+
+
+def test_the_filter_schema_offers_the_tables_fields(
+    qb: Quickbase, scratch: Any, seeded: str
+) -> None:
+    table = get(qb, scratch, seeded)
+    schema = where_schema(fields=table.fields(), max_depth=0)
+    assert "Due Date" in schema["properties"]["field"]["enum"]

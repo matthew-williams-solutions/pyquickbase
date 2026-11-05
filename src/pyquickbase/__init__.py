@@ -27,6 +27,7 @@ from ._sync._client import Quickbase
 from ._sync._resources import App, RecordIterator, Report, Table, TypedIterator, TypedTable
 from ._typed import UNSET, Column, OrderBy, Row, TypedField, TypedPage, TypedRecord, Unset
 from ._version import __version__
+from ._where_data import where_from_dict, where_schema
 from ._writes import FileUpload, RowError, WriteResult
 from .errors import (
     APIError,
@@ -119,4 +120,6 @@ __all__ = [
     "WriteResult",
     "__version__",
     "parse_where",
+    "where_from_dict",
+    "where_schema",
 ]
