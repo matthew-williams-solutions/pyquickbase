@@ -19,6 +19,7 @@ from pyquickbase import (
     ReadRefusedError,
     ReadRules,
     UnknownFieldError,
+    UnknownReportError,
     UnknownTableError,
     WriteAccess,
     WriteRules,
@@ -158,7 +159,8 @@ def test_a_listed_report_loses_hidden_columns(
 ) -> None:
     with limited(scratch, policy(table, ids)) as qb:
         tasks = qb.app(scratch.app_id).table(table.info().id)
-        with pytest.raises(ReadRefusedError, match="isn't a listed table report"):
+        # An unlisted report looks as if it doesn't exist.
+        with pytest.raises(UnknownReportError):
             tasks.report(LIST_ALL).run_page(top=5)
     with limited(scratch, policy(table, ids, reports=[LIST_ALL])) as qb:
         tasks = qb.app(scratch.app_id).table(table.info().id)
@@ -194,6 +196,9 @@ def test_write_only_fields_can_be_written_but_not_read(
             tasks.first(select=["Notes"])
         with pytest.raises(ReadRefusedError, match="formula"):
             tasks.run_formula("1")
+    # Even a write policy that allows everything can't add a field that would copy a hidden one.
+    with limited(scratch, rules, write_policy=lambda _: True) as qb:
+        tasks = qb.app(scratch.app_id).table(table.info().id)
         with pytest.raises(ReadRefusedError, match="can't be changed"):
             tasks.create_field("Copy", "text", formula="[Notes]")
     assert "Copy" not in {field.label for field in table.fields(refresh=True)}

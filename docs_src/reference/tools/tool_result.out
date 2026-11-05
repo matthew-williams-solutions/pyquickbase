@@ -1,0 +1,27 @@
+{
+  "ok": true,
+  "columns": [
+    "Record ID#",
+    "Title",
+    "Due Date"
+  ],
+  "rows": [
+    [
+      1,
+      "Pour slab",
+      "2027-01-15"
+    ],
+    [
+      2,
+      "Frame walls",
+      "2027-02-01"
+    ]
+  ],
+  "page": {
+    "returned": 2,
+    "total": 3,
+    "skip": 0,
+    "next_skip": 2,
+    "has_more": true
+  }
+}
