@@ -17,7 +17,7 @@ CONFIG = build_llms.read_config()
 SITE = CONFIG.site_url
 INDEX = build_llms.build_index(CONFIG)
 FULL = build_llms.build_full(CONFIG)
-COVERED = [page for page in CONFIG.pages if page.path != "playground.md"]
+COVERED = [page for page in CONFIG.pages if page.path not in build_llms.LEFT_OUT]
 LINK = re.compile(r"\]\(([^)\s]+)")
 
 
@@ -82,7 +82,7 @@ def test_the_index_follows_the_format() -> None:
 
 def test_every_link_in_the_index_is_under_the_site() -> None:
     found = links(INDEX)
-    assert len(found) == len(COVERED) + 1
+    assert len(found) == len(COVERED) + 2
     assert all(link.startswith(SITE) for link in found)
 
 

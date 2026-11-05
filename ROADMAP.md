@@ -50,8 +50,15 @@ refusal raises and leaves behind. Check new claims in a live test before publish
 - `docs/guides/agents.md`
 - `docs/guides/codegen.md`, which so far only gained a section on `query_page()`
 
-Give the methods these guides cover full `Args`, `Returns`, and `Raises` docstrings at the same time. Those
-are code changes, so during the week before 1.0 only change the guides, and leave docstrings until after it.
+Give the methods these guides cover full `Args`, `Returns`, and `Raises` docstrings at the same time.
+
+## API reference
+
+`scripts/build_reference.py` writes `Table` in the two-column layout, with live-tested examples. If that
+page is kept:
+
+- Convert the other resources, then replace `docs/reference.md` with an overview that links to them, and add
+  each page's Markdown file to `llms.txt`.
 
 ## Docs playground
 

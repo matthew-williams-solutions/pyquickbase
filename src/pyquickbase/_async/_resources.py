@@ -305,7 +305,14 @@ class AsyncTable:
         self._ref = ref
 
     async def info(self) -> TableInfo:
-        """Get the table's metadata. Raises `UnknownTableError` if it isn't in this app."""
+        """Get the table's metadata, from the client's cache of the app's tables.
+
+        Returns:
+            A `TableInfo`, with the table's `id` and `name`.
+
+        Raises:
+            UnknownTableError: This app has no such table, even after checking again.
+        """
         tables = await self._app.tables()
         found = _find_table(tables, self._ref)
         if found is None:
@@ -320,7 +327,19 @@ class AsyncTable:
         return found
 
     async def fields(self, *, refresh: bool = False) -> list[Field]:
-        """List the table's fields, from the cache unless `refresh` is set."""
+        """List the table's fields, from the cache unless `refresh` is set.
+
+        Args:
+            refresh: Ask Quickbase instead of using the client's cache, which keeps metadata for
+                five minutes by default. A change made through this client updates the cache, so
+                this is for changes made elsewhere, such as in the Quickbase interface.
+
+        Returns:
+            A `Field` for each of the table's fields, including built-in ones like `Record ID#`.
+
+        Raises:
+            UnknownTableError: This app has no such table.
+        """
         table_id = (await self.info()).id
         key = f"fields:{table_id}"
         cached = None if refresh else self._cache.get(key)
@@ -332,7 +351,19 @@ class AsyncTable:
         return list(fields)
 
     async def relationships(self, *, refresh: bool = False) -> list[Relationship]:
-        """List the relationships in which this table is the child. A parent table lists none."""
+        """List the relationships in which this table is the child. A parent table lists none.
+
+        Args:
+            refresh: Ask Quickbase instead of using the client's cache, which keeps metadata for
+                five minutes by default. A change made through this client updates the cache, so
+                this is for changes made elsewhere, such as in the Quickbase interface.
+
+        Returns:
+            A `Relationship` for each parent this table links to, or an empty list.
+
+        Raises:
+            UnknownTableError: This app has no such table.
+        """
         table_id = (await self.info()).id
         key = f"relationships:{table_id}"
         cached = None if refresh else self._cache.get(key)
@@ -356,7 +387,20 @@ class AsyncTable:
         return rows, payload["metadata"]["totalRelationships"]
 
     async def reports(self, *, refresh: bool = False) -> list[ReportInfo]:
-        """List the table's reports, from the cache unless `refresh` is set."""
+        """List the table's reports, from the cache unless `refresh` is set.
+
+        Args:
+            refresh: Ask Quickbase instead of using the client's cache, which keeps metadata for
+                five minutes by default. A change made through this client updates the cache, so
+                this is for changes made elsewhere, such as in the Quickbase interface.
+
+        Returns:
+            A `ReportInfo` for each report, including ones Quickbase can't run through the API,
+            whose `incomplete` is true.
+
+        Raises:
+            UnknownTableError: This app has no such table.
+        """
         table_id = (await self.info()).id
         key = f"reports:{table_id}"
         cached = None if refresh else self._cache.get(key)
@@ -370,7 +414,17 @@ class AsyncTable:
         return list(reports)
 
     def report(self, name_or_id: str) -> "AsyncReport":
-        """Get a report on this table by name or ID. It's checked when first used."""
+        """Get a report on this table by name or ID. It's checked when first used.
+
+        This doesn't contact Quickbase, so a report that doesn't exist raises
+        `UnknownReportError` on first use.
+
+        Args:
+            name_or_id: The report's exact name, or its ID, which takes priority over a name.
+
+        Returns:
+            A `Report`, for running it or getting its details.
+        """
         return AsyncReport(self._transport, self, name_or_id)
 
     async def _with_fields(self, build: Callable[[list[Field]], T]) -> T:
@@ -486,7 +540,7 @@ class AsyncTable:
             order_by: The fields to sort by, which decide which record is first. See `query`.
 
         Returns:
-            The record, or None.
+            The first matching `Record`, or None if nothing matches.
 
         Raises:
             UnknownFieldError: The table has no such field. Nothing was queried.
@@ -504,7 +558,7 @@ class AsyncTable:
                 default fields.
 
         Returns:
-            The record, or None.
+            The `Record`, or None if no record has this ID.
 
         Raises:
             InvalidValueError: `record_id` isn't a positive integer. Nothing was sent.
@@ -517,10 +571,15 @@ class AsyncTable:
         """Count the matching records without fetching them.
 
         Args:
-            where: A condition built with `F`, or a hand-written string. Defaults to every record.
+            where: A condition built with `F`, or a hand-written string, which gets checked.
+                Defaults to every record.
 
         Returns:
             The number of matching records.
+
+        Raises:
+            UnknownFieldError: The table has no such field. Nothing was queried.
+            QueryError: `where` can't be sent as written. Nothing was queried.
         """
         body = await self._query_body(where, None, None)
         return (await self._fetch_page({**body, "select": [RECORD_ID_FIELD]}, 1, 0)).total
@@ -562,8 +621,9 @@ class AsyncTable:
         record when a row has an existing value in that field. Use `upsert()` on those tables.
 
         Args:
-            rows: The rows. A value of `None` leaves the field empty, but a row needs at least one
-                real value, because Quickbase can silently skip a row without one.
+            rows: The records to create, as `{label or ID: value}` dictionaries. A value of `None`
+                leaves the field empty, but a row needs at least one real value, because Quickbase
+                can silently skip a row without one.
             batch_size: The most rows to send in one request.
 
         Returns:
@@ -594,8 +654,8 @@ class AsyncTable:
         A record that doesn't exist is an error rather than being created.
 
         Args:
-            rows: The rows. Fields left out of a row keep their values, and a value of `None` clears
-                the field.
+            rows: The changes, as `{label or ID: value}` dictionaries that each set `Record ID#`.
+                Fields left out of a row keep their values, and a value of `None` clears the field.
             batch_size: The most rows to send in one request.
 
         Returns:
@@ -625,8 +685,10 @@ class AsyncTable:
         """Update the record whose unique `merge_on` field matches, or create one if none does.
 
         Args:
-            rows: The rows, which must each set `merge_on`.
-            merge_on: A field marked as unique, by label or ID.
+            rows: The records, as `{label or ID: value}` dictionaries that each set `merge_on`.
+                Fields left out of a row keep their values on a record that already exists.
+            merge_on: The field that identifies a record, by label or ID. Quickbase requires it to
+                be marked as unique.
             batch_size: The most rows to send in one request.
 
         Returns:
@@ -701,7 +763,7 @@ class AsyncTable:
             total: Numeric fields to add up. Empty values are skipped.
             average: Numeric fields to average. Empty values are skipped.
             minimum: Numeric, date, timestamp, or time of day fields to find the lowest of.
-            maximum: The same, for the highest.
+            maximum: Numeric, date, timestamp, or time of day fields to find the highest of.
             max_records: Raise `QueryError` if more records match than this, without reading them.
                 It never returns a partial result. An agent's tool should always set this.
             page_size: Records to request per call to Quickbase.
@@ -810,8 +872,23 @@ class AsyncTable:
     async def run_formula(self, formula: str, *, record_id: int | None = None) -> FormulaResult:
         """Run a formula against this table, without saving it.
 
-        `record_id` is required if the formula uses fields. Don't run formula text you don't
-        control: a formula can read other tables, whichever table you run it on.
+        Don't run formula text you don't control: a formula can read other tables, whichever
+        table you run it on.
+
+        Args:
+            formula: The formula's text, in Quickbase's formula language. It can't be blank.
+            record_id: The record whose values the formula reads. It's required if the formula
+                uses fields.
+
+        Returns:
+            A `FormulaResult`. Its `value` is the result as a Python value where that's safe,
+            and `text` is exactly what Quickbase sent.
+
+        Raises:
+            InvalidValueError: `formula` is blank, or `record_id` isn't a positive integer.
+                Nothing was sent.
+            BadRequestError: Quickbase can't run the formula, and its message says why.
+            NotFoundError: The record doesn't exist.
         """
         require_formula(formula)
         if record_id is not None:
@@ -839,8 +916,22 @@ class AsyncTable:
     ) -> FileDownload:
         """Download a file from a record, by default its latest version.
 
-        Quickbase keeps a limited number of versions, so an older one may be gone. Raises
-        `NotFoundError` if the record, version, or file doesn't exist.
+        Quickbase keeps a limited number of versions, so an older one may be gone.
+
+        Args:
+            record_id: The Record ID# of the record that holds the file.
+            field: The file attachment field, by label or ID.
+            version: The version to download, starting at 1. Defaults to the latest.
+
+        Returns:
+            A `FileDownload`, with the file's `name`, `data`, and `content_type`. Don't trust
+            `name` as a path, or `content_type` as a description of what's in the file.
+
+        Raises:
+            InvalidValueError: `record_id` or `version` isn't a positive integer, or `field`
+                isn't a file attachment field. Nothing was sent.
+            UnknownFieldError: The table has no such field. Nothing was sent.
+            NotFoundError: The record, version, or file doesn't exist.
         """
         if version is not None:
             require_id("version", version)
@@ -852,7 +943,19 @@ class AsyncTable:
     async def delete_file_version(self, record_id: int, field: FieldRef, *, version: int) -> None:
         """Delete one version of a file. Deleting the only version leaves the field empty.
 
-        `version` is required, because Quickbase treats version 0 as the latest and deletes it.
+        The record stays, and the other versions keep their numbers.
+
+        Args:
+            record_id: The Record ID# of the record that holds the file.
+            field: The file attachment field, by label or ID.
+            version: The version to delete, starting at 1. It's required, because Quickbase
+                treats version 0 as the latest and deletes it.
+
+        Raises:
+            InvalidValueError: `record_id` or `version` isn't a positive integer, or `field`
+                isn't a file attachment field. Nothing was sent.
+            UnknownFieldError: The table has no such field. Nothing was sent.
+            NotFoundError: The record or version doesn't exist.
         """
         require_id("version", version)
         await self._transport.request("DELETE", await self._file_path(record_id, field, version))
@@ -877,7 +980,7 @@ class AsyncTable:
         exists without them. Use `ensure_field()` to repair it.
 
         Args:
-            label: The field's label. Another field can't have the same label, ignoring case.
+            label: The new field's label. Another field can't have the same label, ignoring case.
             field_type: One of `text`, `text-multiple-choice`, `text-multi-line`, `rich-text`,
                 `numeric`, `currency`, `rating`, `percent`, `multitext`, `email`, `url`, `duration`,
                 `date`, `datetime`, `timestamp`, `timeofday`, `checkbox`, `user`, `multiuser`,
@@ -893,7 +996,7 @@ class AsyncTable:
                 can't be `timestamp` or `text-multi-line`. Use `datetime` for a timestamp formula.
 
         Returns:
-            The new field.
+            The new `Field`.
 
         Raises:
             BadRequestError: Quickbase refused the field, such as for an unknown type, a label
@@ -943,7 +1046,7 @@ class AsyncTable:
                 Quickbase would accept that and empty the field's values.
 
         Returns:
-            The changed field.
+            The `Field`, with its new settings.
 
         Raises:
             UnknownFieldError: The table has no such field. Nothing was sent.
@@ -1007,14 +1110,15 @@ class AsyncTable:
         `ensure_relationship()` in a script that may run twice.
 
         Args:
-            parent: The table to link to.
-            foreign_key_label: The new foreign key field's label.
+            parent: The `Table` to link to, which becomes the parent.
+            foreign_key_label: The label of the new field on this table, which holds the Record
+                ID# of each record's parent.
             lookup_fields: Fields of the parent to show on this table, by label or ID. Quickbase
                 names each new field after the foreign key and the field, such as
                 `Project - Name`.
 
         Returns:
-            The relationship. Its `lookup_field_ids` are the new fields on this table, so don't
+            The `Relationship`. Its `lookup_field_ids` are the new fields on this table, so don't
             pass them back as `lookup_fields`.
 
         Raises:
@@ -1065,7 +1169,7 @@ class AsyncTable:
             formula: The text of a formula field.
 
         Returns:
-            The field, whether it was found, created, or changed.
+            The `Field`, whether it was found, created, or changed.
 
         Raises:
             SchemaMismatchError: The field exists with a different type, because Quickbase can't
@@ -1114,12 +1218,12 @@ class AsyncTable:
         Use the result with `ensure_lookup_field()` and `ensure_summary_field()`.
 
         Args:
-            parent: The table to link to.
-            foreign_key_label: The foreign key field's label, ignoring case when looking for an
-                existing relationship.
+            parent: The `Table` to link to, which becomes the parent.
+            foreign_key_label: The label of the field on this table that holds the Record ID# of
+                each record's parent, ignoring case when looking for an existing relationship.
 
         Returns:
-            The existing or new relationship.
+            The existing or new `Relationship`.
         """
         parent_id = (await parent.info()).id
         labels = {item.id: item.label.casefold() for item in await self.fields(refresh=True)}
@@ -1144,7 +1248,7 @@ class AsyncTable:
                 field, such as `Project - Name`. An existing lookup is renamed to match.
 
         Returns:
-            The lookup field.
+            The lookup `Field`, on this table.
 
         Raises:
             UnknownFieldError: The parent has no such field. Nothing was sent.
@@ -1202,7 +1306,7 @@ class AsyncTable:
                 `STD-DEV`, `DISTINCT-COUNT`, `COMBINED-TEXT`, or `COMBINED-USER`.
 
         Returns:
-            The summary field, on the parent.
+            The summary `Field`, on the parent.
 
         Raises:
             UnknownFieldError: This table has no such field. Nothing was sent.
@@ -1247,7 +1351,17 @@ class AsyncTable:
         return created
 
     async def resolve_field_ids(self, fields: Sequence[FieldRef]) -> list[int]:
-        """Turn field labels or IDs into IDs. Raises `UnknownFieldError` if one doesn't exist."""
+        """Turn field labels or IDs into IDs.
+
+        Args:
+            fields: The fields, by label or ID, in any mix.
+
+        Returns:
+            The field IDs, in the same order as `fields`.
+
+        Raises:
+            UnknownFieldError: The table has no such field.
+        """
         return await self._with_fields(
             lambda known: [FieldIndex(known).resolve(ref).id for ref in fields]
         )

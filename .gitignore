@@ -20,6 +20,9 @@ docs/playground-app/playground-data.json
 docs/llms.txt
 docs/llms-full.txt
 
+# API reference pages: created by scripts/build_reference.py
+docs/reference/
+
 # Tool caches
 .coverage
 .coverage.*

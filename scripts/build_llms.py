@@ -19,8 +19,8 @@ ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
 CONFIG = ROOT / "mkdocs.yml"
 
-# An interactive page, which means nothing as text.
-LEFT_OUT = {"playground.md"}
+# An interactive page, which means nothing as text, and a page with its own plain Markdown file.
+LEFT_OUT = {"playground.md", "reference/table.md"}
 # What each page is for, shown in llms.txt. A page missing from here stops the build.
 DESCRIPTIONS = {
     "index.md": "What the SDK is, why to use it, and how to install it",
@@ -134,7 +134,7 @@ def _next_fence(line: str, fence: str | None) -> str | None:
     return None if found[1].startswith(fence) else fence
 
 
-def _clean_types(text: str) -> str:
+def clean_types(text: str) -> str:
     """Show types by their public names, as in `Expression`, not `pyquickbase._query.Expression`."""
     return _QUOTED_TYPE.sub(r"\1", _MODULE_PREFIX.sub("", text)).replace("~", "")
 
@@ -145,7 +145,7 @@ def _signature(function: Any) -> str:
     parameters = list(signature.parameters.values())
     if parameters and parameters[0].name in ("self", "cls"):
         signature = signature.replace(parameters=parameters[1:])
-    return _clean_types(str(signature))
+    return clean_types(str(signature))
 
 
 def _docstring(item: Any) -> str:
@@ -194,7 +194,7 @@ def _describe(name: str, *, members: bool) -> list[str]:
         return heading + _code_and_docs(f"{name}: {item.__class__.__name__}", item.__class__)
     has_constructor = "__init__" in vars(item) and name not in CLIENT_MADE
     if has_constructor:
-        signature = _clean_types(str(inspect.signature(item))).removesuffix(" -> None")
+        signature = clean_types(str(inspect.signature(item))).removesuffix(" -> None")
         out = heading + _code_and_docs(f"{name}{signature}", item)
     else:
         docs = _docstring(item)
@@ -346,6 +346,8 @@ def build_index(config: Config) -> str:
         "Docs": [
             f"- [All the docs in one file]({site_url}llms-full.txt): Every page below as one "
             "Markdown document, with the API reference written out",
+            f"- [API reference: Table]({site_url}reference/table.txt): Every `Table` method as "
+            "Markdown, with its parameters, return value, errors, and tested examples",
         ]
     }
     for page in _covered_pages(config):

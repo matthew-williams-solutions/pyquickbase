@@ -27,6 +27,8 @@ jobs:
         run: uv build
       - name: Build the files for AI tools
         run: uv run --locked scripts/build_llms.py
+      - name: Build the API reference pages
+        run: uv run --locked scripts/build_reference.py
       - name: Prepare the docs playground
         run: uv run --locked scripts/build_playground.py
       - name: Build the docs, failing on broken links

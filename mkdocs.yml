@@ -41,10 +41,17 @@ nav:
       - Configuring clients: guides/clients.md
       - Using pyquickbase from an AI agent: guides/agents.md
   - API reference: reference.md
+  - "API reference: Table": reference/table.md
   - Field types: field-types.md
   - Stability and versioning: stability.md
   - Quickbase API notes: api-notes.md
   - Changelog: changelog.md
+
+extra_css:
+  - stylesheets/reference.css
+
+extra_javascript:
+  - javascripts/reference.js
 
 plugins:
   - search
@@ -67,6 +74,8 @@ plugins:
 
 markdown_extensions:
   - admonition
+  - attr_list
+  - md_in_html
   - tables
   - toc:
       permalink: true

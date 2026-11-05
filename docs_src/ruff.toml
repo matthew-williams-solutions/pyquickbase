@@ -1,0 +1,3 @@
+# Keep examples narrow enough for the code column of the API reference.
+extend = "../pyproject.toml"
+line-length = 62

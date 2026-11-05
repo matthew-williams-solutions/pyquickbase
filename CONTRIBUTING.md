@@ -88,6 +88,13 @@ and again to see a change in them. It reads the pages from the `nav` in `mkdocs.
 needs a description in the script, and it writes the API reference from the SDK with `inspect`. It
 deliberately uses no docs plugin or anything from the `docs` dependency group.
 
+`uv run scripts/build_reference.py` writes the two-column API reference in `docs/reference/`, which
+also isn't committed, so run it once before previewing or building the docs. Its examples are in
+`docs_src/reference/`, written for the async client, with the sync version derived from them. A new
+public method stops the build until it and its arguments have descriptions, and it has an example. The live tests run every
+example with both clients and compare what it prints to the `.out` file beside it, which
+`QB_UPDATE_REFERENCE_OUTPUT=1` records.
+
 ## Sync and async code
 
 **Only edit the async code.** `src/pyquickbase/_sync/` and `tests/_sync/` are generated from their

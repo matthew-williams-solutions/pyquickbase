@@ -10,7 +10,11 @@ import pytest
 import pyquickbase
 
 ROOT = Path(__file__).resolve().parent.parent
-PAGES = [ROOT / "README.md", *sorted((ROOT / "docs").rglob("*.md"))]
+# The generated reference pages have their own tests, in test_reference.py.
+PAGES = [
+    ROOT / "README.md",
+    *sorted(path for path in (ROOT / "docs").rglob("*.md") if "reference" not in path.parent.parts),
+]
 FENCE = re.compile(r"^( *)```python\n(.*?)^\1```", re.DOTALL | re.MULTILINE)
 
 
