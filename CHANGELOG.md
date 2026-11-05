@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0rc7] - 2026-11-05
+
+This candidate adds limits on what a client can read, output for a model's tool call, and table
+operations offered to a model with their JSON Schema. It also makes the API reference a set of pages. It
+has breaking changes: the write limits are renamed and `allowed_writes` is removed, so check the list
+under Changed before upgrading.
+
 ### Added
 
 - `read_policy` on `Quickbase` and `AsyncQuickbase`, which decides on each read before it's sent, and
