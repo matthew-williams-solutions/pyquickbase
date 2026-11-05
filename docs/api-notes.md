@@ -448,10 +448,12 @@ Tested on 2026-11-03 and 2026-11-04 in a real app, using `POST /tables/{child}/r
 | `accumulationType` values | The API lists `AVG`, `SUM`, `MAX`, `MIN`, `STD-DEV`, `COUNT`, `COMBINED-TEXT`, `COMBINED-USER`, and `DISTINCT-COUNT`, in capitals |
 | Summaries that worked | `SUM` of numeric and currency, `AVG` and `STD-DEV` of numeric, `MAX` and `MIN` of numeric and date, `DISTINCT-COUNT` of numeric and text, `COMBINED-TEXT` of text, and `COMBINED-USER` of user. Each kept the child's type, except that `AVG`, `STD-DEV`, and `DISTINCT-COUNT` are numeric, and the combined ones are `multitext` and `multiuser` |
 | Summaries refused with 400 | `SUM` of checkbox, `MAX` of text, and `COUNT` of numeric, text, checkbox, and the record ID |
+| **`COUNT` takes no field** | With no `summaryFid`, or `summaryFid: 0`, it counts the child records, as a `numeric` summary with `summaryTargetFieldId: 0`. With any field, including the record ID, it's 400, `That form of summarization/aggregation cannot be applied to this field`. Lowercase `count` is 400. Live API, 2026-11-05 |
+| **A `COUNT` with no child records** | **0, not empty**, unlike the other summaries. Live API, 2026-11-05 |
 | A lookup's properties | `lookupReferenceFieldId` is the foreign key on the child, and `lookupTargetFieldId` is the field on the parent |
 | `summaryFields`, with `summaryFid`, `label`, and `accumulationType: "SUM"` | Creates the field on the parent. Works on a formula field of the child |
 | A summary's properties | `summaryReferenceFieldId`, `summaryTargetFieldId`, and `summaryFunction` |
-| **A summary with no child records** | **Empty, not 0.** A formula using it is also empty unless it uses `Nz()`, which matters for something like a balance |
+| **A summary with no child records** | **Empty, not 0**, except a `COUNT`. A formula using it is also empty unless it uses `Nz()`, which matters for something like a balance |
 | Fields added to the parent | A `dblink` such as `Task records`, and a `url` formula such as `Add Task`, containing `a=API_GenAddRecordForm` |
 
 ## Field types
@@ -502,6 +504,9 @@ A `datetime` field reports its type as `timestamp`.
 | Table names in the UI | Creating a table with a name already in the app, or renaming a table to one, is refused too. Tried by hand with the same name on 2026-11-04. Case and spacing variations weren't tried in the UI |
 | Writing a timestamp | `2027-01-02T03:04:05+00:00` and three fractional digits are accepted. **Python's default of six, or one, is a row error**, `Incompatible value`. It reads back to the second |
 | `properties` | An unknown key is refused with 400, `Extraneous key`. `fieldHelp` isn't a property, and neither are `choices` on a type without them |
+| Settings outside `properties` | `POST /fields` and `POST /fields/{id}` take `fieldHelp`, `bold`, `noWrap`, `findEnabled`, and `appearsByDefault` beside `label`, and `GET /fields` returns them. `addToForms` is accepted on create and never returned. **`audited: true` was accepted and read back as false**, in an app without audit logging set up. `fieldHelp` inside `properties` is 400, `Extraneous key 'properties.fieldHelp' is not permitted`. Live API, 2026-11-05 |
+| A field's response | Also lists `permissions`, each role's name, ID, and access to the field. `GET /fields` leaves them out |
+| **Writing a `duration`** | **Milliseconds**, as it reads: `90000` reads back as `90000`, and `3600000` is an hour. Negative and 0 work. **A fraction is dropped with no error**, so `1.5` reads back as `1`. Text is parsed too: `"90000"`, `"1:30:00"`, and `"2 hours"` became `90000`, `5400000`, and `7200000`. Live API, 2026-11-05 |
 | `POST /fields/{id}` with `required: true` | 400, `field contains null values`, if any record has it empty, which includes a new field on a table with records |
 | `POST /fields/{id}` with `unique: true` | 400, `field contains non-unique values`, if it holds duplicates. A new, empty field on a table with records is allowed |
 | A `phone` value | Reformatted: `5551234567` reads back as `(555) 123-4567` |
