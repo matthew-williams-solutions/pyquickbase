@@ -45,6 +45,10 @@ Invalid formulas raise `BadRequestError` with Quickbase's explanation, and a mis
     on, and can return the realm and the token owner's email. Treat formula text from users or other
     systems like code.
 
+    It can't read a table in another app, even with a token that can reach both, or a table the
+    token's role has no access to. **That isn't an error:** the result is empty, as it is for a table
+    that doesn't exist, so an empty result doesn't mean there's no data.
+
 ## Formula fields
 
 Pass `formula` to `create_field()`. The field's type must match what the formula returns.

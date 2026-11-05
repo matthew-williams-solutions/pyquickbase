@@ -134,6 +134,7 @@ and chart reports built in the UI. The API can't create reports.
 |---|---|
 | `GET /reports?tableId=` | A list of the same objects as `GET /reports/{id}?tableId=`: `id`, `name`, `type`, `description`, `query`, `properties`, `incomplete`, `usedCount`, and `usedLast` once used |
 | Report IDs | Numeric strings, **unique only within a table**. A new table gets `1` (List All) and `2` (List Changes) |
+| Deleted report IDs | Not reused. Checked by hand in the UI on 2026-11-04, so cached report details won't find a different report under an old ID |
 | Report names | **Can repeat within a table** |
 | `POST /reports/{id}/run?tableId=` | Needs no body. Returns `fields`, `data`, and `metadata`, as a query does |
 | `top` and `skip` | Must be query parameters. **In the body they're silently ignored, and every record returns** |
@@ -148,6 +149,7 @@ and chart reports built in the UI. The API can't create reports.
 | A table report with Record ID# as a column, even in second position | `fields` uses the real ID, 3, with type `recordid`, unlike a summary report's positions. All 1,200 rows matched a query's IDs |
 | A table report with a formula column | `fields` uses the formula field's real ID and its type, such as `numeric`. All 1,200 values matched a query |
 | A sort with ties, 400 records on each of 3 values | Ties came back in Record ID# order. Six full runs, with page sizes of 7, 37, 100, and 1,000, gave the same order, with nothing repeated or missing. Editing a tied record's other field didn't move it |
+| A sort with ties, 2,000 records on each of 3 values | The same, on 2026-11-04. 13 full runs of 6,000 records, with no `top` and page sizes from 37 to 6,000 in a shuffled table, all gave Record ID# order within each value. This is what was seen, not a promise from Quickbase |
 | `top` omitted, in a 50,000-record table | Returned every record, and `metadata` has no `top` |
 | Changing a saved report's type | The UI doesn't offer this |
 | Running a report | **Adds 1 to `usedCount`.** A GET doesn't, a 400 for a bad `top` or `skip` doesn't, and records aren't modified. An earlier test saw a failed run add 1 too, for a reason not pinned down |
@@ -170,6 +172,9 @@ default settings.
 | Version `0` | The latest, **for `DELETE` as well as `GET`** |
 | Each upload | Adds a version, even with identical contents, and reports the record as updated |
 | Version limit | A new field has `maxVersions: 3`. **The oldest is silently removed**, and its download returns 404 |
+| `maxVersions` values | 1 to 1,000 were accepted, and 0 or a negative number returns 400. At 1, 2, and 5, only that many newest versions were kept. **A field set to 1 leaves `maxVersions` out of its properties** |
+| `versionMode` | `keeplastversions` by default, which applies the limit. **`keepallversions` ignores `maxVersions`**: it kept all 150 uploads, and all 5 with `maxVersions: 2`. No cap was found in that range |
+| Lowering `maxVersions` | Nothing is removed until the next upload, which then trims to the new limit. Raising it doesn't bring back removed versions |
 | Version numbers | Not reused or renumbered after a delete or removal |
 | `DELETE` a version | Returns that version's details. Deleting the last one keeps the record and empties the field |
 | `{"value": ""}` or `{"value": null}` on a file field | **No error and no change**, reported in `unchangedRecordIds`. On insert, creates a record with no file |
@@ -191,6 +196,10 @@ returned 413, `request entity too large`, at one byte more. It's a limit on the 
 MB files in one request returned 413, and two 15 MB files succeeded. It applies without files too:
 1,500 rows of 30,000 characters returned 413 and wrote nothing. The largest file that fits was
 31,457,208 bytes. Downloads worked up to that size.
+
+The limit is the same elsewhere. On 2026-11-04, `POST /records`, `POST /records/query`, `DELETE /records`,
+`POST /formula/run`, `POST /reports/{id}/run`, `POST /fields`, and `POST /tables` each got past it with
+a body of exactly 41,943,040 bytes and returned 413 at one byte more. Only one realm has been tried.
 
 ## Formulas
 
@@ -215,6 +224,7 @@ Tested on 2026-11-02 against temporary tables in a sandbox app.
 | Function and field name case | Ignored: `today()` and `[title]` work |
 | `fieldTypeApplied` | `false` in every test. Sending `fieldType` or `resultType` changed nothing, and we don't know what sets it |
 | **Other tables** | **A formula can read other tables** with `GetRecord()` and `GetRecords()`, whatever `from` says |
+| **Tables in another app** | **Not readable, and there's no error.** On 2026-11-04, with a token that could reach both apps, `GetRecord()`, `GetRecords()`, and `Size()` from another app returned 200 with an empty result, exactly as for a table ID that doesn't exist. The same formula run inside the table's own app returned the value, and so did a same-app read from the first app. A saved formula field behaved the same way. Quickbase's help describes queries as working on "unrelated tables in the same app". Only table IDs were tried, not aliases |
 | Other information | `AppID()`, `URLRoot()`, and `UserToEmail(User())` return the app ID, realm, and the token owner's email |
 | Side effects | No record changed, including `Date Modified`, after about 60 runs |
 | Formula length | A 1,000,000-character formula worked |
@@ -310,8 +320,8 @@ sandboxed frame. Dashboard settings were checked by hand, in the app's own scree
 
 Tested on 2026-11-02 against a temporary table in a sandbox app, with a second user's token. Its role
 could only view that table, had no access to the app's other tables, and had access `None` on one text
-field and one file field. See also [roles with write access](#roles-with-write-access). Record-level
-rules weren't tested.
+field and one file field. See also [roles with write access](#roles-with-write-access) and
+[record-level rules](#record-level-rules).
 
 | Behavior | Result |
 |---|---|
@@ -323,17 +333,19 @@ rules weren't tested.
 | `select` with a hidden field and a visible one | **200, and the hidden field is silently left out** |
 | `select` with only hidden fields | 400, `Report contains a restricted field` |
 | `where` or `sortBy` on a hidden field | 403, whether or not anything matches |
-| Running a table report with a hidden column | **200, and the column is silently left out.** A report with a hidden field in its sort or filter wasn't tested |
+| Running a table report with a hidden column | **200, and the column is silently left out** |
 | A file field's value, read with view access | Includes `creator`, with **the uploader's email address** |
 | Downloading from a visible file field | 200 |
 | Downloading from a hidden file field | 404, `No such field` |
 | A formula using a hidden field, directly or through `GetRecords()` | 403, including when `GetRecords()` only filters on it. A visible field works |
 | Insert, update, delete, upload, deleting a file version, creating a field | 403, `Insufficient permissions`, and nothing changed |
+| A table the role has no access to | `GET /tables` leaves it out. Querying it, `GET /tables/{id}`, `GET /fields`, and a formula with it as `from` return 403. Tested on 2026-11-04 |
+| **A formula reading a table the role has no access to** | **Empty, with no error.** `GetRecord()`, `GetRecords()`, and `Size()` return 200 with `""` from a table the role can view, while an admin's token gets the real value. A saved formula field shows each user their own result. Tested on 2026-11-04 with a role that had no access to the table or its fields |
 
 ## Roles with write access
 
 Tested on 2026-11-04 in a real app, with a second user's token. Its role had custom field access on some
-tables, and no delete rights. Record-level rules weren't tested.
+tables, and no delete rights. See also [record-level rules](#record-level-rules).
 
 | Behavior | Result |
 |---|---|
@@ -353,6 +365,36 @@ tables, and no delete rights. Record-level rules weren't tested.
 `GET /apps/{id}/roles` with an administrator's token returns `id`, `name`, and `access`, including roles
 you made. We didn't find any endpoint for reading or changing a role's permissions:
 `/apps/{id}/roles/{id}` and `/apps/{id}/roles/{id}/permissions` return 404.
+
+## Record-level rules
+
+Tested on 2026-11-04 against 6,000 records split evenly across three categories, with a second user's
+token. The role's View rule was `Category` is not `Gamma`, and its Modify rule was `Category` is
+`Alpha`. It had Add but not Delete, and a hidden numeric field.
+
+| Behavior | Result |
+|---|---|
+| Queries, counts, and reports | Only show records the View rule allows, and `totalRecords` counts only those, so nothing reveals how many others exist |
+| `where` matching a hidden record, by ID or value | 200 with no records, not an error |
+| `GetRecords()` and `GetRecord()` in a formula | Follow the rule. A count is of allowed records, and a hidden record reads as `""` |
+| A formula with a hidden record as `rid` | **403, while a record that doesn't exist returns 404**, so this shows whether an ID exists |
+| Updating a record the Modify rule doesn't allow, visible or hidden | Row error, `You don't have permission to update records in this table.` |
+| Updating an ID that doesn't exist | Row error, `Can not find record by ID`, **which also shows whether an ID exists** |
+| A request mixing allowed and refused records | 207. The allowed rows are written, and the others get row errors |
+| **Changing an allowed record so the rules no longer match** | **Allowed, including moving it to where the role can't see it.** The rules check the record before the change, not after |
+| **Inserting a record the role won't be able to see** | **Allowed.** The new ID comes back, but `fieldsToReturn` values don't, and the role can't read it afterward |
+| Deleting, with no delete rights | 403, including a record the role just added |
+| Writing to a hidden field | Row error, `Insufficient permissions to update data in a restricted field.` |
+
+**Reports using a hidden field.** A report that sorts or filters on a field the role can't see isn't
+available to that role, and nothing about the hidden field is revealed:
+
+| Behavior | Result |
+|---|---|
+| `GET /reports` | **Leaves the report out**, so the SDK raises `UnknownReportError`, by name or ID |
+| `POST /reports/{id}/run` | **400, `Invalid request: Internal error`.** A report ID that doesn't exist returns 404, so this shows that the report exists |
+| A report that only shows the hidden field as a column | Listed, and runs without that column |
+| `GET /reports/{id}` | 403 for every report we tried with this role, even ones it can run |
 
 ## Custom data rules
 
@@ -426,13 +468,17 @@ A `datetime` field reports its type as `timestamp`.
 
 | Behavior | Result |
 |---|---|
-| Lookup and formula fields | Return the same shapes as their type. Lookups were tested holding text, numeric, and date values, and empty for user, multitext, and checkbox. A formula of `Null` matched its type on text, numeric, and checkbox fields |
+| Formula fields | Return the same shapes as their type. A formula of `Null` matched its type on text, numeric, and checkbox fields |
+| Lookup fields | Return exactly what the parent field returns, filled and empty, for every type `POST /fields` accepts except `file`, and for numeric, text, and checkbox formulas. With no parent record, they read as that type's empty value. Tested on 2026-11-04 |
+| A lookup's reported type | The parent's type, except that a lookup of `text-multiple-choice` **reports `text`** |
+| A lookup of a `file` field | 400, `The following field ids can not be lookup fields` |
 | Writable fields | Built-in fields 1 to 5 aren't, nor are formula, lookup, and summary fields, or `address` |
 | An `address` field | Is read-only, with text subfields for its parts, which can be written. Creating one also creates its subfields, and sets `Country` to a default |
 | `dblink` | Created by a relationship, on the parent table |
 | Labels | **Can contain almost anything, including `"""`, line breaks, and code**, as can table names |
 | Label uniqueness | Exact duplicates are refused, ignoring case, but `Due Date` and `Due-Date` can both exist |
 | Table names | `POST /tables` and renaming with `POST /tables/{id}` refuse a name already in use with 400, `Table name exists`, ignoring case and surrounding spaces |
+| Table names in the UI | Creating a table with a name already in the app, or renaming a table to one, is refused too. Tried by hand with the same name on 2026-11-04. Case and spacing variations weren't tried in the UI |
 | Writing a timestamp | `2027-01-02T03:04:05+00:00` and three fractional digits are accepted. **Python's default of six, or one, is a row error**, `Incompatible value`. It reads back to the second |
 | `properties` | An unknown key is refused with 400, `Extraneous key`. `fieldHelp` isn't a property, and neither are `choices` on a type without them |
 | `POST /fields/{id}` with `required: true` | 400, `field contains null values`, if any record has it empty, which includes a new field on a table with records |

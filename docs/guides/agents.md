@@ -51,8 +51,9 @@ although a table method may read the table's metadata before getting that far.
 - **They don't limit reads.** These clients can read whatever the token can.
 - **`read_only` promises only that it changes no records.** It still runs reports, which adds to
   their usage count in Quickbase, and formulas.
-- **Formulas reach further than the table you run them on.** A formula can read other tables with
-  `GetRecord()` and `GetRecords()`, and can return the realm and the token owner's email. Don't run
+- **Formulas reach further than the table you run them on.** A formula can read other tables in the
+  same app with `GetRecord()` and `GetRecords()`, and can return the realm and the token owner's
+  email. A table in another app, or one the token's role can't access, comes back empty. Don't run
   formula text from a model or another person, even on a read-only client. See the [warning in
   Formulas](formulas.md#running-a-formula).
 - **They aren't a sandbox.** They apply to one client. If an agent can run code of its own, it can
@@ -72,8 +73,12 @@ code is running.
 Test the role you plan to use, because this has only been partly confirmed. A
 [view-only role](../api-notes.md#restricted-users) was refused every write we tried, and fields it
 couldn't see were left out. A [role with write access](../api-notes.md#roles-with-write-access) was
-held to its limits as well. Record-level rules haven't been tested, and neither has whether a
-restricted user's formula can read a table their role has no access to.
+held to its limits as well, and a formula can't read a table its
+[role has no access to](../api-notes.md#restricted-users). That result is empty, not an error, so an
+empty result doesn't mean there's no data.
+[Record-level rules](../api-notes.md#record-level-rules) held too, for reads, formulas, and writes, but
+they only check a record before a change. A role can move a record it may modify to where it can no
+longer see it, and can add a record it won't be able to read.
 
 ## Untrusted values
 

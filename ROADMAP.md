@@ -32,6 +32,8 @@ Nothing here should break anyone.
 - `select` on typed tables, which needs a design, because a generated class requires every column.
 - A setting that repeats a typed table's schema check after a set time.
 - Typed access to file and user values, as a dictionary subclass, which could leave out uploader emails.
+- Better errors for a report that uses a field the role can't see. `UnknownReportError` says the table
+  has no such report, and running it by raw ID gives `Internal error`, so neither mentions the role.
 
 ## Guides
 
@@ -76,29 +78,18 @@ the result to `docs/api-notes.md`.
 **Queries and limits**
 
 - Which endpoints have different rate limits?
-- Do other endpoints or realms have a different request size limit?
+- Do other realms have a different request size limit? Seven endpoints share the one in the
+  [API notes](docs/api-notes.md#file-attachments).
 
 **Reports**
 
-- Can a deleted report's ID be reused? A new report got ID 8, the highest so far, but the deleted
-  report's own ID wasn't recorded. If it can, cached report details could misread a total as a Record
-  ID#.
-- Do a report's pages stay stable with ties above 1,200 records? A report's sort can't add Record ID#.
 
 **Fields and files**
 
-- What do lookups return for types other than text, numeric, and date, and what about field types only
-  the UI can create? These are `Any` and read-only in generated classes until confirmed.
-- How do file fields behave with other version settings, and are there limits on total storage?
+- What do lookups of field types only the UI can create return? These are `Any` and read-only in
+  generated classes until confirmed.
 
 **Realms and apps**
 
-- What's the API host for EU realms?
-- Can a formula read a table in another app?
-- How do roles with record-level rules behave, and a report that sorts or filters on a hidden field?
-  Roles with write access are in the [API notes](docs/api-notes.md#roles-with-write-access).
-- Can a restricted user's formula read a table their role has no access to? A role's hidden fields held
-  up, but this wasn't tested, because the role's other tables were the seeded ones.
-  `docs/guides/agents.md` calls this untested, so update it with the answer.
-- Can the UI give two tables the same name? The API refuses it, ignoring case. If so, `app.table()`
-  takes the first match, unlike fields and reports, which raise an error.
+- Is `api.quickbase.eu` the API host for EU realms? It answers without a token just as `api.quickbase.com`
+  does, and the help only says EU realms use `.quickbase.eu`. Confirming it needs a real EU realm.
