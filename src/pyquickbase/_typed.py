@@ -262,9 +262,10 @@ def schema_problems(model: type[TypedRecord], current: Iterable[Field]) -> list[
     for column in model.__columns__:
         field = by_id.get(column.id)
         if field is None:
-            # Quickbase leaves out fields a role can't see, so these look the same as deleted ones.
+            # Quickbase leaves out fields a role can't see, and so does a read policy, so these look
+            # the same as deleted ones.
             problems.append(
-                f"{column.name} (field {column.id}) no longer exists, or this token can't see it"
+                f"{column.name} (field {column.id}) no longer exists, or this client can't see it"
             )
         elif field.type != column.field_type:
             problems.append(f"{column.name} was {column.field_type} and is now {field.type}")

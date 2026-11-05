@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from ._models import RECORD_ID_FIELD
-from .errors import ConfigurationError, ReadOnlyError
+from .errors import ConfigurationError, WriteRefusedError
 
 WriteAction = Literal["insert", "update", "upsert", "delete", "delete_file", "other"]
 """What a write does. See `WriteRequest`."""
@@ -149,15 +149,15 @@ def check_policy(policy: WritePolicy, request: WriteRequest) -> None:
     """Refuse the write unless the policy returns `True`. Anything else, even truthy, refuses."""
     try:
         allowed = policy(request)
-    except ReadOnlyError:
+    except WriteRefusedError:
         raise
     except Exception as exc:
-        raise ReadOnlyError(
+        raise WriteRefusedError(
             f"The write policy raised {type(exc).__name__}, so this client won't send "
             f"{request.method} {request.path}."
         ) from exc
     if allowed is not True:
-        raise ReadOnlyError(
+        raise WriteRefusedError(
             f"The write policy refused this {request.action}, so this client won't send "
             f"{request.method} {request.path}."
         )
@@ -169,7 +169,7 @@ def validate_write_policy(policy: WritePolicy | None, *, read_only: bool) -> Wri
     if read_only:
         raise ConfigurationError("Use read_only or write_policy, not both.")
     if not callable(policy):
-        raise ConfigurationError("write_policy must be a function, or TableRules.")
+        raise ConfigurationError("write_policy must be a function, or WriteRules.")
     if inspect.iscoroutinefunction(policy):
         raise ConfigurationError(
             "write_policy can't be async, because it would never finish before the request is sent."
@@ -195,8 +195,8 @@ def _access(name: str, value: Any) -> bool | frozenset[int]:
 
 
 @dataclass(frozen=True, slots=True, init=False)
-class Allow:
-    """What a client may do to one table, for `TableRules`. Anything not granted is refused.
+class WriteAccess:
+    """What a client may do to one table, for `WriteRules`. Anything not granted is refused.
 
     `insert` and `update` each take `True` for any field, or a list of the field IDs they may set.
     An `upsert` needs both, and its fields need to be in both, including the one it merges on.
@@ -234,8 +234,8 @@ class Allow:
         object.__setattr__(self, "delete_files", delete_files)
 
 
-def _refused(request: WriteRequest, reason: str) -> ReadOnlyError:
-    return ReadOnlyError(
+def _refused(request: WriteRequest, reason: str) -> WriteRefusedError:
+    return WriteRefusedError(
         f"This client's write rules don't allow this {request.action}: {reason} It wasn't sent."
     )
 
@@ -252,11 +252,11 @@ def _check_fields(request: WriteRequest, access: bool | frozenset[int], word: st
         raise _refused(request, f"table {request.table_id} doesn't allow fields {sorted(extra)}.")
 
 
-class TableRules:
+class WriteRules:
     """A write policy that lists what a client may do to each table. Anything else is refused.
 
     ```python
-    rules = TableRules({"bqtasks123": Allow(insert=True, update=[7, 12])})
+    rules = WriteRules({"bqtasks123": WriteAccess(insert=True, update=[7, 12])})
     qb = Quickbase.from_env(write_policy=rules)
     ```
 
@@ -265,26 +265,28 @@ class TableRules:
     To allow those, write your own policy.
 
     Args:
-        tables: What's allowed, as `{table ID: Allow(...)}`.
+        tables: What's allowed, as `{table ID: WriteAccess(...)}`.
 
     Raises:
-        ConfigurationError: A key isn't a table ID, or a value isn't an `Allow`.
+        ConfigurationError: A key isn't a table ID, or a value isn't an `WriteAccess`.
     """
 
     __slots__ = ("_tables",)
 
-    def __init__(self, tables: Mapping[str, Allow]) -> None:
+    def __init__(self, tables: Mapping[str, WriteAccess]) -> None:
         if not isinstance(tables, Mapping):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise ConfigurationError("TableRules takes a dictionary of {table ID: Allow(...)}.")
+            raise ConfigurationError(
+                "WriteRules takes a dictionary of {table ID: WriteAccess(...)}."
+            )
         for table_id, access in tables.items():
             if not isinstance(table_id, str) or not table_id:  # pyright: ignore[reportUnnecessaryIsInstance]
-                raise ConfigurationError("TableRules needs a table ID for each table.")
-            if not isinstance(access, Allow):  # pyright: ignore[reportUnnecessaryIsInstance]
-                raise ConfigurationError(f"Table {table_id} needs an Allow(...).")
+                raise ConfigurationError("WriteRules needs a table ID for each table.")
+            if not isinstance(access, WriteAccess):  # pyright: ignore[reportUnnecessaryIsInstance]
+                raise ConfigurationError(f"Table {table_id} needs an WriteAccess(...).")
         self._tables = dict(tables)
 
     def __call__(self, request: WriteRequest) -> bool:
-        """Return `True` if the write is allowed, and raise `ReadOnlyError` with why if it isn't."""
+        """Return `True` if the write is allowed, or raise `WriteRefusedError` saying why not."""
         if request.action == "other":
             raise _refused(request, "only record and file writes can be allowed.")
         if request.table_id is None:
@@ -301,30 +303,3 @@ class TableRules:
         if request.action == "delete_file" and not access.delete_files:
             raise _refused(request, f"deleting files isn't allowed on table {request.table_id}.")
         return True
-
-
-def all_of(*policies: WritePolicy) -> WritePolicy:
-    """Combine write policies, so that a write must pass every one of them.
-
-    Args:
-        *policies: The policies, which are checked in order until one refuses.
-
-    Returns:
-        A write policy.
-
-    Raises:
-        ConfigurationError: No policies were given, or one can't be used.
-    """
-    if not policies:
-        raise ConfigurationError("all_of() needs at least one policy.")
-    for policy in policies:
-        validate_write_policy(policy, read_only=False)
-        if policy is None:  # pyright: ignore[reportUnnecessaryComparison]
-            raise ConfigurationError("all_of() takes policies, not None.")
-
-    def combined(request: WriteRequest) -> bool:
-        for policy in policies:
-            check_policy(policy, request)
-        return True
-
-    return combined

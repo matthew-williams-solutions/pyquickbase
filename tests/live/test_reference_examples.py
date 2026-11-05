@@ -29,9 +29,9 @@ from pyquickbase import (
     NotFoundError,
     PermissionDeniedError,
     Quickbase,
-    ReadOnlyError,
     UnknownFieldError,
     UnknownTableError,
+    WriteRefusedError,
 )
 from pyquickbase._codegen import render
 
@@ -295,7 +295,7 @@ def test_only_an_administrator_can_list_roles(scratch: Any) -> None:
 
 def test_request_keeps_to_the_clients_limits(scratch: Any) -> None:
     with Quickbase(realm=scratch.realm, token=scratch.token, read_only=True) as qb:
-        with pytest.raises(ReadOnlyError):
+        with pytest.raises(WriteRefusedError):
             qb.request("POST", "/tables", params={"appId": scratch.app_id}, json={"name": "No"})
 
 

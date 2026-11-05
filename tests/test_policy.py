@@ -7,12 +7,12 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from pyquickbase import (
-    Allow,
     ConfigurationError,
     Quickbase,
-    ReadOnlyError,
-    TableRules,
+    WriteAccess,
+    WriteRefusedError,
     WriteRequest,
+    WriteRules,
     all_of,
 )
 from pyquickbase._policy import check_policy, describe_write
@@ -169,35 +169,37 @@ def test_a_description_holds_no_values() -> None:
     assert "s3cret" not in repr(records([{"6": {"value": "s3cret"}}]))
 
 
-# TableRules
+# WriteRules
 
 
-def allows(rules: TableRules, request: WriteRequest) -> bool:
+def allows(rules: WriteRules, request: WriteRequest) -> bool:
     try:
         return rules(request)
-    except ReadOnlyError:
+    except WriteRefusedError:
         return False
 
 
 def test_a_table_that_isnt_listed_is_refused() -> None:
-    rules = TableRules({NOTES: Allow(insert=True, update=True, delete=True, delete_files=True)})
+    rules = WriteRules(
+        {NOTES: WriteAccess(insert=True, update=True, delete=True, delete_files=True)}
+    )
     for request in (
         records([row(6)]),
         records([row(3, 6)], mergeFieldId=3),
         describe_write("DELETE", "/records", {"from": TASKS}),
         describe_write("DELETE", "/files/bqtasks/5/13/2", None),
     ):
-        with pytest.raises(ReadOnlyError, match=f"table {TASKS} isn't listed"):
+        with pytest.raises(WriteRefusedError, match=f"table {TASKS} isn't listed"):
             rules(request)
 
 
 def test_table_ids_must_match_exactly() -> None:
-    rules = TableRules({"BQTASKS": Allow(insert=True)})
+    rules = WriteRules({"BQTASKS": WriteAccess(insert=True)})
     assert not allows(rules, records([row(6)]))
 
 
 def test_nothing_is_granted_by_default() -> None:
-    rules = TableRules({TASKS: Allow()})
+    rules = WriteRules({TASKS: WriteAccess()})
     assert not allows(rules, records([row(6)]))
     assert not allows(rules, records([row(3, 6)], mergeFieldId=3))
     assert not allows(rules, records([row(6)], mergeFieldId=6))
@@ -219,82 +221,84 @@ def test_each_action_is_granted_separately() -> None:
         ({"delete_files": True}, {"delete_file"}),
     ]
     for grant, expected in cases:
-        rules = TableRules({TASKS: Allow(**grant)})
+        rules = WriteRules({TASKS: WriteAccess(**grant)})
         for request in (insert, update, upsert, delete, delete_file):
             assert allows(rules, request) == (request.action in expected), (grant, request.action)
 
 
 def test_field_lists_limit_updates() -> None:
-    rules = TableRules({TASKS: Allow(update=[7, 12])})
+    rules = WriteRules({TASKS: WriteAccess(update=[7, 12])})
     assert rules(records([row(3, 7)], mergeFieldId=3))
     assert rules(records([row(3, 7, 12)]))
-    with pytest.raises(ReadOnlyError, match=r"doesn't allow fields \[8\]"):
+    with pytest.raises(WriteRefusedError, match=r"doesn't allow fields \[8\]"):
         rules(records([row(3, 7, 8)], mergeFieldId=3))
 
 
 def test_field_lists_limit_inserts() -> None:
-    rules = TableRules({TASKS: Allow(insert=[6])})
+    rules = WriteRules({TASKS: WriteAccess(insert=[6])})
     assert rules(records([row(6)]))
     assert not allows(rules, records([row(6), row(7)]))
 
 
 def test_a_field_list_refuses_fields_it_cant_read() -> None:
-    rules = TableRules({TASKS: Allow(insert=[7], update=[7])})
+    rules = WriteRules({TASKS: WriteAccess(insert=[7], update=[7])})
     for key in ("07", " 7", "+7", "8 "):
         request = records([{key: {"value": "x"}}])
-        with pytest.raises(ReadOnlyError, match="can't be determined"):
+        with pytest.raises(WriteRefusedError, match="can't be determined"):
             rules(request)
 
 
 def test_an_upsert_needs_both_and_its_fields_in_both() -> None:
-    both = TableRules({TASKS: Allow(insert=[6, 7], update=[6, 7])})
+    both = WriteRules({TASKS: WriteAccess(insert=[6, 7], update=[6, 7])})
     assert both(records([row(6, 7)], mergeFieldId=6))
-    narrower = TableRules({TASKS: Allow(insert=[6, 7], update=[7])})
+    narrower = WriteRules({TASKS: WriteAccess(insert=[6, 7], update=[7])})
     assert not allows(narrower, records([row(6, 7)], mergeFieldId=6))
 
 
 def test_an_insert_grant_refuses_a_table_with_another_key_field() -> None:
-    insert_only = TableRules({TASKS: Allow(insert=True)})
+    insert_only = WriteRules({TASKS: WriteAccess(insert=True)})
     assert insert_only(records([row(6)], key_field_id=3))
     for key_field_id in (6, None):
-        with pytest.raises(ReadOnlyError, match="updating isn't allowed"):
+        with pytest.raises(WriteRefusedError, match="updating isn't allowed"):
             insert_only(records([row(6)], key_field_id=key_field_id))
-    both = TableRules({TASKS: Allow(insert=True, update=True)})
+    both = WriteRules({TASKS: WriteAccess(insert=True, update=True)})
     assert both(records([row(6)], key_field_id=6))
 
 
 def test_a_merge_on_record_id_written_another_way_needs_both() -> None:
-    update_only = TableRules({TASKS: Allow(update=True)})
+    update_only = WriteRules({TASKS: WriteAccess(update=True)})
     assert not allows(update_only, records([row(3, 6)], mergeFieldId="3"))
 
 
 def test_true_allows_any_field_even_one_it_cant_read() -> None:
-    rules = TableRules({TASKS: Allow(insert=True, update=True)})
+    rules = WriteRules({TASKS: WriteAccess(insert=True, update=True)})
     assert rules(records([{"07": {"value": "x"}}]))
 
 
 def test_field_lists_dont_limit_deletes() -> None:
     assert allows(
-        TableRules({TASKS: Allow(update=[7], delete=True)}),
+        WriteRules({TASKS: WriteAccess(update=[7], delete=True)}),
         describe_write("DELETE", "/records", {"from": TASKS}),
     )
     assert not allows(
-        TableRules({TASKS: Allow(update=[7])}),
+        WriteRules({TASKS: WriteAccess(update=[7])}),
         describe_write("DELETE", "/records", {"from": TASKS}),
     )
 
 
 def test_other_writes_and_unknown_tables_are_refused() -> None:
-    rules = TableRules({TASKS: Allow(insert=True, update=True, delete=True, delete_files=True)})
-    with pytest.raises(ReadOnlyError, match="only record and file"):
+    rules = WriteRules(
+        {TASKS: WriteAccess(insert=True, update=True, delete=True, delete_files=True)}
+    )
+    with pytest.raises(WriteRefusedError, match="only record and file"):
         rules(describe_write("POST", "/fields", {}))
-    with pytest.raises(ReadOnlyError, match="table can't be determined"):
+    with pytest.raises(WriteRefusedError, match="table can't be determined"):
         rules(describe_write("POST", "/records", {"data": [row(6)]}))
 
 
 def test_refusals_never_repeat_values() -> None:
-    rules = TableRules({TASKS: Allow(update=[7])})
-    with pytest.raises(ReadOnlyError) as caught:
+    rules = WriteRules({TASKS: WriteAccess(update=[7])})
+    with pytest.raises(WriteRefusedError) as caught:
         rules(records([{"3": {"value": 1}, "8": {"value": "s3cret"}}], mergeFieldId=3))
     assert "s3cret" not in str(caught.value)
 
@@ -319,30 +323,30 @@ def test_refusals_never_repeat_values() -> None:
 )
 def test_bad_grants_are_refused(grant: dict[str, Any]) -> None:
     with pytest.raises(ConfigurationError):
-        Allow(**grant)
+        WriteAccess(**grant)
 
 
 def test_a_grant_cant_change_afterward() -> None:
-    access = Allow(update=[7])
+    access = WriteAccess(update=[7])
     assert access.update == {7}
     with pytest.raises(AttributeError):
         access.update = True  # type: ignore[misc]  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def test_rules_cant_change_when_the_dictionary_does() -> None:
-    tables = {TASKS: Allow(insert=True)}
-    rules = TableRules(tables)
-    tables[NOTES] = Allow(insert=True)
+    tables = {TASKS: WriteAccess(insert=True)}
+    rules = WriteRules(tables)
+    tables[NOTES] = WriteAccess(insert=True)
     assert not allows(rules, describe_write("POST", "/records", {"to": NOTES, "data": [row(6)]}))
 
 
 @pytest.mark.parametrize(
     "tables",
-    [None, [TASKS], TASKS, {TASKS: True}, {TASKS: None}, {"": Allow()}, {5: Allow()}],
+    [None, [TASKS], TASKS, {TASKS: True}, {TASKS: None}, {"": WriteAccess()}, {5: WriteAccess()}],
 )
 def test_bad_rules_are_refused(tables: Any) -> None:
     with pytest.raises(ConfigurationError):
-        TableRules(tables)
+        WriteRules(tables)
 
 
 # Checking a policy
@@ -350,7 +354,7 @@ def test_bad_rules_are_refused(tables: Any) -> None:
 
 @pytest.mark.parametrize("answer", [False, None, 1, "yes", [1], object()])
 def test_only_true_lets_a_write_through(answer: Any) -> None:
-    with pytest.raises(ReadOnlyError, match="refused"):
+    with pytest.raises(WriteRefusedError, match="refused"):
         check_policy(lambda _: answer, records([row(6)]))
 
 
@@ -358,7 +362,7 @@ def test_a_policy_that_raises_refuses_the_write() -> None:
     def broken(_: WriteRequest) -> bool:
         raise KeyError("s3cret")
 
-    with pytest.raises(ReadOnlyError, match="raised KeyError") as caught:
+    with pytest.raises(WriteRefusedError, match="raised KeyError") as caught:
         check_policy(broken, records([row(6)]))
     assert "s3cret" not in str(caught.value)
     assert isinstance(caught.value.__cause__, KeyError)
@@ -366,9 +370,9 @@ def test_a_policy_that_raises_refuses_the_write() -> None:
 
 def test_a_policy_can_give_its_own_reason() -> None:
     def closed(_: WriteRequest) -> bool:
-        raise ReadOnlyError("Closed for the weekend.")
+        raise WriteRefusedError("Closed for the weekend.")
 
-    with pytest.raises(ReadOnlyError, match="Closed for the weekend"):
+    with pytest.raises(WriteRefusedError, match="Closed for the weekend"):
         check_policy(closed, records([row(6)]))
 
 
@@ -384,9 +388,9 @@ def test_all_of_needs_every_policy() -> None:
     yes = lambda _: True  # noqa: E731
     no = lambda _: False  # noqa: E731
     assert all_of(yes, yes)(records([row(6)])) is True
-    with pytest.raises(ReadOnlyError):
+    with pytest.raises(WriteRefusedError):
         all_of(yes, no)(records([row(6)]))
-    with pytest.raises(ReadOnlyError):
+    with pytest.raises(WriteRefusedError):
         all_of(no, yes)(records([row(6)]))
 
 
@@ -397,8 +401,8 @@ def test_all_of_stops_at_the_first_refusal_and_keeps_its_reason() -> None:
         calls.append("later")
         return True
 
-    rules = TableRules({NOTES: Allow(insert=True)})
-    with pytest.raises(ReadOnlyError, match="isn't listed"):
+    rules = WriteRules({NOTES: WriteAccess(insert=True)})
+    with pytest.raises(WriteRefusedError, match="isn't listed"):
         all_of(rules, later)(records([row(6)]))
     assert calls == []
 
@@ -413,7 +417,7 @@ def test_all_of_refuses_what_it_cant_use(policies: tuple[Any, ...]) -> None:
         all_of(*policies)
 
 
-@pytest.mark.parametrize("policy", ["x", 5, {TASKS: Allow()}, _async_policy])
+@pytest.mark.parametrize("policy", ["x", 5, {TASKS: WriteAccess()}, _async_policy])
 def test_clients_refuse_a_policy_they_cant_use(policy: Any) -> None:
     with pytest.raises(ConfigurationError, match="write_policy"):
         Quickbase(realm="acme", token="t", write_policy=policy)
@@ -450,7 +454,7 @@ def test_any_body_can_be_described(method: str, path: str, body: Any) -> None:
 def test_a_field_list_never_lets_another_field_through(
     rows: list[dict[str, Any]], extra: dict[str, Any]
 ) -> None:
-    rules = TableRules({TASKS: Allow(update=[7])})
+    rules = WriteRules({TASKS: WriteAccess(update=[7])})
     if allows(rules, records(rows, **extra)):
         assert {key for r in rows for key in r} <= {"3", "7"}
 
@@ -459,7 +463,7 @@ def test_a_field_list_never_lets_another_field_through(
 def test_an_update_grant_never_lets_a_create_through(
     rows: list[dict[str, Any]], extra: dict[str, Any]
 ) -> None:
-    rules = TableRules({TASKS: Allow(update=True)})
+    rules = WriteRules({TASKS: WriteAccess(update=True)})
     if allows(rules, records(rows, **extra)):
         merge = extra.get("mergeFieldId", 3)
         assert type(merge) is int
@@ -472,7 +476,7 @@ def test_an_update_grant_never_lets_a_create_through(
 def test_an_insert_grant_never_lets_a_change_through(
     rows: list[dict[str, Any]], extra: dict[str, Any], key_field_id: int | None
 ) -> None:
-    rules = TableRules({TASKS: Allow(insert=True)})
+    rules = WriteRules({TASKS: WriteAccess(insert=True)})
     if allows(rules, records(rows, key_field_id=key_field_id, **extra)):
         assert key_field_id == 3
         assert "mergeFieldId" not in extra

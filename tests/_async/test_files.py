@@ -12,10 +12,10 @@ from pyquickbase import (
     InvalidValueError,
     NotFoundError,
     RateLimitError,
-    ReadOnlyError,
     RetryPolicy,
     UnknownFieldError,
     WriteError,
+    WriteRefusedError,
     _writes,
 )
 
@@ -248,8 +248,8 @@ async def test_read_only_client_downloads_but_cant_change_files() -> None:
     async with client(server, read_only=True) as qb:
         table = qb.app(APP).table("Tasks")
         assert (await table.download_file(7, "Attachment")).data == b"contents"
-        with pytest.raises(ReadOnlyError):
+        with pytest.raises(WriteRefusedError):
             await table.delete_file_version(7, "Attachment", version=2)
-        with pytest.raises(ReadOnlyError):
+        with pytest.raises(WriteRefusedError):
             await table.insert([{"Attachment": FileUpload("a.txt", b"x")}])
     assert [r.method for r in server.sent("/files")] == ["GET"]

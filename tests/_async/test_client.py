@@ -15,10 +15,10 @@ from pyquickbase import (
     NotFoundError,
     PermissionDeniedError,
     RateLimitError,
-    ReadOnlyError,
     RequestTimeoutError,
     RetryPolicy,
     ServerError,
+    WriteRefusedError,
 )
 
 pytestmark = pytest.mark.anyio
@@ -362,7 +362,7 @@ async def test_read_only_client_never_sends_anything_else(method: str, path: str
         return httpx.Response(200, json={})
 
     async with make_client(handler, read_only=True) as qb:
-        with pytest.raises(ReadOnlyError, match="read-only"):
+        with pytest.raises(WriteRefusedError, match="read-only"):
             await qb.request(method, path, json={})
     assert seen == []
 
@@ -401,7 +401,7 @@ async def test_allowed_writes_permit_only_exact_matches() -> None:
             ("POST", "/records/"),
             ("POST", "/reports/1/run/"),
         ):
-            with pytest.raises(ReadOnlyError, match="specific writes"):
+            with pytest.raises(WriteRefusedError, match="specific writes"):
                 await qb.request(method, path, json={})
     assert seen == ["POST /v1/records", "POST /v1/records/query", "GET /v1/apps/abc"]
 
@@ -411,7 +411,7 @@ async def test_empty_allowed_writes_is_read_only() -> None:
         raise AssertionError("nothing should be sent")  # pragma: no cover
 
     async with make_client(handler, allowed_writes=[]) as qb:
-        with pytest.raises(ReadOnlyError, match="read-only"):
+        with pytest.raises(WriteRefusedError, match="read-only"):
             await qb.request("POST", "/records", json={})
 
 

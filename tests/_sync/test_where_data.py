@@ -7,7 +7,14 @@ from typing import Any
 import httpx
 import pytest
 
-from pyquickbase import F, QueryError, Quickbase, ReadOnlyError, where_from_dict, where_schema
+from pyquickbase import (
+    F,
+    QueryError,
+    Quickbase,
+    WriteRefusedError,
+    where_from_dict,
+    where_schema,
+)
 
 FIELDS = [
     {"id": 3, "label": "Record ID#", "fieldType": "recordid"},
@@ -90,7 +97,7 @@ def test_a_read_only_client_still_refuses_a_delete() -> None:
     fake = Fake()
     with client(fake, read_only=True) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        with pytest.raises(ReadOnlyError):
+        with pytest.raises(WriteRefusedError):
             tasks.delete(where_from_dict({"field": "Status", "op": "==", "value": "Done"}))
 
 

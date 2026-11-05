@@ -10,7 +10,7 @@ from pyquickbase import (
     BadRequestError,
     InvalidResponseError,
     InvalidValueError,
-    ReadOnlyError,
+    WriteRefusedError,
 )
 
 pytestmark = pytest.mark.anyio
@@ -117,7 +117,7 @@ async def test_read_only_client_can_run_formulas() -> None:
     server = FakeFormulas()
     async with client(server, read_only=True) as qb:
         assert (await qb.app(APP).table("Tasks").run_formula("1 + 1")).value is True
-        with pytest.raises(ReadOnlyError):
+        with pytest.raises(WriteRefusedError):
             await qb.app(APP).table("Tasks").create_field("X", "numeric", formula="1 + 1")
 
 

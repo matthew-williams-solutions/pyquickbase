@@ -6,10 +6,10 @@ from pyquickbase import (
     InvalidResponseError,
     QueryError,
     Quickbase,
-    ReadOnlyError,
     ReportInfo,
     UnknownReportError,
     UnsupportedReportError,
+    WriteRefusedError,
 )
 
 APP = "bq1234567"
@@ -272,7 +272,7 @@ def test_read_only_client_can_run_reports_but_not_write() -> None:
     with client(server, read_only=True) as qb:
         page = qb.app(APP).table("Tasks").report("1").run_page()
         assert len(page.records) == 5
-        with pytest.raises(ReadOnlyError):
+        with pytest.raises(WriteRefusedError):
             qb.request("POST", "/records", json={})
 
 

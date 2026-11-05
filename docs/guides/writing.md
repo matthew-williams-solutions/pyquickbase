@@ -233,7 +233,7 @@ A write that times out isn't retried, because Quickbase may already have applied
 | A value that can't be written, such as a `datetime` without a timezone | `InvalidValueError` | Nothing was sent |
 | A row names a field the table doesn't have, or the token can't see | `UnknownFieldError` | Nothing was sent |
 | `batch_size` below 1, or a `delete()` condition that can't be sent as written | `QueryError` | Nothing was sent |
-| The client is read-only, or its [limits](clients.md#limiting-what-a-client-can-do) don't allow this write | `ReadOnlyError` | Nothing was sent, unless it's a later batch, below |
+| The client is read-only, or its [limits](clients.md#limiting-what-a-client-can-do) don't allow this write | `WriteRefusedError` | Nothing was sent, unless it's a later batch, below |
 | `merge_on` isn't a unique field | `BadRequestError` | Nothing was written |
 | Some rows failed, such as a duplicate or a formula field | `WriteError` | **The other rows were written** |
 | A later batch failed outright, or a [write policy](clients.md#writing-your-own-policy) refused it | `WriteError` | **Earlier batches were written** |

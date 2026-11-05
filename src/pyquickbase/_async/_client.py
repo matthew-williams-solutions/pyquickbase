@@ -8,6 +8,7 @@ from typing import Any, Self
 import httpx
 
 from .._auth import UserTokenAuth
+from .._combine import check_read_policy, check_write_policy
 from .._config import (
     DEFAULT_BASE_URL,
     DEFAULT_TIMEOUT,
@@ -19,7 +20,8 @@ from .._config import (
     validate_base_url,
     validate_token,
 )
-from .._policy import WritePolicy, validate_write_policy
+from .._policy import WritePolicy
+from .._read_policy import ReadPolicy
 from .._retry import RetryPolicy
 from .._schema import SchemaCache
 from ..errors import ConfigurationError
@@ -43,20 +45,26 @@ class AsyncQuickbase:
         http_client: Your own configured httpx client, for proxies, custom TLS, event hooks,
             or custom transports. You remain responsible for closing it.
         schema_ttl: Seconds to cache app, table, and field metadata. Use 0 to disable caching.
-        read_only: Refuse any request that could change data, raising `ReadOnlyError`. Only GET
+        read_only: Refuse any request that could change data, raising `WriteRefusedError`. Only GET
             requests, record queries, report runs, and formula runs are sent, including through
             `request()`. Running a report adds to its usage count in Quickbase, but changes no
             records.
         allowed_writes: Like `read_only`, but also allow these `(method, path)` pairs, such as
             `{("POST", "/records")}`. Paths must match exactly.
-        write_policy: A function that decides on each write, usually `TableRules`, for limits by
+        write_policy: A function that decides on each write, usually `WriteRules`, for limits by
             table, action, and field. It takes a `WriteRequest`, and only a return value of `True`
-            lets the write through. Otherwise, it raises `ReadOnlyError` and isn't sent. Reads
-            aren't affected. Use it with `allowed_writes` to require both.
+            lets the write through. Otherwise, it raises `WriteRefusedError` and isn't sent. Use it
+            with `allowed_writes` to require both.
+        read_policy: A function that decides on each read, usually `ReadRules`, for limits by
+            table, field, report, and number of records. It takes a `ReadRequest`, and only a
+            return value of `True` lets the read through. Otherwise, it raises `ReadRefusedError`
+            and isn't sent. `ReadRules` also leaves out of each response, and of metadata, what it
+            doesn't allow. It works with any of the limits on writes.
 
     Raises:
         ConfigurationError: `realm`, `token`, or `base_url` can't be used, or the limits on writes
-            conflict, such as `read_only` with `write_policy`.
+            conflict, such as `read_only` with `write_policy`, or a policy is passed as the wrong
+            kind.
     """
 
     def __init__(
@@ -73,6 +81,7 @@ class AsyncQuickbase:
         read_only: bool = False,
         allowed_writes: Collection[tuple[str, str]] | None = None,
         write_policy: WritePolicy | None = None,
+        read_policy: ReadPolicy | None = None,
     ) -> None:
         self._realm = normalize_realm(realm)
         self._transport = AsyncTransport(
@@ -84,7 +93,8 @@ class AsyncQuickbase:
             user_agent=build_user_agent(user_agent),
             http_client=http_client,
             allowed_writes=normalize_allowed_writes(read_only, allowed_writes),
-            write_policy=validate_write_policy(write_policy, read_only=read_only),
+            write_policy=check_write_policy(write_policy, read_only=read_only),
+            read_policy=check_read_policy(read_policy),
         )
         self._schema = SchemaCache(schema_ttl)
 
@@ -101,6 +111,7 @@ class AsyncQuickbase:
         read_only: bool = False,
         allowed_writes: Collection[tuple[str, str]] | None = None,
         write_policy: WritePolicy | None = None,
+        read_policy: ReadPolicy | None = None,
         token_env: str = ENV_TOKEN,
     ) -> Self:
         """Create a client from the `QB_REALM` and `QB_USER_TOKEN` environment variables.
@@ -130,6 +141,7 @@ class AsyncQuickbase:
             read_only=read_only,
             allowed_writes=allowed_writes,
             write_policy=write_policy,
+            read_policy=read_policy,
         )
 
     @property
@@ -172,7 +184,7 @@ class AsyncQuickbase:
         """Call any Quickbase endpoint directly and return its decoded JSON body.
 
         This is the escape hatch for endpoints without a dedicated method. The client's retries
-        and limits on writes still apply.
+        and its limits on writes and reads still apply.
 
         Args:
             method: The HTTP method, such as `GET`.
@@ -184,7 +196,10 @@ class AsyncQuickbase:
             The decoded JSON body, or None if the response is empty.
 
         Raises:
-            ReadOnlyError: The client's limits don't allow this request. It wasn't sent.
+            WriteRefusedError: The client's limits on writes don't allow this request. It wasn't
+                sent.
+            ReadRefusedError: The client's `read_policy` doesn't allow this request. It wasn't
+                sent.
             APIError: Quickbase returned an error. This is a subclass such as `NotFoundError` or
                 `PermissionDeniedError`, for the status it returned.
         """

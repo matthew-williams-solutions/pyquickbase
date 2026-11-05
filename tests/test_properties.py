@@ -22,8 +22,8 @@ from pyquickbase import (
     InvalidResponseError,
     InvalidValueError,
     QueryError,
-    ReadOnlyError,
     RetryPolicy,
+    WriteRefusedError,
     parse_where,
 )
 from pyquickbase._codegen import _attribute_names, render
@@ -183,7 +183,7 @@ def test_read_only_allows_only_known_reads(method: str, path: str) -> None:
     if allowed:
         check_allowed(method, path, frozenset())
     else:
-        with pytest.raises(ReadOnlyError):
+        with pytest.raises(WriteRefusedError):
             check_allowed(method, path, frozenset())
 
 
@@ -199,7 +199,7 @@ def test_allowed_writes_must_match_exactly(
     if is_read or (method, path) in allowed:
         check_allowed(method, path, allowed)
     else:
-        with pytest.raises(ReadOnlyError):
+        with pytest.raises(WriteRefusedError):
             check_allowed(method, path, allowed)
 
 

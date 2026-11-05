@@ -6,7 +6,14 @@ from typing import Any
 import httpx
 import pytest
 
-from pyquickbase import AsyncQuickbase, F, QueryError, ReadOnlyError, where_from_dict, where_schema
+from pyquickbase import (
+    AsyncQuickbase,
+    F,
+    QueryError,
+    WriteRefusedError,
+    where_from_dict,
+    where_schema,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -91,7 +98,7 @@ async def test_a_read_only_client_still_refuses_a_delete() -> None:
     fake = Fake()
     async with client(fake, read_only=True) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        with pytest.raises(ReadOnlyError):
+        with pytest.raises(WriteRefusedError):
             await tasks.delete(where_from_dict({"field": "Status", "op": "==", "value": "Done"}))
 
 

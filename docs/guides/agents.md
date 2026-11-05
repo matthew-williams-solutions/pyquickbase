@@ -35,11 +35,11 @@ def open_tasks(project: str) -> list[dict]:
 Give an agent the narrowest client that does its job. `read_only=True` is the place to start, and it
 only sends GET requests, record queries, report runs, and formula runs. If the agent also needs to
 write, list exactly what it can change with
-[`TableRules`](clients.md#limiting-writes-by-table-action-and-field). Anything else raises
-`ReadOnlyError` and is never sent, which also applies to `qb.request()`.
+[`WriteRules`](clients.md#limiting-writes-by-table-action-and-field). Anything else raises
+`WriteRefusedError` and is never sent, which also applies to `qb.request()`.
 
 ```python
-from pyquickbase import Allow, Quickbase, TableRules
+from pyquickbase import Quickbase, WriteAccess, WriteRules
 
 with Quickbase.from_env() as setup:
     tasks = setup.app("bq1234567").table("Tasks")
@@ -47,11 +47,11 @@ with Quickbase.from_env() as setup:
     status, notes = tasks.resolve_field_ids(["Status", "Notes"])
 
 # It can add tasks and change these two fields, on this table only. It can't delete anything.
-rules = TableRules({tasks_id: Allow(insert=True, update=[status, notes])})
+rules = WriteRules({tasks_id: WriteAccess(insert=True, update=[status, notes])})
 agent_client = Quickbase.from_env(write_policy=rules)
 ```
 
-Return a `ReadOnlyError` to the model as the tool's result. Its message says what was refused and why,
+Return a `WriteRefusedError` to the model as the tool's result. Its message says what was refused and why,
 such as a field that isn't allowed, and doesn't repeat the values it sent.
 
 You can add rules of your own, such as a limit on how many records one call can change, with a
@@ -59,9 +59,44 @@ You can add rules of your own, such as a limit on how many records one call can 
 the kind of request and not the table, so `{("POST", "/records")}` allows that request on any table the
 token can reach, and also covers `insert()`, `update()`, `upsert()`, and file uploads.
 
+### Limiting what it reads
+
+An agent doesn't need to see every field the token can, such as a customer's email, phone number, or
+internal notes. List what it may read with
+[`ReadRules`](clients.md#limiting-reads-by-table-field-and-number-of-records). The SDK enforces this
+itself, so it doesn't depend on the model following its instructions:
+
+```python
+from pyquickbase import Quickbase, ReadAccess, ReadRules
+
+with Quickbase.from_env() as setup:
+    visits = setup.app("bq1234567").table("Appointments")
+    visits_id = visits.info().id
+    when, status, technician = visits.resolve_field_ids(["When", "Status", "Technician"])
+
+access = ReadAccess(fields=[when, status, technician], filter=[status, technician], max_records=50)
+agent_client = Quickbase.from_env(read_policy=ReadRules({visits_id: access}), read_only=True)
+```
+
+To the agent, a field or table that isn't listed looks as if it doesn't exist. `table.fields()` leaves it
+out, and naming it raises `UnknownFieldError`. Asking for more than is allowed raises `ReadRefusedError`,
+whose message says what to change, such as asking for at most 50 records. Return either one to the model
+as the tool's result. Both leave out the values it sent.
+
+Email addresses are left out of user values, and the uploader's details out of file values, unless you
+pass `user_emails=True`. Formulas are always refused, because a formula can read any table and field.
+
 ### What these limits don't do
 
-- **They don't limit reads.** These clients can read whatever the token can.
+- **Read rules complement the token's role, and don't replace it.** Quickbase still enforces the role on
+  everything they allow.
+- **A field you allow can show one you don't.** A formula, lookup, or summary field can copy a hidden
+  value, so check what each allowed field is built from.
+- **Filtering and sorting reveal values.** A model that may filter on a field can find out what it holds by
+  seeing which records match, even if the field isn't returned, so `filter` and `sort` are separate
+  lists.
+- **Limits apply per query.** `max_records` stops one query from returning a whole table, but a model
+  can still make more queries.
 - **`read_only` promises only that it changes no records.** It still runs reports, which adds to
   their usage count in Quickbase, and formulas.
 - **Formulas reach further than the table you run them on.** A formula can read other tables with
@@ -72,7 +107,8 @@ token can reach, and also covers `insert()`, `update()`, `upsert()`, and file up
   [record-level rules](../api-notes.md#record-level-rules), and [fix the scope](#filters-from-a-model)
   of what it reads in your code.
 - **They aren't a sandbox.** They apply to one client. If an agent can run code of its own, it can
-  create another client with the same token, or call the API directly.
+  create another client with the same token, call the API directly, or reach inside the client to
+  remove them.
 
 ## The token is the real boundary
 
@@ -186,7 +222,8 @@ What it can't do is decide whether a filter is the right one:
   project. Without that, a filter of `Record ID# > 0` matches every record, as it should.
 - **Pass `fields` to limit what it can filter on.** Otherwise a model can learn the value of a field
   you didn't select, by filtering on it and seeing which records come back. `where_schema()` only
-  tells the model the list, so pass the same list to `where_from_dict()`, which enforces it.
+  tells the model the list, so pass the same list to `where_from_dict()`, which enforces it. A client's
+  `ReadRules` enforce their `filter` list as well, on every query.
 - **Keep the schema small.** A tool's schema goes to the model with every request. The default covers
   `A and (B or C)` at about 700 tokens, and `max_depth=1` takes it to about 450 if a tool doesn't need
   that.
@@ -205,7 +242,8 @@ delete unchecked.
 - Quickbase's formula error messages [can contain HTML](errors.md#errors-from-quickbase), such as a
   `javascript:` link, and errors pass it on unchanged.
 - File field values [include the uploader's email address](files.md#listing-versions), and user
-  fields hold an email too. Decide whether a model or a log should see them.
+  fields hold an email too. Decide whether a model or a log should see them. `ReadRules` leave both
+  out unless you pass `user_emails=True`.
 - [Don't use a file's name as a path](files.md#downloading). Quickbase stores names as sent,
   including `../../etc/passwd`.
 
@@ -304,13 +342,13 @@ may already have applied, so an agent should check the data before trying again.
 
 | Exception | What it means for a write |
 |---|---|
-| [Mistakes caught before sending](errors.md#mistakes-caught-before-sending), such as `QueryError`, `InvalidValueError`, and `ReadOnlyError` | This request wasn't sent |
+| [Mistakes caught before sending](errors.md#mistakes-caught-before-sending), such as `QueryError`, `InvalidValueError`, `WriteRefusedError`, and `ReadRefusedError` | This request wasn't sent |
 | `WriteError` | Some rows may have been written. If a large write stopped at a later batch, `result` covers only the earlier batches, `errors` can be empty, and the failed batch may have been written |
 | `NetworkError`, `RequestTimeoutError`, `ServerError`, `InvalidResponseError` | Unknown, so check the data first |
 | Other `APIError`s, such as `BadRequestError` | Quickbase answered with an error, so fix the cause rather than repeating the request |
 
 `create_field()` with `required` or `unique` takes two requests, so if it raises an error, the field
-[may already exist](schema.md). This includes `ReadOnlyError`, when only the first is allowed.
+[may already exist](schema.md). This includes `WriteRefusedError`, when only the first is allowed.
 
 Repeating an `update()`, or an `upsert()` on a unique field, reports the record as unchanged rather
 than adding another, but repeating an `insert()` can add a duplicate.

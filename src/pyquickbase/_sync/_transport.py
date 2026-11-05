@@ -7,8 +7,10 @@ from typing import Any
 
 import httpx
 
+from .._combine import read_rules_in
 from .._config import build_url, check_allowed, is_read
 from .._policy import WritePolicy, check_policy, describe_write
+from .._read_policy import ReadPolicy, ReadRequest, check_read, describe_read
 from .._response import error_from_response, error_from_transport, parse_response
 from .._retry import RetryPolicy, parse_retry_after
 
@@ -26,7 +28,10 @@ class Transport:
         http_client: httpx.Client | None,
         allowed_writes: frozenset[tuple[str, str]] | None = None,
         write_policy: WritePolicy | None = None,
+        read_policy: ReadPolicy | None = None,
     ) -> None:
+        self._read_policy = read_policy
+        self._read_rules = read_rules_in(read_policy)
         self._allowed_writes = allowed_writes
         self._write_policy = write_policy
         self._auth = auth
@@ -44,13 +49,62 @@ class Transport:
         params: Mapping[str, Any] | None = None,
         json: Any = None,
         key_field_id: int | None = None,
+        report_type: str | None = None,
+        summarizing: bool = False,
     ) -> Any:
+        """Send a request, and return its decoded body, trimmed by any `ReadRules`.
+
+        `report_type` and `summarizing` describe a read the request can't, as `describe_read()`
+        explains, so `request()` on the client can't pass them.
+        """
         method = method.upper()
-        response = self._send(method, path, params, json, key_field_id)
-        return parse_response(response, method, path)
+        self._check_write(method, path, json, key_field_id)
+        read = self._check_read(method, path, params, json, report_type, summarizing)
+        response = self._send(method, path, params, json)
+        payload = parse_response(response, method, path)
+        for rules in self._read_rules:
+            payload = rules._trim_response(read, method, path, payload)  # pyright: ignore[reportPrivateUsage]
+        return payload
+
+    def summary_limit(self, table_id: str) -> int | None:
+        """The most records the read rules let `summarize()` read from a table, if any."""
+        limits = [
+            found
+            for rules in self._read_rules
+            if (found := rules._summary_limit(table_id)) is not None  # pyright: ignore[reportPrivateUsage]
+        ]
+        return min(limits, default=None)
+
+    def _check_write(self, method: str, path: str, json: Any, key_field_id: int | None) -> None:
+        """Apply the limits on writes, which come first, so a refused write says so."""
+        if self._allowed_writes is not None:
+            check_allowed(method, path, self._allowed_writes)
+        if self._write_policy is not None and not is_read(method, path):
+            request = describe_write(method, path, json, key_field_id=key_field_id)
+            check_policy(self._write_policy, request)
+
+    def _check_read(
+        self,
+        method: str,
+        path: str,
+        params: Mapping[str, Any] | None,
+        json: Any,
+        report_type: str | None,
+        summarizing: bool,
+    ) -> ReadRequest | None:
+        if self._read_policy is None:
+            return None
+        read = describe_read(
+            method, path, params, json, report_type=report_type, summarizing=summarizing
+        )
+        if read is not None:
+            check_read(self._read_policy, read)
+        return read
 
     def get_raw(self, path: str) -> httpx.Response:
         """GET something that isn't JSON, such as a file, with the usual retries and errors."""
+        self._check_write("GET", path, None, None)
+        self._check_read("GET", path, None, None, None, False)
         response = self._send("GET", path, None, None)
         if not response.is_success:
             raise error_from_response(response, "GET", path)
@@ -62,14 +116,8 @@ class Transport:
         path: str,
         params: Mapping[str, Any] | None,
         json: Any,
-        key_field_id: int | None = None,
     ) -> httpx.Response:
         url = build_url(self._base_url, path)
-        if self._allowed_writes is not None:
-            check_allowed(method, path, self._allowed_writes)
-        if self._write_policy is not None and not is_read(method, path):
-            request = describe_write(method, path, json, key_field_id=key_field_id)
-            check_policy(self._write_policy, request)
         attempt = 0
         while True:
             try:

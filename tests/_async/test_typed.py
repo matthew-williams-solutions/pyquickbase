@@ -263,13 +263,13 @@ async def test_an_old_cache_doesnt_cause_a_false_alarm() -> None:
 
 
 async def test_a_read_only_client_reads_but_cant_write() -> None:
-    from pyquickbase import ReadOnlyError
+    from pyquickbase import WriteRefusedError
 
     server = Server()
     async with client(server, read_only=True) as qb:
         tasks = qb.app(APP).typed(Tasks)
         assert len([t async for t in tasks.query()]) == 3
-        with pytest.raises(ReadOnlyError):
+        with pytest.raises(WriteRefusedError):
             await tasks.insert([Tasks.new(title="x")])
 
 

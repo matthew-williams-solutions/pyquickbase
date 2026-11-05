@@ -1,12 +1,5 @@
 class APIError(QuickbaseError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
-class Allow(object)
-    def __eq__(self, other)
-    def __init__(self, *, insert: bool | Collection[int] = False, update: bool | Collection[int] = False, delete: bool = False, delete_files: bool = False) -> None
-    field delete: bool
-    field delete_files: bool
-    field insert: bool | frozenset[int]
-    field update: bool | frozenset[int]
 class App(object)
     def create_table(self, name: str, *, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> 'Table'
     def ensure_table(self, name: str, *, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> 'Table'
@@ -37,11 +30,11 @@ class AsyncApp(object)
 class AsyncQuickbase(object)
     async def __aenter__(self) -> Self
     async def __aexit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: traceback | None) -> None
-    def __init__(self, *, realm: str, token: str, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.AsyncClient | None = None, schema_ttl: float = 300.0, read_only: bool = False, allowed_writes: Collection[tuple[str, str]] | None = None, write_policy: Callable[[WriteRequest], bool] | None = None) -> None
+    def __init__(self, *, realm: str, token: str, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.AsyncClient | None = None, schema_ttl: float = 300.0, read_only: bool = False, allowed_writes: Collection[tuple[str, str]] | None = None, write_policy: Callable[[WriteRequest], bool] | None = None, read_policy: Callable[[ReadRequest], bool] | None = None) -> None
     async def aclose(self) -> None
     def app(self, app_id: str) -> AsyncApp
     def clear_schema_cache(self) -> None
-    classmethod def from_env(cls, *, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.AsyncClient | None = None, schema_ttl: float = 300.0, read_only: bool = False, allowed_writes: Collection[tuple[str, str]] | None = None, write_policy: Callable[[WriteRequest], bool] | None = None, token_env: str = 'QB_USER_TOKEN') -> Self
+    classmethod def from_env(cls, *, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.AsyncClient | None = None, schema_ttl: float = 300.0, read_only: bool = False, allowed_writes: Collection[tuple[str, str]] | None = None, write_policy: Callable[[WriteRequest], bool] | None = None, read_policy: Callable[[ReadRequest], bool] | None = None, token_env: str = 'QB_USER_TOKEN') -> Self
     property realm -> str
     async def request(self, method: str, path: str, *, params: Mapping[str, Any] | None = None, json: Any = None) -> Any
 class AsyncRecordIterator(object)
@@ -206,17 +199,48 @@ class QueryError(QuickbaseError, ValueError)
 class Quickbase(object)
     def __enter__(self) -> Self
     def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: traceback | None) -> None
-    def __init__(self, *, realm: str, token: str, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.Client | None = None, schema_ttl: float = 300.0, read_only: bool = False, allowed_writes: Collection[tuple[str, str]] | None = None, write_policy: Callable[[WriteRequest], bool] | None = None) -> None
+    def __init__(self, *, realm: str, token: str, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.Client | None = None, schema_ttl: float = 300.0, read_only: bool = False, allowed_writes: Collection[tuple[str, str]] | None = None, write_policy: Callable[[WriteRequest], bool] | None = None, read_policy: Callable[[ReadRequest], bool] | None = None) -> None
     def app(self, app_id: str) -> App
     def clear_schema_cache(self) -> None
     def close(self) -> None
-    classmethod def from_env(cls, *, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.Client | None = None, schema_ttl: float = 300.0, read_only: bool = False, allowed_writes: Collection[tuple[str, str]] | None = None, write_policy: Callable[[WriteRequest], bool] | None = None, token_env: str = 'QB_USER_TOKEN') -> Self
+    classmethod def from_env(cls, *, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.Client | None = None, schema_ttl: float = 300.0, read_only: bool = False, allowed_writes: Collection[tuple[str, str]] | None = None, write_policy: Callable[[WriteRequest], bool] | None = None, read_policy: Callable[[ReadRequest], bool] | None = None, token_env: str = 'QB_USER_TOKEN') -> Self
     property realm -> str
     def request(self, method: str, path: str, *, params: Mapping[str, Any] | None = None, json: Any = None) -> Any
 class QuickbaseError(Exception)
 class RateLimitError(APIError)
     def __init__(self, summary: str, *, retry_after: float | None = None, **kwargs: object) -> None
-class ReadOnlyError(QuickbaseError)
+class ReadAccess(object)
+    def __eq__(self, other)
+    def __init__(self, *, fields: bool | Collection[int], filter: bool | Collection[int] | None = None, sort: bool | Collection[int] | None = None, write_only: Collection[int] = (), files: Collection[int] = (), reports: Collection[str | int] = (), summary_reports: Collection[str | int] = (), max_records: int = 100, max_summary_records: int = 10000, user_emails: bool = False) -> None
+    field fields: bool | frozenset[int]
+    field files: frozenset[int]
+    field filter: bool | frozenset[int]
+    field max_records: int
+    field max_summary_records: int
+    field reports: frozenset[str]
+    field sort: bool | frozenset[int]
+    field summary_reports: frozenset[str]
+    field user_emails: bool
+    field write_only: frozenset[int]
+value ReadAction = Literal['query', 'summarize', 'delete', 'report', 'summary_report', 'file', 'formula', 'tables', 'fields', 'relationships', 'reports', 'app', 'roles', 'other']
+value ReadPolicy = Callable[[ReadRequest], bool]
+class ReadRefusedError(RequestRefusedError)
+class ReadRequest(object)
+    def __eq__(self, other)
+    def __init__(self, *, action: Literal['query', 'summarize', 'delete', 'report', 'summary_report', 'file', 'formula', 'tables', 'fields', 'relationships', 'reports', 'app', 'roles', 'other'], table_id: str | None = None, field_ids: frozenset[int] | None = None, filter_field_ids: frozenset[int] | None = None, sort_field_ids: frozenset[int] | None = None, top: int | None = None, skip: int | None = None, report_id: str | None = None, method: str, path: str) -> None
+    field action: Literal['query', 'summarize', 'delete', 'report', 'summary_report', 'file', 'formula', 'tables', 'fields', 'relationships', 'reports', 'app', 'roles', 'other']
+    field field_ids: frozenset[int] | None
+    field filter_field_ids: frozenset[int] | None
+    field method: str
+    field path: str
+    field report_id: str | None
+    field skip: int | None
+    field sort_field_ids: frozenset[int] | None
+    field table_id: str | None
+    field top: int | None
+class ReadRules(object)
+    def __call__(self, request: ReadRequest) -> bool
+    def __init__(self, tables: Mapping[str, ReadAccess]) -> None
 class Record(Mapping)
     def __getitem__(self, key: str | int) -> Any
     def __init__(self, values: Mapping[int, Any], labels: Mapping[str, int]) -> None
@@ -256,6 +280,7 @@ class ReportInfo(object)
     field name: str
     field raw: Mapping[str, Any]
     field type: str
+class RequestRefusedError(QuickbaseError)
 class RequestTimeoutError(NetworkError)
 class RetryPolicy(object)
     def __eq__(self, other)
@@ -334,9 +359,6 @@ class TableInfo(object)
     field key_field_id: int | None
     field name: str
     field raw: Mapping[str, Any]
-class TableRules(object)
-    def __call__(self, request: WriteRequest) -> bool
-    def __init__(self, tables: Mapping[str, Allow]) -> None
 class TypedField(F)
     def __eq__(self, value: object) -> Condition
     def __ge__(self, value: Any) -> Condition
@@ -399,12 +421,20 @@ class WhereCondition(object)
     field field_id: int
     field operator: str
     field value: str
+class WriteAccess(object)
+    def __eq__(self, other)
+    def __init__(self, *, insert: bool | Collection[int] = False, update: bool | Collection[int] = False, delete: bool = False, delete_files: bool = False) -> None
+    field delete: bool
+    field delete_files: bool
+    field insert: bool | frozenset[int]
+    field update: bool | frozenset[int]
 value WriteAction = Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'other']
 class WriteError(QuickbaseError)
     def __init__(self, summary: str, *, result: Any = None) -> None
 class WritePermissionError(WriteError, PermissionDeniedError)
     def __init__(self, summary: str, *, result: Any = None, status_code: int = 403, **kwargs: Any) -> None
 value WritePolicy = Callable[[WriteRequest], bool]
+class WriteRefusedError(RequestRefusedError)
 class WriteRequest(object)
     def __eq__(self, other)
     def __init__(self, *, action: Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'other'], table_id: str | None, field_ids: frozenset[int] | None, row_count: int | None, method: str, path: str) -> None
@@ -421,7 +451,10 @@ class WriteResult(object)
     field errors: tuple[RowError, ...]
     field unchanged_ids: tuple[int, ...]
     field updated_ids: tuple[int, ...]
-def all_of(*policies: Callable[[WriteRequest], bool]) -> Callable[[WriteRequest], bool]
+class WriteRules(object)
+    def __call__(self, request: WriteRequest) -> bool
+    def __init__(self, tables: Mapping[str, WriteAccess]) -> None
+def all_of(*policies: Any) -> Any
 def parse_where(where: str, fields: Iterable[Field]) -> list[WhereCondition]
 def where_from_dict(data: Mapping[str, Any], *, fields: Iterable[str | int] | None = None) -> Expression
 def where_schema(*, fields: Iterable[str | int] | Iterable[Field] | None = None, max_depth: int = 2) -> dict[str, Any]

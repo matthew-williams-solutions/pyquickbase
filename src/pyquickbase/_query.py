@@ -6,7 +6,7 @@ that those mistakes raise an error instead. See docs/api-notes.md for the tested
 """
 
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -34,6 +34,7 @@ _JOIN = re.compile(r"(?:AND|OR)\b")
 _ESCAPE = re.compile(r"\\(.)")
 _LIST_WORD = re.compile(r"\b(?:OR|AND)\b")
 _FIELD_REFERENCE = re.compile(r"(?:^|\s)_fid_", re.IGNORECASE)
+_FIELD_REFERENCE_ANYWHERE = re.compile(r"_fid_", re.IGNORECASE)
 _WHERE_HELP = (
     "Each condition must be {fieldId.OPERATOR.'value'} in its own braces, joined outside the "
     "braces with AND or OR in uppercase. Write an apostrophe in a value as \\'."
@@ -287,7 +288,8 @@ def _unquote(raw: str) -> str:
     return _ESCAPE.sub(r"\1", raw[1:-1]) if raw.startswith("'") else raw
 
 
-def _scan_where(text: str, fields: FieldIndex) -> list[WhereCondition]:
+def _scan_where(text: str, resolve: Callable[[int], object]) -> list[WhereCondition]:
+    """Read each condition, calling `resolve` with its field ID, which raises for an unknown one."""
     found: list[WhereCondition] = []
     position, depth, expect_condition = 0, 0, True
     while position < len(text):
@@ -300,10 +302,10 @@ def _scan_where(text: str, fields: FieldIndex) -> list[WhereCondition]:
             if match is None:
                 raise _where_error(text, position, "expected a condition")
             try:
-                fields.resolve(int(match[1]))
+                resolve(int(match[1]))
             except UnknownFieldError:
                 raise _where_error(
-                    text, position, f"field {match[1]} doesn't exist, or this token can't see it"
+                    text, position, f"field {match[1]} doesn't exist, or this client can't see it"
                 ) from None
             if match[2] not in OPERATORS:
                 raise _where_error(
@@ -334,7 +336,7 @@ def validate_where(where: str, fields: FieldIndex) -> str:
     build queries with `F` when any of the text comes from someone else.
     """
     text = where.strip()
-    _scan_where(text, fields)
+    _scan_where(text, fields.resolve)
     return text
 
 
@@ -354,7 +356,22 @@ def parse_where(where: str, fields: Iterable[Field]) -> list[WhereCondition]:
         QueryError: It has the same mistakes that `table.query()` would refuse.
         UnknownFieldError: It names a field that isn't in `fields`.
     """
-    return _scan_where(where.strip(), FieldIndex(fields))
+    return _scan_where(where.strip(), FieldIndex(fields).resolve)
+
+
+def where_field_ids(where: str) -> frozenset[int] | None:
+    """Return the fields a `where` string uses, or None if that can't be determined.
+
+    A value like `_FID_6` compares with field 6, so a string with one anywhere counts as unknown, as
+    does anything the validator would refuse.
+    """
+    if _FIELD_REFERENCE_ANYWHERE.search(where):
+        return None
+    try:
+        conditions = _scan_where(where.strip(), lambda _: None)
+    except QueryError:
+        return None
+    return frozenset(item.field_id for item in conditions)
 
 
 def compile_where(where: Expression | str, fields: FieldIndex) -> str:

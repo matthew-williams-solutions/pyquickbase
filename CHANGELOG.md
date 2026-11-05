@@ -6,7 +6,27 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `read_policy` on `Quickbase` and `AsyncQuickbase`, which decides on each read before it's sent, and
+  works with any of the limits on writes. `ReadRules` and `ReadAccess` list what a client may read from
+  each table: which fields it may return, filter on, and sort by, which reports and file fields it may
+  use, and how many records one query can reach. A table or field they don't list acts as if the token
+  couldn't see it. They also leave email addresses out of user and file values unless asked, and keep
+  only the metadata the SDK reads, so a field's formula and a report's filter aren't in `raw`. They
+  refuse formulas, app details and roles, reports run through `request()`, and any change to tables or
+  fields. A policy can also be your own function, which takes a `ReadRequest`.
+- `ReadRefusedError`, raised for a read the policy refuses, and `RequestRefusedError`, the base of it and
+  of `WriteRefusedError`.
+
 ### Changed
+
+- **Breaking:** renamed `TableRules` to `WriteRules`, `Allow` to `WriteAccess`, and `ReadOnlyError` to
+  `WriteRefusedError`, so that the names for limiting writes match those for limiting reads. A refused
+  write still raises the same error in the same places.
+- `all_of()` combines read policies as well as write policies, but not the two kinds at once.
+- A field or table that can't be found now says "this client can't see it" rather than "this token",
+  as a read policy can hide it too.
 
 - The message of `AuthenticationError` now says that a 401 may mean a wrong ID rather than a bad token.
   Quickbase uses the same wording for a bad token, an app or table that doesn't exist, and one the token
@@ -18,6 +38,7 @@ All notable changes to this project are documented here. The format follows
   argument and attribute and an example for both clients, which live tests run. Each page has a plain
   Markdown copy, listed in `llms.txt`.
 - Links to anchors in the old reference page, such as `reference/#pyquickbase.Table`, no longer work.
+- The reference page "Write limits and retries" is now "Limits and retries", and covers read limits.
 
 ## [1.0.0rc6] - 2026-11-05
 

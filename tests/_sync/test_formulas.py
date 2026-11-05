@@ -11,7 +11,7 @@ from pyquickbase import (
     InvalidResponseError,
     InvalidValueError,
     Quickbase,
-    ReadOnlyError,
+    WriteRefusedError,
 )
 
 APP = "bq1234567"
@@ -116,7 +116,7 @@ def test_read_only_client_can_run_formulas() -> None:
     server = FakeFormulas()
     with client(server, read_only=True) as qb:
         assert (qb.app(APP).table("Tasks").run_formula("1 + 1")).value is True
-        with pytest.raises(ReadOnlyError):
+        with pytest.raises(WriteRefusedError):
             qb.app(APP).table("Tasks").create_field("X", "numeric", formula="1 + 1")
 
 

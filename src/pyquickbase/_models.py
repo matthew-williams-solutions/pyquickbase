@@ -321,7 +321,7 @@ class FieldIndex:
         found = None if isinstance(ref, bool) else self._by_id.get(ref)
         if found is None:
             raise UnknownFieldError(
-                f"This table has no field with ID {ref!r}, or this token can't see it."
+                f"This table has no field with ID {ref!r}, or this client can't see it."
             )
         return found
 
@@ -335,7 +335,7 @@ class FieldIndex:
         close = difflib.get_close_matches(label, self._by_label, n=3)
         hint = f" Did you mean {' or '.join(repr(name) for name in close)}?" if close else ""
         raise UnknownFieldError(
-            f"This table has no field labeled {label!r}, or this token can't see it.{hint}"
+            f"This table has no field labeled {label!r}, or this client can't see it.{hint}"
         )
 
 

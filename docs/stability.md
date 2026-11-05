@@ -13,9 +13,13 @@ minor release.
 - The `pyquickbase` command and its options.
 - The promise that a `read_only` client changes no records. It can still run reports, which adds to
   their usage count in Quickbase, and formulas.
-- File and user values staying plain dictionaries. Their contents come from Quickbase.
-- `TableRules` refusing whatever it doesn't list. A later version can add a new `WriteAction` or a new
-  attribute on `WriteRequest`, so have your own policy refuse an action it doesn't recognize.
+- File and user values staying plain dictionaries. Their contents come from Quickbase, less what a
+  `ReadRules` leaves out.
+- `WriteRules` and `ReadRules` refusing whatever they don't list, and `ReadRules` leaving out of a
+  response whatever it doesn't allow. A later version can add a new `WriteAction` or `ReadAction`, or a
+  new attribute on `WriteRequest` or `ReadRequest`, so have your own policy refuse an action it doesn't
+  recognize.
+- Which metadata keys `ReadRules` keeps can change, as Quickbase's responses aren't covered either.
 
 ## What isn't covered
 

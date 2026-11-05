@@ -50,7 +50,7 @@ nav:
       - Queries: reference/queries.md
       - Records and results: reference/records.md
       - Metadata: reference/metadata.md
-      - Write limits and retries: reference/limits.md
+      - Limits and retries: reference/limits.md
       - Generated classes: reference/generated.md
       - Errors: reference/errors.md
   - Field types: field-types.md

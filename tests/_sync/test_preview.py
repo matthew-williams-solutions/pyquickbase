@@ -15,9 +15,9 @@ from pyquickbase import (
     InvalidValueError,
     QueryError,
     Quickbase,
-    ReadOnlyError,
     TypedRecord,
     UnknownFieldError,
+    WriteRefusedError,
     where_from_dict,
 )
 
@@ -181,7 +181,7 @@ def test_previews_work_where_the_write_would_be_refused() -> None:
     with client(fake, read_only=True) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         assert (tasks.preview_update([{"Record ID#": 1, "Title": "new"}])).changes
-        with pytest.raises(ReadOnlyError):
+        with pytest.raises(WriteRefusedError):
             tasks.update([{"Record ID#": 1, "Title": "new"}])
 
 

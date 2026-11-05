@@ -28,7 +28,11 @@ REFERENCE_PAGES = (
     ("Queries", "queries", "`F`, conditions from plain data, and checking hand-written ones"),
     ("Records and results", "records", "What reads and writes return, files, and summaries"),
     ("Metadata", "metadata", "What describes apps, tables, fields, relationships, and reports"),
-    ("Write limits and retries", "limits", "Limiting what a client can write, and how it retries"),
+    (
+        "Limits and retries",
+        "limits",
+        "Limiting what a client can write and read, and how it retries",
+    ),
     ("Generated classes", "generated", "What supports the classes from `pyquickbase codegen`"),
     ("Errors", "errors", "Everything the SDK raises, and what each one holds"),
 )

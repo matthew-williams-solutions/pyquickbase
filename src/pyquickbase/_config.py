@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from ._version import __version__
-from .errors import ConfigurationError, ReadOnlyError
+from .errors import ConfigurationError, WriteRefusedError
 
 DEFAULT_BASE_URL = "https://api.quickbase.com/v1"
 DEFAULT_TIMEOUT = 30.0
@@ -80,7 +80,7 @@ def check_allowed(method: str, path: str, allowed_writes: frozenset[tuple[str, s
         return
     if (method, path) not in allowed_writes:
         limit = "limited to reads and specific writes" if allowed_writes else "read-only"
-        raise ReadOnlyError(f"This client is {limit}, so it won't send {method} {path}.")
+        raise WriteRefusedError(f"This client is {limit}, so it won't send {method} {path}.")
 
 
 def build_user_agent(prefix: str | None) -> str:

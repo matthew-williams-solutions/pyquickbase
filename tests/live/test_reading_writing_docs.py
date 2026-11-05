@@ -13,10 +13,10 @@ from pyquickbase.errors import (
     BadRequestError,
     InvalidValueError,
     QueryError,
-    ReadOnlyError,
     UnknownFieldError,
     UnknownTableError,
     WriteError,
+    WriteRefusedError,
 )
 
 CHOICES = {"choices": ["Open", "Done"], "properties": {"allowNewChoices": False}}
@@ -220,9 +220,9 @@ def test_a_read_only_client_refuses_writes(scratch: Any) -> None:
     with Quickbase(realm=scratch.realm, token=scratch.token, read_only=True) as qb:
         table = qb.app(scratch.app_id).table(scratch.created[-1].info().id)
         assert table.count() == 0
-        with pytest.raises(ReadOnlyError):
+        with pytest.raises(WriteRefusedError):
             table.insert([{"Title": "x"}])
-        with pytest.raises(ReadOnlyError):
+        with pytest.raises(WriteRefusedError):
             table.delete(F("Title") == "x")
 
 

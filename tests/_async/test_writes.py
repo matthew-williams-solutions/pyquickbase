@@ -11,11 +11,11 @@ from pyquickbase import (
     InvalidResponseError,
     InvalidValueError,
     QueryError,
-    ReadOnlyError,
     ServerError,
     UnknownFieldError,
     UnknownTableError,
     WriteError,
+    WriteRefusedError,
 )
 
 pytestmark = pytest.mark.anyio
@@ -311,7 +311,7 @@ async def test_read_only_client_refuses_every_write() -> None:
             lambda: app.create_table("New"),
         ]
         for call in calls:
-            with pytest.raises(ReadOnlyError):
+            with pytest.raises(WriteRefusedError):
                 await call()
     assert {r.method for r in server.requests} == {"GET"}
 

@@ -73,6 +73,7 @@ from ..errors import (
     PermissionDeniedError,
     QueryError,
     QuickbaseError,
+    ReadRefusedError,
     SchemaMismatchError,
     UnknownFieldError,
     UnknownReportError,
@@ -496,11 +497,19 @@ class AsyncTable:
             )
         )
 
-    async def _fetch_page(self, body: dict[str, Any], top: int, skip: int) -> Page:
+    async def _fetch_page(
+        self, body: dict[str, Any], top: int, skip: int, *, summarizing: bool = False
+    ) -> Page:
         payload = await self._transport.request(
-            "POST", "/records/query", json={**body, "options": {"top": top, "skip": skip}}
+            "POST",
+            "/records/query",
+            json={**body, "options": {"top": top, "skip": skip}},
+            summarizing=summarizing,
         )
         return parse(page_from_api, payload, "records query")
+
+    async def _fetch_summary_page(self, body: dict[str, Any], top: int, skip: int) -> Page:
+        return await self._fetch_page(body, top, skip, summarizing=True)
 
     async def query_page(
         self,
@@ -814,7 +823,8 @@ class AsyncTable:
             minimum: Numeric, date, timestamp, or time of day fields to find the lowest of.
             maximum: Numeric, date, timestamp, or time of day fields to find the highest of.
             max_records: Raise `QueryError` if more records match than this, without reading them.
-                It never returns a partial result. An agent's tool should always set this.
+                It never returns a partial result. An agent's tool should always set this. A
+                client's `ReadRules` can set a limit of their own, `max_summary_records`.
             page_size: Records to request per call to Quickbase.
 
         Returns:
@@ -826,6 +836,8 @@ class AsyncTable:
             QueryError: An argument can't be used, such as a text field in `total`, or more records
                 match than `max_records`. No records were read.
             UnknownFieldError: The table has no such field. No records were read.
+            ReadRefusedError: More records match than the client's `ReadRules` allow summarizing,
+                or it doesn't allow a field. No records were read.
             InvalidResponseError: A value isn't what its field's type says it should be.
         """
         _require_positive("page_size", page_size)
@@ -841,14 +853,26 @@ class AsyncTable:
                 maximum=maximum,
             )
         )
-        if max_records is not None:
+        allowed = self._transport.summary_limit((await self.info()).id)
+        if max_records is not None or allowed is not None:
             found = await self.count(where)
-            if found > max_records:
+            if max_records is not None and found > max_records:
                 raise QueryError(
                     f"{found} records match, which is more than max_records of {max_records}. "
                     "Narrow the filter, or raise the limit."
                 )
-        async for record in self.query(where=where, select=summary.select, page_size=page_size):
+            if allowed is not None and found > allowed:
+                raise ReadRefusedError(
+                    f"{found} records match, and this client's read rules allow summarizing at "
+                    f"most {allowed}. Narrow the filter. Nothing was summarized."
+                )
+        records = AsyncRecordIterator(
+            lambda: self._query_body(where, summary.select, None),
+            self._fetch_summary_page,
+            page_size,
+            allowed,
+        )
+        async for record in records:
             summary.add(record)
         return summary.rows()
 
@@ -1470,7 +1494,7 @@ class AsyncReport:
     async def _load_target(self) -> dict[str, Any]:
         info = await self.info()
         require_table_report(info)
-        return {"id": info.id, "tableId": (await self._table.info()).id}
+        return {"id": info.id, "tableId": (await self._table.info()).id, "type": info.type}
 
     async def _fetch_page(self, target: dict[str, Any], top: int, skip: int) -> Page:
         # Quickbase silently ignores top and skip in the body and returns every record.
@@ -1478,6 +1502,7 @@ class AsyncReport:
             "POST",
             f"/reports/{target['id']}/run",
             params={"tableId": target["tableId"], "top": top, "skip": skip},
+            report_type=target["type"],
         )
         return parse(page_from_api, payload, "report")
 
@@ -1564,6 +1589,7 @@ class AsyncReport:
                 "POST",
                 f"/reports/{info.id}/run",
                 params={"tableId": table_id, "top": top, "skip": len(rows)},
+                report_type=info.type,
             )
             page, total = parse(summary_rows_from_api, payload, "report")
             rows.extend(page)

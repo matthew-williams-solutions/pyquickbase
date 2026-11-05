@@ -20,20 +20,22 @@ qb = Quickbase.from_env(token_env="QB_SERVICE_TOKEN")
 
 ## Limiting what a client can do
 
-Choose the narrowest option that fits. Each one raises `ReadOnlyError` for anything it doesn't allow,
-without sending it, though a table method may read the table's metadata first. They also apply to
-`qb.request()`.
+Choose the narrowest option that fits. A refused write raises `WriteRefusedError`, and a refused read
+raises `ReadRefusedError`, both without sending anything, though a table method may read the table's
+metadata first. Both are a `RequestRefusedError`. They also apply to `qb.request()`.
 
-| Option | What the client can write | Use it for |
+| Option | What the client can do | Use it for |
 |---|---|---|
-| `read_only=True` | Nothing | Reports, dashboards, and anything that only looks |
-| `write_policy=TableRules(...)` | Only the tables, actions, and fields you list | An AI agent or a job with a narrow purpose |
-| `write_policy=your_function` | Whatever your function allows | Rules that the list can't express |
-| `allowed_writes={...}` | Only the exact requests you list, on any table | Limiting a client to a kind of request |
+| `read_only=True` | Write nothing | Reports, dashboards, and anything that only looks |
+| `write_policy=WriteRules(...)` | Write only the tables, actions, and fields you list | An AI agent or a job with a narrow purpose |
+| `write_policy=your_function` | Write whatever your function allows | Rules that the list can't express |
+| `allowed_writes={...}` | Write only the exact requests you list, on any table | Limiting a client to a kind of request |
+| `read_policy=ReadRules(...)` | Read only the tables, fields, reports, and number of records you list | An AI agent that shouldn't see everything the token can |
+| `read_policy=your_function` | Read whatever your function allows | Logging reads, or limits the list can't express |
 
-None of them limit reads, other than which requests count as one. These protect against bugs in your
-code and mistakes by a model. See [what they don't do](#what-these-limits-dont-do), and give your
-token access to as little as possible, so that Quickbase enforces the limit too.
+A read policy works with any of the others. These protect against bugs in your code and mistakes by a
+model. See [what they don't do](#what-these-limits-dont-do), and give your token access to as little
+as possible, so that Quickbase enforces the limit too.
 
 ### Making a client read-only
 
@@ -50,7 +52,7 @@ with Quickbase(realm="acme", token="your_user_token", read_only=True) as qb:
 
 ### Limiting writes by table, action, and field
 
-Pass `TableRules`, which lists what's allowed on each table. Anything not listed is refused, including
+Pass `WriteRules`, which lists what's allowed on each table. Anything not listed is refused, including
 any other table, so a table added later starts out blocked.
 
 Rules use table and field IDs, because a name or label can be renamed, which could leave a rule
@@ -58,24 +60,24 @@ protecting the wrong thing. Look them up once when you set up, then either keep 
 or use them right away, as this does.
 
 ```python
-from pyquickbase import Allow, Quickbase, TableRules
+from pyquickbase import WriteAccess, Quickbase, WriteRules
 
 with Quickbase(realm="acme", token="your_user_token") as setup:
     tasks = setup.app("bq1234567").table("Tasks")
     tasks_id = tasks.info().id
     status, notes = tasks.resolve_field_ids(["Status", "Notes"])
 
-rules = TableRules({tasks_id: Allow(insert=True, update=[status, notes])})
+rules = WriteRules({tasks_id: WriteAccess(insert=True, update=[status, notes])})
 
 with Quickbase(realm="acme", token="your_user_token", write_policy=rules) as qb:
     tasks = qb.app("bq1234567").table(tasks_id)
     created = tasks.insert([{"Title": "Order chairs"}]).created_ids[0]
     tasks.update([{"Record ID#": created, "Status": "Done"}])  # Allowed
-    # tasks.update([{"Record ID#": created, "Title": "Changed"}])  # Raises ReadOnlyError
-    # tasks.delete(F("Status") == "Done")  # Raises ReadOnlyError
+    # tasks.update([{"Record ID#": created, "Title": "Changed"}])  # Raises WriteRefusedError
+    # tasks.delete(F("Status") == "Done")  # Raises WriteRefusedError
 ```
 
-`Allow` grants nothing unless you say so:
+`WriteAccess` grants nothing unless you say so:
 
 | Argument | What it grants | Values |
 |---|---|---|
@@ -106,15 +108,15 @@ Things to know:
 
 A policy is a function that takes a `WriteRequest` and returns `True` to allow the write. Anything else
 refuses it, including `False`, `None`, a truthy value, or an error your function raises, so a bug can't
-let a write through. To give a reason, raise `ReadOnlyError` with a message of your own.
+let a write through. To give a reason, raise `WriteRefusedError` with a message of your own.
 
 ```python
-from pyquickbase import Quickbase, ReadOnlyError, WriteRequest
+from pyquickbase import Quickbase, WriteRefusedError, WriteRequest
 
 
 def small_batches_only(request: WriteRequest) -> bool:
     if request.row_count is None or request.row_count > 100:
-        raise ReadOnlyError("This job only writes up to 100 records at a time.")
+        raise WriteRefusedError("This job only writes up to 100 records at a time.")
     return True
 
 
@@ -149,14 +151,14 @@ per request, so a write split into batches is checked batch by batch, and it can
 `row_count`, not the total.
 
 A custom policy is only as careful as its author, and returning `True` too often removes the protection,
-so use `TableRules` when it can express what you need.
+so use `WriteRules` when it can express what you need.
 
 ### Combining limits
 
 `all_of()` requires a write to pass every policy, in order, and stops at the first refusal.
 
 ```python
-from pyquickbase import Allow, Quickbase, TableRules, WriteRequest, all_of
+from pyquickbase import WriteAccess, Quickbase, WriteRules, WriteRequest, all_of
 
 
 def log_write(request: WriteRequest) -> bool:
@@ -164,11 +166,11 @@ def log_write(request: WriteRequest) -> bool:
     return True
 
 
-rules = TableRules({"bqtasks123": Allow(insert=True)})
+rules = WriteRules({"bqtasks123": WriteAccess(insert=True)})
 qb = Quickbase(realm="acme", token="your_user_token", write_policy=all_of(rules, log_write))
 ```
 
-Put `TableRules` first if a later policy records what was allowed.
+Put `WriteRules` first if a later policy records what was allowed.
 
 `allowed_writes` limits a client to exact requests, on any table. If you also pass `write_policy`, a
 write has to pass both. Passing `read_only=True` with either one is a `ConfigurationError`, as it would
@@ -178,9 +180,111 @@ refuse everything they allow.
 qb = Quickbase(realm="acme", token="your_user_token", allowed_writes={("POST", "/records")})
 ```
 
+### Limiting reads by table, field, and number of records
+
+Pass `ReadRules`, which lists what may be read from each table. As with writes, anything not listed is
+refused, and rules use IDs.
+
+```python
+from pyquickbase import Quickbase, ReadAccess, ReadRules
+
+with Quickbase(realm="acme", token="your_user_token") as setup:
+    visits = setup.app("bq1234567").table("Appointments")
+    visits_id = visits.info().id
+    when, status, technician = visits.resolve_field_ids(["When", "Status", "Technician"])
+
+# It can read these three fields, filter on Status and Technician, and get 50 records at a time.
+access = ReadAccess(fields=[when, status, technician], filter=[status, technician], max_records=50)
+agent_client = Quickbase(
+    realm="acme",
+    token="your_user_token",
+    read_policy=ReadRules({visits_id: access}),
+    read_only=True,
+)
+```
+
+A table or field that isn't listed acts as if the token couldn't see it, as a role that hides it does.
+`app.tables()` and `table.fields()` leave it out, a query by default returns only the fields it may, and
+naming one raises `UnknownTableError` or `UnknownFieldError`. Asking for more than is allowed, such as
+filtering on a field that's only returned, or 200 records, raises `ReadRefusedError`, which says what to
+change.
+
+`ReadAccess` grants nothing beyond `fields` unless you say so:
+
+| Argument | What it grants | Default |
+|---|---|---|
+| `fields` | Returning these fields. `True` means every field, including ones added later | Required |
+| `filter` | Filtering on these fields | The same as `fields` |
+| `sort` | Sorting by these fields | The same as `fields` |
+| `write_only` | Naming these fields in a write, without reading them | None |
+| `files` | Downloading from these file fields. Listing one in `fields` only returns the file's name and version details | None |
+| `reports` | Running these table reports, by ID. Columns outside `fields` are left out | None |
+| `summary_reports` | Running these summary and chart reports, by ID, with all of their columns | None |
+| `max_records` | How many records one query or report can reach, counting `skip` | 100 |
+| `max_summary_records` | How many records `summarize()` may read for one summary | 10,000 |
+| `user_emails` | Email addresses in user values, and the uploader's details in file values | Left out |
+
+Things to know:
+
+- **`Record ID#` is always allowed,** because the SDK uses it to page through records and to find them.
+- **`max_records` limits each query, not the client.** A query needs a `limit`, or a `top`, of at most
+  this, and it's refused rather than cut short, so the result is never partly missing without saying so.
+  A model can still reach other records with another filter. To limit how many a client reads in all,
+  count them in your own policy.
+- **A field in `filter` or `sort` reveals something about its values,** even if it isn't returned,
+  because a model can see which records match and in which order.
+- **A listed report's own filter and sort can use any field,** and someone can change them in the
+  Quickbase interface, so list only reports you've checked. A summary report's columns can't be matched to
+  fields, so listing one allows all of them.
+- **Metadata keeps only what the SDK reads.** A field's formula, a report's filter, and anything Quickbase
+  adds later are left out of the response, and so of `raw`.
+- **Some things are always refused:** running a formula, which can read other tables and fields, an app's
+  details and roles, running a report through `qb.request()`, which doesn't say what kind of report it
+  is, any request it doesn't recognize, and any change to tables or fields, as a new formula field could
+  read whatever the rules hide. Use a separate client for those.
+- **A generated class must only use allowed fields,** or `SchemaMismatchError` says a field no longer
+  exists.
+- **A delete is held to `filter`,** because the number deleted shows how many records matched.
+
+### Writing your own read policy
+
+As with writes, a read policy is a function that takes a `ReadRequest` and returns `True` to allow the
+read, which holds no values, so it's safe to log. Only `ReadRules` trims what comes back, so combine
+yours with it using `all_of()`, which applies every `ReadRules` inside it.
+
+```python
+from pyquickbase import Quickbase, ReadAccess, ReadRequest, ReadRules, all_of
+
+
+def log_read(request: ReadRequest) -> bool:
+    print(request.action, request.table_id, request.field_ids)
+    return True
+
+
+rules = ReadRules({"bqtasks123": ReadAccess(fields=[6, 7])})
+qb = Quickbase(realm="acme", token="your_user_token", read_policy=all_of(rules, log_read))
+```
+
+| Attribute | What it holds |
+|---|---|
+| `action` | `query`, `summarize`, `delete`, `report`, `summary_report`, `file`, `formula`, `tables`, `fields`, `relationships`, `reports`, `app`, `roles`, or `other` |
+| `table_id` | The table's ID |
+| `field_ids`, `filter_field_ids`, `sort_field_ids` | The fields it returns, filters on, and sorts by |
+| `top`, `skip` | How many records it asks for, and how many it passes over |
+| `report_id` | The report it runs |
+| `method`, `path` | The HTTP request, for anything `action` doesn't cover |
+
+`None` means "couldn't be determined", as it does for writes. A query without `sortBy` has `None` for
+`sort_field_ids`, because the table's default sort would apply, and one without a `top` has `None` there,
+because Quickbase would return every record. Have your policy refuse an `action` it doesn't recognize.
+A read policy sees changes to tables and fields as `other`.
+
 ### What these limits don't do
 
-- **They don't limit reads.** A client with `TableRules` can still read every table the token can reach.
+- **They can't see copies of a value.** A formula, lookup, or summary field you allow can show a field you
+  don't, and an address field shows its subfields. Check what each allowed field is built from.
+- **A write can reveal a value.** An update reports a record as unchanged when a field already held the
+  value it was given, so a client that may write a field can test what it holds.
 - **They limit this client, not the token.** Code that can create another client, or call the API
   directly, can get around them. To limit that, the token's role has to do it.
 - **They don't cover what Quickbase does next.** A pipeline or automation can still change other tables
@@ -193,12 +297,15 @@ qb = Quickbase(realm="acme", token="your_user_token", allowed_writes={("POST", "
 
 | What happened | Exception | What's left behind |
 |---|---|---|
-| The table, action, or a field isn't allowed | `ReadOnlyError` | Nothing was sent |
-| The policy returned anything but `True`, or raised an error | `ReadOnlyError` | Nothing was sent. An error it raised is kept as the `__cause__` |
+| The table, action, or a field isn't allowed | `WriteRefusedError` | Nothing was sent |
+| The policy returned anything but `True`, or raised an error | `WriteRefusedError` | Nothing was sent. An error it raised is kept as the `__cause__` |
 | A later batch of a write was refused | `WriteError` | **Earlier batches were written**, and are in `error.result` |
-| `Allow` with an empty list, or labels instead of IDs | `ConfigurationError` | The rules weren't created |
-| `TableRules` with anything but `{table ID: Allow(...)}` | `ConfigurationError` | The rules weren't created |
-| An async function as a policy, or `read_only` with a policy | `ConfigurationError` | The client wasn't created |
+| `WriteAccess` with an empty list, or labels instead of IDs | `ConfigurationError` | The rules weren't created |
+| `WriteRules` with anything but `{table ID: WriteAccess(...)}` | `ConfigurationError` | The rules weren't created |
+| A read isn't allowed, such as a field, report, or too many records | `ReadRefusedError` | Nothing was sent |
+| A table or field the read rules don't list is named | `UnknownTableError` or `UnknownFieldError` | Nothing was sent |
+| `ReadAccess` with labels, report names, or a limit below 1 | `ConfigurationError` | The rules weren't created |
+| An async function as a policy, `read_only` with a write policy, or a policy of the wrong kind | `ConfigurationError` | The client wasn't created |
 
 ## Retries
 

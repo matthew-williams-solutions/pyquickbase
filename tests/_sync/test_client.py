@@ -16,10 +16,10 @@ from pyquickbase import (
     PermissionDeniedError,
     Quickbase,
     RateLimitError,
-    ReadOnlyError,
     RequestTimeoutError,
     RetryPolicy,
     ServerError,
+    WriteRefusedError,
 )
 
 TOKEN = "fake-user-token"
@@ -361,7 +361,7 @@ def test_read_only_client_never_sends_anything_else(method: str, path: str) -> N
         return httpx.Response(200, json={})
 
     with make_client(handler, read_only=True) as qb:
-        with pytest.raises(ReadOnlyError, match="read-only"):
+        with pytest.raises(WriteRefusedError, match="read-only"):
             qb.request(method, path, json={})
     assert seen == []
 
@@ -400,7 +400,7 @@ def test_allowed_writes_permit_only_exact_matches() -> None:
             ("POST", "/records/"),
             ("POST", "/reports/1/run/"),
         ):
-            with pytest.raises(ReadOnlyError, match="specific writes"):
+            with pytest.raises(WriteRefusedError, match="specific writes"):
                 qb.request(method, path, json={})
     assert seen == ["POST /v1/records", "POST /v1/records/query", "GET /v1/apps/abc"]
 
@@ -410,7 +410,7 @@ def test_empty_allowed_writes_is_read_only() -> None:
         raise AssertionError("nothing should be sent")  # pragma: no cover
 
     with make_client(handler, allowed_writes=[]) as qb:
-        with pytest.raises(ReadOnlyError, match="read-only"):
+        with pytest.raises(WriteRefusedError, match="read-only"):
             qb.request("POST", "/records", json={})
 
 

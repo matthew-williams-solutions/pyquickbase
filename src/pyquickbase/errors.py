@@ -23,8 +23,27 @@ class InvalidResponseError(QuickbaseError):
     """Quickbase reported success, but the response body wasn't in the expected format."""
 
 
-class ReadOnlyError(QuickbaseError):
-    """The client's limits don't allow this request, which could change data. It wasn't sent."""
+class RequestRefusedError(QuickbaseError):
+    """The client's own limits refused this request, so it wasn't sent.
+
+    Catch this for either kind. `WriteRefusedError` and `ReadRefusedError` say which limit it was.
+    The message says what was refused and why, without repeating any values from the request.
+    """
+
+
+class WriteRefusedError(RequestRefusedError):
+    """The client's limits on writes don't allow this request, which could change data.
+
+    `read_only`, `allowed_writes`, and `write_policy` all raise this. Nothing was sent.
+    """
+
+
+class ReadRefusedError(RequestRefusedError):
+    """The client's `read_policy` doesn't allow this read, so it wasn't sent.
+
+    It's raised for a field, table, report, or number of records that the policy doesn't allow.
+    Quickbase's own permissions still apply to whatever it allows.
+    """
 
 
 class QueryError(QuickbaseError, ValueError):

@@ -168,19 +168,21 @@ Quickbase may already have applied it, so check the data before trying again.
 ## Limiting what a client can do
 
 Pass `read_only=True` to guarantee a client can't change data. It only sends GET requests, record
-queries, report runs, and formula runs, including through `qb.request()`, and raises `ReadOnlyError`
+queries, report runs, and formula runs, including through `qb.request()`, and raises `WriteRefusedError`
 for anything else without sending it, though a table method may read the table's metadata first.
 Running a report adds to its usage count in Quickbase, but changes no records.
 
-To limit writes by table, action, and field, such as for an AI agent, pass `TableRules`. Anything it
-doesn't list is refused. See [Limiting what a client can do](https://matthew-williams-solutions.github.io/pyquickbase/guides/clients/#limiting-what-a-client-can-do)
-for this, your own policies, and what these limits don't do.
+To limit writes by table, action, and field, such as for an AI agent, pass `WriteRules`. To limit reads
+by table, field, report, and number of records, pass `ReadRules`, which also leaves out of each
+response what it doesn't allow. Anything they don't list is refused. See [Limiting what a client can do](https://matthew-williams-solutions.github.io/pyquickbase/guides/clients/#limiting-what-a-client-can-do)
+for these, your own policies, and what these limits don't do.
 
 ```python
-from pyquickbase import Allow, Quickbase, TableRules
+from pyquickbase import Quickbase, ReadAccess, ReadRules, WriteAccess, WriteRules
 
-rules = TableRules({"bqtasks123": Allow(insert=True, update=[7, 12])})
-qb = Quickbase(realm="acme", token="your_user_token", write_policy=rules)
+writes = WriteRules({"bqtasks123": WriteAccess(insert=True, update=[7, 12])})
+reads = ReadRules({"bqtasks123": ReadAccess(fields=[6, 7, 12], max_records=50)})
+qb = Quickbase(realm="acme", token="your_user_token", write_policy=writes, read_policy=reads)
 ```
 
 ## Customizing

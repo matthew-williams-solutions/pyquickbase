@@ -12,11 +12,11 @@ from pyquickbase import (
     InvalidValueError,
     QueryError,
     Quickbase,
-    ReadOnlyError,
     ServerError,
     UnknownFieldError,
     UnknownTableError,
     WriteError,
+    WriteRefusedError,
 )
 
 APP = "bq1234567"
@@ -310,7 +310,7 @@ def test_read_only_client_refuses_every_write() -> None:
             lambda: app.create_table("New"),
         ]
         for call in calls:
-            with pytest.raises(ReadOnlyError):
+            with pytest.raises(WriteRefusedError):
                 call()
     assert {r.method for r in server.requests} == {"GET"}
 

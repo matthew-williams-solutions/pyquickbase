@@ -16,7 +16,6 @@ import pytest
 import pyquickbase
 from pyquickbase import (
     UNSET,
-    Allow,
     AppInfo,
     F,
     FileUpload,
@@ -26,17 +25,18 @@ from pyquickbase import (
     Period,
     QueryError,
     Quickbase,
-    ReadOnlyError,
     Record,
     RetryPolicy,
     SchemaMismatchError,
     TableInfo,
-    TableRules,
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
     UnsupportedReportError,
+    WriteAccess,
     WriteError,
+    WriteRefusedError,
+    WriteRules,
     all_of,
     parse_where,
     where_from_dict,
@@ -463,7 +463,7 @@ def test_read_only_and_allowed_writes(scratch: Any, seeded: str) -> None:
         ):
             try:
                 attempt()
-            except ReadOnlyError:
+            except WriteRefusedError:
                 pass
             except pyquickbase.InvalidValueError:
                 pass  # drop() checks the name first
@@ -474,7 +474,7 @@ def test_read_only_and_allowed_writes(scratch: Any, seeded: str) -> None:
     with Quickbase(realm=scratch.realm, token=scratch.token, allowed_writes=writes) as qb:
         table = get(qb, scratch, seeded)
         table.insert([{"Title": "Allowed", "Code": "A1"}])
-        with pytest.raises(ReadOnlyError):
+        with pytest.raises(WriteRefusedError):
             table.delete(F("Code") == "A1")
 
 
@@ -765,7 +765,7 @@ def test_write_rules_limit_tables_actions_and_fields(
     other_id = other.info().id
     other.insert([{"Title": "Untouched"}])
     status_field = scratch.client.app(scratch.app_id).table(table_id).resolve_field_ids(["Title"])
-    rules = TableRules({table_id: Allow(insert=True, update=status_field)})
+    rules = WriteRules({table_id: WriteAccess(insert=True, update=status_field)})
     with Quickbase(realm=scratch.realm, token=scratch.token, write_policy=rules) as limited:
         table = limited.app(scratch.app_id).table(table_id)
         record = (one(table, "C1", "Code")).id
@@ -774,13 +774,13 @@ def test_write_rules_limit_tables_actions_and_fields(
         table.update([{"Record ID#": record, "Title": "Changed"}])
         assert (one(table, "C1", "Title"))["Title"] == "Changed"
 
-        with pytest.raises(ReadOnlyError, match="doesn't allow fields"):
+        with pytest.raises(WriteRefusedError, match="doesn't allow fields"):
             table.update([{"Record ID#": record, "Code": "Nope"}])
-        with pytest.raises(ReadOnlyError, match="deleting isn't allowed"):
+        with pytest.raises(WriteRefusedError, match="deleting isn't allowed"):
             table.delete(F("Code") == "C2")
-        with pytest.raises(ReadOnlyError, match="only record and file"):
+        with pytest.raises(WriteRefusedError, match="only record and file"):
             table.create_field("Nope", "text")
-        with pytest.raises(ReadOnlyError, match="isn't listed"):
+        with pytest.raises(WriteRefusedError, match="isn't listed"):
             limited.app(scratch.app_id).table(other_id).insert([{"Title": "Nope"}])
         limited.request(
             "POST", "/records/query", json={"from": other_id, "select": [3]}
@@ -801,7 +801,7 @@ def test_a_custom_policy_runs_on_real_writes(scratch: Any, table_id: str, seeded
         seen.append(request.action)
         return True
 
-    policy = all_of(record_actions, TableRules({table_id: Allow(insert=True, update=True)}))
+    policy = all_of(record_actions, WriteRules({table_id: WriteAccess(insert=True, update=True)}))
     with Quickbase(realm=scratch.realm, token=scratch.token, write_policy=policy) as limited:
         table = limited.app(scratch.app_id).table(table_id)
         table.upsert([{"Code": "C1", "Title": "Upserted"}], merge_on="Code")

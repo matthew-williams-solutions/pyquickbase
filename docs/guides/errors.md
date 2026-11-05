@@ -27,11 +27,12 @@ These mean the request wasn't sent, though the SDK may have read table metadata 
 | `QueryError` | A query that can't be sent as written |
 | `InvalidValueError` | A row, value, or file request that can't be sent |
 | `SchemaMismatchError` | A generated class no longer matches its table, or an `ensure_` method found a field that isn't what it was asked for |
-| `UnknownTableError` | No table with that name or ID in this app |
-| `UnknownFieldError` | No field with that label or ID in this table, or the token's role can't see it |
+| `UnknownTableError` | No table with that name or ID in this app, or the client's read policy hides it |
+| `UnknownFieldError` | No field with that label or ID in this table, or the token's role or the client's read policy hides it |
 | `UnknownReportError` | No report with that name or ID on this table, or several with that name |
 | `UnsupportedReportError` | A report that can't be read as records, such as a summary or chart |
-| `ReadOnlyError` | The client's [limits](clients.md#limiting-what-a-client-can-do) don't allow this request |
+| `WriteRefusedError` | The client's [limits on writes](clients.md#limiting-what-a-client-can-do) don't allow this request |
+| `ReadRefusedError` | The client's [read policy](clients.md#limiting-reads-by-table-field-and-number-of-records) doesn't allow this request |
 
 ## Refused writes
 

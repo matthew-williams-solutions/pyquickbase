@@ -33,7 +33,16 @@ ASYNC_NAMES = {"close": "aclose"}
 OVERVIEW = "../reference.md"
 
 # Classes you make yourself, so they show a constructor rather than a list of attributes.
-HAS_PUBLIC_CONSTRUCTOR = {"F", "FileUpload", "Period", "TableRules", "Allow", "RetryPolicy"}
+HAS_PUBLIC_CONSTRUCTOR = {
+    "F",
+    "FileUpload",
+    "Period",
+    "WriteRules",
+    "WriteAccess",
+    "ReadRules",
+    "ReadAccess",
+    "RetryPolicy",
+}
 # Public so that the SDK can call them across modules, and of no use from outside it.
 INTERNAL_METHODS = {"Expression.compile"}
 # Type aliases have no docstrings of their own.
@@ -43,8 +52,11 @@ ALIASES = {
     "PeriodUnit": "How much time each group of a `Period` covers.",
     "SummaryGroups": "What `Table.summarize()` can group by.",
     "WriteAction": "What kind of write a `WriteRequest` is.",
+    "ReadAction": "What kind of read a `ReadRequest` is.",
+    "ReadPolicy": "A function that decides on each read. Only a return value of `True` lets one "
+    "through. `ReadRules` is one, or you can write your own.",
     "WritePolicy": "A function that decides on each write. Only a return value of `True` lets one "
-    "through. `TableRules` is one, or you can write your own.",
+    "through. `WriteRules` is one, or you can write your own.",
     "OrderBy": "What a generated class's methods take as `order_by`, which is fields rather than "
     "labels, so that renaming a label can't break it.",
 }
@@ -358,11 +370,11 @@ SYMBOL_PAGES = (
         ),
     ),
     SymbolPage(
-        "Write limits and retries",
+        "Limits and retries",
         "limits",
-        "Pass these to `Quickbase()` to limit what a client can write, and to choose how it "
-        "retries. These limits protect against bugs in your code and mistakes by a model, so give "
-        "your token access to as little as possible as well.",
+        "Pass these to `Quickbase()` to limit what a client can write and read, and to choose how "
+        "it retries. These limits protect against bugs in your code and mistakes by a model, so "
+        "give your token access to as little as possible as well.",
         "Each example makes its own client from the environment, with `bqtasks123` standing for "
         f"the ID of the `Job Tasks` table. {_LIVE_TEST}",
         *_setup(_TABLE_LINE),
@@ -371,13 +383,27 @@ SYMBOL_PAGES = (
                 "Limit writes by table, action, and field",
                 "table-rules",
                 _CLIENTS,
-                ("TableRules", "Allow"),
+                ("WriteRules", "WriteAccess"),
+            ),
+            Group(
+                "Limit reads by table, field, and number of records",
+                "read-rules",
+                _CLIENTS,
+                ("ReadRules", "ReadAccess"),
             ),
             Group(
                 "Write your own policy",
                 "own-policy",
                 _CLIENTS,
-                ("WriteRequest", "all_of", "WritePolicy", "WriteAction"),
+                (
+                    "WriteRequest",
+                    "ReadRequest",
+                    "all_of",
+                    "WritePolicy",
+                    "ReadPolicy",
+                    "WriteAction",
+                    "ReadAction",
+                ),
             ),
             Group("Retries", "retries", _CLIENTS, ("RetryPolicy",)),
         ),
@@ -411,7 +437,14 @@ SYMBOL_PAGES = (
                 "Mistakes caught before sending",
                 "before-sending",
                 _ERRORS,
-                ("ConfigurationError", "QueryError", "InvalidValueError", "ReadOnlyError"),
+                (
+                    "ConfigurationError",
+                    "QueryError",
+                    "InvalidValueError",
+                    "RequestRefusedError",
+                    "WriteRefusedError",
+                    "ReadRefusedError",
+                ),
             ),
             Group(
                 "Names that don't match",

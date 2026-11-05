@@ -5,10 +5,10 @@ from pyquickbase import (
     AsyncQuickbase,
     InvalidResponseError,
     QueryError,
-    ReadOnlyError,
     ReportInfo,
     UnknownReportError,
     UnsupportedReportError,
+    WriteRefusedError,
 )
 
 pytestmark = pytest.mark.anyio
@@ -277,7 +277,7 @@ async def test_read_only_client_can_run_reports_but_not_write() -> None:
     async with client(server, read_only=True) as qb:
         page = await qb.app(APP).table("Tasks").report("1").run_page()
         assert len(page.records) == 5
-        with pytest.raises(ReadOnlyError):
+        with pytest.raises(WriteRefusedError):
             await qb.request("POST", "/records", json={})
 
 

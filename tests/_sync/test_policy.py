@@ -8,15 +8,15 @@ import httpx
 import pytest
 
 from pyquickbase import (
-    Allow,
     F,
     FileUpload,
     InvalidValueError,
     Quickbase,
-    ReadOnlyError,
-    TableRules,
+    WriteAccess,
     WriteError,
+    WriteRefusedError,
     WriteRequest,
+    WriteRules,
     all_of,
 )
 
@@ -79,7 +79,9 @@ def client(fake: Fake, policy: Any, **kwargs: Any) -> Quickbase:
 
 def test_allowed_writes_are_sent() -> None:
     fake = Fake()
-    rules = TableRules({TASKS: Allow(insert=True, update=[7], delete=True, delete_files=True)})
+    rules = WriteRules(
+        {TASKS: WriteAccess(insert=True, update=[7], delete=True, delete_files=True)}
+    )
     with client(fake, rules) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         tasks.insert([{"Title": "x"}])
@@ -96,7 +98,7 @@ def test_allowed_writes_are_sent() -> None:
 
 def test_each_table_method_is_refused_without_being_sent() -> None:
     fake = Fake()
-    with client(fake, TableRules({TASKS: Allow()})) as qb:
+    with client(fake, WriteRules({TASKS: WriteAccess()})) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         calls: list[Any] = [
             lambda: tasks.insert([{"Title": "x"}]),
@@ -111,7 +113,7 @@ def test_each_table_method_is_refused_without_being_sent() -> None:
             lambda: qb.app("bq1234567").create_table("New"),
         ]
         for call in calls:
-            with pytest.raises(ReadOnlyError):
+            with pytest.raises(WriteRefusedError):
                 call()
     assert fake.writes == []
 
@@ -119,9 +121,9 @@ def test_each_table_method_is_refused_without_being_sent() -> None:
 def test_an_upload_counts_as_setting_its_field() -> None:
     fake = Fake()
     upload = FileUpload("a.txt", b"s3cret")
-    with client(fake, TableRules({TASKS: Allow(update=[7])})) as qb:
+    with client(fake, WriteRules({TASKS: WriteAccess(update=[7])})) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        with pytest.raises(ReadOnlyError, match=r"\[13\]") as caught:
+        with pytest.raises(WriteRefusedError, match=r"\[13\]") as caught:
             tasks.update([{"Record ID#": 1, "Attachment": upload}])
     assert fake.writes == []
     assert "s3cret" not in str(caught.value)
@@ -129,16 +131,16 @@ def test_an_upload_counts_as_setting_its_field() -> None:
 
 def test_the_raw_escape_hatch_is_covered_too() -> None:
     fake = Fake()
-    with client(fake, TableRules({TASKS: Allow(insert=[6])})) as qb:
-        with pytest.raises(ReadOnlyError):
+    with client(fake, WriteRules({TASKS: WriteAccess(insert=[6])})) as qb:
+        with pytest.raises(WriteRefusedError):
             qb.request("POST", "/records", json={"to": "bqother", "data": [{"6": {}}]})
-        with pytest.raises(ReadOnlyError):
+        with pytest.raises(WriteRefusedError):
             qb.request("POST", "/records", json={"to": TASKS, "data": [{"07": {}}]})
-        with pytest.raises(ReadOnlyError):
+        with pytest.raises(WriteRefusedError):
             qb.request("POST", "/records", json={"to": TASKS, "data": "x"})
-        with pytest.raises(ReadOnlyError):
+        with pytest.raises(WriteRefusedError):
             qb.request("DELETE", "/tables/bqtasks", params={"appId": "bq1234567"})
-        with pytest.raises(ReadOnlyError, match="updating isn't allowed"):
+        with pytest.raises(WriteRefusedError, match="updating isn't allowed"):
             # request() doesn't know the table's key field, so this could change a record.
             qb.request("POST", "/records", json={"to": TASKS, "data": [{"6": {}}]})
     assert fake.writes == []
@@ -146,14 +148,14 @@ def test_the_raw_escape_hatch_is_covered_too() -> None:
 
 def test_a_raw_insert_needs_both_grants() -> None:
     fake = Fake()
-    with client(fake, TableRules({TASKS: Allow(insert=True, update=True)})) as qb:
+    with client(fake, WriteRules({TASKS: WriteAccess(insert=True, update=True)})) as qb:
         qb.request("POST", "/records", json={"to": TASKS, "data": [{"6": {}}]})
     assert fake.writes == ["POST /records"]
 
 
 def test_insert_is_refused_on_a_table_with_another_key_field() -> None:
     fake = Fake(key_field_id=8)
-    rules = TableRules({TASKS: Allow(insert=True, update=True)})
+    rules = WriteRules({TASKS: WriteAccess(insert=True, update=True)})
     with client(fake, rules) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         with pytest.raises(InvalidValueError, match=r"key field is 'Code'.*merge_on=8"):
@@ -186,13 +188,13 @@ def test_reads_arent_affected() -> None:
 
 def test_it_works_with_allowed_writes_and_both_must_pass() -> None:
     fake = Fake()
-    rules = TableRules({TASKS: Allow(insert=True, delete=True)})
+    rules = WriteRules({TASKS: WriteAccess(insert=True, delete=True)})
     with client(fake, rules, allowed_writes={("POST", "/records")}) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         tasks.insert([{"Title": "x"}])
-        with pytest.raises(ReadOnlyError):  # The rules allow it, and allowed_writes doesn't.
+        with pytest.raises(WriteRefusedError):  # The rules allow it, and allowed_writes doesn't.
             tasks.delete(F("Title") == "x")
-        with pytest.raises(ReadOnlyError):  # allowed_writes allows it, and the rules don't.
+        with pytest.raises(WriteRefusedError):  # allowed_writes allows it, and the rules don't.
             qb.request("POST", "/records", json={"to": "bqother", "data": [{"6": {}}]})
     assert fake.writes == ["POST /records"]
 
@@ -220,11 +222,11 @@ def test_a_custom_policy_sees_the_batch_and_can_combine() -> None:
     def small(request: WriteRequest) -> bool:
         return request.row_count is not None and request.row_count <= 1
 
-    policy = all_of(TableRules({TASKS: Allow(insert=True)}), small)
+    policy = all_of(WriteRules({TASKS: WriteAccess(insert=True)}), small)
     with client(fake, policy) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         tasks.insert([{"Title": "x"}])
-        with pytest.raises(ReadOnlyError, match="refused this insert"):
+        with pytest.raises(WriteRefusedError, match="refused this insert"):
             tasks.insert([{"Title": "x"}, {"Title": "y"}])
     assert fake.writes == ["POST /records"]
 
@@ -234,8 +236,8 @@ def test_from_env_takes_a_policy(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("QB_USER_TOKEN", "t")
     fake = Fake()
     http = httpx.Client(transport=httpx.MockTransport(fake))
-    rules = TableRules({})
+    rules = WriteRules({})
     with Quickbase.from_env(http_client=http, write_policy=rules) as qb:
-        with pytest.raises(ReadOnlyError):
+        with pytest.raises(WriteRefusedError):
             qb.request("POST", "/records", json=json.loads('{"to": "x", "data": []}'))
     assert fake.writes == []
