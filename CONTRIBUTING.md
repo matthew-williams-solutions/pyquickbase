@@ -50,6 +50,11 @@ The viewable table needs:
 - In the role: a View rule of `Category` is not `Gamma`, a Modify rule of `Category` is `Alpha`, Add but
   not Delete, and no view or modify access to `Internal Rank`.
 
+`QB_FIELD_TYPES_TABLE_ID` is a table for field types only the UI can create, and its test skips without
+it. It needs a text field named `Name`, then these fields, added in the UI: `Contact Card` (vCard),
+`Calendar Entry` (iCalendar), `Depends On` (Predecessor), and `Team Members` (a list-user formula), with
+at least one record.
+
 These tests add a temporary field to the viewable table as the main token. The restricted user only
 tries writes that should be refused, and the run fails if either table's record count changes. Give
 anything you keep in these apps a clear, professional name and description.

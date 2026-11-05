@@ -204,3 +204,35 @@ def test_a_report_using_a_hidden_field_isnt_available(scratch: Any, name: str) -
             list(table.report(name).run())
         with pytest.raises(BadRequestError, match="Internal error"):
             client.request("POST", f"/reports/{report_id}/run", params={"tableId": table_id})
+
+
+def test_field_types_only_the_ui_can_create(scratch: Any) -> None:
+    table_id = os.environ.get("QB_FIELD_TYPES_TABLE_ID")
+    if not table_id:
+        pytest.skip("Set QB_FIELD_TYPES_TABLE_ID to run this. See CONTRIBUTING.md.")
+    table = scratch.client.app(scratch.app_id).table(table_id)
+    fields = {item.label: item for item in table.fields(refresh=True)}
+    assert fields["Contact Card"].type == "vCardButton"
+    assert fields["Calendar Entry"].type == "ICalendarButton"
+    assert fields["Depends On"].type == "predecessor"
+    assert fields["Team Members"].type == "multiuser"
+    assert fields["Team Members"].mode == "formula"
+
+    labels = ["Contact Card", "Calendar Entry", "Depends On", "Team Members"]
+    record = next(iter(table.query(select=labels)))
+    assert "a=VCard" in record["Contact Card"]
+    assert "a=ICal" in record["Calendar Entry"]
+    assert isinstance(record["Depends On"], str)
+    assert isinstance(record["Team Members"], list)
+
+    # These should all be refused, so nothing here changes the table.
+    for label, value, message in (
+        ("Contact Card", "x", "read-only"),
+        ("Calendar Entry", "x", "read-only"),
+        ("Team Members", [{"id": "x"}], "formula"),
+        ("Depends On", "99999999", "Invalid entry"),
+    ):
+        row = {"3": {"value": record.id}, str(fields[label].id): {"value": value}}
+        body = {"to": table_id, "data": [row]}
+        errors = scratch.client.request("POST", "/records", json=body)["metadata"]["lineErrors"]
+        assert message in errors["1"][0]

@@ -23,6 +23,9 @@ Nothing here should break anyone.
   `mkdocs.yml`, so update it if the config moves.
 - `llms.txt` is at `/pyquickbase/llms.txt`, not the domain root where some tools look, because the
   site is served from a subpath. Only a custom domain would change that.
+- Real types in generated classes for `vCardButton` and `ICalendarButton`, as read-only `str`, and
+  `predecessor`, as a writable `str`. All three are `Any` until then, and the
+  [API notes](docs/api-notes.md#field-types) record what they return.
 - A method for summary and chart reports, returning `{label: value}` rows.
 - Find out how `COUNT` summaries work. `ensure_summary_field()` always sends a child field, and
   Quickbase refused `COUNT` on every field tried, so the SDK may need to leave it out.
@@ -80,14 +83,6 @@ the result to `docs/api-notes.md`.
 - Which endpoints have different rate limits?
 - Do other realms have a different request size limit? Seven endpoints share the one in the
   [API notes](docs/api-notes.md#file-attachments).
-
-**Reports**
-
-
-**Fields and files**
-
-- What do lookups of field types only the UI can create return? These are `Any` and read-only in
-  generated classes until confirmed.
 
 **Realms and apps**
 

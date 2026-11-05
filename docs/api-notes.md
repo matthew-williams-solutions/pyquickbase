@@ -240,7 +240,8 @@ many other mistakes, these are checked:
 | Creating with an empty formula, or adding a formula to a plain field | 400, `Field must be of formula mode.` |
 | Renaming a field a formula uses | Quickbase updates the formula's text |
 | Writing to a formula field | Row error |
-| Field types that took a formula | `text`, `numeric`, `date`, `checkbox`, `duration`, `timeofday`, `currency`, `percent`, `rating`, `url`, `email`, and `datetime` |
+| Field types that took a formula | `text`, `numeric`, `date`, `checkbox`, `duration`, `timeofday`, `currency`, `percent`, `rating`, `url`, `email`, and `datetime`, and on 2026-11-04 `phone`, `user`, `multitext`, and `rich-text` |
+| Field types the API refuses a formula on | `text-multi-line` and `multiuser`, with `[formula] property is not supported`. **The UI can make a `multiuser` formula**, such as `ToUserList(User())`, which reads as a list of users |
 | **A timestamp formula** | **`timestamp` returns 400, `[formula] property is not supported`. `datetime` works, and the field then reports its type as `timestamp`** |
 | `text-multi-line` | 400, `[formula] property is not supported` |
 | Reading formula fields in a query | Full precision, unlike a formula run: `1/3` returns `0.3333333333333333`. A duration returns milliseconds, and a time of day `11:34:49.896` |
@@ -464,14 +465,20 @@ A `datetime` field reports its type as `timestamp`.
 | `multiuser` | A list of users | `[]` |
 | `file` | `{"url", "versions"}` | `{"url": "", "versions": []}` |
 | `address` | Display text, such as `1 Main St, Springfield 12345` | `""` |
-| `dblink` | `""` in the one case seen | |
+| `dblink` | `""`, including when the relationship has child records | `""` |
+| `vCardButton`, `ICalendarButton` | A relative link, such as `<table ID>?a=VCard&fid=14&rid=b`, on every record, even with no data to show | The link, or `""` as a lookup with no parent |
+| `predecessor` | Record IDs as text, such as `1` or `1;2` | `""` |
 
 | Behavior | Result |
 |---|---|
 | Formula fields | Return the same shapes as their type. A formula of `Null` matched its type on text, numeric, and checkbox fields |
 | Lookup fields | Return exactly what the parent field returns, filled and empty, for every type `POST /fields` accepts except `file`, and for numeric, text, and checkbox formulas. With no parent record, they read as that type's empty value. Tested on 2026-11-04 |
 | A lookup's reported type | The parent's type, except that a lookup of `text-multiple-choice` **reports `text`** |
-| A lookup of a `file` field | 400, `The following field ids can not be lookup fields` |
+| A lookup of a `file`, `dblink`, or `predecessor` field | 400, `The following field ids can not be lookup fields` |
+| A lookup of a type only the UI can create | `vCardButton`, `ICalendarButton`, and a `multiuser` formula return what the parent returns, and report the parent's type. Tested on 2026-11-04 |
+| Types only the UI can create | vCard, iCalendar, and Predecessor, which report as `vCardButton`, `ICalendarButton`, and `predecessor`. A Report link reports as `dblink`, and a relationship also creates one |
+| Writing to `vCardButton`, `ICalendarButton`, or `dblink` | Row error, `Can not change the value of the read-only field` |
+| Writing to `predecessor` | Works. It takes a record ID, as text or a number, or several in a list or a separated string, stored as written: `1,2` reads as `1, 2`. A missing ID or other text gives `Invalid entry in field`, and a record linking to itself gives a row error about links back to the first record. `""` clears it. `where` with `EX` matched a record holding that ID |
 | Writable fields | Built-in fields 1 to 5 aren't, nor are formula, lookup, and summary fields, or `address` |
 | An `address` field | Is read-only, with text subfields for its parts, which can be written. Creating one also creates its subfields, and sets `Country` to a default |
 | `dblink` | Created by a relationship, on the parent table |
