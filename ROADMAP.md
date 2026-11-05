@@ -34,21 +34,6 @@ Nothing here should break anyone.
 - A small config file to choose generated names.
 - A setting that repeats a typed table's schema check after a set time.
 
-## Guides
-
-Bring these up to the format of `docs/guides/schema.md`, `reading.md`, and `writing.md`: organized by task,
-with a complete setup in the first example, sections that make sense on their own, and a table of what each
-refusal raises and leaves behind. Check new claims in a live test before publishing them.
-
-- `docs/guides/files.md`
-- `docs/guides/formulas.md`
-- `docs/guides/errors.md`
-- `docs/guides/clients.md`
-- `docs/guides/agents.md`
-- `docs/guides/codegen.md`, which so far only gained a section on `query_page()`
-
-Give the methods these guides cover full `Args`, `Returns`, and `Raises` docstrings at the same time.
-
 ## Demo app
 
 The Quickbase demo app and its Python code page, which is kept outside this repo. Do these before anyone
