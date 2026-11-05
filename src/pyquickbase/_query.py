@@ -42,6 +42,18 @@ _WHERE_HELP = (
 )
 
 
+_MAX_EXPONENT = 308  # The largest a JSON number can be in most parsers.
+
+
+def plain_number(value: float | Decimal) -> str | None:
+    """Write a number without an exponent, as `str()` gives `1e-07` and `1E+3`, or return None
+    for one that isn't finite or is too large to write out."""
+    number = value if isinstance(value, Decimal) else Decimal(repr(value))
+    if not number.is_finite() or abs(number.adjusted()) > _MAX_EXPONENT:
+        return None
+    return format(number, "f")
+
+
 def format_value(value: Any) -> str:
     """Render a Python value for use between the quotes of a condition.
 
@@ -57,8 +69,13 @@ def format_value(value: Any) -> str:
         return ""
     if isinstance(value, bool):
         return "true" if value else "false"
-    if isinstance(value, int | float | Decimal):
+    if isinstance(value, int):
         return str(value)
+    if isinstance(value, float | Decimal):
+        found = plain_number(value)
+        if found is None:
+            raise QueryError("A number in a query must be finite, and can't be this large.")
+        return found
     if isinstance(value, datetime):
         if value.tzinfo is None:
             raise QueryError("A datetime in a query needs a timezone, so its meaning is clear.")

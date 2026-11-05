@@ -58,6 +58,18 @@ def test_to_api_value(value: Any, expected: Any) -> None:
     assert to_api_value(value) == expected
 
 
+def test_to_api_value_writes_a_decimal_without_an_exponent() -> None:
+    assert to_api_value(Decimal("1E+3")) == "1000"
+
+
+@pytest.mark.parametrize(
+    "value", [float("nan"), float("-inf"), Decimal("NaN"), Decimal("Infinity"), Decimal("1E+999")]
+)
+def test_to_api_value_refuses_numbers_json_cant_hold(value: Any) -> None:
+    with pytest.raises(InvalidValueError, match="finite"):
+        to_api_value(value)
+
+
 def test_a_datetime_is_written_with_the_precision_quickbase_accepts() -> None:
     whole = datetime(2027, 1, 2, 3, 4, 5, tzinfo=UTC)
     assert to_api_value(whole) == "2027-01-02T03:04:05+00:00"

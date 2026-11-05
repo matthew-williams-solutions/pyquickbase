@@ -79,6 +79,22 @@ def test_values_that_could_break_out_of_a_condition_are_rejected(value: str) -> 
         format_value(value)
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(1e-07, "0.0000001"), (1e20, "100000000000000000000"), (Decimal("1E+3"), "1000")],
+)
+def test_format_value_writes_numbers_without_an_exponent(value: Any, expected: str) -> None:
+    assert format_value(value) == expected
+
+
+@pytest.mark.parametrize(
+    "value", [float("nan"), float("inf"), Decimal("NaN"), Decimal("-Infinity"), Decimal("1E+999")]
+)
+def test_format_value_rejects_numbers_it_cant_write(value: Any) -> None:
+    with pytest.raises(QueryError, match="finite"):
+        format_value(value)
+
+
 def test_format_value_rejects_naive_datetimes_and_unknown_types() -> None:
     with pytest.raises(QueryError, match="timezone"):
         format_value(datetime(2026, 1, 2))

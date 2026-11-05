@@ -8,6 +8,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- pyquickbase now needs httpx 0.28 or later, whose request bodies the SDK measures to keep each
+  batch under Quickbase's 40 MiB limit.
 - An operation's `scope` now holds for what a write sets, not only for what it filters. `insert`,
   `update`, and `preview_update` refuse a row that sets a field the scope uses, which could move a
   record out of it. `insert` fills those fields in from the scope, and refuses to run when the scope
@@ -19,6 +21,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `tool_error()` reports `changed: "some"` when a failed call still changed something: when
+  `delete_fields()` deleted some of the fields, and when `create_field()` created the field but
+  couldn't set `required` or `unique`. That error's message now says the field was created.
+- `insert()`, `update()`, and `upsert()` raise `InvalidValueError` for a NaN or infinite number,
+  rather than a `ValueError` from httpx.
+- `Decimal` values, in writes and queries, and `float` values in queries, are written without an
+  exponent, so `Decimal("1E+3")` is sent as `1000`. A NaN, infinite, or enormous number in a query
+  raises `QueryError`.
 - `preview_update()` reads in batches no larger than the client's `ReadRules` `max_records`, so a
   preview of more records than that is no longer refused.
 

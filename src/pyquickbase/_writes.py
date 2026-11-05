@@ -6,6 +6,7 @@ creates a record when a merge value doesn't match. See docs/api-notes.md for the
 
 import base64
 import json
+import math
 import re
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -15,6 +16,7 @@ from typing import Any, Literal
 from unicodedata import category
 
 from ._models import Field, FieldIndex
+from ._query import plain_number
 from .errors import (
     InvalidValueError,
     PermissionDeniedError,
@@ -105,6 +107,7 @@ def split_batches(rows: Sequence[Mapping[str, Any]], batch_size: int) -> Iterato
     """Yield `(start, end)` ranges of rows that fit in one request.
 
     A row too large on its own still gets a request, so that Quickbase decides and reports it.
+    Rows are measured as httpx 0.28 and later send them, as compact UTF-8 JSON.
     """
     start = size = 0
     for index, row in enumerate(rows):
@@ -121,10 +124,15 @@ def to_api_value(value: Any) -> Any:
     """Render a Python value for writing. `None` clears the field, which null doesn't do."""
     if value is None:
         return ""
+    if isinstance(value, float) and not math.isfinite(value):
+        raise InvalidValueError("A number must be finite, as JSON can't hold NaN or infinity.")
     if isinstance(value, bool | int | float | str | list | dict):
         return value  # pyright: ignore[reportUnknownVariableType]
     if isinstance(value, Decimal):
-        return str(value)
+        found = plain_number(value)
+        if found is None:
+            raise InvalidValueError("A Decimal must be finite, and can't be this large.")
+        return found
     if isinstance(value, datetime):
         if value.tzinfo is None:
             raise InvalidValueError("A datetime needs a timezone, so its meaning is clear.")
