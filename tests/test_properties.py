@@ -29,8 +29,7 @@ from pyquickbase import (
 from pyquickbase._codegen import _attribute_names, render
 from pyquickbase._config import (
     build_url,
-    check_allowed,
-    normalize_allowed_writes,
+    check_read_only,
     normalize_realm,
     validate_base_url,
     validate_token,
@@ -181,26 +180,10 @@ def test_read_only_allows_only_known_reads(method: str, path: str) -> None:
         path in SAFE_POSTS or re.fullmatch(r"/reports/[0-9]+/run", path, re.ASCII) is not None
     )
     if allowed:
-        check_allowed(method, path, frozenset())
+        check_read_only(method, path)
     else:
         with pytest.raises(WriteRefusedError):
-            check_allowed(method, path, frozenset())
-
-
-@given(METHODS, PATHS, METHODS, PATHS)
-def test_allowed_writes_must_match_exactly(
-    method: str, path: str, listed: str, target: str
-) -> None:
-    allowed = normalize_allowed_writes(False, {(listed, target)})
-    assert allowed is not None
-    is_read = method == "POST" and (
-        path in SAFE_POSTS or re.fullmatch(r"/reports/[0-9]+/run", path, re.ASCII) is not None
-    )
-    if is_read or (method, path) in allowed:
-        check_allowed(method, path, allowed)
-    else:
-        with pytest.raises(WriteRefusedError):
-            check_allowed(method, path, allowed)
+            check_read_only(method, path)
 
 
 @given(PATHS)

@@ -31,6 +31,9 @@ All notable changes to this project are documented here. The format follows
 - **Breaking:** renamed `TableRules` to `WriteRules`, `Allow` to `WriteAccess`, and `ReadOnlyError` to
   `WriteRefusedError`, so that the names for limiting writes match those for limiting reads. A refused
   write still raises the same error in the same places.
+- **Breaking:** removed `allowed_writes`, which only did what a `write_policy` can. A policy that checks
+  `request.method` and `request.path` does the same, as
+  [Combining limits](https://matthew-williams-solutions.github.io/pyquickbase/guides/clients/#combining-limits) shows.
 - `all_of()` combines read policies as well as write policies, but not the two kinds at once.
 - A field or table that can't be found now says "this client can't see it" rather than "this token",
   as a read policy can hide it too.

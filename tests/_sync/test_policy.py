@@ -77,7 +77,7 @@ def client(fake: Fake, policy: Any, **kwargs: Any) -> Quickbase:
     return Quickbase(realm="acme", token="t", http_client=http, write_policy=policy, **kwargs)
 
 
-def test_allowed_writes_are_sent() -> None:
+def test_writes_the_rules_allow_are_sent() -> None:
     fake = Fake()
     rules = WriteRules(
         {TASKS: WriteAccess(insert=True, update=[7], delete=True, delete_files=True)}
@@ -184,19 +184,6 @@ def test_reads_arent_affected() -> None:
         qb.request("POST", "/records/query", json={"from": TASKS, "select": [6]})
         qb.request("POST", "/reports/1/run", params={"tableId": TASKS})
         qb.request("POST", "/formula/run", json={"formula": "1", "from": TASKS})
-
-
-def test_it_works_with_allowed_writes_and_both_must_pass() -> None:
-    fake = Fake()
-    rules = WriteRules({TASKS: WriteAccess(insert=True, delete=True)})
-    with client(fake, rules, allowed_writes={("POST", "/records")}) as qb:
-        tasks = qb.app("bq1234567").table("Tasks")
-        tasks.insert([{"Title": "x"}])
-        with pytest.raises(WriteRefusedError):  # The rules allow it, and allowed_writes doesn't.
-            tasks.delete(F("Title") == "x")
-        with pytest.raises(WriteRefusedError):  # allowed_writes allows it, and the rules don't.
-            qb.request("POST", "/records", json={"to": "bqother", "data": [{"6": {}}]})
-    assert fake.writes == ["POST /records"]
 
 
 def test_a_later_batch_refused_reports_what_was_written() -> None:

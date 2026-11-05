@@ -78,7 +78,7 @@ def client(fake: Fake, policy: Any, **kwargs: Any) -> AsyncQuickbase:
     return AsyncQuickbase(realm="acme", token="t", http_client=http, write_policy=policy, **kwargs)
 
 
-async def test_allowed_writes_are_sent() -> None:
+async def test_writes_the_rules_allow_are_sent() -> None:
     fake = Fake()
     rules = WriteRules(
         {TASKS: WriteAccess(insert=True, update=[7], delete=True, delete_files=True)}
@@ -185,19 +185,6 @@ async def test_reads_arent_affected() -> None:
         await qb.request("POST", "/records/query", json={"from": TASKS, "select": [6]})
         await qb.request("POST", "/reports/1/run", params={"tableId": TASKS})
         await qb.request("POST", "/formula/run", json={"formula": "1", "from": TASKS})
-
-
-async def test_it_works_with_allowed_writes_and_both_must_pass() -> None:
-    fake = Fake()
-    rules = WriteRules({TASKS: WriteAccess(insert=True, delete=True)})
-    async with client(fake, rules, allowed_writes={("POST", "/records")}) as qb:
-        tasks = qb.app("bq1234567").table("Tasks")
-        await tasks.insert([{"Title": "x"}])
-        with pytest.raises(WriteRefusedError):  # The rules allow it, and allowed_writes doesn't.
-            await tasks.delete(F("Title") == "x")
-        with pytest.raises(WriteRefusedError):  # allowed_writes allows it, and the rules don't.
-            await qb.request("POST", "/records", json={"to": "bqother", "data": [{"6": {}}]})
-    assert fake.writes == ["POST /records"]
 
 
 async def test_a_later_batch_refused_reports_what_was_written() -> None:

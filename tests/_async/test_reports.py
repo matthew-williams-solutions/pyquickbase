@@ -281,12 +281,6 @@ async def test_read_only_client_can_run_reports_but_not_write() -> None:
             await qb.request("POST", "/records", json={})
 
 
-async def test_allowed_writes_client_can_run_reports() -> None:
-    server = FakeReports()
-    async with client(server, allowed_writes={("POST", "/records")}) as qb:
-        assert len((await qb.app(APP).table("Tasks").report("1").run_page()).records) == 5
-
-
 async def test_dropping_a_table_forgets_its_reports() -> None:
     server = FakeReports()
     async with client(server) as qb:

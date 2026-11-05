@@ -34,7 +34,7 @@ class RequestRefusedError(QuickbaseError):
 class WriteRefusedError(RequestRefusedError):
     """The client's limits on writes don't allow this request, which could change data.
 
-    `read_only`, `allowed_writes`, and `write_policy` all raise this. Nothing was sent.
+    `read_only` and `write_policy` both raise this. Nothing was sent.
     """
 
 

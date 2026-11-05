@@ -56,9 +56,7 @@ message says what was refused and why, such as a field that isn't allowed, and d
 it sent.
 
 You can add rules of your own, such as a limit on how many records one call can change, with a
-[custom policy](clients.md#writing-your-own-policy). `allowed_writes` is also available, but it limits
-the kind of request and not the table, so `{("POST", "/records")}` allows that request on any table the
-token can reach, and also covers `insert()`, `update()`, `upsert()`, and file uploads.
+[custom policy](clients.md#writing-your-own-policy).
 
 ### Limiting what it reads
 

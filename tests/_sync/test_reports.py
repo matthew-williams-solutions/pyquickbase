@@ -276,12 +276,6 @@ def test_read_only_client_can_run_reports_but_not_write() -> None:
             qb.request("POST", "/records", json={})
 
 
-def test_allowed_writes_client_can_run_reports() -> None:
-    server = FakeReports()
-    with client(server, allowed_writes={("POST", "/records")}) as qb:
-        assert len((qb.app(APP).table("Tasks").report("1").run_page()).records) == 5
-
-
 def test_dropping_a_table_forgets_its_reports() -> None:
     server = FakeReports()
     with client(server) as qb:

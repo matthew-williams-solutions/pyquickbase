@@ -30,11 +30,11 @@ class AsyncApp(object)
 class AsyncQuickbase(object)
     async def __aenter__(self) -> Self
     async def __aexit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: traceback | None) -> None
-    def __init__(self, *, realm: str, token: str, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.AsyncClient | None = None, schema_ttl: float = 300.0, read_only: bool = False, allowed_writes: Collection[tuple[str, str]] | None = None, write_policy: Callable[[WriteRequest], bool] | None = None, read_policy: Callable[[ReadRequest], bool] | None = None) -> None
+    def __init__(self, *, realm: str, token: str, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.AsyncClient | None = None, schema_ttl: float = 300.0, read_only: bool = False, write_policy: Callable[[WriteRequest], bool] | None = None, read_policy: Callable[[ReadRequest], bool] | None = None) -> None
     async def aclose(self) -> None
     def app(self, app_id: str) -> AsyncApp
     def clear_schema_cache(self) -> None
-    classmethod def from_env(cls, *, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.AsyncClient | None = None, schema_ttl: float = 300.0, read_only: bool = False, allowed_writes: Collection[tuple[str, str]] | None = None, write_policy: Callable[[WriteRequest], bool] | None = None, read_policy: Callable[[ReadRequest], bool] | None = None, token_env: str = 'QB_USER_TOKEN') -> Self
+    classmethod def from_env(cls, *, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.AsyncClient | None = None, schema_ttl: float = 300.0, read_only: bool = False, write_policy: Callable[[WriteRequest], bool] | None = None, read_policy: Callable[[ReadRequest], bool] | None = None, token_env: str = 'QB_USER_TOKEN') -> Self
     property realm -> str
     async def request(self, method: str, path: str, *, params: Mapping[str, Any] | None = None, json: Any = None) -> Any
 class AsyncRecordIterator(object)
@@ -199,11 +199,11 @@ class QueryError(QuickbaseError, ValueError)
 class Quickbase(object)
     def __enter__(self) -> Self
     def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: traceback | None) -> None
-    def __init__(self, *, realm: str, token: str, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.Client | None = None, schema_ttl: float = 300.0, read_only: bool = False, allowed_writes: Collection[tuple[str, str]] | None = None, write_policy: Callable[[WriteRequest], bool] | None = None, read_policy: Callable[[ReadRequest], bool] | None = None) -> None
+    def __init__(self, *, realm: str, token: str, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.Client | None = None, schema_ttl: float = 300.0, read_only: bool = False, write_policy: Callable[[WriteRequest], bool] | None = None, read_policy: Callable[[ReadRequest], bool] | None = None) -> None
     def app(self, app_id: str) -> App
     def clear_schema_cache(self) -> None
     def close(self) -> None
-    classmethod def from_env(cls, *, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.Client | None = None, schema_ttl: float = 300.0, read_only: bool = False, allowed_writes: Collection[tuple[str, str]] | None = None, write_policy: Callable[[WriteRequest], bool] | None = None, read_policy: Callable[[ReadRequest], bool] | None = None, token_env: str = 'QB_USER_TOKEN') -> Self
+    classmethod def from_env(cls, *, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.Client | None = None, schema_ttl: float = 300.0, read_only: bool = False, write_policy: Callable[[WriteRequest], bool] | None = None, read_policy: Callable[[ReadRequest], bool] | None = None, token_env: str = 'QB_USER_TOKEN') -> Self
     property realm -> str
     def request(self, method: str, path: str, *, params: Mapping[str, Any] | None = None, json: Any = None) -> Any
 class QuickbaseError(Exception)

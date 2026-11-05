@@ -7,7 +7,7 @@ import anyio
 import httpx
 
 from .._combine import read_rules_in
-from .._config import build_url, check_allowed, is_read
+from .._config import build_url, check_read_only, is_read
 from .._policy import WritePolicy, check_policy, describe_write
 from .._read_policy import ReadPolicy, ReadRequest, check_read, describe_read
 from .._response import error_from_response, error_from_transport, parse_response
@@ -25,13 +25,13 @@ class AsyncTransport:
         timeout: float,
         user_agent: str,
         http_client: httpx.AsyncClient | None,
-        allowed_writes: frozenset[tuple[str, str]] | None = None,
+        read_only: bool = False,
         write_policy: WritePolicy | None = None,
         read_policy: ReadPolicy | None = None,
     ) -> None:
         self._read_policy = read_policy
         self._read_rules = read_rules_in(read_policy)
-        self._allowed_writes = allowed_writes
+        self._read_only = read_only
         self._write_policy = write_policy
         self._auth = auth
         self._base_url = base_url
@@ -76,8 +76,8 @@ class AsyncTransport:
 
     def _check_write(self, method: str, path: str, json: Any, key_field_id: int | None) -> None:
         """Apply the limits on writes, which come first, so a refused write says so."""
-        if self._allowed_writes is not None:
-            check_allowed(method, path, self._allowed_writes)
+        if self._read_only:
+            check_read_only(method, path)
         if self._write_policy is not None and not is_read(method, path):
             request = describe_write(method, path, json, key_field_id=key_field_id)
             check_policy(self._write_policy, request)

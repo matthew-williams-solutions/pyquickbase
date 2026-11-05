@@ -120,12 +120,6 @@ def test_read_only_client_can_run_formulas() -> None:
             qb.app(APP).table("Tasks").create_field("X", "numeric", formula="1 + 1")
 
 
-def test_allowed_writes_client_can_run_formulas() -> None:
-    server = FakeFormulas()
-    with client(server, allowed_writes={("POST", "/records")}) as qb:
-        assert (qb.app(APP).table("Tasks").run_formula("1 + 1")).value is True
-
-
 def test_create_field_with_a_formula() -> None:
     server = FakeFormulas()
     with client(server) as qb:

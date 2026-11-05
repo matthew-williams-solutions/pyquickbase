@@ -383,42 +383,6 @@ def test_read_only_client_allows_reads(method: str, path: str) -> None:
         assert qb.request(method, path) == {"ok": True}
 
 
-def test_allowed_writes_permit_only_exact_matches() -> None:
-    seen: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(f"{request.method} {request.url.path}")
-        return httpx.Response(200, json={})
-
-    with make_client(handler, allowed_writes={("post", "/records")}) as qb:
-        qb.request("POST", "/records", json={})
-        qb.request("POST", "/records/query", json={})
-        qb.request("GET", "/apps/abc")
-        for method, path in (
-            ("DELETE", "/records"),
-            ("POST", "/tables"),
-            ("POST", "/records/"),
-            ("POST", "/reports/1/run/"),
-        ):
-            with pytest.raises(WriteRefusedError, match="specific writes"):
-                qb.request(method, path, json={})
-    assert seen == ["POST /v1/records", "POST /v1/records/query", "GET /v1/apps/abc"]
-
-
-def test_empty_allowed_writes_is_read_only() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        raise AssertionError("nothing should be sent")  # pragma: no cover
-
-    with make_client(handler, allowed_writes=[]) as qb:
-        with pytest.raises(WriteRefusedError, match="read-only"):
-            qb.request("POST", "/records", json={})
-
-
-def test_read_only_and_allowed_writes_conflict() -> None:
-    with pytest.raises(ConfigurationError, match="not both"):
-        make_client(lambda request: httpx.Response(200), read_only=True, allowed_writes=[])
-
-
 def test_rate_limit_error_includes_the_message_from_its_different_format() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(

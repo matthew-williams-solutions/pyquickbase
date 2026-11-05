@@ -36,6 +36,7 @@ from pyquickbase import (
     WriteAccess,
     WriteError,
     WriteRefusedError,
+    WriteRequest,
     WriteRules,
     all_of,
     parse_where,
@@ -449,7 +450,7 @@ def test_drop_needs_the_exact_name(qb: Quickbase, scratch: Any) -> None:
         table.info()
 
 
-def test_read_only_and_allowed_writes(scratch: Any, seeded: str) -> None:
+def test_read_only_and_a_policy_of_exact_requests(scratch: Any, seeded: str) -> None:
     with Quickbase(realm=scratch.realm, token=scratch.token, read_only=True) as qb:
         table = get(qb, scratch, seeded)
         assert table.count() == 5
@@ -470,8 +471,11 @@ def test_read_only_and_allowed_writes(scratch: Any, seeded: str) -> None:
             else:
                 pytest.fail("A read-only client sent a write.")
     assert scratch.client.app(scratch.app_id).table(seeded).count() == 5
-    writes = {("POST", "/records")}
-    with Quickbase(realm=scratch.realm, token=scratch.token, allowed_writes=writes) as qb:
+
+    def records_only(request: WriteRequest) -> bool:
+        return (request.method, request.path) == ("POST", "/records")
+
+    with Quickbase(realm=scratch.realm, token=scratch.token, write_policy=records_only) as qb:
         table = get(qb, scratch, seeded)
         table.insert([{"Title": "Allowed", "Code": "A1"}])
         with pytest.raises(WriteRefusedError):

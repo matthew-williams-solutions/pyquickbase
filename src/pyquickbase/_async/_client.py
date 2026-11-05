@@ -1,7 +1,7 @@
 """The async Quickbase client."""
 
 import re
-from collections.abc import Collection, Mapping
+from collections.abc import Mapping
 from types import TracebackType
 from typing import Any, Self
 
@@ -14,7 +14,6 @@ from .._config import (
     DEFAULT_TIMEOUT,
     ENV_TOKEN,
     build_user_agent,
-    normalize_allowed_writes,
     normalize_realm,
     read_env,
     validate_base_url,
@@ -49,12 +48,9 @@ class AsyncQuickbase:
             requests, record queries, report runs, and formula runs are sent, including through
             `request()`. Running a report adds to its usage count in Quickbase, but changes no
             records.
-        allowed_writes: Like `read_only`, but also allow these `(method, path)` pairs, such as
-            `{("POST", "/records")}`. Paths must match exactly.
         write_policy: A function that decides on each write, usually `WriteRules`, for limits by
             table, action, and field. It takes a `WriteRequest`, and only a return value of `True`
-            lets the write through. Otherwise, it raises `WriteRefusedError` and isn't sent. Use it
-            with `allowed_writes` to require both.
+            lets the write through. Otherwise, it raises `WriteRefusedError` and isn't sent.
         read_policy: A function that decides on each read, usually `ReadRules`, for limits by
             table, field, report, and number of records. It takes a `ReadRequest`, and only a
             return value of `True` lets the read through. Otherwise, it raises `ReadRefusedError`
@@ -79,7 +75,6 @@ class AsyncQuickbase:
         http_client: httpx.AsyncClient | None = None,
         schema_ttl: float = DEFAULT_SCHEMA_TTL,
         read_only: bool = False,
-        allowed_writes: Collection[tuple[str, str]] | None = None,
         write_policy: WritePolicy | None = None,
         read_policy: ReadPolicy | None = None,
     ) -> None:
@@ -92,7 +87,7 @@ class AsyncQuickbase:
             timeout=timeout,
             user_agent=build_user_agent(user_agent),
             http_client=http_client,
-            allowed_writes=normalize_allowed_writes(read_only, allowed_writes),
+            read_only=read_only,
             write_policy=check_write_policy(write_policy, read_only=read_only),
             read_policy=check_read_policy(read_policy),
         )
@@ -109,7 +104,6 @@ class AsyncQuickbase:
         http_client: httpx.AsyncClient | None = None,
         schema_ttl: float = DEFAULT_SCHEMA_TTL,
         read_only: bool = False,
-        allowed_writes: Collection[tuple[str, str]] | None = None,
         write_policy: WritePolicy | None = None,
         read_policy: ReadPolicy | None = None,
         token_env: str = ENV_TOKEN,
@@ -139,7 +133,6 @@ class AsyncQuickbase:
             http_client=http_client,
             schema_ttl=schema_ttl,
             read_only=read_only,
-            allowed_writes=allowed_writes,
             write_policy=write_policy,
             read_policy=read_policy,
         )

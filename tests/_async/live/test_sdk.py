@@ -35,6 +35,7 @@ from pyquickbase import (
     WriteAccess,
     WriteError,
     WriteRefusedError,
+    WriteRequest,
     WriteRules,
     all_of,
     parse_where,
@@ -465,7 +466,7 @@ async def test_drop_needs_the_exact_name(qb: AsyncQuickbase, scratch: Any) -> No
         await table.info()
 
 
-async def test_read_only_and_allowed_writes(scratch: Any, seeded: str) -> None:
+async def test_read_only_and_a_policy_of_exact_requests(scratch: Any, seeded: str) -> None:
     async with AsyncQuickbase(realm=scratch.realm, token=scratch.token, read_only=True) as qb:
         table = get(qb, scratch, seeded)
         assert await table.count() == 5
@@ -486,9 +487,12 @@ async def test_read_only_and_allowed_writes(scratch: Any, seeded: str) -> None:
             else:
                 pytest.fail("A read-only client sent a write.")
     assert scratch.client.app(scratch.app_id).table(seeded).count() == 5
-    writes = {("POST", "/records")}
+
+    def records_only(request: WriteRequest) -> bool:
+        return (request.method, request.path) == ("POST", "/records")
+
     async with AsyncQuickbase(
-        realm=scratch.realm, token=scratch.token, allowed_writes=writes
+        realm=scratch.realm, token=scratch.token, write_policy=records_only
     ) as qb:
         table = get(qb, scratch, seeded)
         await table.insert([{"Title": "Allowed", "Code": "A1"}])

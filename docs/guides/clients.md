@@ -29,7 +29,6 @@ metadata first. Both are a `RequestRefusedError`. They also apply to `qb.request
 | `read_only=True` | Write nothing | Reports, dashboards, and anything that only looks |
 | `write_policy=WriteRules(...)` | Write only the tables, actions, and fields you list | An AI agent or a job with a narrow purpose |
 | `write_policy=your_function` | Write whatever your function allows | Rules that the list can't express |
-| `allowed_writes={...}` | Write only the exact requests you list, on any table | Limiting a client to a kind of request |
 | `read_policy=ReadRules(...)` | Read only the tables, fields, reports, and number of records you list | An AI agent that shouldn't see everything the token can |
 | `read_policy=your_function` | Read whatever your function allows | Logging reads, or limits the list can't express |
 
@@ -172,12 +171,19 @@ qb = Quickbase(realm="acme", token="your_user_token", write_policy=all_of(rules,
 
 Put `WriteRules` first if a later policy records what was allowed.
 
-`allowed_writes` limits a client to exact requests, on any table. If you also pass `write_policy`, a
-write has to pass both. Passing `read_only=True` with either one is a `ConfigurationError`, as it would
-refuse everything they allow.
+To limit a client to exact requests on any table, check `method` and `path` in your own policy.
+Passing `read_only=True` with a write policy is a `ConfigurationError`, as it would refuse everything
+the policy allows.
 
 ```python
-qb = Quickbase(realm="acme", token="your_user_token", allowed_writes={("POST", "/records")})
+from pyquickbase import Quickbase, WriteRequest
+
+
+def record_writes_only(request: WriteRequest) -> bool:
+    return (request.method, request.path) == ("POST", "/records")
+
+
+qb = Quickbase(realm="acme", token="your_user_token", write_policy=record_writes_only)
 ```
 
 ### Limiting reads by table, field, and number of records
