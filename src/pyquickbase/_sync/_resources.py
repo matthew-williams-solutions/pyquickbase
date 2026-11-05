@@ -218,6 +218,12 @@ class App:
 
         Returns:
             A `Table` for the existing or new table.
+
+        Raises:
+            AuthenticationError: Quickbase doesn't recognize the app ID, or the token can't reach it.
+            BadRequestError: Quickbase refused to create the table.
+            WriteRefusedError: The client's limits on writes don't allow creating a table. Nothing
+                was created.
         """
         tables = self.tables(refresh=True)
         for item in tables:
@@ -1371,6 +1377,11 @@ class Table:
 
         Returns:
             The existing or new `Relationship`.
+
+        Raises:
+            UnknownTableError: This app has no such table, or no such parent.
+            BadRequestError: Quickbase refused to create the relationship.
+            WriteRefusedError: The client's limits on writes don't allow it. Nothing was created.
         """
         parent_id = (parent.info()).id
         labels = {item.id: item.label.casefold() for item in self.fields(refresh=True)}

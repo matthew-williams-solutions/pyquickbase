@@ -1,9 +1,29 @@
 # Configuring clients
 
-`Quickbase` and `AsyncQuickbase` take the same options. Use them as context managers so that
+This page covers choosing a client, limiting what it can read and write, retries, and connection
+settings. `Quickbase` and `AsyncQuickbase` take the same options. Use them as context managers so that
 connections get closed.
 
 ## Sync or async
+
+```python
+import asyncio
+
+from pyquickbase import AsyncQuickbase, F, Quickbase
+
+with Quickbase(realm="acme", token="your_user_token") as qb:
+    print(qb.app("bq1234567").table("Tasks").count(F("Status") == "Open"))
+
+
+async def main() -> None:
+    async with AsyncQuickbase(realm="acme", token="your_user_token") as qb:
+        tasks = qb.app("bq1234567").table("Tasks")
+        async for task in tasks.query(where=F("Status") == "Open", limit=5):
+            print(task["Title"])
+
+
+asyncio.run(main())
+```
 
 The clients have the same methods, and the sync client is a true sync client rather than a wrapper
 around asyncio. That means it works in notebooks, in threads, and inside a running event loop.
@@ -314,6 +334,8 @@ A read policy sees changes to tables and fields as `other`.
 | A table or field the read rules don't list is named | `UnknownTableError` or `UnknownFieldError` | Nothing was sent |
 | `ReadAccess` with labels, report names, or a limit below 1 | `ConfigurationError` | The rules weren't created |
 | An async function as a policy, `read_only` with a write policy, or a policy of the wrong kind | `ConfigurationError` | The client wasn't created |
+| A realm, token, or `base_url` that can't be used, such as `http://` to another host | `ConfigurationError` | The client wasn't created |
+| `from_env()` with a variable missing or empty | `ConfigurationError` | The client wasn't created |
 
 ## Retries
 
