@@ -33,6 +33,7 @@ REFERENCE_PAGES = (
         "limits",
         "Limiting what a client can write and read, and how it retries",
     ),
+    ("Output for models", "output", "Results and errors as plain data for a model's tool call"),
     ("Generated classes", "generated", "What supports the classes from `pyquickbase codegen`"),
     ("Errors", "errors", "Everything the SDK raises, and what each one holds"),
 )

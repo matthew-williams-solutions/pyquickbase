@@ -53,6 +53,8 @@ ALIASES = {
     "SummaryGroups": "What `Table.summarize()` can group by.",
     "WriteAction": "What kind of write a `WriteRequest` is.",
     "ReadAction": "What kind of read a `ReadRequest` is.",
+    "ToolErrorCode": "The `code` in what `tool_error()` returns. Codes don't change within 1.x, so "
+    "a tool can act on them.",
     "ReadPolicy": "A function that decides on each read. Only a return value of `True` lets one "
     "through. `ReadRules` is one, or you can write your own.",
     "WritePolicy": "A function that decides on each write. Only a return value of `True` lets one "
@@ -409,6 +411,20 @@ SYMBOL_PAGES = (
         ),
     ),
     SymbolPage(
+        "Output for models",
+        "output",
+        "These turn results and errors into plain data for the result of a model's tool call, in "
+        "the same shapes and value formats whatever the call. They work with any tool-calling "
+        "framework, as `json.dumps()` always accepts what they return.",
+        "Each example makes its own client from the environment, with `bqtasks123` standing for "
+        f"the ID of the `Job Tasks` table. {_JOB_TASKS} {_LIVE_TEST}",
+        *_setup(_TABLE_LINE),
+        (
+            Group("Results", "results", _AGENTS, ("tool_result",)),
+            Group("Errors", "errors", _AGENTS, ("tool_error", "ToolErrorCode")),
+        ),
+    ),
+    SymbolPage(
         "Generated classes",
         "generated",
         "These support the classes from `pyquickbase codegen`, and you rarely need them directly. "
@@ -605,11 +621,28 @@ def parse_docstring(text: str | None, owner: str) -> Docstring:
     )
 
 
+def _join_block(block: str) -> str:
+    """Join a block's wrapped lines, keeping each row of a table and each item of a list."""
+    if "```" in block:
+        return block
+    lines = [line.strip() for line in block.splitlines()]
+    if all(line.startswith("|") for line in lines):
+        return "\n".join(lines)
+    if lines[0].startswith("- "):
+        items: list[str] = []
+        for line in lines:
+            if line.startswith("- ") or not items:
+                items.append(line)
+            else:
+                items[-1] = f"{items[-1]} {line}"
+        return "\n".join(items)
+    return " ".join(lines)
+
+
 def _paragraphs(lines: list[str]) -> tuple[str, list[str]]:
-    """Join a docstring's wrapped lines into paragraphs, leaving code blocks as they are."""
-    paragraphs: list[str] = []
-    for block in "\n".join(lines).strip().split("\n\n"):
-        paragraphs.append(block if "```" in block else block.replace("\n", " "))
+    """Join a docstring's wrapped lines into paragraphs, leaving code blocks, tables, and lists."""
+    blocks = "\n".join(lines).strip().split("\n\n")
+    paragraphs = [_join_block(block) for block in blocks]
     return paragraphs[0], paragraphs[1:]
 
 

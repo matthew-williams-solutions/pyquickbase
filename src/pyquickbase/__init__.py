@@ -22,6 +22,7 @@ from ._models import (
     Role,
     TableInfo,
 )
+from ._output import ToolErrorCode, tool_error, tool_result
 from ._policy import WriteAccess, WriteAction, WritePolicy, WriteRequest, WriteRules
 from ._preview import FieldChange, RecordChange, UpdatePreview
 from ._query import Expression, F, FieldRef, FieldRefs, WhereCondition, parse_where
@@ -123,6 +124,7 @@ __all__ = [
     "SummaryRow",
     "Table",
     "TableInfo",
+    "ToolErrorCode",
     "TypedField",
     "TypedIterator",
     "TypedPage",
@@ -147,6 +149,8 @@ __all__ = [
     "__version__",
     "all_of",
     "parse_where",
+    "tool_error",
+    "tool_result",
     "where_from_dict",
     "where_schema",
 ]

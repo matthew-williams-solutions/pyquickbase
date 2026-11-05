@@ -359,6 +359,7 @@ class TableInfo(object)
     field key_field_id: int | None
     field name: str
     field raw: Mapping[str, Any]
+value ToolErrorCode = Literal['configuration', 'invalid_query', 'invalid_value', 'read_refused', 'write_refused', 'refused', 'unknown_table', 'unknown_field', 'unknown_report', 'unsupported_report', 'schema_mismatch', 'partial_write', 'write_failed', 'write_permission', 'authentication', 'permission_denied', 'not_found', 'bad_request', 'rate_limited', 'server_error', 'api_error', 'timeout', 'network', 'invalid_response', 'error', 'internal']
 class TypedField(F)
     def __eq__(self, value: object) -> Condition
     def __ge__(self, value: Any) -> Condition
@@ -456,6 +457,8 @@ class WriteRules(object)
     def __init__(self, tables: Mapping[str, WriteAccess]) -> None
 def all_of(*policies: Any) -> Any
 def parse_where(where: str, fields: Iterable[Field]) -> list[WhereCondition]
+def tool_error(error: BaseException) -> dict[str, Any]
+def tool_result(value: Any, *, compact: bool = False, max_records: int | None = None, max_text: int | None = None) -> dict[str, Any]
 def where_from_dict(data: Mapping[str, Any], *, fields: Iterable[str | int] | None = None) -> Expression
 def where_schema(*, fields: Iterable[str | int] | Iterable[Field] | None = None, max_depth: int = 2) -> dict[str, Any]
 command pyquickbase codegen

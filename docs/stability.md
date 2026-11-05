@@ -20,6 +20,10 @@ minor release.
   new attribute on `WriteRequest` or `ReadRequest`, so have your own policy refuse an action it doesn't
   recognize.
 - Which metadata keys `ReadRules` keeps can change, as Quickbase's responses aren't covered either.
+- The keys of what `tool_result()` and `tool_error()` return, how they write each kind of value, and the
+  codes in `ToolErrorCode`, along with each code's `changed` and `retryable`. A later version can add a
+  key or a code, so have your tool handle a code it doesn't recognize. The wording of `message` and
+  `hint` isn't covered.
 
 ## What isn't covered
 

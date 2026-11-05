@@ -287,3 +287,11 @@ def test_the_pages_match_the_list_in_build_llms() -> None:
     assert [item[:2] for item in build_llms.REFERENCE_PAGES] == [
         (item.name, item.slug) for item in build_reference.ALL_PAGES
     ]
+
+
+def test_tables_and_lists_in_a_docstring_keep_their_lines() -> None:
+    doc = build_reference.parse_docstring(
+        "Summary.\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n- One item that\n  wraps.\n- Two.",
+        "x",
+    )
+    assert doc.prose == ["| A | B |\n|---|---|\n| 1 | 2 |", "- One item that wraps.\n- Two."]

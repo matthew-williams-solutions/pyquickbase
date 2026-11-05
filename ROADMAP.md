@@ -15,13 +15,14 @@ to keep are explained in the guides, not here.
 
 ## Agent features
 
-In progress on `feature/agent-features`: read limits first, then output for models, schema discovery,
-and more JSON Schema functions.
+In progress on `feature/agent-features`: read limits and output for models are built, and schema
+discovery and more JSON Schema functions are next.
 
-- Run the live tests of read limits, `tests/_async/live/test_read_policy.py`, and record the output of
-  the new reference examples in `docs_src/reference/limits/` and `docs_src/reference/errors/`. Until
-  then, what `ReadRules` leaves of real user values, file values, and report columns is only tested
-  against mocks.
+- Run the live tests of read limits, `tests/_async/live/test_read_policy.py`. Until then, what
+  `ReadRules` leaves of real user values, file values, and report columns is only tested against mocks.
+- Record the output of the new reference examples: `ReadRules`, `ReadAccess`, and `ReadRequest` in
+  `docs_src/reference/limits/`, `ReadRefusedError` and `RequestRefusedError` in
+  `docs_src/reference/errors/`, and both in `docs_src/reference/output/`.
 
 ## After 1.0
 

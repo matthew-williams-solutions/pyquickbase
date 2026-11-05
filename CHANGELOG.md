@@ -18,6 +18,13 @@ All notable changes to this project are documented here. The format follows
   fields. A policy can also be your own function, which takes a `ReadRequest`.
 - `ReadRefusedError`, raised for a read the policy refuses, and `RequestRefusedError`, the base of it and
   of `WriteRefusedError`.
+- `tool_result()` and `tool_error()`, which turn results and errors into plain data for the result of a
+  model's tool call, for any tool-calling framework. Results use the same shapes and value formats every
+  time: dates as `YYYY-MM-DD`, timestamps in UTC, every empty value as null, and paging as `returned`,
+  `total`, `skip`, `next_skip`, and `has_more`. `compact=True` sends each label once, and `max_records`
+  and `max_text` cut a result while saying so. Errors carry a fixed `code` from `ToolErrorCode`, a
+  `hint` for the model, whether a retry can help, and whether anything was `changed`, which tells a
+  partial write from a complete failure. An exception from outside the SDK says nothing about itself.
 
 ### Changed
 
