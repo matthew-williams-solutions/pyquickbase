@@ -169,6 +169,8 @@ def _write_changed(error: WriteError) -> Changed:
 
 
 def _changed(error: BaseException) -> Changed:
+    if isinstance(error, QuickbaseError) and error._changed:  # pyright: ignore[reportPrivateUsage]
+        return "some"
     if isinstance(error, WriteError):
         return _write_changed(error)
     if isinstance(error, _UNCERTAIN) or not isinstance(error, QuickbaseError):

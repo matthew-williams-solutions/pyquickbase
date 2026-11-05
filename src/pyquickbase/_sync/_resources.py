@@ -1082,7 +1082,8 @@ class Table:
 
         Raises:
             BadRequestError: Quickbase refused the field, such as for an unknown type, a label
-                that's already used, or `choices` on a type without them.
+                that's already used, or `choices` on a type without them. If it refused `required`
+                or `unique`, the field was still created, and the message says so.
             InvalidValueError: `formula` is blank. Nothing was sent.
         """
         merged = field_properties(properties, formula)
@@ -1099,7 +1100,15 @@ class Table:
         field = parse(field_from_api, payload, "field")
         if required is None and unique is None:
             return field
-        return self.update_field(field.id, required=required, unique=unique)
+        try:
+            return self.update_field(field.id, required=required, unique=unique)
+        except QuickbaseError as exc:
+            exc.args = (
+                f"Field {field.id} was created, but setting required or unique failed, so it "
+                f"exists without them. Use ensure_field() to repair it: {exc}",
+            )
+            exc._changed = True  # pyright: ignore[reportPrivateUsage]
+            raise
 
     def update_field(
         self,
@@ -1174,9 +1183,18 @@ class Table:
             "DELETE", "/fields", params={"tableId": table_id}, json={"fieldIds": field_ids}
         )
         self._forget_fields(table_id)
-        errors = parse(lambda data: list(data.get("errors") or ()), payload, "delete fields")
+        errors, deleted = parse(
+            lambda data: (list(data.get("errors") or ()), list(data.get("deletedFieldIds") or ())),
+            payload,
+            "delete fields",
+        )
         if errors:
-            raise WriteError(f"Some fields weren't deleted: {'; '.join(map(str, errors))}")
+            error = WriteError(
+                f"Some fields weren't deleted, and fields {deleted} were: "
+                f"{'; '.join(map(str, errors))}"
+            )
+            error._changed = bool(deleted)  # pyright: ignore[reportPrivateUsage]
+            raise error
 
     def create_relationship(
         self,

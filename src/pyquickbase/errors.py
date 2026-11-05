@@ -6,6 +6,9 @@ from typing import Any
 class QuickbaseError(Exception):
     """Base class for every exception this library defines."""
 
+    # Set when the SDK knows the failed call still changed something, for `tool_error()`.
+    _changed: bool = False
+
 
 class ConfigurationError(QuickbaseError, ValueError):
     """The client was given invalid or missing settings."""

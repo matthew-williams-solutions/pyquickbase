@@ -7,6 +7,7 @@ import pytest
 
 from pyquickbase import (
     AsyncQuickbase,
+    BadRequestError,
     F,
     InvalidResponseError,
     InvalidValueError,
@@ -16,6 +17,7 @@ from pyquickbase import (
     UnknownTableError,
     WriteError,
     WriteRefusedError,
+    tool_error,
 )
 
 pytestmark = pytest.mark.anyio
@@ -39,6 +41,8 @@ class FakeQuickbase:
         self.line_errors: dict[int, dict[str, list[str]]] = {}
         self.failures: dict[int, httpx.Response] = {}
         self.delete_field_errors: list[str] = []
+        self.deleted_field_ids: list[int] | None = None
+        self.field_update: httpx.Response | None = None
         self.writes = 0
 
     def sent(self, method: str, suffix: str) -> list[Any]:
@@ -70,12 +74,15 @@ class FakeQuickbase:
             field = {"id": 50, "label": body["label"], "fieldType": body["fieldType"]}
             self.fields = [*self.fields, field]
             return httpx.Response(200, json=field)
+        if route == ("POST", "/fields/50") and self.field_update is not None:
+            return self.field_update
         if route == ("POST", "/fields/50"):
             field = {"id": 50, "label": "New", "fieldType": "text", **json.loads(request.content)}
             return httpx.Response(200, json=field)
         if route == ("DELETE", "/fields"):
             ids = json.loads(request.content)["fieldIds"]
-            body = {"deletedFieldIds": ids, "errors": self.delete_field_errors}
+            deleted = ids if self.deleted_field_ids is None else self.deleted_field_ids
+            body = {"deletedFieldIds": deleted, "errors": self.delete_field_errors}
             return httpx.Response(200, json=body)
         if route == ("POST", f"/tables/{TASKS}/relationship"):
             return httpx.Response(
@@ -379,6 +386,32 @@ async def test_delete_fields_reports_partial_failure() -> None:
             await table.delete_fields("Record ID#")
         with pytest.raises(InvalidValueError, match="at least one"):
             await table.delete_fields([])
+
+
+@pytest.mark.parametrize(
+    ("deleted", "code", "changed"), [([6], "partial_write", "some"), ([], "write_failed", "none")]
+)
+async def test_delete_fields_says_whether_any_were_deleted(
+    deleted: list[int], code: str, changed: str
+) -> None:
+    server = FakeQuickbase()
+    server.delete_field_errors = ["You can't delete a built-in field."]
+    server.deleted_field_ids = deleted
+    async with client(server) as qb:
+        with pytest.raises(WriteError, match=rf"fields \{deleted}\ were") as caught:
+            await qb.app(APP).table("Tasks").delete_fields(["Title", "Record ID#"])
+    error = tool_error(caught.value)["error"]
+    assert (error["code"], error["changed"]) == (code, changed)
+
+
+async def test_create_field_says_it_was_created_when_setting_unique_fails() -> None:
+    server = FakeQuickbase()
+    server.field_update = httpx.Response(400, json={"message": "field contains non-unique values"})
+    async with client(server) as qb:
+        with pytest.raises(BadRequestError, match="Field 50 was created") as caught:
+            await qb.app(APP).table("Tasks").create_field("New", "text", unique=True)
+    assert "non-unique" in str(caught.value)
+    assert tool_error(caught.value)["error"]["changed"] == "some"
 
 
 async def test_create_relationship() -> None:
