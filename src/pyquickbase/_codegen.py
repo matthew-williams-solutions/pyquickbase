@@ -45,6 +45,11 @@ _READ_TYPES = {
     "user": "dict[str, Any] | None",
     "multiuser": "list[dict[str, Any]]",
     "file": "dict[str, Any]",
+    # Relative links, on every record, even with nothing to show. Only the UI can create these.
+    "vCardButton": "str",
+    "ICalendarButton": "str",
+    # Record IDs as text, such as `1` or `1;2`.
+    "predecessor": "str",
 }
 _WRITE_TYPES = {
     **dict.fromkeys(("text", "text-multiple-choice", "text-multi-line", "rich-text"), "str | None"),
@@ -55,6 +60,8 @@ _WRITE_TYPES = {
     "checkbox": "bool | None",
     "multitext": "list[str] | None",
     "file": "FileUpload",
+    # A record ID, or several separated by commas or semicolons. Quickbase stores it as written.
+    "predecessor": "str | None",
 }
 # Keywords and builtins as of Python 3.14, written out so that the Python running the command can't
 # change a generated name. Don't add to this: a new builtin can't harm a generated file, and a new

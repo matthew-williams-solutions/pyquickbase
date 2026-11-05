@@ -70,7 +70,16 @@ _UNGROUPABLE_TYPES = frozenset({"multitext", "multiuser", "file"})
 # confirmed, so a model couldn't be told what number to send.
 _JSON_WRITE_TYPES = frozenset(_WRITE_TYPES) - {"duration"}
 _TEXT_TYPES = frozenset(
-    {"text", "text-multiple-choice", "text-multi-line", "rich-text", "email", "url", "phone"}
+    {
+        "text",
+        "text-multiple-choice",
+        "text-multi-line",
+        "rich-text",
+        "email",
+        "url",
+        "phone",
+        "predecessor",
+    }
 )
 _ISO_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 _TIME_OF_DAY = re.compile(r"[0-9]{2}:[0-9]{2}(:[0-9]{2})?")

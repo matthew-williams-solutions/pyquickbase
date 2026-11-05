@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Generated classes type `vCardButton` and `ICalendarButton` fields as read-only `str`, and
+  `predecessor` fields as a writable `str`, rather than `Any`. Run `pyquickbase codegen` again to get
+  them. Operations can write a `predecessor` field as text.
 - `WriteResult.row_ids`, which gives each row of an `insert()` its new Record ID#, in the order of
   your rows, with None for a row that failed. `created_ids` leaves failed rows out, so it only lines up
   with your rows when none failed.

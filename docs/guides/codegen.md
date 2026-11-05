@@ -58,6 +58,8 @@ break it. Each record is a frozen dataclass, and `query()` and
 | `user` | `dict[str, Any] \| None` |
 | `multiuser` | `list[dict[str, Any]]` |
 | `file` | `dict[str, Any]`, as described in [File attachments](files.md) |
+| `vCardButton` and `ICalendarButton` | `str`, a relative link, and read-only |
+| `predecessor` | `str`, the record IDs it links to, such as `1;2`. Write it as one ID or several separated by commas |
 | Anything else | `Any` |
 
 An ordinary `Record` holds every number as a `float`. Generated classes convert them, so money reads

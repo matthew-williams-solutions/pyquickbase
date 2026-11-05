@@ -330,6 +330,29 @@ def test_insert_converts_json_values() -> None:
     assert upload.data == b"hello"
 
 
+
+def test_insert_writes_a_predecessor_as_text_and_never_offers_a_link() -> None:
+    fields = [
+        *FIELDS,
+        field_from_api({"id": 16, "label": "Depends On", "fieldType": "predecessor"}),
+        field_from_api({"id": 17, "label": "Card", "fieldType": "vCardButton"}),
+    ]
+    options: dict[str, Any] = {
+        "table_id": TASKS,
+        "key_field_id": 3,
+        "read_rules": (),
+        "write_rules": (),
+        "read_only": False,
+        "wanted": None,
+        "wanted_reports": None,
+    }
+    insert = spec("insert", allowed_for(fields, REPORTS, **options))
+    record = insert.schema["properties"]["records"]["items"]["properties"]
+    assert record["Depends On"] == {"type": ["string", "null"]}
+    assert "Card" not in record
+    rows = insert.plan({"records": [{"Title": "a", "Depends On": "1;2"}]}, None).arguments["rows"]
+    assert rows[0]["Depends On"] == "1;2"
+
 def test_insert_schema_requires_required_fields() -> None:
     record = spec("insert").schema["properties"]["records"]["items"]
     assert record["required"] == ["Title"]

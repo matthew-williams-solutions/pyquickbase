@@ -109,7 +109,7 @@ def test_writable_types() -> None:
     assert {
         "text", "text-multiple-choice", "text-multi-line", "rich-text", "numeric", "currency",
         "rating", "percent", "multitext", "email", "url", "duration", "date", "timestamp",
-        "timeofday", "checkbox", "user", "multiuser", "phone", "file",
+        "timeofday", "checkbox", "user", "multiuser", "phone", "file", "predecessor",
     } == WRITABLE_TYPES  # fmt: skip
 
 

@@ -333,7 +333,7 @@ they can't be asked about a field without a request, so one may refuse more than
 
 | Field type | The model sends |
 |---|---|
-| Text, email, URL, phone | Text. A multiple-choice field that doesn't allow new choices offers only its choices |
+| Text, email, URL, phone, predecessor | Text. A multiple-choice field that doesn't allow new choices offers only its choices |
 | Number, currency, percent, rating | A number |
 | Checkbox | `true` or `false` |
 | Date | `YYYY-MM-DD`, so `today` is refused |

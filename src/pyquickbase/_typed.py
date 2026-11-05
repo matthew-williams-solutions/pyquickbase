@@ -31,6 +31,7 @@ WRITABLE_TYPES = {
     "multiuser",
     "phone",
     "file",
+    "predecessor",
 }
 
 

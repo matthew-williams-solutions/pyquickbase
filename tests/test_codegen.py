@@ -278,6 +278,24 @@ def test_is_writable() -> None:
     assert not is_writable(field(6, "A", "address"))
     assert not is_writable(field(6, "A", "dblink"))
     assert not is_writable(field(6, "A", "new-type"))
+    assert is_writable(field(6, "A", "predecessor"))
+    assert not is_writable(field(6, "A", "vCardButton"))
+    assert not is_writable(field(6, "A", "ICalendarButton"))
+
+
+def test_fields_only_the_ui_can_create_get_real_types() -> None:
+    fields = [
+        *BUILT_IN,
+        field(6, "Card", "vCardButton"),
+        field(7, "Calendar", "ICalendarButton"),
+        field(8, "Depends On", "predecessor"),
+    ]
+    source = render([(table(), fields)])
+    assert "card: str\n" in source
+    assert "calendar: str\n" in source
+    assert "depends_on: str\n" in source
+    assert "depends_on: str | None | Unset = UNSET" in source
+    assert "card: " not in source.split("def new(")[1].split(")")[0]
 
 
 def test_schema_problems_lists_each_change() -> None:
