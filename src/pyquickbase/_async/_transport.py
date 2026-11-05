@@ -13,6 +13,13 @@ from .._read_policy import ReadPolicy, ReadRequest, ReadRules, check_read, descr
 from .._response import error_from_response, error_from_transport, parse_response
 from .._retry import RetryPolicy, parse_retry_after
 
+# Failures where nothing reached Quickbase, so any request is safe to send again.
+_NOT_SENT = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
+# Failures after a request may have reached Quickbase, which only a read is safe to send again.
+_READ_FAILURES = (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)
+# A gateway or overloaded server, which only a read is safe to send again.
+_READ_RETRY_STATUSES = frozenset({502, 503, 504})
+
 
 class AsyncTransport:
     def __init__(
@@ -140,21 +147,26 @@ class AsyncTransport:
         json: Any,
     ) -> httpx.Response:
         url = build_url(self._base_url, path)
+        read = is_read(method, path)
         attempt = 0
         while True:
             try:
                 response = await self._http.request(
                     method, url, params=params, json=json, headers=self._headers, auth=self._auth
                 )
-            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
-                # Nothing reached the server, so this is safe to retry even for writes.
-                if attempt >= self._retry.max_retries:
+            except httpx.RequestError as exc:
+                retryable = isinstance(exc, _NOT_SENT) or (read and isinstance(exc, _READ_FAILURES))
+                if not retryable or attempt >= self._retry.max_retries:
                     raise error_from_transport(exc, method, path) from exc
                 delay = self._retry.backoff(attempt)
-            except httpx.RequestError as exc:
-                raise error_from_transport(exc, method, path) from exc
             else:
-                if response.status_code != 429 or attempt >= self._retry.max_retries:
+                if attempt >= self._retry.max_retries:
+                    return response
+                if read and response.status_code in _READ_RETRY_STATUSES:
+                    await anyio.sleep(self._retry.backoff(attempt))
+                    attempt += 1
+                    continue
+                if response.status_code != 429:
                     return response
                 retry_after = parse_retry_after(response.headers.get("retry-after"))
                 wait = self._retry.rate_limit_delay(attempt, retry_after)

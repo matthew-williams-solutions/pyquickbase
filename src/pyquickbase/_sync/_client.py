@@ -39,8 +39,10 @@ class Quickbase:
         realm: Your realm, as `acme`, `acme.quickbase.com`, or a realm URL.
         token: A Quickbase user token.
         base_url: The API root. Must use HTTPS, except for loopback addresses.
-        retry: How to retry rate limits and connection failures.
-        timeout: Request timeout in seconds. Ignored if you pass `http_client`.
+        retry: How to retry rate limits, connection failures, and reads that time out or get a
+            502, 503, or 504. A write isn't retried after anything that may have reached Quickbase.
+        timeout: Seconds to allow for each step of a request, such as connecting or waiting for
+            the response, as httpx applies it. Ignored if you pass `http_client`.
         user_agent: Identifies your application, placed before the SDK's own User-Agent.
         http_client: Your own configured httpx client, for proxies, custom TLS, event hooks,
             or custom transports. You remain responsible for closing it.

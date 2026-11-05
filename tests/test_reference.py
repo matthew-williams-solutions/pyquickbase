@@ -184,7 +184,7 @@ def test_links_go_to_a_class_page_where_there_is_one() -> None:
 
 def test_from_env_describes_the_options_it_shares_with_the_constructor() -> None:
     parameters = {item.name: item for item in METHODS["Quickbase"]["from_env"].parameters}
-    assert parameters["timeout"].description.startswith("Request timeout")
+    assert parameters["timeout"].description.startswith("Seconds to allow for each step")
     assert parameters["token_env"].description.startswith("The name of the variable")
 
 

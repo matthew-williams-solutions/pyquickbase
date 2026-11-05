@@ -170,12 +170,12 @@ async def test_a_failure_on_a_later_page_raises_after_the_earlier_records(
 ) -> None:
     server.script = [page(0, 2, 4), failure]
     seen: list[int] = []
-    async with client(server) as qb:
+    async with client(server, retry=RetryPolicy(max_retries=0)) as qb:
         with pytest.raises(NetworkError) as caught:
             await read_all(table(qb), seen)
     assert seen == [1, 2]
     assert TOKEN not in str(caught.value)
-    assert server.count("/records/query") == 2  # A read could be retried, but nothing hides this.
+    assert server.count("/records/query") == 2
 
 
 async def test_every_record_arrives_once_across_pages(server: Server) -> None:
@@ -369,7 +369,7 @@ async def test_an_unreadable_rate_limit_wait_backs_off(server: Server, wait: str
 )
 async def test_odd_error_bodies(server: Server, status: int, body: bytes, kind: type) -> None:
     server.script = [(status, {}, body)]
-    async with client(server) as qb:
+    async with client(server, retry=RetryPolicy(max_retries=0)) as qb:
         with pytest.raises(kind) as caught:
             await table(qb).query_page()
     assert caught.value.status_code == status

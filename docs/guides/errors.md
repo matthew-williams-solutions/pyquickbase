@@ -80,7 +80,8 @@ and `request_id`. Include `request_id` when reporting a problem to Quickbase sup
 
 ## Retries
 
-Rate limits and connection failures are retried automatically, honoring `Retry-After`. Nothing else
-is, because a failed write may already have been applied. A long burst of requests can still use up a
+Rate limits and connection failures are retried automatically, honoring `Retry-After`. Reads, meaning
+GET requests, record queries, report runs, and formula runs, are also retried after a timeout, a dropped connection, or a 502, 503,
+or 504. A write isn't, because it may already have been applied. A long burst of requests can still use up a
 call's retries and raise `RateLimitError`, so handle it if you make many calls at once. See
 [Configuring clients](clients.md#retries) to change this.

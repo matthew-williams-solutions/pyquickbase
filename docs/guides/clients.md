@@ -326,6 +326,21 @@ qb = Quickbase(realm="acme", token="your_user_token", retry=policy)
 `RateLimitError`. A `Retry-After` of 0 uses the backoff from `base_delay` instead, because Quickbase
 can send it while still limiting. Use `max_retries=0` to disable retrying.
 
+What's retried:
+
+| Failure | Reads | Writes |
+|---|---|---|
+| 429, rate limited | Yes | Yes |
+| Couldn't connect, or no free connection in the pool | Yes | Yes, as nothing was sent |
+| A timeout or dropped connection after sending | Yes | No, as it may have been applied |
+| 502, 503, or 504 | Yes | No |
+| Any other error status | No | No |
+
+Reads are GET requests, record queries, report runs, and formula runs. Running a report again adds to its usage count again.
+
+`timeout` applies to each step of a request separately, connecting, sending, and waiting for each part of
+the response, as httpx does, rather than to the whole request.
+
 ## Using another API host
 
 `base_url` sets the API root, which is `https://api.quickbase.com/v1` by default. The right host for EU

@@ -115,7 +115,8 @@ def test_maps_status_codes_to_errors(status: int, error_type: type[APIError]) ->
 
 
 def test_non_json_error_body_is_truncated() -> None:
-    with make_client(lambda _: httpx.Response(502, text="x" * 2000)) as qb:
+    handler = lambda _: httpx.Response(502, text="x" * 2000)  # noqa: E731
+    with make_client(handler, retry=RetryPolicy(max_retries=0)) as qb:
         with pytest.raises(ServerError) as caught:
             qb.request("GET", "/x")
     assert caught.value.message == "x" * 500
@@ -244,6 +245,54 @@ def test_read_timeout_on_write_is_not_retried(sleeps: list[float]) -> None:
             qb.request("POST", "/records", json={})
     assert len(calls) == 1
     assert sleeps == []
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [httpx.ReadTimeout("x"), httpx.ReadError("x"), httpx.RemoteProtocolError("x"), 503, 502, 504],
+)
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [("GET", "/apps/abc"), ("POST", "/records/query"), ("POST", "/reports/1/run")],
+)
+def test_reads_are_retried_after_failures_a_write_isnt(
+    sleeps: list[float], failure: Exception | int, method: str, path: str
+) -> None:
+    calls: list[int] = []
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        if len(calls) == 1:
+            if isinstance(failure, int):
+                return httpx.Response(failure)
+            raise failure
+        return httpx.Response(200, json={})
+
+    with make_client(handler) as qb:
+        assert qb.request(method, path, json=None if method == "GET" else {}) == {}
+    assert len(calls) == 2
+    assert len(sleeps) == 1
+
+
+def test_read_retries_run_out(sleeps: list[float]) -> None:
+    with make_client(lambda _: httpx.Response(503), retry=RetryPolicy(max_retries=2)) as qb:
+        with pytest.raises(ServerError):
+            qb.request("GET", "/apps/abc")
+    assert len(sleeps) == 2
+
+
+def test_a_pool_timeout_is_retried_even_for_a_write(sleeps: list[float]) -> None:
+    calls: list[int] = []
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        if len(calls) == 1:
+            raise httpx.PoolTimeout("x")
+        return httpx.Response(200, json={})
+
+    with make_client(handler) as qb:
+        assert qb.request("POST", "/records", json={}) == {}
+    assert len(sleeps) == 1
 
 
 def test_read_error_is_not_retried(sleeps: list[float]) -> None:

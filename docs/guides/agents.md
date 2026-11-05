@@ -644,7 +644,8 @@ except WriteError as error:
         print("Failed:", rows[failed.index], failed.messages)
 ```
 
-Rate limits and connection failures are retried for you. A write that timed out isn't, because it
+Rate limits, connection failures, and reads that timed out are retried for you. A write that timed out
+isn't, because it
 may already have applied, so an agent should check the data before trying again.
 
 | Exception | What it means for a write |

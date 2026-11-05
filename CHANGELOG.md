@@ -14,6 +14,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Reads, meaning GET requests, record queries, report runs, and formula runs, are now retried after a
+  timeout, a dropped connection, or a 502, 503, or 504, as sending one again changes nothing. A write
+  still isn't. Any request is also retried after httpx's `PoolTimeout`, as nothing was sent.
 - pyquickbase now needs httpx 0.28 or later, whose request bodies the SDK measures to keep each
   batch under Quickbase's 40 MiB limit.
 - An operation's `scope` now holds for what a write sets, not only for what it filters. `insert`,

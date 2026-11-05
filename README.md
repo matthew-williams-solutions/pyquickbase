@@ -14,7 +14,8 @@ sync and async clients.
 - A Python query builder that escapes values, and checks for hand-written queries that Quickbase would
   otherwise accept and answer incorrectly
 - Automatic paging, and records with real `date` and `datetime` values
-- Automatic retries for rate limits, honoring `Retry-After`, and for connection failures
+- Automatic retries for rate limits, honoring `Retry-After`, for connection failures, and for reads
+  that time out or get a 502, 503, or 504
 - Specific exceptions that include Quickbase's error message and request ID
 - Tokens kept out of `repr`s, exceptions, and logs, and never sent to other hosts or over plain HTTP
 - Creating, updating, and deleting records, with errors reported for each failed row
@@ -162,8 +163,9 @@ except QuickbaseError as error:
 Quickbase answers with a 401, not a 404, for an app or table that doesn't exist, so
 `AuthenticationError` can mean either a bad token or a wrong ID.
 
-Only rate limits and connection failures are retried. A timed-out write isn't retried because
-Quickbase may already have applied it, so check the data before trying again.
+Rate limits and connection failures are retried. Reads, meaning GET requests, record queries, report runs, and formula runs, are also
+retried after a timeout, a dropped connection, or a 502, 503, or 504. A write isn't retried after
+those, because Quickbase may already have applied it, so check the data before trying again.
 
 ## Limiting what a client can do
 

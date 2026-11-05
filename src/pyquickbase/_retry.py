@@ -1,7 +1,8 @@
 """When to retry and how long to wait. Quickbase documents retrying only on HTTP 429.
 
-Connection failures are also retried, because the request never reached the server.
-Other failures are not: a timed-out or failed write may already have been applied.
+Connection failures are also retried, because the request never reached the server. A read is
+also retried after a timeout, a dropped connection, or a 502, 503, or 504, as sending it again
+changes nothing. A write isn't, because it may already have been applied.
 """
 
 import random
@@ -18,7 +19,7 @@ _MAX_EXPONENT = 32  # keeps 2**attempt from overflowing a float
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class RetryPolicy:
-    """How to retry rate-limited requests and connection failures.
+    """How to retry rate limits, connection failures, and reads that failed on the way.
 
     Args:
         max_retries: Retries after the first attempt. Use 0 to disable retrying.
