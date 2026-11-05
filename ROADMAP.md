@@ -35,8 +35,6 @@ Nothing here should break anyone.
 - `select` on typed tables, which needs a design, because a generated class requires every column.
 - A setting that repeats a typed table's schema check after a set time.
 - Typed access to file and user values, as a dictionary subclass, which could leave out uploader emails.
-- Better errors for a report that uses a field the role can't see. `UnknownReportError` says the table
-  has no such report, and running it by raw ID gives `Internal error`, so neither mentions the role.
 
 ## Guides
 

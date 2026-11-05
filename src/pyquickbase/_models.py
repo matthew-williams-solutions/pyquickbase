@@ -281,7 +281,10 @@ def find_report(reports: Sequence[ReportInfo], ref: str) -> ReportInfo | None:
 def unknown_report_message(reports: Sequence[ReportInfo], ref: str) -> str:
     close = difflib.get_close_matches(ref, dict.fromkeys(item.name for item in reports), n=3)
     hint = f" Did you mean {' or '.join(repr(name) for name in close)}?" if close else ""
-    return f"This table has no report {ref!r}.{hint}"
+    return (
+        f"This table has no report {ref!r}, or this client can't see it.{hint} Quickbase hides a "
+        "report from a role whose access doesn't include a field the report filters or sorts on."
+    )
 
 
 def require_table_report(report: ReportInfo) -> None:

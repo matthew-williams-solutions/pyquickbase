@@ -55,6 +55,10 @@ def build_url(base_url: str, path: str) -> str:
     return f"{base_url}{path}"
 
 
+def is_report_run(path: str) -> bool:
+    return bool(_REPORT_RUN.fullmatch(path))
+
+
 def is_read(method: str, path: str) -> bool:
     """Whether a request is a known read. Queries are POSTs, so method alone isn't enough."""
     return method == "GET" or (

@@ -115,6 +115,21 @@ async def test_maps_status_codes_to_errors(status: int, error_type: type[APIErro
     assert "hidden" not in str(error)
 
 
+@pytest.mark.parametrize(("path", "hinted"), [("/reports/7/run", True), ("/records/query", False)])
+async def test_an_internal_error_running_a_report_points_at_hidden_fields(
+    path: str, hinted: bool
+) -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400, json={"message": "Invalid request", "description": "Internal error"}
+        )
+
+    async with make_client(handler) as qb:
+        with pytest.raises(BadRequestError) as caught:
+            await qb.request("POST", path, json={})
+    assert ("filters or sorts on a field" in str(caught.value)) is hinted
+
+
 async def test_non_json_error_body_is_truncated() -> None:
     handler = lambda _: httpx.Response(502, text="x" * 2000)  # noqa: E731
     async with make_client(handler, retry=RetryPolicy(max_retries=0)) as qb:

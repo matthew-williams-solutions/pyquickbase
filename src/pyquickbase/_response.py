@@ -4,6 +4,7 @@ from typing import Any
 
 import httpx
 
+from ._config import is_report_run
 from ._retry import parse_retry_after
 from .errors import (
     APIError,
@@ -24,6 +25,11 @@ _MAX_DETAIL_CHARS = 500
 _UNAUTHORIZED_HINT = (
     "Quickbase answers this way for a bad token, and also for an app or table that doesn't exist "
     "or that the token can't reach, so check the ID as well."
+)
+# How Quickbase refuses to run a report that uses a field the role can't see. See docs/api-notes.md.
+_HIDDEN_REPORT_HINT = (
+    "Quickbase answers this way for a report that filters or sorts on a field the token's role "
+    "can't see, so check the role's access to the report's fields."
 )
 _ERRORS_BY_STATUS: dict[int, type[APIError]] = {
     400: BadRequestError,
@@ -65,6 +71,8 @@ def error_from_response(response: httpx.Response, method: str, path: str) -> API
         summary += f" (request ID: {request_id})"
     if status == 401:
         summary += f" {_UNAUTHORIZED_HINT}"
+    if status == 400 and is_report_run(path) and "internal error" in detail.lower():
+        summary += f" {_HIDDEN_REPORT_HINT}"
     common = {
         "status_code": status,
         "method": method,

@@ -158,7 +158,10 @@ async def test_unknown_report_refreshes_once_then_suggests() -> None:
 
 async def test_unknown_report_with_nothing_close_has_no_hint() -> None:
     async with client(FakeReports()) as qb:
-        with pytest.raises(UnknownReportError, match=r"no report 'zzzz'\.$"):
+        with pytest.raises(
+            UnknownReportError,
+            match=r"no report 'zzzz', or this client can't see it\. Quickbase hides",
+        ):
             await qb.app(APP).table("Tasks").report("zzzz").info()
 
 

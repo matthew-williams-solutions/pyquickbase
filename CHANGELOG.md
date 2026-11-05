@@ -36,6 +36,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `UnknownReportError` says the report may be hidden from the token's role, as Quickbase hides one whose
+  filter or sort uses a field the role can't see. Running such a report by ID through `qb.request()`
+  gives `Internal error`, and that error now says why.
 - `summarize()` on a client with `ReadRules` raises `ReadRefusedError` if more records match while it
   reads than `max_summary_records`, rather than returning a summary of only some of them.
 - `tool_error()` reports `changed: "some"` when a failed call still changed something: when
