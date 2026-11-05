@@ -470,6 +470,8 @@ def test_fields_keep_visible_ones_without_formulas_or_permissions() -> None:
             "label": "Title",
             "fieldType": "text",
             "appearsByDefault": True,
+            "fieldHelp": "The task's name",
+            "bold": True,
             "properties": {"formula": "[Salary]", "choices": ["a"]},
             "permissions": [{"role": "x"}],
         },
@@ -485,6 +487,7 @@ def test_fields_keep_visible_ones_without_formulas_or_permissions() -> None:
         "label": "Title",
         "fieldType": "text",
         "appearsByDefault": True,
+        "fieldHelp": "The task's name",
         "properties": {"choices": ["a"]},
     }
     # Only a field that may be returned is selected by default.

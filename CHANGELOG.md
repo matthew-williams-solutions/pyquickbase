@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `help_text`, `bold`, `no_wrap`, `find_enabled`, and `appears_by_default` on `create_field()`,
+  `update_field()`, and `ensure_field()`, and `add_to_forms` on `create_field()`, for the settings
+  Quickbase takes beside `properties`. `Field.help_text` reads a field's help, and `ReadRules` keep it.
 - `ensure_count_field()`, which counts a child table's records on the parent. `COUNT` takes no field,
   so `ensure_summary_field()` now raises `InvalidValueError` for it, where Quickbase refused every field.
 - Operations can write `duration` fields, as whole milliseconds. Table writes and generated classes also

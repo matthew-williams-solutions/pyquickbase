@@ -97,5 +97,19 @@ print(budget.decimal_places, budget.raw["properties"])
 0 places. `Field.raw` holds everything Quickbase returned for a field, including settings the SDK has
 no attribute for.
 
-The Quickbase API takes `fieldHelp` and some other settings outside `properties`, so `create_field()`
-and `update_field()` can't set those.
+A few settings go beside `properties` rather than inside it, and Quickbase refuses them inside it.
+`create_field()`, `update_field()`, and `ensure_field()` take them as arguments:
+
+| Argument | Quickbase's name | What it does |
+|---|---|---|
+| `help_text` | `fieldHelp` | Help shown beside the field on forms. `Field.help_text` reads it back |
+| `bold` | `bold` | Shows the field's values in bold |
+| `no_wrap` | `noWrap` | Keeps the field's values on one line |
+| `find_enabled` | `findEnabled` | Includes the field in Quickbase's search box |
+| `appears_by_default` | `appearsByDefault` | Returns the field from a query without `select` |
+| `add_to_forms` | `addToForms` | Adds the field to the table's forms. Only `create_field()` takes it, as Quickbase never reports it |
+
+```python
+tasks.create_field("Priority", "text", help_text="High, Medium, or Low", bold=True)
+tasks.update_field("Priority", find_enabled=False)
+```

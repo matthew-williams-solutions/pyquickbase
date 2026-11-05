@@ -56,7 +56,16 @@ _SORT_ORDERS = frozenset({"ASC", "DESC"})
 # and an app's variables, is left out of the response, so it isn't in `raw` either.
 _TABLE_KEYS = ("id", "name", "description", "keyFieldId")
 _REPORT_KEYS = ("id", "name", "type", "description", "incomplete")
-_FIELD_KEYS = ("id", "label", "fieldType", "mode", "required", "unique", "appearsByDefault")
+_FIELD_KEYS = (
+    "id",
+    "label",
+    "fieldType",
+    "mode",
+    "required",
+    "unique",
+    "appearsByDefault",
+    "fieldHelp",
+)
 _FIELD_PROPERTIES = (
     "choices",
     "allowNewChoices",

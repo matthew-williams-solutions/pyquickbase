@@ -89,6 +89,31 @@ def field_properties(properties: Mapping[str, Any] | None, formula: str | None) 
     return merged
 
 
+# Settings Quickbase takes beside a field's `properties`, by argument name. See docs/api-notes.md.
+FIELD_SETTINGS = {
+    "help_text": "fieldHelp",
+    "bold": "bold",
+    "no_wrap": "noWrap",
+    "find_enabled": "findEnabled",
+    "appears_by_default": "appearsByDefault",
+    "add_to_forms": "addToForms",
+}
+
+
+def field_settings(**values: Any) -> dict[str, Any]:
+    """The settings that were given, by Quickbase's name, refusing a value of the wrong type."""
+    found: dict[str, Any] = {}
+    for name, value in values.items():
+        if value is None:
+            continue
+        wanted = str if name == "help_text" else bool
+        if not isinstance(value, wanted):
+            kind = "text" if wanted is str else "True or False"
+            raise InvalidValueError(f"{name} takes {kind}.")
+        found[FIELD_SETTINGS[name]] = value
+    return found
+
+
 def require_file_field(item: Field) -> None:
     if item.type != FILE_FIELD_TYPE:
         raise InvalidValueError(f"Field {item.label!r} isn't a file attachment field.")

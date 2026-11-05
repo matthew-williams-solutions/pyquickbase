@@ -295,7 +295,6 @@ async def test_ensure_summary_refuses_a_label_used_by_something_else(
         await tasks.ensure_summary_field(project(fake), "Hours", "Total Hours", function="AVG")
 
 
-
 async def test_ensure_count_creates_once_without_a_field(app: Any, fake: FakeSchema) -> None:
     tasks = app.table("Tasks")
     rel = project(fake)
@@ -320,6 +319,7 @@ async def test_count_is_its_own_method(app: Any, fake: FakeSchema) -> None:
     with pytest.raises(SchemaMismatchError):
         await tasks.ensure_count_field(project(fake), "Total Hours")
     assert len(fake.writes()) == 1
+
 
 async def test_ensure_summary_reports_one_quickbase_did_not_create(
     app: Any, fake: FakeSchema

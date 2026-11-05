@@ -472,3 +472,47 @@ async def test_drop_requires_the_exact_name() -> None:
         await table.drop(confirm="Tasks")
         with pytest.raises(UnknownTableError):
             await table.info()
+
+
+async def test_field_settings_go_beside_properties() -> None:
+    server = FakeQuickbase()
+    async with client(server) as qb:
+        tasks = qb.app(APP).table("Tasks")
+        await tasks.create_field(
+            "New", "text", help_text="What it's for", bold=True, add_to_forms=False
+        )
+        await tasks.update_field("New", no_wrap=True, find_enabled=False, appears_by_default=True)
+    (created,) = server.sent("POST", "/fields")
+    assert created == {
+        "label": "New",
+        "fieldType": "text",
+        "fieldHelp": "What it's for",
+        "bold": True,
+        "addToForms": False,
+    }
+    assert server.sent("POST", "/fields/50") == [
+        {"noWrap": True, "findEnabled": False, "appearsByDefault": True}
+    ]
+
+
+async def test_ensure_field_changes_only_settings_that_differ() -> None:
+    server = FakeQuickbase()
+    server.fields = [
+        *server.fields,
+        {"id": 50, "label": "New", "fieldType": "text", "fieldHelp": "Old", "bold": True},
+    ]
+    async with client(server) as qb:
+        tasks = qb.app(APP).table("Tasks")
+        same = await tasks.ensure_field("New", "text", help_text="Old", bold=True)
+        assert same.help_text == "Old"
+        await tasks.ensure_field("New", "text", help_text="New help", bold=True)
+    assert server.sent("POST", "/fields/50") == [{"fieldHelp": "New help"}]
+
+
+@pytest.mark.parametrize(("setting", "value"), [("help_text", 5), ("bold", "yes")])
+async def test_a_setting_of_the_wrong_type_is_refused(setting: str, value: Any) -> None:
+    server = FakeQuickbase()
+    async with client(server) as qb:
+        with pytest.raises(InvalidValueError, match=setting):
+            await qb.app(APP).table("Tasks").create_field("New", "text", **{setting: value})
+    assert server.sent("POST", "/fields") == []

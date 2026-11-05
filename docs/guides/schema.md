@@ -32,6 +32,8 @@ The other examples on this page use `qb`, a client made in the same way.
 - `properties` are any other settings, sent as they are. The
   [field types page](../field-types.md#field-settings) lists common ones.
 - `formula` makes it a formula field. See [Formulas](formulas.md#formula-fields).
+- `help_text`, `bold`, `no_wrap`, `find_enabled`, `appears_by_default`, and `add_to_forms` are the
+  settings Quickbase takes beside `properties`. See [Field settings](../field-types.md#field-settings).
 
 To run the same script more than once, use the `ensure_` methods in
 [Setup scripts you can run again](#setup-scripts-you-can-run-again).

@@ -65,11 +65,13 @@ from .._typed import (
     select_ids,
 )
 from .._writes import (
+    FIELD_SETTINGS,
     RowInput,
     WriteResult,
     build_rows,
     custom_key_refusal,
     field_properties,
+    field_settings,
     merge_write_result,
     refuse_blank_rows,
     refuse_field,
@@ -1116,6 +1118,12 @@ class AsyncTable:
         unique: bool | None = None,
         properties: Mapping[str, Any] | None = None,
         formula: str | None = None,
+        help_text: str | None = None,
+        bold: bool | None = None,
+        no_wrap: bool | None = None,
+        find_enabled: bool | None = None,
+        appears_by_default: bool | None = None,
+        add_to_forms: bool | None = None,
     ) -> Field:
         """Create a field and return it.
 
@@ -1137,6 +1145,13 @@ class AsyncTable:
                 refuses a key it doesn't know.
             formula: Makes this a formula field. `field_type` must match the formula's result, and
                 can't be `timestamp` or `text-multi-line`. Use `datetime` for a timestamp formula.
+            help_text: The help Quickbase shows beside the field on forms.
+            bold: Whether forms and reports show the field's values in bold.
+            no_wrap: Whether forms and reports keep the field's values on one line.
+            find_enabled: Whether the field's values are searched by Quickbase's search box.
+            appears_by_default: Whether a query or report without chosen columns returns the field.
+            add_to_forms: Whether Quickbase adds the field to the table's forms. Quickbase doesn't
+                report this afterward.
 
         Returns:
             The new `Field`.
@@ -1145,13 +1160,22 @@ class AsyncTable:
             BadRequestError: Quickbase refused the field, such as for an unknown type, a label
                 that's already used, or `choices` on a type without them. If it refused `required`
                 or `unique`, the field was still created, and the message says so.
-            InvalidValueError: `formula` is blank. Nothing was sent.
+            InvalidValueError: `formula` is blank, or a setting has the wrong type. Nothing was
+                sent.
         """
         merged = field_properties(properties, formula)
+        settings = field_settings(
+            help_text=help_text,
+            bold=bold,
+            no_wrap=no_wrap,
+            find_enabled=find_enabled,
+            appears_by_default=appears_by_default,
+            add_to_forms=add_to_forms,
+        )
         table_id = (await self.info()).id
         if choices is not None:
             merged["choices"] = list(choices)
-        body: dict[str, Any] = {"label": label, "fieldType": field_type}
+        body: dict[str, Any] = {"label": label, "fieldType": field_type, **settings}
         if merged:
             body["properties"] = merged
         payload = await self._transport.request(
@@ -1180,6 +1204,11 @@ class AsyncTable:
         unique: bool | None = None,
         properties: Mapping[str, Any] | None = None,
         formula: str | None = None,
+        help_text: str | None = None,
+        bold: bool | None = None,
+        no_wrap: bool | None = None,
+        find_enabled: bool | None = None,
+        appears_by_default: bool | None = None,
     ) -> Field:
         """Change a field's settings and return it. Anything left as None stays as it is.
 
@@ -1196,16 +1225,29 @@ class AsyncTable:
                 list of choices.
             formula: New formula text, only for a formula field. It can't be blank, because
                 Quickbase would accept that and empty the field's values.
+            help_text: The help Quickbase shows beside the field on forms.
+            bold: Whether forms and reports show the field's values in bold.
+            no_wrap: Whether forms and reports keep the field's values on one line.
+            find_enabled: Whether the field's values are searched by Quickbase's search box.
+            appears_by_default: Whether a query or report without chosen columns returns the field.
 
         Returns:
             The `Field`, with its new settings.
 
         Raises:
             UnknownFieldError: The table has no such field. Nothing was sent.
-            InvalidValueError: There's nothing to change, or `formula` is blank. Nothing was sent.
+            InvalidValueError: There's nothing to change, `formula` is blank, or a setting has the
+                wrong type. Nothing was sent.
             BadRequestError: Quickbase refused the change, and the field is as it was.
         """
         merged = field_properties(properties, formula)
+        settings = field_settings(
+            help_text=help_text,
+            bold=bold,
+            no_wrap=no_wrap,
+            find_enabled=find_enabled,
+            appears_by_default=appears_by_default,
+        )
         table_id = (await self.info()).id
         field_id = await self._with_fields(lambda fields: FieldIndex(fields).resolve(field).id)
         optional = {
@@ -1213,6 +1255,7 @@ class AsyncTable:
             "required": required,
             "unique": unique,
             "properties": merged or None,
+            **settings,
         }
         body = {k: v for k, v in optional.items() if v is not None}
         if not body:
@@ -1311,6 +1354,11 @@ class AsyncTable:
         unique: bool | None = None,
         properties: Mapping[str, Any] | None = None,
         formula: str | None = None,
+        help_text: str | None = None,
+        bold: bool | None = None,
+        no_wrap: bool | None = None,
+        find_enabled: bool | None = None,
+        appears_by_default: bool | None = None,
     ) -> Field:
         """Return the field with this label, creating it or changing it to match what you pass.
 
@@ -1328,6 +1376,11 @@ class AsyncTable:
             unique: Whether values must be different on every record.
             properties: Other settings, sent as they are.
             formula: The text of a formula field.
+            help_text: The help Quickbase shows beside the field on forms.
+            bold: Whether forms and reports show the field's values in bold.
+            no_wrap: Whether forms and reports keep the field's values on one line.
+            find_enabled: Whether the field's values are searched by Quickbase's search box.
+            appears_by_default: Whether a query or report without chosen columns returns the field.
 
         Returns:
             The `Field`, whether it was found, created, or changed.
@@ -1337,6 +1390,14 @@ class AsyncTable:
                 always convert one. It wasn't changed.
             BadRequestError: Quickbase refused the field or the change.
         """
+        given: dict[str, Any] = {
+            "help_text": help_text,
+            "bold": bold,
+            "no_wrap": no_wrap,
+            "find_enabled": find_enabled,
+            "appears_by_default": appears_by_default,
+        }
+        settings = field_settings(**given)
         fields = await self.fields(refresh=True)
         found = next((item for item in fields if item.label.casefold() == label.casefold()), None)
         if found is None:
@@ -1348,6 +1409,7 @@ class AsyncTable:
                 unique=unique,
                 properties=properties,
                 formula=formula,
+                **given,
             )
         reported_type = "timestamp" if field_type == "datetime" else field_type
         if found.type != reported_type:
@@ -1365,10 +1427,20 @@ class AsyncTable:
         }
         new_required = required if required not in (None, found.required) else None
         new_unique = unique if unique not in (None, found.unique) else None
-        if not changed and new_required is None and new_unique is None:
+        api_names = {api: name for name, api in FIELD_SETTINGS.items()}
+        new_settings = {
+            api_names[key]: value
+            for key, value in settings.items()
+            if found.raw.get(key, "" if key == "fieldHelp" else None) != value
+        }
+        if not changed and new_required is None and new_unique is None and not new_settings:
             return found
         return await self.update_field(
-            found.id, required=new_required, unique=new_unique, properties=changed or None
+            found.id,
+            required=new_required,
+            unique=new_unique,
+            properties=changed or None,
+            **new_settings,
         )
 
     async def ensure_relationship(

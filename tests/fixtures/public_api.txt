@@ -52,7 +52,7 @@ class AsyncReport(object)
     async def summary_rows(self, *, page_size: int = 1000, limit: int | None = None) -> list[dict[str, Any]]
 class AsyncTable(object)
     async def count(self, where: Expression | str | None = None) -> int
-    async def create_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None) -> Field
+    async def create_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None, add_to_forms: bool | None = None) -> Field
     async def create_relationship(self, parent: 'AsyncTable', *, foreign_key_label: str, lookup_fields: Sequence[str | int] = ()) -> Relationship
     async def delete(self, where: Expression | str) -> int
     async def delete_fields(self, fields: str | int | Sequence[str | int]) -> None
@@ -60,7 +60,7 @@ class AsyncTable(object)
     async def download_file(self, record_id: int, field: str | int, *, version: int | None = None, timeout: float | None = None) -> FileDownload
     async def drop(self, *, confirm: str) -> None
     async def ensure_count_field(self, relationship: Relationship, label: str) -> Field
-    async def ensure_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None) -> Field
+    async def ensure_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None) -> Field
     async def ensure_lookup_field(self, relationship: Relationship, parent_field: str | int, *, label: str | None = None) -> Field
     async def ensure_relationship(self, parent: 'AsyncTable', *, foreign_key_label: str) -> Relationship
     async def ensure_summary_field(self, relationship: Relationship, child_field: str | int, label: str, *, function: str = 'SUM') -> Field
@@ -81,7 +81,7 @@ class AsyncTable(object)
     async def run_formula(self, formula: str, *, record_id: int | None = None) -> FormulaResult
     async def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, total: str | int | F | Sequence[str | int | F] | None = None, average: str | int | F | Sequence[str | int | F] | None = None, minimum: str | int | F | Sequence[str | int | F] | None = None, maximum: str | int | F | Sequence[str | int | F] | None = None, max_records: int | None = None, page_size: int = 1000) -> list[SummaryRow]
     async def update(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
-    async def update_field(self, field: str | int, *, label: str | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None) -> Field
+    async def update_field(self, field: str | int, *, label: str | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None) -> Field
     async def upsert(self, rows: Iterable[Mapping[str | int, Any]], *, merge_on: str | int, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
 class AsyncTypedIterator(Generic)
     def __aiter__(self) -> Self
@@ -136,12 +136,13 @@ class F(object)
     def starts_with(self, value: Any) -> Condition
 class Field(object)
     def __eq__(self, other)
-    def __init__(self, *, id: int, label: str, type: str, mode: str | None, required: bool, unique: bool, appears_by_default: bool, choices: tuple[str, ...], allow_new_choices: bool, formula: str | None = None, decimal_places: int | None = None, is_foreign_key: bool = False, lookup_reference_field_id: int | None = None, lookup_target_field_id: int | None = None, summary_reference_field_id: int | None = None, summary_target_field_id: int | None = None, summary_function: str | None = None, raw: Mapping[str, Any]) -> None
+    def __init__(self, *, id: int, label: str, type: str, mode: str | None, required: bool, unique: bool, appears_by_default: bool, choices: tuple[str, ...], allow_new_choices: bool, formula: str | None = None, help_text: str = '', decimal_places: int | None = None, is_foreign_key: bool = False, lookup_reference_field_id: int | None = None, lookup_target_field_id: int | None = None, summary_reference_field_id: int | None = None, summary_target_field_id: int | None = None, summary_function: str | None = None, raw: Mapping[str, Any]) -> None
     field allow_new_choices: bool
     field appears_by_default: bool
     field choices: tuple[str, ...]
     field decimal_places: int | None
     field formula: str | None
+    field help_text: str
     field id: int
     field is_foreign_key: bool
     field label: str
@@ -349,7 +350,7 @@ class SummaryRow(object)
     field total: Mapping[str, float]
 class Table(object)
     def count(self, where: Expression | str | None = None) -> int
-    def create_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None) -> Field
+    def create_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None, add_to_forms: bool | None = None) -> Field
     def create_relationship(self, parent: 'Table', *, foreign_key_label: str, lookup_fields: Sequence[str | int] = ()) -> Relationship
     def delete(self, where: Expression | str) -> int
     def delete_fields(self, fields: str | int | Sequence[str | int]) -> None
@@ -357,7 +358,7 @@ class Table(object)
     def download_file(self, record_id: int, field: str | int, *, version: int | None = None, timeout: float | None = None) -> FileDownload
     def drop(self, *, confirm: str) -> None
     def ensure_count_field(self, relationship: Relationship, label: str) -> Field
-    def ensure_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None) -> Field
+    def ensure_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None) -> Field
     def ensure_lookup_field(self, relationship: Relationship, parent_field: str | int, *, label: str | None = None) -> Field
     def ensure_relationship(self, parent: 'Table', *, foreign_key_label: str) -> Relationship
     def ensure_summary_field(self, relationship: Relationship, child_field: str | int, label: str, *, function: str = 'SUM') -> Field
@@ -378,7 +379,7 @@ class Table(object)
     def run_formula(self, formula: str, *, record_id: int | None = None) -> FormulaResult
     def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, total: str | int | F | Sequence[str | int | F] | None = None, average: str | int | F | Sequence[str | int | F] | None = None, minimum: str | int | F | Sequence[str | int | F] | None = None, maximum: str | int | F | Sequence[str | int | F] | None = None, max_records: int | None = None, page_size: int = 1000) -> list[SummaryRow]
     def update(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
-    def update_field(self, field: str | int, *, label: str | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None) -> Field
+    def update_field(self, field: str | int, *, label: str | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None) -> Field
     def upsert(self, rows: Iterable[Mapping[str | int, Any]], *, merge_on: str | int, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
 class TableInfo(object)
     def __eq__(self, other)

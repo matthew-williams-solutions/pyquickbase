@@ -136,6 +136,7 @@ class Field:
         choices: The options of a multiple-choice field, or empty for other fields.
         allow_new_choices: Quickbase's `allowNewChoices` setting, or False if it isn't reported.
         formula: The formula's text, or None if the field doesn't have one.
+        help_text: The help Quickbase shows beside the field on forms, which may be empty.
         decimal_places: Only how a number is displayed: Quickbase still stores `1.5` in a field set
             to 0 places.
         is_foreign_key: Whether the field links to a parent table's record.
@@ -157,6 +158,7 @@ class Field:
     choices: tuple[str, ...]
     allow_new_choices: bool
     formula: str | None = None
+    help_text: str = ""
     decimal_places: int | None = None
     is_foreign_key: bool = False
     lookup_reference_field_id: int | None = None
@@ -180,6 +182,7 @@ def field_from_api(data: Mapping[str, Any]) -> Field:
         choices=tuple(properties.get("choices") or ()),
         allow_new_choices=bool(properties.get("allowNewChoices")),
         formula=properties.get("formula") or None,
+        help_text=data.get("fieldHelp") or "",
         decimal_places=properties.get("decimalPlaces"),
         is_foreign_key=bool(properties.get("foreignKey")),
         lookup_reference_field_id=properties.get("lookupReferenceFieldId"),
