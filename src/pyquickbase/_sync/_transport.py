@@ -14,6 +14,7 @@ from .._policy import WritePolicy, WriteRules, check_policy, describe_write
 from .._read_policy import ReadPolicy, ReadRequest, ReadRules, check_read, describe_read
 from .._response import error_from_response, error_from_transport, parse_response
 from .._retry import RetryPolicy, parse_retry_after
+from ..errors import ReadRefusedError, WriteRefusedError
 
 # Failures where nothing reached Quickbase, so any request is safe to send again.
 _NOT_SENT = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
@@ -37,11 +38,14 @@ class Transport:
         read_only: bool = False,
         write_policy: WritePolicy | None = None,
         read_policy: ReadPolicy | None = None,
+        confirmation_key: bytes | None = None,
     ) -> None:
         self.realm = realm
-        # Signs the confirmations previews return. Each client makes its own, so a confirmation
-        # only works with operations from the client that issued it.
-        self.confirmation_key = secrets.token_bytes(32)
+        # Signs the confirmations previews return. Without a shared key, each client makes its own,
+        # so a confirmation only works with operations from the client that issued it.
+        self.confirmation_key = (
+            secrets.token_bytes(32) if confirmation_key is None else confirmation_key
+        )
         self._read_policy = read_policy
         self._read_rules = read_rules_in(read_policy)
         self._read_only = read_only
@@ -61,6 +65,8 @@ class Transport:
         params: Mapping[str, Any] | None = None,
         json: Any = None,
         key_field_id: int | None = None,
+        parent_table_id: str | None = None,
+        sources_checked: bool = False,
         report_type: str | None = None,
         summarizing: bool = False,
         timeout: float | None = None,
@@ -68,10 +74,20 @@ class Transport:
         """Send a request, and return its decoded body, trimmed by any `ReadRules`.
 
         `report_type` and `summarizing` describe a read the request can't, as `describe_read()`
-        explains, so `request()` on the client can't pass them.
+        explains, and `parent_table_id` a relationship's parent. `sources_checked` says that a
+        formula, lookup, or summary field only reads what the client may read. `request()` on the
+        client can't pass any of these.
         """
         method = method.upper()
-        self._check_write(method, path, json, key_field_id)
+        self._check_write(
+            method,
+            path,
+            params,
+            json,
+            key_field_id=key_field_id,
+            parent_table_id=parent_table_id,
+            sources_checked=sources_checked,
+        )
         read = self._check_read(method, path, params, json, report_type, summarizing)
         response = self._send(method, path, params, json, timeout)
         payload = parse_response(response, method, path)
@@ -111,12 +127,48 @@ class Transport:
         ]
         return min(limits, default=None)
 
-    def _check_write(self, method: str, path: str, json: Any, key_field_id: int | None) -> None:
+    @property
+    def limited(self) -> bool:
+        """Whether the client has any limits on what it reads or writes."""
+        return self._read_only or self._read_policy is not None or self._write_policy is not None
+
+    def table_created(self, table_id: str) -> None:
+        """Give a table this client just created the access its rules give new tables."""
+        for rules in (*self._read_rules, *self.write_rules):
+            rules._adopt(table_id)  # pyright: ignore[reportPrivateUsage]
+
+    def _check_write(
+        self,
+        method: str,
+        path: str,
+        params: Mapping[str, Any] | None,
+        json: Any,
+        *,
+        key_field_id: int | None = None,
+        parent_table_id: str | None = None,
+        sources_checked: bool = False,
+    ) -> None:
         """Apply the limits on writes, which come first, so a refused write says so."""
         if self._read_only:
             check_read_only(method, path)
-        if self._write_policy is not None and not is_read(method, path):
-            request = describe_write(method, path, json, key_field_id=key_field_id)
+        if is_read(method, path) or (self._write_policy is None and self._read_policy is None):
+            return
+        request = describe_write(
+            method,
+            path,
+            json,
+            params=params,
+            key_field_id=key_field_id,
+            parent_table_id=parent_table_id,
+        )
+        if request.derived and not sources_checked:
+            refused = ReadRefusedError if self._read_policy is not None else WriteRefusedError
+            raise refused(
+                f"This client has limits, so it only makes {' and '.join(sorted(request.derived))} "
+                "fields through methods such as create_field() and ensure_lookup_field(), which "
+                f"check what they read. {method} {path} wasn't sent."
+            )
+        if self._write_policy is not None:
             check_policy(self._write_policy, request)
 
     def _check_read(

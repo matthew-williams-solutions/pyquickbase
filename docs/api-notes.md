@@ -463,6 +463,8 @@ Tested on 2026-11-03 and 2026-11-04 in a real app, using `POST /tables/{child}/r
 | A summary's properties | `summaryReferenceFieldId`, `summaryTargetFieldId`, and `summaryFunction` |
 | **A summary with no child records** | **Empty, not 0**, except a `COUNT`. A formula using it is also empty unless it uses `Nz()`, which matters for something like a balance |
 | Fields added to the parent | A `dblink` such as `Task records`, and a `url` formula such as `Add Task`, containing `a=API_GenAddRecordForm` |
+| `DELETE /tables/{child}/relationship/{id}` | 200, `{"relationshipId": 7}`. **Deletes the lookups on the child, and the summaries and the link and add-record fields on the parent. The foreign key field stays.** A second delete is 404, `Parent table not found. Delete the field 'Parent' to remove this relationship.` Live API, 2026-11-06 |
+| `GET /tables/{parent}/relationships` | **Empty for the parent.** Only the child lists a relationship. Live API, 2026-11-06 |
 | **Summaries and the reader's role** | **They only total the child records the reader can see.** With 4 child records and a custom rule letting a restricted role see 2, an admin read a count of 4 and a total of 40, while the restricted user read 2 and 20. With View set to None on the child table, the restricted user read both as empty, even the `COUNT`. Live API, 2026-11-06 |
 
 ## Field types
@@ -510,6 +512,7 @@ A `datetime` field reports its type as `timestamp`.
 | Labels | **Can contain almost anything, including `"""`, line breaks, and code**, as can table names |
 | Label uniqueness | Exact duplicates are refused, ignoring case, but `Due Date` and `Due-Date` can both exist |
 | Table names | `POST /tables` and renaming with `POST /tables/{id}` refuse a name already in use with 400, `Table name exists`, ignoring case and surrounding spaces |
+| Changing a table with `POST /tables/{id}` | Needs `appId`, or it's 400, `Required query 'appId' not found`. An empty body is 200 and changes nothing. Live API, 2026-11-06 |
 | Table names in the UI | Creating a table with a name already in the app, or renaming a table to one, is refused too. Tried by hand with the same name on 2026-11-04. Case and spacing variations weren't tried in the UI |
 | Writing a timestamp | `2027-01-02T03:04:05+00:00` and three fractional digits are accepted. **Python's default of six, or one, is a row error**, `Incompatible value`. It reads back to the second |
 | `properties` | An unknown key is refused with 400, `Extraneous key`. `fieldHelp` isn't a property, and neither are `choices` on a type without them |

@@ -9,6 +9,7 @@ from hypothesis import strategies as st
 from pyquickbase import (
     ConfigurationError,
     Quickbase,
+    SchemaAccess,
     WriteAccess,
     WriteRefusedError,
     WriteRequest,
@@ -139,15 +140,11 @@ def test_deleting_a_file_version() -> None:
 @pytest.mark.parametrize(
     ("method", "path"),
     [
-        ("POST", "/fields"),
-        ("DELETE", "/fields"),
-        ("POST", "/fields/6"),
-        ("POST", "/tables"),
-        ("POST", "/tables/bqtasks"),
-        ("DELETE", "/tables/bqtasks"),
-        ("POST", "/tables/bqtasks/relationship"),
-        ("DELETE", "/tables/bqtasks/relationship/1"),
         ("POST", "/apps"),
+        ("PUT", "/fields"),
+        ("POST", "/fields/06"),
+        ("POST", "/tables/bqtasks/relationships"),
+        ("PATCH", "/tables/bqtasks"),
         ("PUT", "/records"),
         ("PATCH", "/records"),
         ("POST", "/records/"),
@@ -163,6 +160,166 @@ def test_everything_else_is_other(method: str, path: str) -> None:
     request = describe_write(method, path, {"to": TASKS, "from": TASKS, "data": [row(6)]})
     assert request.action == "other"
     assert request.table_id is None
+
+
+def schema(
+    method: str, path: str, body: Any = None, *, table: str = TASKS, **kwargs: Any
+) -> WriteRequest:
+    params = {"tableId": table, "appId": "bqapp"}
+    return describe_write(method, path, body, params=params, **kwargs)
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body", "action", "table_id"),
+    [
+        ("POST", "/tables", {"name": "New"}, "create_table", None),
+        ("POST", f"/tables/{TASKS}", {"name": "New"}, "update_table", TASKS),
+        ("DELETE", f"/tables/{TASKS}", None, "delete_table", TASKS),
+        ("POST", "/fields", {"label": "x", "fieldType": "text"}, "create_field", TASKS),
+        ("POST", "/fields/6", {"label": "y"}, "update_field", TASKS),
+        ("DELETE", "/fields", {"fieldIds": [6, 7]}, "delete_field", TASKS),
+        ("POST", f"/tables/{TASKS}/relationship", {"parentTableId": NOTES}, "create_relationship",
+         TASKS),
+        ("POST", f"/tables/{TASKS}/relationship/7", {"lookupFieldIds": [6]},
+         "update_relationship", TASKS),
+        ("DELETE", f"/tables/{TASKS}/relationship/7", None, "delete_relationship", TASKS),
+    ],
+)  # fmt: skip
+def test_schema_changes_are_described(
+    method: str, path: str, body: Any, action: str, table_id: str | None
+) -> None:
+    request = schema(method, path, body)
+    assert (request.action, request.table_id) == (action, table_id)
+
+
+def test_a_schema_change_says_what_it_touches() -> None:
+    created = schema("POST", "/fields", {"fieldType": "date", "properties": {"formula": ""}})
+    assert (created.field_type, created.derived) == ("date", {"formula"})
+    assert schema("POST", "/fields/6", {"label": "y"}).field_ids == {6}
+    assert schema("DELETE", "/fields", {"fieldIds": [6, 7]}).field_ids == {6, 7}
+    assert schema("DELETE", "/fields", {"fieldIds": ["6"]}).field_ids is None
+    assert schema("POST", "/tables", {"name": "x"}).app_id == "bqapp"
+    link = schema("POST", f"/tables/{TASKS}/relationship", {"parentTableId": NOTES,
+                                                         "lookupFieldIds": [6]})  # fmt: skip
+    assert (link.parent_table_id, link.derived) == (NOTES, {"lookup"})
+    path = f"/tables/{TASKS}/relationship/7"
+    added = schema("POST", path, {"summaryFields": [{}]}, parent_table_id=NOTES)
+    assert (added.parent_table_id, added.derived) == (NOTES, {"summary"})
+    assert schema("POST", path, {"lookupFieldIds": [6]}).parent_table_id is None
+    assert schema("POST", path, {"lookupFieldIds": "6"}).action == "other"
+
+
+def full(**grant: Any) -> WriteAccess:
+    return WriteAccess(schema=SchemaAccess(**grant))
+
+
+def test_schema_changes_need_a_schema_grant() -> None:
+    rules = WriteRules({TASKS: WriteAccess(insert=True, update=True, delete=True)})
+    with pytest.raises(WriteRefusedError, match="doesn't allow schema changes"):
+        rules(schema("POST", "/fields", {"label": "x", "fieldType": "text"}))
+    with pytest.raises(WriteRefusedError, match="creating tables isn't allowed"):
+        rules(schema("POST", "/tables", {"name": "x"}))
+
+
+@pytest.mark.parametrize(
+    ("grant", "request_args", "allowed"),
+    [
+        ({"update_table": True}, ("POST", f"/tables/{TASKS}", {}), True),
+        ({}, ("POST", f"/tables/{TASKS}", {}), False),
+        ({"delete_table": True}, ("DELETE", f"/tables/{TASKS}", None), True),
+        ({"update_table": True}, ("DELETE", f"/tables/{TASKS}", None), False),
+        ({"create_fields": True}, ("POST", "/fields", {"fieldType": "text"}), True),
+        ({"create_fields": True, "field_types": ["date"]}, ("POST", "/fields",
+                                                            {"fieldType": "text"}), False),
+        ({"create_fields": True}, ("POST", "/fields", {}), False),
+        ({"update_fields": [6]}, ("POST", "/fields/6", {"label": "y"}), True),
+        ({"update_fields": [7]}, ("POST", "/fields/6", {"label": "y"}), False),
+        ({"delete_fields": True}, ("DELETE", "/fields", {"fieldIds": [6]}), True),
+        ({"delete_fields": [6]}, ("DELETE", "/fields", {"fieldIds": [6, 7]}), False),
+        ({"delete_fields": [6]}, ("DELETE", "/fields", {"fieldIds": "6"}), False),
+    ],
+)  # fmt: skip
+def test_each_schema_change_is_granted_separately(
+    grant: dict[str, Any], request_args: tuple[str, str, Any], allowed: bool
+) -> None:
+    rules = WriteRules({TASKS: full(**grant)})
+    assert allows(rules, schema(*request_args)) is allowed
+
+
+def test_formulas_need_their_own_grant_and_cant_make_links() -> None:
+    formula = {"fieldType": "numeric", "properties": {"formula": "1"}}
+    assert not allows(WriteRules({TASKS: full(create_fields=True)}), schema("POST", "/fields",
+                                                                             formula))  # fmt: skip
+    rules = WriteRules({TASKS: full(create_fields=True, update_fields=True, formulas=True)})
+    assert allows(rules, schema("POST", "/fields", formula))
+    assert allows(rules, schema("POST", "/fields/6", {"properties": {"formula": "2"}}))
+    for unsafe in ("url", "rich-text"):
+        body = {"fieldType": unsafe, "properties": {"formula": '"x"'}}
+        with pytest.raises(WriteRefusedError, match="acts as them"):
+            rules(schema("POST", "/fields", body))
+    assert allows(rules, schema("POST", "/fields", {"fieldType": "url"}))
+
+
+def test_relationships_need_both_tables_and_their_grants() -> None:
+    link = schema("POST", f"/tables/{TASKS}/relationship", {"parentTableId": NOTES})
+    lookup = schema("POST", f"/tables/{TASKS}/relationship/7", {"lookupFieldIds": [6]},
+                    parent_table_id=NOTES)  # fmt: skip
+    summary = schema("POST", f"/tables/{TASKS}/relationship/7", {"summaryFields": [{}]},
+                     parent_table_id=NOTES)  # fmt: skip
+    unlink = schema("DELETE", f"/tables/{TASKS}/relationship/7", parent_table_id=NOTES)
+    only_child = WriteRules({TASKS: full(relationships=True)})
+    with pytest.raises(WriteRefusedError, match=f"table {NOTES} isn't listed"):
+        only_child(link)
+    both = WriteRules({TASKS: full(relationships=True), NOTES: full(relationships=True)})
+    assert allows(both, link)
+    assert not allows(both, lookup)
+    assert not allows(both, summary)
+    assert not allows(both, unlink)
+    granted = WriteRules(
+        {
+            TASKS: full(relationships=True, lookups=True, delete_fields=True),
+            NOTES: full(relationships=True, summaries=True, delete_fields=True),
+        }
+    )
+    for request in (link, lookup, summary, unlink):
+        assert allows(granted, request), request.action
+    unknown_parent = schema("POST", f"/tables/{TASKS}/relationship/7", {"summaryFields": [{}]})
+    with pytest.raises(WriteRefusedError, match="parent table can't be determined"):
+        granted(unknown_parent)
+
+
+def test_new_tables_get_their_own_access() -> None:
+    rules = WriteRules({}, create_tables_in=["bqapp"], new_tables=full(create_fields=True))
+    assert allows(rules, schema("POST", "/tables", {"name": "x"}))
+    field = schema("POST", "/fields", {"fieldType": "text"}, table="bqnew")
+    assert not allows(rules, field)
+    rules._adopt("bqnew")  # pyright: ignore[reportPrivateUsage]
+    assert allows(rules, field)
+    assert not allows(WriteRules({}, create_tables_in=["other"]), schema("POST", "/tables", {}))
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"update_fields": []},
+        {"formulas": 1},
+        {"field_types": "text"},
+        {"field_types": []},
+        {"field_types": [""]},
+    ],
+)
+def test_schema_access_checks_its_settings(kwargs: dict[str, Any]) -> None:
+    with pytest.raises(ConfigurationError):
+        SchemaAccess(**kwargs)
+
+
+def test_write_rules_check_their_new_settings() -> None:
+    with pytest.raises(ConfigurationError, match="schema takes"):
+        WriteAccess(schema=True)  # pyright: ignore[reportArgumentType]
+    with pytest.raises(ConfigurationError, match="create_tables_in"):
+        WriteRules({}, create_tables_in="bqapp")
+    with pytest.raises(ConfigurationError, match="new_tables"):
+        WriteRules({}, new_tables=SchemaAccess())  # pyright: ignore[reportArgumentType]
 
 
 def test_a_description_holds_no_values() -> None:
@@ -290,8 +447,8 @@ def test_other_writes_and_unknown_tables_are_refused() -> None:
     rules = WriteRules(
         {TASKS: WriteAccess(insert=True, update=True, delete=True, delete_files=True)}
     )
-    with pytest.raises(WriteRefusedError, match="only record and file"):
-        rules(describe_write("POST", "/fields", {}))
+    with pytest.raises(WriteRefusedError, match="only record, file, and schema"):
+        rules(describe_write("POST", "/apps", {}))
     with pytest.raises(WriteRefusedError, match="table can't be determined"):
         rules(describe_write("POST", "/records", {"data": [row(6)]}))
 

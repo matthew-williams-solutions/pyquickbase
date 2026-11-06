@@ -28,7 +28,15 @@ from ._models import (
 )
 from ._operations import OperationName
 from ._output import ToolErrorCode, tool_error, tool_result
-from ._policy import WriteAccess, WriteAction, WritePolicy, WriteRequest, WriteRules
+from ._policy import (
+    DerivedKind,
+    SchemaAccess,
+    WriteAccess,
+    WriteAction,
+    WritePolicy,
+    WriteRequest,
+    WriteRules,
+)
 from ._preview import FieldChange, RecordChange, UpdatePreview
 from ._query import Expression, F, FieldRef, FieldRefs, WhereCondition, parse_where
 from ._read_policy import ReadAccess, ReadAction, ReadPolicy, ReadRequest, ReadRules
@@ -102,6 +110,7 @@ __all__ = [
     "BadRequestError",
     "Column",
     "ConfigurationError",
+    "DerivedKind",
     "Expression",
     "F",
     "Field",
@@ -146,6 +155,7 @@ __all__ = [
     "Role",
     "Row",
     "RowError",
+    "SchemaAccess",
     "SchemaMismatchError",
     "Select",
     "ServerError",

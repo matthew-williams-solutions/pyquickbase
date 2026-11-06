@@ -8,6 +8,7 @@ from typing import Any, Generic, Self, TypeVar, cast
 from .._confirm import binding as confirmation_binding
 from .._confirm import check as check_confirmation
 from .._confirm import issue as issue_confirmation
+from .._derived import check_formula_sources, check_readable, table_access
 from .._links import (
     app_url,
     field_url,
@@ -61,6 +62,7 @@ from .._operations import (
     scope_rows,
     unavailable,
 )
+from .._policy import UNSAFE_FORMULA_TYPES
 from .._preview import (
     ConfirmedUpdatePreview,
     UpdatePreview,
@@ -117,6 +119,7 @@ from ..errors import (
     UnknownReportError,
     UnknownTableError,
     WriteError,
+    WriteRefusedError,
 )
 from ._transport import AsyncTransport
 
@@ -307,7 +310,9 @@ class AsyncApp:
             "POST", "/tables", params={"appId": self._id}, json=body
         )
         self._cache.delete(f"tables:{self._id}")
-        return self.table(parse(lambda data: table_info_from_api(data).id, payload, "table"))
+        table_id = parse(lambda data: table_info_from_api(data).id, payload, "table")
+        self._transport.table_created(table_id)
+        return self.table(table_id)
 
     def table(self, name_or_id: str) -> "AsyncTable":
         """Get a table in this app by name or ID. It's checked when first used.
@@ -1387,8 +1392,10 @@ class AsyncTable:
         body: dict[str, Any] = {"label": label, "fieldType": field_type, **settings}
         if merged:
             body["properties"] = merged
+        if "formula" in merged:
+            await self._check_formula(table_id, merged["formula"])
         payload = await self._transport.request(
-            "POST", "/fields", params={"tableId": table_id}, json=body
+            "POST", "/fields", params={"tableId": table_id}, json=body, sources_checked=True
         )
         self._forget_fields(table_id)
         field = parse(field_from_api, payload, "field")
@@ -1458,7 +1465,16 @@ class AsyncTable:
             appears_by_default=appears_by_default,
         )
         table_id = (await self.info()).id
-        field_id = await self._with_fields(lambda fields: FieldIndex(fields).resolve(field).id)
+        target = await self._with_fields(lambda fields: FieldIndex(fields).resolve(field))
+        field_id = target.id
+        if "formula" in merged:
+            if self._transport.write_rules and target.type in UNSAFE_FORMULA_TYPES:
+                raise WriteRefusedError(
+                    f"This client's write rules don't allow changing field {field_id}'s formula: "
+                    f"a {target.type} formula makes something people click, which acts as them. "
+                    "It wasn't sent."
+                )
+            await self._check_formula(table_id, merged["formula"])
         optional = {
             "label": label,
             "required": required,
@@ -1470,10 +1486,43 @@ class AsyncTable:
         if not body:
             raise InvalidValueError("update_field() needs at least one setting to change.")
         payload = await self._transport.request(
-            "POST", f"/fields/{field_id}", params={"tableId": table_id}, json=body
+            "POST",
+            f"/fields/{field_id}",
+            params={"tableId": table_id},
+            json=body,
+            sources_checked=True,
         )
         self._forget_fields(table_id)
         return parse(field_from_api, payload, "field")
+
+    async def _check_formula(self, table_id: str, formula: Any) -> None:
+        """Refuse a formula that reads what this client can't, when it has read rules."""
+        access = table_access(self._transport.read_rules, table_id)
+        if access is not None and isinstance(formula, str):
+            check_formula_sources(formula, await self.fields(), access)
+
+    async def _check_parent_field(self, parent: "AsyncTable", field_id: int, what: str) -> None:
+        """Refuse a lookup of a parent's field that this client can't read."""
+        parent_id = (await parent.info()).id
+        access = table_access(self._transport.read_rules, parent_id)
+        if access is not None:
+            found = await parent._with_fields(lambda fields: FieldIndex(fields).resolve(field_id))  # pyright: ignore[reportPrivateUsage]
+            check_readable(found, access, parent_id, what)
+
+    async def _check_own_fields(self, field_ids: Sequence[int | None], what: str) -> None:
+        """Refuse a summary or lookup that shows this table's fields, unless they're readable."""
+        table_id = (await self.info()).id
+        access = table_access(self._transport.read_rules, table_id)
+        if access is None:
+            return
+        index = await self._with_fields(FieldIndex)
+        for field_id in field_ids:
+            if field_id is None:
+                raise ReadRefusedError(
+                    f"{what} needs the relationship's foreign key, which this client can't see. "
+                    "Nothing was sent."
+                )
+            check_readable(index.resolve(field_id), access, table_id, what)
 
     async def delete_fields(self, fields: FieldRef | Sequence[FieldRef]) -> None:
         """Delete fields and all their data.
@@ -1540,6 +1589,8 @@ class AsyncTable:
         table_id = (await self.info()).id
         parent_id = (await parent.info()).id
         lookup_ids = await parent.resolve_field_ids(lookup_fields)
+        for lookup_id in lookup_ids:
+            await self._check_parent_field(parent, lookup_id, "A lookup")
         payload = await self._transport.request(
             "POST",
             f"/tables/{table_id}/relationship",
@@ -1548,6 +1599,7 @@ class AsyncTable:
                 "foreignKeyField": {"label": foreign_key_label},
                 "lookupFieldIds": lookup_ids,
             },
+            sources_checked=True,
         )
         self._forget_fields(table_id)
         self._forget_fields(parent_id)
@@ -1705,19 +1757,21 @@ class AsyncTable:
         found = await self._find_lookup(relationship, target_id)
         if found is None:
             table_id = (await self.info()).id
+            await self._check_parent_field(parent, target_id, "A lookup")
+            await self._check_own_fields([relationship.foreign_key_field_id], "A lookup")
             # This adds to the existing lookups, and takes the parent's field IDs, not the child's.
             await self._transport.request(
                 "POST",
                 f"/tables/{table_id}/relationship/{relationship.id}",
                 json={"lookupFieldIds": [target_id]},
+                parent_table_id=relationship.parent_table_id,
+                sources_checked=True,
             )
             self._forget_fields(table_id)
             self._forget_fields(relationship.parent_table_id)
             found = await self._find_lookup(relationship, target_id)
             if found is None:
-                raise InvalidResponseError(
-                    f"Quickbase accepted a lookup of field {target_id}, but it can't be found."
-                )
+                raise self._created_but_unseen(f"A lookup of field {target_id}")
         if label is not None and found.label != label:
             return await self.update_field(found.id, label=label)
         return found
@@ -1814,20 +1868,38 @@ class AsyncTable:
         summary: dict[str, Any] = {"label": label, "accumulationType": function}
         if target_id is not None:
             summary["summaryFid"] = target_id
+        shown = [relationship.foreign_key_field_id]
+        await self._check_own_fields(
+            [*shown, target_id] if target_id is not None else shown, "A summary"
+        )
         await self._transport.request(
             "POST",
             f"/tables/{table_id}/relationship/{relationship.id}",
             json={"summaryFields": [summary]},
+            parent_table_id=relationship.parent_table_id,
+            sources_checked=True,
         )
         self._forget_fields(table_id)
         self._forget_fields(relationship.parent_table_id)
         fields = await parent.fields(refresh=True)
         created = next((item for item in fields if item.label.casefold() == label.casefold()), None)
         if created is None:
-            raise InvalidResponseError(
-                f"Quickbase accepted summary {label!r}, but it can't be found."
-            )
+            raise self._created_but_unseen(f"Summary {label!r}")
         return created
+
+    def _created_but_unseen(self, what: str) -> QuickbaseError:
+        """The error for a field Quickbase made that this client can't find afterward."""
+        if self._transport.read_rules:
+            error: QuickbaseError = UnknownFieldError(
+                f"{what} was created, but this client's read rules hide new fields, so it can't "
+                "be returned. Allow it in ReadAccess, or use fields=True."
+            )
+        else:
+            error = InvalidResponseError(
+                f"Quickbase accepted {what.lower()}, but it can't be found."
+            )
+        error._changed = True  # pyright: ignore[reportPrivateUsage]
+        return error
 
     async def resolve_field_ids(self, fields: Sequence[FieldRef]) -> list[int]:
         """Turn field labels or IDs into IDs.
@@ -1969,6 +2041,77 @@ class AsyncTable:
             require_preview=require_preview,
         )
         return AsyncOperation(self, spec)
+
+    async def update_info(
+        self,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        single_record_name: str | None = None,
+        plural_record_name: str | None = None,
+    ) -> TableInfo:
+        """Change the table's name or descriptions, and return its new details. Anything left as
+        None stays as it is.
+
+        This `Table` keeps working after a rename, even if it was found by its old name.
+
+        Args:
+            name: A new name. Another table in the app can't have it.
+            description: A new description.
+            single_record_name: What the table calls one record, such as `Project`.
+            plural_record_name: What the table calls several records, such as `Projects`.
+
+        Returns:
+            The table's `TableInfo`, with its new settings.
+
+        Raises:
+            InvalidValueError: There's nothing to change. Nothing was sent.
+            BadRequestError: Quickbase refused the change, such as for a name another table has.
+        """
+        optional = {
+            "name": name,
+            "description": description,
+            "singleRecordName": single_record_name,
+            "pluralRecordName": plural_record_name,
+        }
+        body = {key: value for key, value in optional.items() if value is not None}
+        if not body:
+            raise InvalidValueError("update_info() needs at least one setting to change.")
+        table_id = (await self.info()).id
+        payload = await self._transport.request(
+            "POST", f"/tables/{table_id}", params={"appId": self._app.id}, json=body
+        )
+        self._cache.delete(f"tables:{self._app.id}")
+        self._ref = table_id  # The old name no longer finds it.
+        return parse(table_info_from_api, payload, "table")
+
+    async def delete_relationship(self, relationship: Relationship) -> None:
+        """Delete a relationship in which this table is the child.
+
+        Quickbase also deletes its lookup fields on this table, and its summary fields and the
+        fields that list and add child records on the parent. The foreign key field stays, with
+        its values, as a plain number field.
+
+        Args:
+            relationship: The relationship, from `relationships()`.
+
+        Raises:
+            InvalidValueError: This table isn't the relationship's child. Nothing was sent.
+            NotFoundError: The relationship doesn't exist.
+        """
+        table_id = (await self.info()).id
+        if relationship.child_table_id != table_id:
+            raise InvalidValueError(
+                f"Relationship {relationship.id} belongs to child table "
+                f"{relationship.child_table_id}, so call delete_relationship() on that table."
+            )
+        await self._transport.request(
+            "DELETE",
+            f"/tables/{table_id}/relationship/{relationship.id}",
+            parent_table_id=relationship.parent_table_id,
+        )
+        self._forget_fields(table_id)
+        self._forget_fields(relationship.parent_table_id)
 
     async def drop(self, *, confirm: str) -> None:
         """Delete this table and all its records.

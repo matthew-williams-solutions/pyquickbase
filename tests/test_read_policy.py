@@ -174,7 +174,6 @@ def test_a_report_with_a_body_or_other_parameters_is_other() -> None:
         ("GET", f"/tables/{TASKS}", {"appId": "bqapp"}, "other", None),
         ("POST", "/formula/run", None, "formula", None),
         ("POST", "/fields", None, "other", None),
-        ("DELETE", "/tables/bqtasks", None, "other", None),
         ("HEAD", "/tables", None, "other", None),
     ],
 )
@@ -326,17 +325,34 @@ def test_files_must_be_listed_even_when_the_field_is_returned() -> None:
         ("POST", "/formula/run", {"formula": "1", "from": TASKS}, "a formula can read"),
         ("GET", "/apps/bqapp", None, "only the listed tables"),
         ("GET", "/apps/bqapp/roles", None, "only the listed tables"),
-        ("POST", "/fields", {"label": "x"}, "can't be changed"),
         ("GET", "/apps/bqapp/events", None, "only records"),
     ],
 )
-def test_formulas_metadata_and_schema_changes_are_refused(
-    method: str, path: str, body: Any, match: str
-) -> None:
+def test_formulas_and_metadata_are_refused(method: str, path: str, body: Any, match: str) -> None:
     found = describe_read(method, path, None, body)
     assert found is not None
     with pytest.raises(ReadRefusedError, match=match):
         rules(fields=True)(found)
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "params", "body"),
+    [
+        ("POST", "/fields", {"tableId": TASKS}, {"label": "x", "fieldType": "text"}),
+        ("POST", "/fields", {"tableId": TASKS}, {"label": "x", "properties": {"formula": "1"}}),
+        ("POST", "/fields/6", {"tableId": TASKS}, {"label": "y"}),
+        ("DELETE", "/fields", {"tableId": TASKS}, {"fieldIds": [6]}),
+        ("POST", "/tables", {"appId": "bqapp"}, {"name": "New"}),
+        ("DELETE", f"/tables/{TASKS}", {"appId": "bqapp"}, None),
+        ("POST", f"/tables/{TASKS}/relationship", None, {"parentTableId": "bqp"}),
+        ("DELETE", f"/tables/{TASKS}/relationship/7", None, None),
+    ],
+)
+def test_schema_changes_are_left_to_the_write_limits(
+    method: str, path: str, params: Any, body: Any
+) -> None:
+    # A formula, lookup, or summary could show hidden values, so the client checks those itself.
+    assert describe_read(method, path, params, body) is None
 
 
 def test_a_delete_is_held_to_the_filter_list() -> None:

@@ -260,15 +260,20 @@ def test_formulas_app_details_and_roles_are_refused() -> None:
     assert not [item for item in fake.sent if "formula" in item or "/apps" in item]
 
 
-def test_schema_changes_are_refused_whatever_the_write_policy() -> None:
+def test_a_formula_that_reads_a_hidden_field_is_refused() -> None:
     fake = Fake()
     with client(fake, rules(), write_policy=lambda _: True) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        with pytest.raises(ReadRefusedError, match="can't be changed"):
+        with pytest.raises(ReadRefusedError, match=r"uses \[Notes\], which this client can't"):
             tasks.create_field("Copy", "text", formula="[Notes]")
-        with pytest.raises(ReadRefusedError):
-            qb.app("bq1234567").create_table("New")
-    assert not [item for item in fake.sent if item.startswith(("POST /fields", "POST /tables"))]
+        with pytest.raises(ReadRefusedError, match="check what they read"):
+            qb.request(
+                "POST",
+                "/fields",
+                params={"tableId": TASKS},
+                json={"label": "Copy", "fieldType": "text", "properties": {"formula": "1"}},
+            )
+    assert not [item for item in fake.sent if item.startswith("POST /fields")]
 
 
 def test_record_writes_still_work_and_deletes_are_held_to_the_filter() -> None:

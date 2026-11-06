@@ -28,6 +28,7 @@ from ._resources import AsyncApp
 from ._transport import AsyncTransport
 
 DEFAULT_SCHEMA_TTL = 300.0
+_MIN_KEY_BYTES = 32
 _APP_ID = re.compile(r"[A-Za-z0-9]+")
 
 
@@ -58,6 +59,10 @@ class AsyncQuickbase:
             return value of `True` lets the read through. Otherwise, it raises `ReadRefusedError`
             and isn't sent. `ReadRules` also leaves out of each response, and of metadata, what it
             doesn't allow. It works with any of the limits on writes.
+        confirmation_key: The secret that signs the confirmations an operation's preview returns,
+            at least 32 random bytes, such as from `secrets.token_bytes(32)`. Give several clients,
+            or processes, the same key so that any of them accepts a preview another made. Without
+            it, each client makes its own.
 
     Raises:
         ConfigurationError: `realm`, `token`, or `base_url` can't be used, or the limits on writes
@@ -79,6 +84,7 @@ class AsyncQuickbase:
         read_only: bool = False,
         write_policy: WritePolicy | None = None,
         read_policy: ReadPolicy | None = None,
+        confirmation_key: bytes | None = None,
     ) -> None:
         self._realm = normalize_realm(realm)
         self._transport = AsyncTransport(
@@ -92,6 +98,7 @@ class AsyncQuickbase:
             read_only=read_only,
             write_policy=check_write_policy(write_policy, read_only=read_only),
             read_policy=check_read_policy(read_policy),
+            confirmation_key=_check_key(confirmation_key),
         )
         self._schema = SchemaCache(schema_ttl)
 
@@ -108,6 +115,7 @@ class AsyncQuickbase:
         read_only: bool = False,
         write_policy: WritePolicy | None = None,
         read_policy: ReadPolicy | None = None,
+        confirmation_key: bytes | None = None,
         token_env: str = ENV_TOKEN,
     ) -> Self:
         """Create a client from the `QB_REALM` and `QB_USER_TOKEN` environment variables.
@@ -137,6 +145,7 @@ class AsyncQuickbase:
             read_only=read_only,
             write_policy=write_policy,
             read_policy=read_policy,
+            confirmation_key=confirmation_key,
         )
 
     @property
@@ -217,3 +226,14 @@ class AsyncQuickbase:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(realm={self._realm!r})"
+
+
+def _check_key(key: bytes | None) -> bytes | None:
+    if key is None:
+        return None
+    if not isinstance(key, bytes) or len(key) < _MIN_KEY_BYTES:  # pyright: ignore[reportUnnecessaryIsInstance]
+        raise ConfigurationError(
+            f"confirmation_key must be at least {_MIN_KEY_BYTES} random bytes, such as from "
+            "secrets.token_bytes(32)."
+        )
+    return key

@@ -39,6 +39,7 @@ HAS_PUBLIC_CONSTRUCTOR = {
     "Period",
     "WriteRules",
     "WriteAccess",
+    "SchemaAccess",
     "ReadRules",
     "ReadAccess",
     "RetryPolicy",
@@ -52,6 +53,9 @@ ALIASES = {
     "PeriodUnit": "How much time each group of a `Period` covers.",
     "SummaryGroups": "What `Table.summarize()` can group by.",
     "WriteAction": "What kind of write a `WriteRequest` is.",
+    "DerivedKind": "A field whose values come from other fields: a `formula`, a `lookup` of a "
+    "parent's field, or a `summary` of a child's. `WriteRequest.derived` lists the ones a write "
+    "makes or changes.",
     "ReadAction": "What kind of read a `ReadRequest` is.",
     "OperationName": "What `Table.operation()` can offer a model, each running the table or "
     "report method of the same name.",
@@ -274,6 +278,8 @@ RESOURCES = (
                     "ensure_lookup_field",
                     "ensure_summary_field",
                     "ensure_count_field",
+                    "delete_relationship",
+                    "update_info",
                     "drop",
                 ),
             ),
@@ -440,7 +446,7 @@ SYMBOL_PAGES = (
                 "Limit writes by table, action, and field",
                 "table-rules",
                 _CLIENTS,
-                ("WriteRules", "WriteAccess"),
+                ("WriteRules", "WriteAccess", "SchemaAccess"),
             ),
             Group(
                 "Limit reads by table, field, and number of records",
@@ -459,6 +465,7 @@ SYMBOL_PAGES = (
                     "WritePolicy",
                     "ReadPolicy",
                     "WriteAction",
+                    "DerivedKind",
                     "ReadAction",
                 ),
             ),

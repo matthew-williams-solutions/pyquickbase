@@ -16,8 +16,9 @@ from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
+from ._formula import formula_parts, unreadable_fields, unsafe_functions
 from ._models import RECORD_ID_FIELD
-from ._policy import _access  # pyright: ignore[reportPrivateUsage]
+from ._policy import _access, is_schema_write  # pyright: ignore[reportPrivateUsage]
 from ._query import where_field_ids
 from .errors import ConfigurationError, InvalidResponseError, ReadRefusedError
 
@@ -97,7 +98,8 @@ class ReadRequest:
             `summary_report` a summary or chart report. `file` downloads a file, and `formula`
             runs one. `tables`, `fields`, `relationships`, `reports`, `app`, and `roles` read
             metadata. `other` is anything else, including a report run through `request()`,
-            which doesn't say what kind of report it is, and any change to tables or fields.
+            which doesn't say what kind of report it is. A change to tables, fields, or
+            relationships isn't a read.
         table_id: The table it reads, or None for `tables`, `app`, `roles`, and `other`.
         field_ids: The fields it returns. For `file`, the file field. None for a report, whose
             columns are chosen in Quickbase, and for metadata.
@@ -286,6 +288,10 @@ def describe_read(
             path=path,
         )
     if method == "DELETE" and _FILE.fullmatch(path):
+        return None
+    if is_schema_write(method, path, body, params):
+        # A schema change reveals no values. Formulas, lookups, and summaries could, so the client
+        # only sends one after checking that it reads nothing hidden.
         return None
     return ReadRequest(action="other", method=method, path=path)
 
@@ -477,20 +483,26 @@ class ReadRules:
     raises `UnknownTableError` or `UnknownFieldError`. Asking for more than is allowed, such as
     filtering on a field that's only returned, raises `ReadRefusedError`.
 
-    It also refuses formulas, app details and roles, reports through `request()`, any request it
-    doesn't recognize, and any change to tables or fields, as a new formula field could read
-    whatever this hides. Use a separate client for those.
+    It also refuses running formulas, app details and roles, reports through `request()`, and
+    any request it doesn't recognize. Changes to tables and fields are left to the write limits,
+    except that a formula, lookup, or summary field could show whatever this hides. So the SDK's
+    own methods check that one only reads what this allows, and `request()` can't make one. A
+    field's formula is only shown when everything it uses is readable.
 
     Args:
         tables: What's allowed, as `{table ID: ReadAccess(...)}`.
+        new_tables: What it may read from the tables this client creates, which are added to
+            `tables` as each is created. None hides them, even from the client that made them.
 
     Raises:
         ConfigurationError: A key isn't a table ID, or a value isn't a `ReadAccess`.
     """
 
-    __slots__ = ("_tables",)
+    __slots__ = ("_new_tables", "_tables")
 
-    def __init__(self, tables: Mapping[str, ReadAccess]) -> None:
+    def __init__(
+        self, tables: Mapping[str, ReadAccess], *, new_tables: ReadAccess | None = None
+    ) -> None:
         if not isinstance(tables, Mapping):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise ConfigurationError("ReadRules takes a dictionary of {table ID: ReadAccess(...)}.")
         for table_id, access in tables.items():
@@ -498,7 +510,18 @@ class ReadRules:
                 raise ConfigurationError("ReadRules needs a table ID for each table.")
             if not isinstance(access, ReadAccess):  # pyright: ignore[reportUnnecessaryIsInstance]
                 raise ConfigurationError(f"Table {table_id} needs a ReadAccess(...).")
+        if new_tables is not None and not isinstance(new_tables, ReadAccess):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise ConfigurationError("new_tables takes a ReadAccess(...), or None.")
         self._tables = dict(tables)
+        self._new_tables = new_tables
+
+    def _adopt(self, table_id: str) -> None:
+        """Give a table this client created the `new_tables` access."""
+        if self._new_tables is not None:
+            self._tables.setdefault(table_id, self._new_tables)
+
+    def _access(self, table_id: str) -> ReadAccess | None:
+        return self._tables.get(table_id)
 
     def __call__(self, request: ReadRequest) -> bool:
         """Return `True` if the read is allowed, or raise `ReadRefusedError` saying why not."""
@@ -576,7 +599,12 @@ class ReadRules:
             # The check refuses these first, so this only guards against a change to it.
             raise _refused(request, "its table isn't listed.")
         if action == "fields":
-            return [_trim_field(item, access) for item in payload if access._visible(item["id"])]  # pyright: ignore[reportPrivateUsage]
+            readable = [item["label"] for item in payload if _allows(access.fields, item["id"])]
+            return [
+                _trim_field(item, access, readable)
+                for item in payload
+                if access._visible(item["id"])  # pyright: ignore[reportPrivateUsage]
+            ]
         if action == "reports":
             listed = access.reports | access.summary_reports
             return [_pick(item, _REPORT_KEYS) for item in payload if str(int(item["id"])) in listed]
@@ -620,15 +648,31 @@ def _pick(item: Mapping[str, Any], keys: Collection[str]) -> dict[str, Any]:
     return {key: item[key] for key in keys if key in item}
 
 
-def _trim_field(item: Mapping[str, Any], access: ReadAccess) -> dict[str, Any]:
+def _trim_field(
+    item: Mapping[str, Any], access: ReadAccess, readable: Collection[str]
+) -> dict[str, Any]:
     kept = _pick(item, _FIELD_KEYS)
     # A field that can't be returned mustn't be selected by default, or every default query fails.
     if not _allows(access.fields, item["id"]):
         kept["appearsByDefault"] = False
     properties = item.get("properties")
     if isinstance(properties, Mapping):
-        kept["properties"] = _pick(properties, _FIELD_PROPERTIES)  # pyright: ignore[reportUnknownArgumentType]
+        found = cast(Mapping[str, Any], properties)
+        kept["properties"] = _pick(found, _FIELD_PROPERTIES)
+        formula = found.get("formula")
+        if isinstance(formula, str) and _shows_only(formula, readable):
+            kept["properties"]["formula"] = formula
     return kept
+
+
+def _shows_only(formula: str, readable: Collection[str]) -> bool:
+    """Whether a formula's text reveals nothing hidden: every field it names is readable, and it
+    calls no function that reads other records."""
+    try:
+        parts = formula_parts(formula)
+    except ReadRefusedError:
+        return False
+    return not unreadable_fields(parts, readable) and not unsafe_functions(parts)
 
 
 def _trim_value(value: Any) -> Any:
