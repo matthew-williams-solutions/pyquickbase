@@ -22,8 +22,14 @@ from pyquickbase import (
     WriteAccess,
     WriteRules,
 )
-from pyquickbase._models import field_from_api
-from pyquickbase._operations import Allowed, allowed_for, make_spec, unavailable
+from pyquickbase._models import FieldIndex, field_from_api
+from pyquickbase._operations import (
+    Allowed,
+    allowed_for,
+    describe_scope,
+    make_spec,
+    unavailable,
+)
 
 TASKS = "bqtasks"
 FIELDS = [
@@ -639,3 +645,21 @@ def test_what_plan_accepts_matches_the_schema() -> None:
         operation = spec(name)
         assert valid(operation.schema, arguments), name
         operation.plan(arguments, None)
+
+
+@pytest.mark.parametrize(
+    ("scope", "words"),
+    [
+        (F("Done") == True, "Done is true"),  # noqa: E712
+        (F("Title") == "Alpha", 'Title is "Alpha"'),
+        (F("Hours") >= 2, "Hours is at least 2"),
+        (F("Owner") == None, "Owner is empty"),  # noqa: E711
+        ((F("Title") == "a") | (F("Title") == "b"), 'Title is "a" or Title is "b"'),
+        (
+            (F("Hours") > 1) & ((F("Title") == "a") | (F("Title") == "b")),
+            'Hours is more than 1 and (Title is "a" or Title is "b")',
+        ),
+    ],
+)
+def test_a_scope_is_described_in_words(scope: Any, words: str) -> None:
+    assert describe_scope(scope, FieldIndex(FIELDS)) == words

@@ -620,6 +620,8 @@ class DeletePreviewPage(Page):
     `tool_result()` can say when a delete with the same filter would be refused. Private."""
 
     most: int
+    confirmation: str | None = None
+    """For `require_preview`: what the delete needs to run, or None if it would be refused."""
 
 
 def require_summary_report(report: ReportInfo) -> None:

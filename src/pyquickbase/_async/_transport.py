@@ -1,5 +1,6 @@
 """Send one logical request: auth, headers, retries, and error mapping."""
 
+import secrets
 from collections.abc import Mapping
 from typing import Any
 
@@ -37,6 +38,9 @@ class AsyncTransport:
         read_policy: ReadPolicy | None = None,
     ) -> None:
         self.realm = realm
+        # Signs the confirmations previews return. Each client makes its own, so a confirmation
+        # only works with operations from the client that issued it.
+        self.confirmation_key = secrets.token_bytes(32)
         self._read_policy = read_policy
         self._read_rules = read_rules_in(read_policy)
         self._read_only = read_only

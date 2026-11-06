@@ -6,6 +6,9 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from functools import partial
 from typing import Any, Generic, Self, TypeVar, cast
 
+from .._confirm import binding as confirmation_binding
+from .._confirm import check as check_confirmation
+from .._confirm import issue as issue_confirmation
 from .._links import app_url, field_url, record_url, record_url_pattern, report_url, table_url
 from .._models import (
     RECORD_ID_FIELD,
@@ -42,14 +45,22 @@ from .._operations import (
     OperationName,
     OperationSpec,
     allowed_for,
+    check_scope,
     copy_schema,
+    describe_scope,
     make_spec,
     operation_names,
     refused_operation,
     scope_rows,
     unavailable,
 )
-from .._preview import UpdatePreview, build_update_preview, id_batches, merge_rows
+from .._preview import (
+    ConfirmedUpdatePreview,
+    UpdatePreview,
+    build_update_preview,
+    id_batches,
+    merge_rows,
+)
 from .._query import Expression, F, FieldRef, FieldRefs, build_query_body, compile_where
 from .._schema import SchemaCache
 from .._summary import Summary, SummaryGroups, SummaryRow
@@ -1744,6 +1755,8 @@ class Table:
         formula: str | None = None,
         max_records: int | None = None,
         max_rows: int = DEFAULT_MAX_ROWS,
+        scope: Expression | None = None,
+        require_preview: bool = False,
     ) -> "Operation":
         """Make one operation on this table into a tool for a model, with its JSON Schema.
 
@@ -1777,6 +1790,17 @@ class Table:
                 `summarize`, 10,000 records read. The client's `ReadRules` can lower it, and
                 their own `max_records` also limits how far `skip` can page.
             max_rows: The most records one `insert` or `update` may send.
+            scope: A condition your code fixes, such as the user's project, that every record the
+                operation reaches must match, as `run()`'s `scope` does. Given here, the schema
+                also tells the model what it is, leaves its fields out of what a write may set,
+                and refuses a write that sets one with a message that says why. An `insert`
+                needs a scope of only `==` conditions joined with `&`, whose fields the client's
+                write rules let it set. A report or formula can't take one.
+            require_preview: For `update` and `delete`: run only with the `confirmation` that
+                `preview_update` or `preview_delete` returns for exactly the same arguments,
+                within 15 minutes, so a model can't skip the preview. A delete is also refused if
+                how many records match has changed since. Make the preview with the same
+                client and `scope`.
 
         Returns:
             An `Operation`, with its `schema` and `run()`.
@@ -1818,6 +1842,11 @@ class Table:
             wanted=fields,
             wanted_reports=report_ids if needs_reports else None,
         )
+        scope_text, scope_labels = "", frozenset[str]()
+        if scope is not None:
+            index = FieldIndex(self.fields())
+            scope_labels = check_scope(name, scope, index, allowed)
+            scope_text = describe_scope(scope, index)
         reason = unavailable(name, allowed, formula)
         if reason is not None:
             raise refused_operation(
@@ -1834,6 +1863,10 @@ class Table:
             max_records=max_records,
             max_rows=max_rows,
             formula=formula,
+            scope=scope,
+            scope_text=scope_text,
+            scope_labels=scope_labels,
+            require_preview=require_preview,
         )
         return Operation(self, spec)
 
@@ -2062,10 +2095,14 @@ class Operation:
                 sent, other than the query that checks the scope or counts a delete.
             InvalidValueError: A record or value can't be written. Nothing was sent.
         """
+        fixed = self._spec.context.scope
+        if fixed is not None:
+            scope = fixed if scope is None else fixed & scope
         call = self._spec.plan(arguments, scope)
         table = self._table
         if scope is not None and "rows" in call.arguments:
             call = scope_rows(call, scope, FieldIndex(table.fields()))
+        matching: int | None = None
         if call.most is not None:
             matching = table.count(call.arguments["where"])
             if matching > call.most:
@@ -2081,19 +2118,59 @@ class Operation:
                     "Some of these records don't exist, or aren't ones this tool may use, so "
                     "nothing was done."
                 )
+        if self._spec.context.require_preview:
+            if call.method == "delete" and matching is None:
+                matching = table.count(call.arguments["where"])
+            self._check_confirmation(arguments, scope, matching)
         if call.report_id is not None:
             report = table.report(call.report_id)
             return getattr(report, call.method)(**call.arguments)
-        if call.method in ("insert", "update", "preview_update"):
+        if call.method in ("insert", "update"):
             return getattr(table, call.method)(call.arguments["rows"])
+        if call.method == "preview_update":
+            preview = table.preview_update(call.arguments["rows"])
+            return ConfirmedUpdatePreview(
+                changes=preview.changes,
+                unchanged_ids=preview.unchanged_ids,
+                missing_ids=preview.missing_ids,
+                confirmation=self._confirmation("update", arguments, scope, None),
+            )
         result = getattr(table, call.method)(**call.arguments)
         if call.method == "preview_delete":
             page = cast(Page, result)
             limit = self._spec.context.limit
+            confirmation = None
+            if page.total <= limit:
+                confirmation = self._confirmation("delete", arguments, scope, page.total)
             return DeletePreviewPage(
-                records=page.records, total=page.total, skip=page.skip, most=limit
+                records=page.records,
+                total=page.total,
+                skip=page.skip,
+                most=limit,
+                confirmation=confirmation,
             )
         return result
+
+    def _confirmation(
+        self,
+        kind: str,
+        arguments: Mapping[str, Any],
+        scope: Expression | None,
+        matching: int | None,
+    ) -> str:
+        table_id = (self._table.info()).id
+        bound = confirmation_binding(kind, table_id, arguments, scope, matching)
+        key = self._table._transport.confirmation_key  # pyright: ignore[reportPrivateUsage]
+        return issue_confirmation(key, kind, bound)
+
+    def _check_confirmation(
+        self, arguments: Mapping[str, Any], scope: Expression | None, matching: int | None
+    ) -> None:
+        kind = self._spec.name
+        table_id = (self._table.info()).id
+        bound = confirmation_binding(kind, table_id, arguments, scope, matching)
+        key = self._table._transport.confirmation_key  # pyright: ignore[reportPrivateUsage]
+        check_confirmation(key, kind, arguments.get("confirmation"), bound)
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._spec.name!r}, table={self._table!r})"

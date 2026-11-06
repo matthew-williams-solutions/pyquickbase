@@ -68,6 +68,14 @@ class UpdatePreview:
     missing_ids: tuple[int, ...] = ()
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ConfirmedUpdatePreview(UpdatePreview):
+    """What a `preview_update` operation found, with the confirmation an update with
+    `require_preview` needs to run. Private."""
+
+    confirmation: str = ""
+
+
 def merge_rows(rows: Sequence[Mapping[str, Mapping[str, Any]]]) -> dict[int, dict[int, Any]]:
     """Group built rows by record, as `{record ID: {field ID: value}}`. A later row wins."""
     merged: dict[int, dict[int, Any]] = {}

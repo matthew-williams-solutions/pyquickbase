@@ -29,7 +29,7 @@ from ._models import (
     TableInfo,
     User,
 )
-from ._preview import UpdatePreview
+from ._preview import ConfirmedUpdatePreview, UpdatePreview
 from ._summary import SummaryRow
 from ._typed import TypedPage, TypedRecord
 from ._writes import RowError, WriteResult
@@ -479,6 +479,8 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
             skip=page.skip,
             has_more=page.has_more,
         )
+        if isinstance(page, DeletePreviewPage) and page.confirmation:
+            found["confirmation"] = page.confirmation
         if isinstance(page, DeletePreviewPage) and page.total > page.most:
             found["over_limit"] = {
                 "max_records": page.most,
@@ -494,7 +496,10 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
     if isinstance(value, WriteResult):
         return _written(value)
     if isinstance(value, UpdatePreview):
-        return _preview(value, state)
+        found = _preview(value, state)
+        if isinstance(value, ConfirmedUpdatePreview) and value.confirmation:
+            found["confirmation"] = value.confirmation
+        return found
     if isinstance(value, FormulaResult):
         return {"value": _value(value.value, state), "type": value.type}
     if isinstance(value, str | int | float | bool | Decimal | date | time):

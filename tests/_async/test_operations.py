@@ -2,6 +2,7 @@
 
 import base64
 import json
+import time
 from typing import Any
 
 import httpx
@@ -12,6 +13,7 @@ from pyquickbase import (
     ConfigurationError,
     F,
     FileDownload,
+    InvalidValueError,
     Page,
     QueryError,
     ReadAccess,
@@ -400,3 +402,132 @@ async def test_a_scope_keeps_an_any_group_inside_it() -> None:
         await count.run({"where": where}, scope=F("Project") == "Alpha")
     (body,) = fake.requests("POST /records/query")
     assert body["where"] == "{9.EX.'Alpha'}AND({7.EX.'Open'}OR{7.EX.'Done'})"
+
+
+# Scope given when the operation is made
+
+
+async def test_a_scope_given_when_made_is_described_and_applied() -> None:
+    fake = Fake()
+    async with client(fake) as qb:
+        tasks = qb.app("bq1234567").table("Tasks")
+        count = await tasks.operation("count", scope=F("Project") == "Alpha")
+        description = count.schema["properties"]["where"]["description"]
+        assert 'Every record this tool reaches also matches: Project is "Alpha".' in description
+        await count.run({"where": OPEN})
+        await count.run({"where": OPEN}, scope=F("Hours") > 2)
+    first, second = fake.requests("POST /records/query")
+    assert first["where"] == "{9.EX.'Alpha'}AND{7.EX.'Open'}"
+    assert second["where"] == "{9.EX.'Alpha'}AND{8.GT.'2'}AND{7.EX.'Open'}"
+
+
+async def test_an_insert_scope_is_left_out_of_the_schema_and_filled_in() -> None:
+    fake = Fake()
+    async with client(fake) as qb:
+        tasks = qb.app("bq1234567").table("Tasks")
+        insert = await tasks.operation("insert", scope=F("Project") == "Alpha")
+        records = insert.schema["properties"]["records"]
+        assert "Project" not in records["items"]["properties"]
+        assert 'made to match this tool\'s scope (Project is "Alpha")' in records["description"]
+        await insert.run({"records": [{"Title": "New"}]})
+        with pytest.raises(
+            InvalidValueError, match=r"records\[0\]\.Project is fixed by this tool's"
+        ):
+            await insert.run({"records": [{"Title": "x", "Project": "Beta"}]})
+    (sent,) = fake.requests("POST /records")
+    assert sent["data"][0]["9"] == {"value": "Alpha"}
+
+
+@pytest.mark.parametrize(
+    ("name", "scope", "kwargs", "match"),
+    [
+        ("insert", F("Project") != "Alpha", {}, "only == conditions"),
+        ("run_report", F("Project") == "Alpha", {}, "can't take a scope"),
+        (
+            "insert",
+            F("Project") == "Alpha",
+            {"write_policy": WriteRules({TASKS: WriteAccess(insert=[6])})},
+            "Allow them in WriteRules",
+        ),
+    ],
+)
+async def test_a_scope_that_cant_work_is_refused_when_made(
+    name: str, scope: Any, kwargs: dict[str, Any], match: str
+) -> None:
+    async with client(Fake(), **kwargs) as qb:
+        tasks = qb.app("bq1234567").table("Tasks")
+        with pytest.raises(ConfigurationError, match=match):
+            await tasks.operation(name, scope=scope)  # type: ignore[arg-type]
+
+
+# Previews that an update or delete requires
+
+
+CHANGE = {"records": [{"Record ID#": 1, "Status": "Done", "Title": "x"}]}
+
+
+async def test_an_update_needs_the_confirmation_of_a_preview_of_the_same_records() -> None:
+    fake = Fake()
+    async with client(fake) as qb:
+        tasks = qb.app("bq1234567").table("Tasks")
+        preview = await tasks.operation("preview_update")
+        update = await tasks.operation("update", require_preview=True)
+        assert "confirmation" in update.schema["required"]
+        with pytest.raises(QueryError, match="needs the confirmation that preview_update"):
+            await update.run(CHANGE)
+        shown = tool_result(await preview.run(CHANGE))
+        confirmation = shown["confirmation"]
+        # The same records in another order, and keys in another order, still match.
+        reordered = {"records": [{"Title": "x", "Status": "Done", "Record ID#": 1}]}
+        result = await update.run({**reordered, "confirmation": confirmation})
+        assert isinstance(result, WriteResult)
+        other = {"records": [{"Record ID#": 1, "Status": "Open", "Title": "x"}]}
+        with pytest.raises(QueryError, match="doesn't match"):
+            await update.run({**other, "confirmation": confirmation})
+        with pytest.raises(QueryError, match="isn't one preview_update returned"):
+            await update.run({**CHANGE, "confirmation": "nonsense"})
+    assert len(fake.requests("POST /records")) == 1
+
+
+async def test_a_confirmation_expires_and_only_works_with_its_own_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with client(Fake()) as qb, client(Fake()) as other_qb:
+        preview = await qb.app("bq1234567").table("Tasks").operation("preview_update")
+        confirmation = tool_result(await preview.run(CHANGE))["confirmation"]
+        elsewhere = (
+            await other_qb.app("bq1234567").table("Tasks").operation("update", require_preview=True)
+        )
+        with pytest.raises(QueryError, match="doesn't match"):
+            await elsewhere.run({**CHANGE, "confirmation": confirmation})
+        update = await qb.app("bq1234567").table("Tasks").operation("update", require_preview=True)
+        later = time.time() + 16 * 60
+        monkeypatch.setattr(time, "time", lambda: later)
+        with pytest.raises(QueryError, match="has expired"):
+            await update.run({**CHANGE, "confirmation": confirmation})
+
+
+async def test_a_delete_needs_a_preview_and_the_same_records_to_match() -> None:
+    fake = Fake(matching=2)
+    async with client(fake) as qb:
+        tasks = qb.app("bq1234567").table("Tasks")
+        preview = await tasks.operation("preview_delete", max_records=10)
+        delete = await tasks.operation("delete", max_records=10, require_preview=True)
+        confirmation = tool_result(await preview.run({"where": OPEN}))["confirmation"]
+        fake.matching = 3  # Another record now matches.
+        with pytest.raises(QueryError, match="the records that match have changed"):
+            await delete.run({"where": OPEN, "confirmation": confirmation})
+        assert fake.requests("DELETE /records") == []
+        fake.matching = 2
+        assert await delete.run({"where": OPEN, "confirmation": confirmation}) == 1
+        # A preview over the limit gives no confirmation, as the delete would be refused.
+        fake.matching = 11
+        shown = tool_result(await preview.run({"where": OPEN}))
+        assert "confirmation" not in shown
+        assert "over_limit" in shown
+
+
+async def test_only_update_and_delete_can_require_a_preview() -> None:
+    async with client(Fake()) as qb:
+        with pytest.raises(ConfigurationError, match="only for update and delete"):
+            await qb.app("bq1234567").table("Tasks").operation("insert", require_preview=True)

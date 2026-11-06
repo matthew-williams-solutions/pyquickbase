@@ -9,7 +9,9 @@ All notable changes to this project are documented here. The format follows
 ## [1.0.0rc11] - 2026-11-05
 
 This candidate adds links to the Quickbase interface, so that a tool built on the SDK can show a
-person where to check what a model read or changed. Nothing that worked before has changed.
+person where to check what a model read or changed. From testing an MCP server in Claude Desktop, an
+operation can now require its preview, and describe its scope to the model. Nothing that worked
+before has changed.
 
 ### Added
 
@@ -20,6 +22,16 @@ person where to check what a model read or changed. Nothing that worked before h
   each record's ID goes, so a tool needn't send a link per record. Names are looked up through the
   client's cache, nothing else is sent to Quickbase, and anything the client's `ReadRules` hide is
   refused as unknown. `App.url()` is a plain method in both clients, as it needs no lookup.
+- **`require_preview=True` on the `update` and `delete` operations.** In testing, a model updated a
+  record with no preview, though told to preview first. With this, they only run with the
+  `confirmation` their preview returned for exactly the same arguments, within 15 minutes, and a
+  delete is refused if how many records match has changed since. `tool_result()` includes the
+  confirmation. Confirmations are signed with a key each client makes, so nothing is stored.
+- **`scope=` on `table.operation()`**, as well as on `run()`. In testing, a model that couldn't see
+  a scope tried to set its field, was refused, and then told the person something untrue about why.
+  Given to `operation()`, the scope is described in the schema, such as `Billable is true`, its
+  fields are left out of a write's schema, a write that sets one is refused with a message saying
+  why, and an `insert` scope that couldn't work is refused when the operation is made.
 - **`Table.compile_where()`** returns a condition, from `F`, `where_from_dict()`, or a string, as
   the query text that a query of the table would send.
 

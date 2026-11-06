@@ -353,9 +353,18 @@ default, limits how many records one `insert` or `update` may send.
 
 ### Limiting it to a scope
 
-Pass `scope` to `run()` for a condition your code fixes, such as the user's project. It changes with each
-call, so it isn't part of the operation. It's added to every filter, so `{"any": [A, B]}` from the model
-becomes `scope AND (A OR B)`.
+Pass `scope` to `table.operation()` for a condition your code fixes that stays the same, such as one
+person's tool, or to `run()` for one that changes with each call, such as the user's project. Given to
+both, both apply. Only a scope given to `operation()` can be described to the model: the `where`
+description says that every record the tool reaches matches it, such as `Billable is true`, a write's
+schema leaves its fields out and says what new records get, and a write that sets one is refused with a
+message saying the scope fixes it. Without that, a model can't tell why it may not set a field, and may
+tell the person something untrue about it. `operation()` also checks an `insert` scope when it's made,
+rather than on the first insert: it must be only `==` conditions, whose fields the client's write rules let
+it set.
+
+Either way, the scope is added to every filter, so `{"any": [A, B]}` from the model becomes
+`scope AND (A OR B)`.
 
 An operation that names records, such as `update`, `run_formula`, or `download_file`, first counts how
 many of them match the scope, with one query, and refuses the whole call if any don't. A record can still
@@ -365,8 +374,9 @@ A write can't set a field the scope uses, so `update` can't move a record out of
 `QueryError` for a row that tries. `insert` fills those fields in from the scope, so with
 `scope=F("Project") == project`, every new record gets that project. That needs a scope of only `==`
 conditions joined with `&`, and `insert` refuses any other scope, as a new record couldn't be made to
-match it. Pass `fields=` without the scope's fields, so the model isn't offered them at all. A report runs with its own filter, so it can't take a scope, and
-`run()` refuses one rather than ignore it. With `ReadRules`, fields in a scope must be ones the client
+match it. With a scope passed only to `run()`, pass `fields=` without the scope's fields, so the model
+isn't offered them at all. A report runs with its own filter, so it can't take a scope, and `operation()`
+and `run()` refuse one rather than ignore it. With `ReadRules`, fields in a scope must be ones the client
 may filter on.
 
 ### Reports, formulas, and files
@@ -627,6 +637,34 @@ def task_totals(project: str, where: dict | None = None) -> dict:
 that's exceeded is an `invalid_query`, whose message says how many records matched.
 
 ## Checking a change before making it
+
+### Requiring the preview
+
+Telling a model to preview first isn't enough: in testing, a model updated a record without a preview,
+or any approval. With `require_preview=True`, the `update` and `delete` operations only run with the
+`confirmation` that `preview_update` or `preview_delete` returned, for exactly the same arguments:
+
+```python
+preview = await tasks.operation("preview_update")
+update = await tasks.operation("update", require_preview=True)
+
+shown = tool_result(await preview.run(arguments))  # holds "confirmation"
+# ... the person approves what the preview showed ...
+await update.run({**arguments, "confirmation": shown["confirmation"]})
+```
+
+- **The arguments must match.** The order of records, and of fields in a record, doesn't matter, but
+  any other difference refuses the call, so a model can't preview one change and make another.
+- **A confirmation lasts 15 minutes.**
+- **A delete's confirmation holds how many records matched**, so the delete is refused if that has
+  changed since the preview. A preview of more records than the delete may match gives no confirmation.
+- **It's signed with a key each client makes when it starts**, so nothing is stored, a model can't make
+  one up, and the preview and the change must come from the same client. Give them the same `scope`.
+
+It makes sure a preview happened, not that a person saw it. Ask your client to show each change for
+approval too.
+
+### Previews without operations
 
 Have a tool show what it would do, and make the change only once someone has approved it. A preview only
 reads, so the tool that shows it can use a read-only client, and only the tool that writes needs more.

@@ -17,6 +17,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Literal, cast, get_args
 
 from ._codegen import _WRITE_TYPES  # pyright: ignore[reportPrivateUsage]
@@ -356,6 +357,12 @@ class Context:
     limit: int
     max_rows: int
     formula: str | None
+    scope: Expression | None = None
+    scope_text: str = ""
+    """The scope as a model reads it, such as `Billable is true`."""
+    scope_labels: frozenset[str] = frozenset()
+    """The labels of the fields the scope uses, which a write can't set."""
+    require_preview: bool = False
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -382,8 +389,11 @@ def _where(ctx: Context, *, required: bool) -> dict[str, Any]:
     if not filterable:
         return {}
     schema = where_schema(fields=filterable)
+    limited = (
+        f" Every record this tool reaches also matches: {ctx.scope_text}." if ctx.scope_text else ""
+    )
     schema["description"] = (
-        f"{schema['description']}{' Required.' if required else ''}"
+        f"{schema['description']}{' Required.' if required else ''}{limited}"
         f"{_glossary(filterable, ctx.descriptions)}"
     )
     return {"where": schema}
@@ -550,6 +560,7 @@ def _records(ctx: Context, *, update: bool, group: str) -> dict[str, Any]:
     properties: dict[str, Any] = {}
     if update:
         properties[_RECORD_ID_LABEL] = {**_RECORD_ID_SCHEMA, "description": "The record to change."}
+    offered = [item for item in offered if item.label not in ctx.scope_labels]
     for item in offered:
         properties[item.label] = _value_schema(item, ctx.descriptions.get(item.id))
     record: dict[str, Any] = {
@@ -567,9 +578,24 @@ def _records(ctx: Context, *, update: bool, group: str) -> dict[str, Any]:
             "items": record,
             "minItems": 1,
             "maxItems": ctx.max_rows,
-            "description": "The records. A field set to null is cleared, except a file field.",
+            "description": "The records. A field set to null is cleared, except a file field."
+            + _scope_note(ctx, update=update),
         }
     }
+
+
+def _scope_note(ctx: Context, *, update: bool) -> str:
+    if not ctx.scope_text:
+        return ""
+    if update:
+        return (
+            f" This tool only changes records that match its scope ({ctx.scope_text}), and can't "
+            "change the fields the scope uses."
+        )
+    return (
+        f" Every new record is made to match this tool's scope ({ctx.scope_text}), so the "
+        "fields it uses are filled in and can't be set."
+    )
 
 
 def _read_records(ctx: Context, value: Any, *, update: bool, group: str) -> list[dict[str, Any]]:
@@ -594,6 +620,12 @@ def _read_records(ctx: Context, value: Any, *, update: bool, group: str) -> list
                 cells[key] = _whole_id(item, f"{path}.{_RECORD_ID_LABEL}")
                 continue
             converter = converters.get(key)
+            if key in ctx.scope_labels:
+                does = "no change may alter it" if update else "it's filled in on every new record"
+                raise InvalidValueError(
+                    f"{path}.{key} is fixed by this tool's scope ({ctx.scope_text}), so {does}. "
+                    "Leave it out."
+                )
             if converter is None and key in readable:
                 # The label is one the tool offers to read, so naming it reveals nothing.
                 raise InvalidValueError(
@@ -1130,8 +1162,14 @@ def make_spec(
     max_records: int | None,
     max_rows: int,
     formula: str | None,
+    scope: Expression | None = None,
+    scope_text: str = "",
+    scope_labels: frozenset[str] = frozenset(),
+    require_preview: bool = False,
 ) -> OperationSpec:
     kind = _KINDS[name]
+    if require_preview and name not in ("update", "delete"):
+        raise ConfigurationError("require_preview is only for update and delete.")
     if formula is not None and name != "run_formula":
         raise ConfigurationError("formula is only for run_formula.")
     if formula is not None and (not isinstance(formula, str) or not formula.strip()):  # pyright: ignore[reportUnnecessaryIsInstance]
@@ -1149,9 +1187,99 @@ def make_spec(
         limit=limit,
         max_rows=max_rows,
         formula=formula,
+        scope=scope,
+        scope_text=scope_text,
+        scope_labels=scope_labels,
+        require_preview=require_preview,
     )
-    schema = _object(kind.properties(context), kind.required)
+    properties, required = kind.properties(context), kind.required
+    if require_preview:
+        properties = {**properties, "confirmation": _confirmation_schema(name)}
+        required = (*required, "confirmation")
+    schema = _object(properties, required)
     return OperationSpec(name, kind, context, schema)
+
+
+def _confirmation_schema(name: str) -> dict[str, Any]:
+    return {
+        "type": "string",
+        "description": (
+            f"The confirmation from preview_{name}, called with exactly these arguments, after the "
+            "person approved what it showed. It lasts 15 minutes."
+        ),
+    }
+
+
+_SCOPE_WORDS = {
+    "EX": "is",
+    "XEX": "is not",
+    "LT": "is less than",
+    "LTE": "is at most",
+    "GT": "is more than",
+    "GTE": "is at least",
+    "BF": "is before",
+    "OBF": "is on or before",
+    "AF": "is after",
+    "OAF": "is on or after",
+    "CT": "contains",
+    "XCT": "doesn't contain",
+    "SW": "starts with",
+    "XSW": "doesn't start with",
+    "HAS": "has",
+    "XHAS": "doesn't have",
+    "TV": "is",
+    "XTV": "is not",
+}
+
+
+def describe_scope(scope: Expression, index: FieldIndex) -> str:
+    """A scope in words a model reads, such as `Billable is true and Team is "Platform"`."""
+    if isinstance(scope, Group):
+        joiner = " and " if scope.joiner == "AND" else " or "
+        return joiner.join(
+            f"({describe_scope(part, index)})"
+            if isinstance(part, Group)
+            else describe_scope(part, index)
+            for part in scope.parts
+        )
+    if not isinstance(scope, Condition):
+        raise QueryError("scope must be a condition built with F.")
+    label = index.resolve(scope.field).label
+    words = _SCOPE_WORDS.get(scope.operator, scope.operator)
+    value = scope.original
+    if value is NO_VALUE:
+        shown = json.dumps(scope.value)
+    elif value is None:
+        return f"{label} {'is empty' if scope.operator in ('EX', 'TV') else 'is not empty'}"
+    elif isinstance(value, bool):
+        shown = "true" if value else "false"
+    elif isinstance(value, int | float | Decimal):
+        shown = str(value)
+    else:
+        shown = json.dumps(value if isinstance(value, str) else str(value), ensure_ascii=False)
+    return f"{label} {words} {shown}"
+
+
+def check_scope(
+    name: OperationName, scope: Expression, index: FieldIndex, allowed: Allowed
+) -> frozenset[str]:
+    """Check a scope when an operation is made, and return the labels of its fields."""
+    if not is_scoped(name):
+        raise ConfigurationError(f"{name} runs with its own filter, so it can't take a scope.")
+    labels = frozenset(index.resolve(item.field).label for item in _scope_conditions(scope))
+    if name == "insert":
+        if _scope_values(scope, index) is None:
+            raise ConfigurationError(
+                "An insert fills the scope's fields into each new record, so its scope must be "
+                "only == conditions joined with &."
+            )
+        missing = sorted(labels - {item.label for item in allowed.insertable})
+        if missing:
+            raise ConfigurationError(
+                f"An insert fills in {', '.join(missing)} from the scope, but the client's write "
+                "rules don't let it set them. Allow them in WriteRules insert."
+            )
+    return labels
 
 
 def is_scoped(name: OperationName) -> bool:
