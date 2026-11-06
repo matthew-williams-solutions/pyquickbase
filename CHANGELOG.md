@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Links to the Quickbase interface**, so a tool can show a person where to check what a model read
+  or changed. `App.url()`, `Table.url()`, and `Report.url()` link to an app, table, or report,
+  `Table.record_url()` to a record's page for viewing or editing it, and `Table.field_url()` to the
+  page that edits a field. `Table.record_url_pattern()` gives one link with `{Record ID#}` where
+  each record's ID goes, so a tool needn't send a link per record. Names are looked up through the
+  client's cache, nothing else is sent to Quickbase, and anything the client's `ReadRules` hide is
+  refused as unknown. `App.url()` is a plain method in both clients, as it needs no lookup.
+- **`Table.compile_where()`** returns a condition, from `F`, `where_from_dict()`, or a string, as
+  the query text that a query of the table would send.
+
 ## [1.0.0rc10] - 2026-11-05
 
 This candidate helps a model get its arguments right, from testing an MCP server built on the SDK

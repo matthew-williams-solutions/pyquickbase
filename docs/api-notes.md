@@ -517,3 +517,25 @@ A `datetime` field reports its type as `timestamp`.
 | A built-in field in `DELETE /fields` | Refused in `errors`, and the others in the list are deleted |
 | Field IDs | Assigned in order, and address subfields use up IDs |
 | `GET /tables/{id}` | Returned an error without its `appId`, so use `GET /tables?appId=` |
+
+## Interface links
+
+These are the current Quickbase interface's addresses, which `url()`, `record_url()`,
+`record_url_pattern()`, and `field_url()` build. The interface isn't part of the API, so Quickbase
+may change them without notice.
+
+| Page | Path, after `https://<realm>` | Source |
+|---|---|---|
+| App home | `/nav/app/<app ID>/action/appoverview` | Browser, 2026-11-05 |
+| Table home | `/nav/app/<app ID>/table/<table ID>/action/td` | Browser, 2026-11-05 |
+| Report | `/nav/app/<app ID>/table/<table ID>/action/q?qid=<report ID>` | Browser, 2026-11-05 |
+| Show a record | `/nav/app/<app ID>/table/<table ID>/action/dr?rid=<Record ID#>` | Browser, 2026-11-05 |
+| Edit a record | `/nav/app/<app ID>/table/<table ID>/action/er?rid=<Record ID#>` | Browser, 2026-11-05 |
+| Edit a field's settings | `/nav/app/<app ID>/table/<table ID>/action/mf?fid=<field ID>` | Browser, 2026-11-05 |
+
+The interface's own links add `skip=0` to a report, `rl=...&page=1` to a record, and `chain=1` to a
+field. These look like the interface's state, so the SDK leaves them out.
+
+A link to the records that match a filter isn't built, because no form has been confirmed. The
+classic interface took `/db/<table ID>?a=q&query=<filter>`, and it isn't known whether that still
+works.

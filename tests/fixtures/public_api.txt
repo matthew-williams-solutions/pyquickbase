@@ -9,6 +9,7 @@ class App(object)
     def table(self, name_or_id: str) -> 'Table'
     def tables(self, *, refresh: bool = False) -> list[TableInfo]
     def typed(self, model: type[~R]) -> 'TypedTable[R]'
+    def url(self) -> str
 class AppInfo(object)
     def __eq__(self, other)
     def __init__(self, *, id: str, name: str, description: str, time_zone: str | None, date_format: str | None, raw: Mapping[str, Any]) -> None
@@ -27,6 +28,7 @@ class AsyncApp(object)
     def table(self, name_or_id: str) -> 'AsyncTable'
     async def tables(self, *, refresh: bool = False) -> list[TableInfo]
     def typed(self, model: type[~R]) -> 'AsyncTypedTable[R]'
+    def url(self) -> str
 class AsyncOperation(object)
     def __init__(self, table: AsyncTable, spec: OperationSpec) -> None
     property name -> Literal['query', 'count', 'summarize', 'insert', 'update', 'delete', 'preview_update', 'preview_delete', 'run_report', 'summary_report', 'run_formula', 'download_file', 'delete_file_version']
@@ -50,7 +52,9 @@ class AsyncReport(object)
     def run(self, *, page_size: int = 1000, limit: int | None = None) -> AsyncRecordIterator
     async def run_page(self, *, top: int = 100, skip: int = 0) -> Page
     async def summary_rows(self, *, page_size: int = 1000, limit: int | None = None) -> list[dict[str, Any]]
+    async def url(self) -> str
 class AsyncTable(object)
+    async def compile_where(self, where: Expression | str) -> str
     async def count(self, where: Expression | str | None = None) -> int
     async def create_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None, add_to_forms: bool | None = None) -> Field
     async def create_relationship(self, parent: 'AsyncTable', *, foreign_key_label: str, lookup_fields: Sequence[str | int] = ()) -> Relationship
@@ -64,6 +68,7 @@ class AsyncTable(object)
     async def ensure_lookup_field(self, relationship: Relationship, parent_field: str | int, *, label: str | None = None) -> Field
     async def ensure_relationship(self, parent: 'AsyncTable', *, foreign_key_label: str) -> Relationship
     async def ensure_summary_field(self, relationship: Relationship, child_field: str | int, label: str, *, function: str = 'SUM') -> Field
+    async def field_url(self, field: str | int) -> str
     async def fields(self, *, refresh: bool = False) -> list[Field]
     async def first(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None) -> Record | None
     async def get(self, record_id: int, *, select: str | int | F | Sequence[str | int | F] | None = None) -> Record | None
@@ -74,6 +79,8 @@ class AsyncTable(object)
     async def preview_update(self, rows: Iterable[Mapping[str | int, Any]]) -> UpdatePreview
     def query(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, page_size: int = 1000, limit: int | None = None) -> AsyncRecordIterator
     async def query_page(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, top: int = 100, skip: int = 0) -> Page
+    async def record_url(self, record_id: int, *, edit: bool = False) -> str
+    async def record_url_pattern(self, *, edit: bool = False) -> str
     async def relationships(self, *, refresh: bool = False) -> list[Relationship]
     def report(self, name_or_id: str) -> 'AsyncReport'
     async def reports(self, *, refresh: bool = False) -> list[ReportInfo]
@@ -83,6 +90,7 @@ class AsyncTable(object)
     async def update(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     async def update_field(self, field: str | int, *, label: str | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None) -> Field
     async def upsert(self, rows: Iterable[Mapping[str | int, Any]], *, merge_on: str | int, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
+    async def url(self) -> str
 class AsyncTypedIterator(Generic)
     def __aiter__(self) -> Self
     async def __anext__(self) -> ~R
@@ -298,6 +306,7 @@ class Report(object)
     def run(self, *, page_size: int = 1000, limit: int | None = None) -> RecordIterator
     def run_page(self, *, top: int = 100, skip: int = 0) -> Page
     def summary_rows(self, *, page_size: int = 1000, limit: int | None = None) -> list[dict[str, Any]]
+    def url(self) -> str
 class ReportInfo(object)
     def __eq__(self, other)
     def __init__(self, *, id: str, name: str, type: str, description: str, incomplete: bool, raw: Mapping[str, Any]) -> None
@@ -349,6 +358,7 @@ class SummaryRow(object)
     field minimum: Mapping[str, Any]
     field total: Mapping[str, float]
 class Table(object)
+    def compile_where(self, where: Expression | str) -> str
     def count(self, where: Expression | str | None = None) -> int
     def create_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None, add_to_forms: bool | None = None) -> Field
     def create_relationship(self, parent: 'Table', *, foreign_key_label: str, lookup_fields: Sequence[str | int] = ()) -> Relationship
@@ -362,6 +372,7 @@ class Table(object)
     def ensure_lookup_field(self, relationship: Relationship, parent_field: str | int, *, label: str | None = None) -> Field
     def ensure_relationship(self, parent: 'Table', *, foreign_key_label: str) -> Relationship
     def ensure_summary_field(self, relationship: Relationship, child_field: str | int, label: str, *, function: str = 'SUM') -> Field
+    def field_url(self, field: str | int) -> str
     def fields(self, *, refresh: bool = False) -> list[Field]
     def first(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None) -> Record | None
     def get(self, record_id: int, *, select: str | int | F | Sequence[str | int | F] | None = None) -> Record | None
@@ -372,6 +383,8 @@ class Table(object)
     def preview_update(self, rows: Iterable[Mapping[str | int, Any]]) -> UpdatePreview
     def query(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, page_size: int = 1000, limit: int | None = None) -> RecordIterator
     def query_page(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, top: int = 100, skip: int = 0) -> Page
+    def record_url(self, record_id: int, *, edit: bool = False) -> str
+    def record_url_pattern(self, *, edit: bool = False) -> str
     def relationships(self, *, refresh: bool = False) -> list[Relationship]
     def report(self, name_or_id: str) -> 'Report'
     def reports(self, *, refresh: bool = False) -> list[ReportInfo]
@@ -381,6 +394,7 @@ class Table(object)
     def update(self, rows: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     def update_field(self, field: str | int, *, label: str | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None) -> Field
     def upsert(self, rows: Iterable[Mapping[str | int, Any]], *, merge_on: str | int, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
+    def url(self) -> str
 class TableInfo(object)
     def __eq__(self, other)
     def __init__(self, *, id: str, name: str, description: str, key_field_id: int | None, raw: Mapping[str, Any]) -> None

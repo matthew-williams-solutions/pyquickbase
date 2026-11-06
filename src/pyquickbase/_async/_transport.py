@@ -36,6 +36,7 @@ class AsyncTransport:
         write_policy: WritePolicy | None = None,
         read_policy: ReadPolicy | None = None,
     ) -> None:
+        self.realm = realm
         self._read_policy = read_policy
         self._read_rules = read_rules_in(read_policy)
         self._read_only = read_only

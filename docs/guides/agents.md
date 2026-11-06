@@ -572,6 +572,30 @@ bug's details, and any values in them, don't reach the model. Log it yourself be
 - **An empty list reads as no records,** even if it came from `summarize()`, as nothing in an empty list
   says what it held.
 
+## Linking to Quickbase
+
+A tool can return links to what a model read or changed, so that a person can check it in the
+Quickbase interface. Each method looks up the IDs it needs from the client's cache, as any other
+method does, and puts only those IDs in the link, never a field's value. A table, field, or report
+that the client's `ReadRules` hide is refused as unknown.
+
+```python
+from pyquickbase import AsyncTable, F, tool_result
+
+
+async def open_tasks(tasks: AsyncTable) -> dict:
+    page = await tasks.query_page(where=F("Status") == "Open", top=50)
+    # https://<realm>/nav/app/<app ID>/table/<table ID>/action/dr?rid={Record ID#}
+    pattern = await tasks.record_url_pattern()
+    return {**tool_result(page), "record_link": pattern}
+```
+
+Send the pattern once, rather than a link for each record, and say in the tool's description that
+`{Record ID#}` is replaced by a record's `Record ID#`. [`record_url()`](../reference/table.md#links)
+builds one record's link, `url()` a table's, app's, or report's, and `field_url()` the page that
+edits a field. To show which records a query asked for, `compile_where()` returns a condition as
+Quickbase's query text, such as `{7.EX.'Open'}`.
+
 ## Counts and totals
 
 Don't have a model count or add up records itself, because it can miss some or get the arithmetic wrong. Give

@@ -5,6 +5,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from functools import partial
 from typing import Any, Generic, Self, TypeVar, cast
 
+from .._links import app_url, field_url, record_url, record_url_pattern, report_url, table_url
 from .._models import (
     RECORD_ID_FIELD,
     AppInfo,
@@ -128,6 +129,14 @@ class AsyncApp:
     def id(self) -> str:
         """The app's ID, as passed to `qb.app()`."""
         return self._id
+
+    def url(self) -> str:
+        """Link to the app's home page in Quickbase. This makes no network calls.
+
+        Returns:
+            The URL, on the client's realm.
+        """
+        return app_url(self._transport.realm, self._id)
 
     async def info(self) -> AppInfo:
         """Get the app's metadata, from the client's cache if it's there.
@@ -508,6 +517,101 @@ class AsyncTable:
             A `Report`, for running it or getting its details.
         """
         return AsyncReport(self._transport, self, name_or_id)
+
+    async def url(self) -> str:
+        """Link to the table's home page in Quickbase.
+
+        This only contacts Quickbase to look up the table's ID, as any method does, and the
+        client's cache usually has it.
+
+        Returns:
+            The URL, on the client's realm.
+
+        Raises:
+            UnknownTableError: This app has no such table, or the client's read rules hide it.
+        """
+        return table_url(self._transport.realm, self._app.id, (await self.info()).id)
+
+    async def record_url(self, record_id: int, *, edit: bool = False) -> str:
+        """Link to a record's page in Quickbase, for viewing it or editing it.
+
+        This doesn't check that the record exists, so a link to one that doesn't opens an error
+        page. It only contacts Quickbase to look up the table's ID, as `url()` does.
+
+        Args:
+            record_id: The record's Record ID#.
+            edit: Link to the page that edits the record, rather than the one that shows it.
+
+        Returns:
+            The URL, on the client's realm.
+
+        Raises:
+            InvalidValueError: `record_id` isn't a positive integer.
+            UnknownTableError: This app has no such table, or the client's read rules hide it.
+        """
+        require_id("record_id", record_id)
+        table_id = (await self.info()).id
+        return record_url(self._transport.realm, self._app.id, table_id, record_id, edit=edit)
+
+    async def record_url_pattern(self, *, edit: bool = False) -> str:
+        """Link to any record's page in Quickbase, with `{Record ID#}` where its ID goes.
+
+        A tool can send this once, rather than a link for each record, and each record's
+        `Record ID#` fills it in. The placeholder is text, not part of a working URL, so replace
+        it with `pattern.replace("{Record ID#}", str(record_id))`. It only contacts Quickbase to
+        look up the table's ID, as `url()` does.
+
+        Args:
+            edit: Link to the page that edits a record, rather than the one that shows it.
+
+        Returns:
+            The URL, on the client's realm, with `{Record ID#}` for the record's ID.
+
+        Raises:
+            UnknownTableError: This app has no such table, or the client's read rules hide it.
+        """
+        table_id = (await self.info()).id
+        return record_url_pattern(self._transport.realm, self._app.id, table_id, edit=edit)
+
+    async def field_url(self, field: FieldRef) -> str:
+        """Link to the page in Quickbase that edits a field's settings.
+
+        It only contacts Quickbase to look up the table's and field's IDs, as any method does, and
+        the client's cache usually has them.
+
+        Args:
+            field: The field, by label or ID.
+
+        Returns:
+            The URL, on the client's realm.
+
+        Raises:
+            UnknownFieldError: The table has no such field, or the client's read rules hide it.
+            UnknownTableError: This app has no such table, or the client's read rules hide it.
+        """
+        table_id = (await self.info()).id
+        field_id = (await self.resolve_field_ids([field]))[0]
+        return field_url(self._transport.realm, self._app.id, table_id, field_id)
+
+    async def compile_where(self, where: Expression | str) -> str:
+        """Return a condition as the query text that a query of this table would send.
+
+        Use it to show a person what a query asked for, as Quickbase's own `{6.EX.'Open'}` form.
+        This only contacts Quickbase to look up the table's fields, which the client's cache
+        usually has.
+
+        Args:
+            where: A condition built with `F` or `where_from_dict()`, or a hand-written string,
+                which gets checked and returned without outer whitespace.
+
+        Returns:
+            The query text.
+
+        Raises:
+            UnknownFieldError: The table has no such field, or the client's read rules hide it.
+            QueryError: `where` can't be sent as written.
+        """
+        return await self._with_fields(lambda fields: compile_where(where, FieldIndex(fields)))
 
     async def _with_fields(self, build: Callable[[list[Field]], T]) -> T:
         try:
@@ -1791,6 +1895,24 @@ class AsyncReport:
         if found is None:
             raise UnknownReportError(unknown_report_message(reports, self._ref))
         return found
+
+    async def url(self) -> str:
+        """Link to the report in Quickbase.
+
+        It only contacts Quickbase to look up the report's and table's IDs, as `info()` does, and
+        the client's cache usually has them.
+
+        Returns:
+            The URL, on the client's realm.
+
+        Raises:
+            UnknownReportError: The table has no such report, or several share the name, or the
+                client's read rules hide it.
+            UnknownTableError: The app has no such table, or the client's read rules hide it.
+        """
+        report_id = (await self.info()).id
+        table_id = (await self._table.info()).id
+        return report_url(self._transport.realm, self._table._app.id, table_id, report_id)  # pyright: ignore[reportPrivateUsage]
 
     async def _load_target(self) -> dict[str, Any]:
         info = await self.info()

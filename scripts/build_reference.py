@@ -146,6 +146,7 @@ _FILES = ("File attachments", "../guides/files.md")
 _FORMULAS = ("Formulas", "../guides/formulas.md")
 _AGENTS = ("Using pyquickbase from an AI agent", "../guides/agents.md")
 _ERRORS = ("Handling errors", "../guides/errors.md")
+_LINKS = "Link to the Quickbase interface"
 
 _TABLE_LINE = 'tasks = qb.app("bq1234567").table("Job Tasks")'
 _SEARCH_LINES = (
@@ -189,7 +190,7 @@ RESOURCES = (
         "only fails on first use.",
         "The examples below use `app`, made as shown here, in an app that has a table named "
         f"`Job Tasks` with three records. {_LIVE_TEST} `AsyncApp` has the same methods, which you "
-        "`await`, but `table()` and `typed()` are called without it.",
+        "`await`, but `table()`, `typed()`, and `url()` are called without it.",
         *_setup('app = qb.app("bq1234567")'),
         (
             Group(
@@ -199,6 +200,7 @@ RESOURCES = (
                 ("id", "info", "tables", "roles"),
             ),
             Group("Get a table", "get-a-table", _CODEGEN, ("table", "typed")),
+            Group(_LINKS, "links", _AGENTS, ("url",)),
             Group("Create tables", "create-tables", _SCHEMA, ("ensure_table", "create_table")),
         ),
     ),
@@ -219,7 +221,7 @@ RESOURCES = (
                 "Read records",
                 "read-records",
                 _READING,
-                ("query", "query_page", "first", "get", "count"),
+                ("query", "query_page", "first", "get", "count", "compile_where"),
             ),
             Group(
                 "Write records", "write-records", _WRITING, ("insert", "update", "upsert", "delete")
@@ -241,6 +243,12 @@ RESOURCES = (
             ),
             Group("Work with files", "files", _FILES, ("download_file", "delete_file_version")),
             Group("Offer an operation to a model", "operations", _AGENTS, ("operation",)),
+            Group(
+                _LINKS,
+                "links",
+                _AGENTS,
+                ("url", "record_url", "record_url_pattern", "field_url"),
+            ),
             Group(
                 "Change the schema",
                 "schema",
@@ -276,6 +284,7 @@ RESOURCES = (
         (
             Group("Run a report", "run-a-report", _READING, ("run", "run_page", "summary_rows")),
             Group("Look up the report's details", "report-details", _READING, ("info",)),
+            Group(_LINKS, "links", _AGENTS, ("url",)),
         ),
     ),
     Resource(
