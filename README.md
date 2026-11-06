@@ -29,7 +29,7 @@ sync and async clients.
 ## Usage
 
 ```bash
-pip install pyquickbase==1.0.0rc9
+pip install pyquickbase==1.0.0rc10
 ```
 
 This is a release candidate, so pin the exact version.

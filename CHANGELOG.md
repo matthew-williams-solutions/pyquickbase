@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0rc10] - 2026-11-05
+
+This candidate lets the report operations take a report the way models send one, found by testing
+an MCP server built on the SDK in Claude Desktop. Every call that worked before still works, and
+only two refusal messages read differently.
+
 ### Fixed
 
 - **The `run_report` and `summary_report` operations refused a report sent any way but its ID as
