@@ -190,7 +190,8 @@ RESOURCES = (
         "only fails on first use.",
         "The examples below use `app`, made as shown here, in an app that has a table named "
         f"`Job Tasks` with three records. {_LIVE_TEST} `AsyncApp` has the same methods, which you "
-        "`await`, but `table()`, `typed()`, and `url()` are called without it.",
+        "`await`, but `table()`, `typed()`, `url()`, and `settings_url()` are called without "
+        "it.",
         *_setup('app = qb.app("bq1234567")'),
         (
             Group(
@@ -200,7 +201,7 @@ RESOURCES = (
                 ("id", "info", "tables", "roles"),
             ),
             Group("Get a table", "get-a-table", _CODEGEN, ("table", "typed")),
-            Group(_LINKS, "links", _AGENTS, ("url",)),
+            Group(_LINKS, "links", _AGENTS, ("url", "settings_url")),
             Group("Create tables", "create-tables", _SCHEMA, ("ensure_table", "create_table")),
         ),
     ),
@@ -247,7 +248,17 @@ RESOURCES = (
                 _LINKS,
                 "links",
                 _AGENTS,
-                ("url", "record_url", "record_url_pattern", "field_url"),
+                (
+                    "url",
+                    "record_url",
+                    "record_url_pattern",
+                    "new_record_url",
+                    "field_url",
+                    "fields_url",
+                    "relationships_url",
+                    "settings_url",
+                    "form_url",
+                ),
             ),
             Group(
                 "Change the schema",

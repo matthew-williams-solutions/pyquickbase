@@ -17,20 +17,27 @@ def _segment(value: str) -> str:
     return quote(value, safe="")
 
 
-def app_url(realm: str, app_id: str) -> str:
-    return f"https://{realm}/nav/app/{_segment(app_id)}/action/appoverview"
+def app_url(realm: str, app_id: str, *, settings: bool = False) -> str:
+    action = "appsettingshome" if settings else "appoverview"
+    return f"https://{realm}/nav/app/{_segment(app_id)}/action/{action}"
 
 
-def _table_base(realm: str, app_id: str, table_id: str) -> str:
-    return f"https://{realm}/nav/app/{_segment(app_id)}/table/{_segment(table_id)}/action"
+def _require_bool(name: str, value: bool) -> None:
+    if not isinstance(value, bool):  # pyright: ignore[reportUnnecessaryIsInstance]
+        raise TypeError(f"{name} takes True or False.")
 
 
-def table_url(realm: str, app_id: str, table_id: str) -> str:
-    return f"{_table_base(realm, app_id, table_id)}/td"
+def table_page(
+    realm: str, app_id: str, table_id: str, action: str, query: dict[str, int | str] | None = None
+) -> str:
+    """Link to one of a table's pages, such as `td` for its home, or `listfields`."""
+    base = f"https://{realm}/nav/app/{_segment(app_id)}/table/{_segment(table_id)}/action/{action}"
+    return f"{base}?{urlencode(query)}" if query else base
 
 
-def report_url(realm: str, app_id: str, table_id: str, report_id: str) -> str:
-    return f"{_table_base(realm, app_id, table_id)}/q?{urlencode({'qid': report_id})}"
+def report_url(realm: str, app_id: str, table_id: str, report_id: str, *, edit: bool) -> str:
+    _require_bool("edit", edit)
+    return table_page(realm, app_id, table_id, "viewBuild" if edit else "q", {"qid": report_id})
 
 
 def record_url(realm: str, app_id: str, table_id: str, record_id: int, *, edit: bool) -> str:
@@ -41,12 +48,16 @@ def record_url(realm: str, app_id: str, table_id: str, record_id: int, *, edit: 
 
 
 def record_url_pattern(realm: str, app_id: str, table_id: str, *, edit: bool) -> str:
-    if not isinstance(edit, bool):  # pyright: ignore[reportUnnecessaryIsInstance]
-        raise TypeError("edit takes True or False.")
-    action = "er" if edit else "dr"
-    return f"{_table_base(realm, app_id, table_id)}/{action}?rid={RECORD_ID_PLACEHOLDER}"
+    _require_bool("edit", edit)
+    base = table_page(realm, app_id, table_id, "er" if edit else "dr")
+    return f"{base}?rid={RECORD_ID_PLACEHOLDER}"
 
 
 def field_url(realm: str, app_id: str, table_id: str, field_id: int) -> str:
     require_id("field_id", field_id)
-    return f"{_table_base(realm, app_id, table_id)}/mf?{urlencode({'fid': field_id})}"
+    return table_page(realm, app_id, table_id, "mf", {"fid": field_id})
+
+
+def form_url(realm: str, app_id: str, table_id: str, form_id: int) -> str:
+    require_id("form_id", form_id)
+    return table_page(realm, app_id, table_id, "DFormProps", {"dfid": form_id})

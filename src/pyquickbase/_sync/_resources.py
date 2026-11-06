@@ -9,7 +9,15 @@ from typing import Any, Generic, Self, TypeVar, cast
 from .._confirm import binding as confirmation_binding
 from .._confirm import check as check_confirmation
 from .._confirm import issue as issue_confirmation
-from .._links import app_url, field_url, record_url, record_url_pattern, report_url, table_url
+from .._links import (
+    app_url,
+    field_url,
+    form_url,
+    record_url,
+    record_url_pattern,
+    report_url,
+    table_page,
+)
 from .._models import (
     RECORD_ID_FIELD,
     AppInfo,
@@ -149,6 +157,14 @@ class App:
             The URL, on the client's realm.
         """
         return app_url(self._transport.realm, self._id)
+
+    def settings_url(self) -> str:
+        """Link to the app's settings in Quickbase. This makes no network calls.
+
+        Returns:
+            The URL, on the client's realm.
+        """
+        return app_url(self._transport.realm, self._id, settings=True)
 
     def info(self) -> AppInfo:
         """Get the app's metadata, from the client's cache if it's there.
@@ -538,7 +554,84 @@ class Table:
         Raises:
             UnknownTableError: This app has no such table, or the client's read rules hide it.
         """
-        return table_url(self._transport.realm, self._app.id, (self.info()).id)
+        return self._page("td")
+
+    def _page(self, action: str, query: dict[str, int | str] | None = None) -> str:
+        table_id = (self.info()).id
+        return table_page(self._transport.realm, self._app.id, table_id, action, query)
+
+    def new_record_url(self) -> str:
+        """Link to the page in Quickbase that adds a record to the table.
+
+        It only contacts Quickbase to look up the table's ID, as `url()` does.
+
+        Returns:
+            The URL, on the client's realm.
+
+        Raises:
+            UnknownTableError: This app has no such table, or the client's read rules hide it.
+        """
+        return self._page("nwr")
+
+    def fields_url(self) -> str:
+        """Link to the table's list of fields in Quickbase.
+
+        It only contacts Quickbase to look up the table's ID, as `url()` does.
+
+        Returns:
+            The URL, on the client's realm.
+
+        Raises:
+            UnknownTableError: This app has no such table, or the client's read rules hide it.
+        """
+        return self._page("listfields")
+
+    def relationships_url(self) -> str:
+        """Link to the table's relationships in Quickbase.
+
+        It only contacts Quickbase to look up the table's ID, as `url()` does.
+
+        Returns:
+            The URL, on the client's realm.
+
+        Raises:
+            UnknownTableError: This app has no such table, or the client's read rules hide it.
+        """
+        return self._page("Relationships")
+
+    def settings_url(self) -> str:
+        """Link to the table's settings in Quickbase, such as its name and key field.
+
+        It only contacts Quickbase to look up the table's ID, as `url()` does.
+
+        Returns:
+            The URL, on the client's realm.
+
+        Raises:
+            UnknownTableError: This app has no such table, or the client's read rules hide it.
+        """
+        return self._page("KeyProps")
+
+    def form_url(self, form_id: int) -> str:
+        """Link to the page in Quickbase that edits one of the table's forms.
+
+        The API can't list forms, so this takes the form's ID, the `dfid` in its address in
+        Quickbase, and doesn't check that the form exists. It only contacts Quickbase to look up
+        the table's ID, as `url()` does.
+
+        Args:
+            form_id: The form's ID.
+
+        Returns:
+            The URL, on the client's realm.
+
+        Raises:
+            InvalidValueError: `form_id` isn't a positive integer.
+            UnknownTableError: This app has no such table, or the client's read rules hide it.
+        """
+        require_id("form_id", form_id)
+        table_id = (self.info()).id
+        return form_url(self._transport.realm, self._app.id, table_id, form_id)
 
     def record_url(self, record_id: int, *, edit: bool = False) -> str:
         """Link to a record's page in Quickbase, for viewing it or editing it.
@@ -1920,11 +2013,14 @@ class Report:
             raise UnknownReportError(unknown_report_message(reports, self._ref))
         return found
 
-    def url(self) -> str:
-        """Link to the report in Quickbase.
+    def url(self, *, edit: bool = False) -> str:
+        """Link to the report in Quickbase, for viewing it or changing how it's built.
 
         It only contacts Quickbase to look up the report's and table's IDs, as `info()` does, and
         the client's cache usually has them.
+
+        Args:
+            edit: Link to the page that changes the report's settings, rather than the report.
 
         Returns:
             The URL, on the client's realm.
@@ -1936,7 +2032,8 @@ class Report:
         """
         report_id = (self.info()).id
         table_id = (self._table.info()).id
-        return report_url(self._transport.realm, self._table._app.id, table_id, report_id)  # pyright: ignore[reportPrivateUsage]
+        app_id = self._table._app.id  # pyright: ignore[reportPrivateUsage]
+        return report_url(self._transport.realm, app_id, table_id, report_id, edit=edit)
 
     def _load_target(self) -> dict[str, Any]:
         info = self.info()

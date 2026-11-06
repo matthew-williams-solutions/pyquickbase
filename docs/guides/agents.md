@@ -602,8 +602,9 @@ async def open_tasks(tasks: AsyncTable) -> dict:
 
 Send the pattern once, rather than a link for each record, and say in the tool's description that
 `{Record ID#}` is replaced by a record's `Record ID#`. [`record_url()`](../reference/table.md#links)
-builds one record's link, `url()` a table's, app's, or report's, and `field_url()` the page that
-edits a field. To show which records a query asked for, `compile_where()` returns a condition as
+builds one record's link, and `url()` a table's, app's, or report's. Others link to the pages a
+change to the schema sends a person to, such as `field_url()` and `fields_url()` for a table's
+fields, `relationships_url()`, and `Report.url(edit=True)` for a report's settings. To show which records a query asked for, `compile_where()` returns a condition as
 Quickbase's query text, such as `{7.EX.'Open'}`.
 
 ## Counts and totals

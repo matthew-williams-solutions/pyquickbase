@@ -216,3 +216,58 @@ def test_compile_where_refuses_what_a_query_would() -> None:
             tasks.compile_where("{6.CT.'x'")
         with pytest.raises(QueryError):
             tasks.compile_where(7)  # pyright: ignore[reportArgumentType]
+
+
+def test_app_settings_url_makes_no_request() -> None:
+    server = FakeSchema()
+    with client(server) as qb:
+        url = qb.app(APP).settings_url()
+    assert url == f"https://acme.quickbase.com/nav/app/{APP}/action/appsettingshome"
+    assert server.requests == []
+
+
+def test_table_page_urls() -> None:
+    server = FakeSchema()
+    with client(server) as qb:
+        tasks = qb.app(APP).table("Tasks")
+        assert tasks.new_record_url() == f"{BASE}/nwr"
+        assert tasks.fields_url() == f"{BASE}/listfields"
+        assert tasks.relationships_url() == f"{BASE}/Relationships"
+        assert tasks.settings_url() == f"{BASE}/KeyProps"
+        assert tasks.form_url(10) == f"{BASE}/DFormProps?dfid=10"
+    assert server.paths() == ["/tables"]
+
+
+@pytest.mark.parametrize("form_id", [0, -3, False, 2.0, "10", "1&a=b", None])
+def test_form_url_refuses_anything_but_a_positive_int(form_id: Any) -> None:
+    server = FakeSchema()
+    with client(server) as qb:
+        with pytest.raises(InvalidValueError, match="form_id"):
+            qb.app(APP).table("Tasks").form_url(form_id)
+    assert server.requests == []
+
+
+def test_report_edit_url() -> None:
+    with client(FakeSchema()) as qb:
+        report = qb.app(APP).table("Tasks").report("List All")
+        assert report.url(edit=True) == f"{BASE}/viewBuild?qid=1"
+        with pytest.raises(TypeError, match="edit"):
+            report.url(edit="yes")  # pyright: ignore[reportArgumentType]
+
+
+def test_read_rules_hide_table_pages() -> None:
+    with client(FakeSchema(), read_policy=rules(), read_only=True) as qb:
+        app = qb.app(APP)
+        assert app.table(TASKS).settings_url() == f"{BASE}/KeyProps"
+        secret = app.table(SECRET)
+        for link in (
+            secret.new_record_url,
+            secret.fields_url,
+            secret.relationships_url,
+            secret.settings_url,
+            lambda: secret.form_url(10),
+        ):
+            with pytest.raises(UnknownTableError):
+                link()
+        with pytest.raises(UnknownReportError):
+            app.table(TASKS).report("12").url(edit=True)

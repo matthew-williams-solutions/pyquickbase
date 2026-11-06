@@ -22,6 +22,10 @@ before has changed.
   each record's ID goes, so a tool needn't send a link per record. Names are looked up through the
   client's cache, nothing else is sent to Quickbase, and anything the client's `ReadRules` hide is
   refused as unknown. `App.url()` is a plain method in both clients, as it needs no lookup.
+- **Links to the schema pages a model's changes send a person to:** `App.settings_url()`,
+  `Report.url(edit=True)` for the report's settings, and on `Table`, `new_record_url()`,
+  `fields_url()`, `relationships_url()`, `settings_url()`, and `form_url(form_id)`, which takes the
+  form's ID because the API can't list forms.
 - **`require_preview=True` on the `update` and `delete` operations.** In testing, a model updated a
   record with no preview, though told to preview first. With this, they only run with the
   `confirmation` their preview returned for exactly the same arguments, within 15 minutes, and a
