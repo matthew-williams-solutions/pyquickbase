@@ -256,6 +256,9 @@ many other mistakes, these are checked:
 | **Updating to an empty formula** | **200, and the field's values become empty** |
 | Creating with an empty formula, or adding a formula to a plain field | 400, `Field must be of formula mode.` |
 | Renaming a field a formula uses | Quickbase updates the formula's text |
+| An unknown function | 400, `The function name Bogus(number) is unknown.` Live API, 2026-11-06 |
+| A formula using another formula field | Works |
+| **Deleting a field a formula uses** | **Allowed. The formula keeps its text, such as `[Hours] * 2`, and its values become empty.** Any update to that formula is then refused with 400 until it stops using the deleted field. Live API, 2026-11-06 |
 | Writing to a formula field | Row error |
 | Field types that took a formula | `text`, `numeric`, `date`, `checkbox`, `duration`, `timeofday`, `currency`, `percent`, `rating`, `url`, `email`, and `datetime`, and on 2026-11-04 `phone`, `user`, `multitext`, and `rich-text` |
 | Field types the API refuses a formula on | `text-multi-line` and `multiuser`, with `[formula] property is not supported`. **The UI can make a `multiuser` formula**, such as `ToUserList(User())`, which reads as a list of users |
@@ -348,6 +351,7 @@ field and one file field. See also [roles with write access](#roles-with-write-a
 | `GET /fields` | **A hidden field is left out**, exactly as if it didn't exist, so a deleted field and a hidden one can't be told apart |
 | `GET /fields/{id}` for a hidden field | 500, `QuickBase is experiencing technical difficulties` |
 | `GET /tables` | Lists only tables the role can use |
+| A table created through the API | The role gets no access to it, so `GET /tables` leaves it out until its permissions are set in the UI. Live API, 2026-11-06 |
 | `GET /apps/{id}` | 403, for this role |
 | `select` with a hidden field and a visible one | **200, and the hidden field is silently left out** |
 | `select` with only hidden fields | 400, `Report contains a restricted field` |
@@ -459,6 +463,7 @@ Tested on 2026-11-03 and 2026-11-04 in a real app, using `POST /tables/{child}/r
 | A summary's properties | `summaryReferenceFieldId`, `summaryTargetFieldId`, and `summaryFunction` |
 | **A summary with no child records** | **Empty, not 0**, except a `COUNT`. A formula using it is also empty unless it uses `Nz()`, which matters for something like a balance |
 | Fields added to the parent | A `dblink` such as `Task records`, and a `url` formula such as `Add Task`, containing `a=API_GenAddRecordForm` |
+| **Summaries and the reader's role** | **They only total the child records the reader can see.** With 4 child records and a custom rule letting a restricted role see 2, an admin read a count of 4 and a total of 40, while the restricted user read 2 and 20. With View set to None on the child table, the restricted user read both as empty, even the `COUNT`. Live API, 2026-11-06 |
 
 ## Field types
 
