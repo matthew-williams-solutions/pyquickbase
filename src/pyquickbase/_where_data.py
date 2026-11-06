@@ -190,7 +190,9 @@ class _Builder:
         if isinstance(field, bool) or not isinstance(field, str | int):
             raise QueryError(f"{path}.field must be a field's label or ID.")
         if self._fields is not None and field not in self._fields:
-            raise QueryError(f"{path}.field isn't a field this filter may use.")
+            raise QueryError(
+                f"{path}.field isn't a field this filter may use.{case_hint(field, self._fields)}"
+            )
         if not isinstance(op, str):
             raise QueryError(f"{path}.op must be text. {_operators_help()}")
         try:
@@ -240,6 +242,28 @@ def _text(value: Any, operator: str) -> str:
     if text == "" and operator not in _EMPTY_ALLOWED:
         raise QueryError("An empty value can only be used with ==, !=, in, or not_in.")
     return text
+
+
+def case_hint(value: Any, labels: Iterable[Any]) -> str:
+    """A hint for a label sent in another case. It names the offered label, which the schema
+    already shows, and never repeats the text that was sent."""
+    if not isinstance(value, str):
+        return ""
+    found = {
+        item for item in labels if isinstance(item, str) and item.casefold() == value.casefold()
+    }
+    return f" Labels must match exactly, as in {found.pop()!r}." if len(found) == 1 else ""
+
+
+def _units(offered: Iterable[FieldRef | Field] | None) -> str:
+    """Say what a number means on a field whose queries use other units, if one is offered."""
+    types = {item.type for item in offered or () if isinstance(item, Field)}
+    notes: list[str] = []
+    if "percent" in types:
+        notes.append("A percent is a fraction, so 50% is 0.5.")
+    if "duration" in types:
+        notes.append("A duration is whole milliseconds, so an hour is 3600000.")
+    return "".join(f" {note}" for note in notes)
 
 
 def _operators_help() -> str:
@@ -373,7 +397,9 @@ def where_schema(
         fields: The fields to offer, as labels, IDs, or `Field` objects, so a model can't name one
             that doesn't exist. Pass the same fields to `where_from_dict()`, by label or ID, to
             enforce the list, as this only describes it. Field labels can contain any text, and
-            this shows them to the model, so only offer fields from an app you trust.
+            this shows them to the model, so only offer fields from an app you trust. Given
+            `Field` objects, the description also says what a number means on a percent or
+            duration field.
         descriptions: What each field means, as `{label or ID: text}`, added to the schema's
             description so the model can choose the right field. Each must be for a field in
             `fields`, so a renamed field can't silently keep a description.
@@ -405,6 +431,6 @@ def where_schema(
         schema["description"] = f"A condition, or all or any of a list. {_SCHEMA_DESCRIPTION}"
         groups = [_group_schema(key, max_depth, condition) for key in ("all", "any")]
         schema["anyOf"] = [condition, *groups]
-    schema["description"] += glossary
+    schema["description"] += _units(offered) + glossary
     # Separates the copies of a condition, so that changing one in a tool's schema can't change all.
     return json.loads(json.dumps(schema))

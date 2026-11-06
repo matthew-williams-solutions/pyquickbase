@@ -26,7 +26,7 @@ from ._query import NO_VALUE, Condition, Expression, FieldRef, Group
 from ._read_policy import ReadRules, _allows  # pyright: ignore[reportPrivateUsage]
 from ._summary import Period, PeriodUnit
 from ._typed import is_writable
-from ._where_data import where_from_dict, where_schema
+from ._where_data import case_hint, where_from_dict, where_schema
 from ._writes import FileUpload
 from .errors import (
     ConfigurationError,
@@ -141,7 +141,9 @@ def _field_names(value: Any, name: str, offered: Sequence[Field]) -> list[str]:
     items = cast(list[Any], value)
     for index, item in enumerate(items):
         if item not in labels:
-            raise QueryError(f"{name}[{index}] isn't a field this tool may use there.")
+            raise QueryError(
+                f"{name}[{index}] isn't a field this tool may use there.{case_hint(item, labels)}"
+            )
     if len(set(items)) != len(items):
         raise QueryError(f"{name} names a field more than once.")
     return cast(list[str], items)
@@ -159,7 +161,8 @@ def _sort(value: Any, offered: Sequence[Field]) -> list[int]:
             raise QueryError(f'{path} must be {{"field": ..., "descending": true or false}}.')
         entry = cast(Mapping[str, Any], item)
         if entry.get("field") not in ids:
-            raise QueryError(f"{path}.field isn't a field this tool may sort by.")
+            hint = case_hint(entry.get("field"), ids)
+            raise QueryError(f"{path}.field isn't a field this tool may sort by.{hint}")
         descending = entry.get("descending", False)
         if not isinstance(descending, bool):
             raise QueryError(f"{path}.descending must be true or false.")
@@ -195,7 +198,8 @@ class _Converter:
             if not isinstance(value, str):
                 raise InvalidValueError(f"{path} must be text.")
             if _closed_choices(item) and value not in item.choices:
-                raise InvalidValueError(f"{path} must be one of the field's choices.")
+                hint = case_hint(value, item.choices).replace("Labels", "Choices")
+                raise InvalidValueError(f"{path} must be one of the field's choices.{hint}")
             return value
         if kind == "duration":
             whole = isinstance(value, int) or (isinstance(value, float) and value.is_integer())
@@ -269,6 +273,8 @@ def _value_schema(item: Field, description: str | None) -> dict[str, Any]:
             "type": ["integer", "null"],
             "description": "A length of time in whole milliseconds, so an hour is 3600000.",
         }
+    elif kind == "percent":
+        schema = {"type": ["number", "null"], "description": "A fraction, so 50% is 0.5."}
     elif kind in _NUMERIC_TYPES:
         schema = {"type": ["number", "null"]}
     elif kind == "checkbox":
@@ -596,7 +602,7 @@ def _read_records(ctx: Context, value: Any, *, update: bool, group: str) -> list
             if converter is None:
                 raise InvalidValueError(
                     f"{path} has a field this tool may not write. Use only the fields its schema "
-                    "lists."
+                    f"lists.{case_hint(key, [*converters, *readable])}"
                 )
             cells[key] = converter(item, f"{path}.{key}")
         if update and _RECORD_ID_LABEL not in cells:
@@ -673,7 +679,8 @@ def _read_summary(ctx: Context, arguments: Mapping[str, Any]) -> dict[str, Any]:
             elif item in _labels(offered["group_by"]):
                 groups.append(item)
             else:
-                raise QueryError(f"{path} isn't a field this tool may group by.")
+                hint = case_hint(item, _labels(offered["group_by"]))
+                raise QueryError(f"{path} isn't a field this tool may group by.{hint}")
         found["group_by"] = groups
     for key in ("total", "average", "minimum", "maximum"):
         if key in arguments:

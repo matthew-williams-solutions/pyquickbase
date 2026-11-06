@@ -8,9 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [1.0.0rc10] - 2026-11-05
 
-This candidate lets the report operations take a report the way models send one, found by testing
-an MCP server built on the SDK in Claude Desktop. Every call that worked before still works, and
-only two refusal messages read differently.
+This candidate helps a model get its arguments right, from testing an MCP server built on the SDK
+in Claude Desktop: report operations take a report the way models send one, schemas say what a
+percent means, and refusals for a label or choice in the wrong case give the right one. Every call
+that worked before still works, and only some refusal messages read differently.
 
 ### Fixed
 
@@ -19,6 +20,13 @@ only two refusal messages read differently.
   a report its tool listed. `run()` now also takes the ID as a number, or the report's exact name,
   ignoring case, of a report the tool lists. A name shared by two of them is refused, asking for
   the ID. The schema still lists the IDs, and its description says a name works too.
+- **Nothing told a model that a percent is a fraction**, so asked for "25% done" it could write
+  `25`, which Quickbase stores as 2,500%, or filter on `50`, which matches nothing. An operation's
+  schema now says so for a percent field it writes, and `where_schema()`, given `Field` objects,
+  says what a number means on a percent or duration field it offers.
+- **A field label or choice in the wrong case gets a refusal that names the right one**, such as
+  `select[0] isn't a field this tool may use there. Labels must match exactly, as in 'Title'.`
+  It only names a field or choice the tool offers, and only when exactly one matches.
 - **A report of the other kind gets a refusal that says what to do.** A table report sent to
   `summary_report`, or a chart sent to `run_report`, says which operation runs it, where the message
   only said it couldn't be run.

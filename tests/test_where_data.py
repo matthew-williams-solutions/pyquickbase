@@ -541,3 +541,23 @@ def test_a_models_percent_is_a_fraction_and_a_duration_is_milliseconds(
 def test_a_models_duration_must_be_whole_milliseconds() -> None:
     with pytest.raises(QueryError, match="whole milliseconds"):
         compile_where(where_from_dict(cond("Budget", ">", 1.5)), TYPED)
+
+
+def test_a_filter_label_in_another_case_says_which_one() -> None:
+    with pytest.raises(QueryError, match="as in 'Status'"):
+        where_from_dict(cond("status", "==", "x"), fields=["Status", "Title"])
+    # Two labels that differ only in case make no hint, rather than a guess.
+    with pytest.raises(QueryError) as caught:
+        where_from_dict(cond("Ab", "==", "x"), fields=["ab", "AB"])
+    assert "as in" not in str(caught.value)
+
+
+def test_where_schema_says_what_percent_and_duration_numbers_mean() -> None:
+    fields = [
+        field_from_api({"id": 6, "label": "Done", "fieldType": "percent"}),
+        field_from_api({"id": 7, "label": "Budget", "fieldType": "duration"}),
+    ]
+    description = where_schema(fields=fields)["description"]
+    assert "A percent is a fraction, so 50% is 0.5." in description
+    assert "A duration is whole milliseconds, so an hour is 3600000." in description
+    assert "A percent" not in where_schema(fields=["Done"])["description"]

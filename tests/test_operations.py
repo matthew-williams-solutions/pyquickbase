@@ -413,7 +413,10 @@ def test_a_field_it_may_read_but_not_write_is_named() -> None:
     with pytest.raises(InvalidValueError, match=r"records\[0\]\.Doubled can be read"):
         spec("insert").plan({"records": [{"Doubled": 1}]}, None)
     # A field it can't read, or one that doesn't exist, isn't named or confirmed.
-    hidden = allowed(read_rules=(ReadRules({TASKS: ReadAccess(fields=[3, 6])}),))
+    hidden = allowed(
+        read_rules=(ReadRules({TASKS: ReadAccess(fields=[3, 6])}),),
+        write_rules=(WriteRules({TASKS: WriteAccess(insert=[6])}),),
+    )
     for key in ("Doubled", "Secret"):
         with pytest.raises(InvalidValueError) as caught:
             spec("insert", hidden).plan({"records": [{key: 1}]}, None)
@@ -514,6 +517,83 @@ def test_a_name_shared_by_two_reports_needs_the_id() -> None:
     with pytest.raises(QueryError, match="Several reports"):
         run.plan({"report": "same"}, None)
     assert run.plan({"report": "2"}, None).report_id == "2"
+
+
+@pytest.mark.parametrize(
+    ("name", "arguments", "label"),
+    [
+        ("query", {"select": ["title"]}, "Title"),
+        ("query", {"where": {"field": "STATUS", "op": "==", "value": "Open"}}, "Status"),
+        ("query", {"order_by": [{"field": "hours"}]}, "Hours"),
+        ("summarize", {"group_by": ["status"]}, "Status"),
+        ("summarize", {"total": ["hours"]}, "Hours"),
+        ("insert", {"records": [{"title": "x"}]}, "Title"),
+    ],
+)
+def test_a_label_in_another_case_is_refused_with_the_right_one(
+    name: OperationName, arguments: dict[str, Any], label: str
+) -> None:
+    with pytest.raises(
+        (QueryError, InvalidValueError), match=f"must match exactly, as in '{label}'"
+    ):
+        spec(name).plan(arguments, None)
+
+
+def test_a_choice_in_another_case_is_refused_with_the_right_one() -> None:
+    with pytest.raises(InvalidValueError, match="Choices must match exactly, as in 'Done'"):
+        spec("insert").plan({"records": [{"Title": "x", "Status": "done"}]}, None)
+
+
+def test_a_hint_never_names_a_field_the_tool_doesnt_offer() -> None:
+    hidden = allowed(
+        read_rules=(ReadRules({TASKS: ReadAccess(fields=[3, 6])}),),
+        write_rules=(WriteRules({TASKS: WriteAccess(insert=[6])}),),
+    )
+    for name, arguments in (
+        ("query", {"select": ["hours"]}),
+        ("insert", {"records": [{"Title": "x", "hours": 1}]}),
+    ):
+        with pytest.raises((QueryError, InvalidValueError)) as caught:
+            spec(name, hidden).plan(arguments, None)  # type: ignore[arg-type]
+        assert "Hours" not in str(caught.value)
+
+
+def test_percent_values_are_described_as_fractions() -> None:
+    fields = [*FIELDS, field_from_api({"id": 20, "label": "Done %", "fieldType": "percent"})]
+    limits = allowed_for(
+        fields,
+        REPORTS,
+        table_id=TASKS,
+        key_field_id=3,
+        read_rules=(),
+        write_rules=(),
+        read_only=False,
+        wanted=None,
+        wanted_reports=None,
+    )
+    insert = make_spec(
+        "insert",
+        limits,
+        descriptions=None,
+        report_descriptions={},
+        max_records=None,
+        max_rows=100,
+        formula=None,
+    )
+    record = insert.schema["properties"]["records"]["items"]["properties"]
+    assert record["Done %"]["description"] == "A fraction, so 50% is 0.5."
+    query = make_spec(
+        "query",
+        limits,
+        descriptions=None,
+        report_descriptions={},
+        max_records=None,
+        max_rows=100,
+        formula=None,
+    )
+    assert "A percent is a fraction" in query.schema["properties"]["where"]["description"]
+    assert "A duration" not in query.schema["properties"]["where"]["description"]
+    assert "A percent" not in spec("query").schema["properties"]["where"]["description"]
 
 
 def test_a_formula_is_fixed_by_code_and_the_model_picks_the_record() -> None:
