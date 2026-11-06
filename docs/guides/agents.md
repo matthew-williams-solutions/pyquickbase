@@ -302,8 +302,8 @@ The schema goes in your framework's tool definition, under the name it uses, suc
 | `delete` | `where`, which is required. It's refused if it matches more than `max_records` | `delete()` | `int` |
 | `preview_update` | As `update` | `preview_update()` | `UpdatePreview` |
 | `preview_delete` | `where`, `select`, `limit`. Give it the same `max_records` as `delete`, and `tool_result()` says in `over_limit` when a delete would be refused | `preview_delete()` | `Page` |
-| `run_report` | `report`, `limit`, `skip` | `Report.run_page()` | `Page` |
-| `summary_report` | `report`, `limit` | `Report.summary_rows()` | A list of rows |
+| `run_report` | `report`, as its ID, its ID as a number, or its name, and `limit`, `skip` | `Report.run_page()` | `Page` |
+| `summary_report` | `report`, as for `run_report`, and `limit` | `Report.summary_rows()` | A list of rows |
 | `run_formula` | `record_id` | `run_formula()`, with the formula your code gives | `FormulaResult` |
 | `download_file` | `record_id`, `field`, `version` | `download_file()` | `FileDownload` |
 | `delete_file_version` | `record_id`, `field`, `version` | `delete_file_version()` | None |
@@ -323,7 +323,7 @@ The schema lists only what the client may do, so a model isn't offered a field t
 | `order_by` | Fields it may sort by | `ReadRules` `sort` |
 | `limit` | Up to `max_records`, 100 by default | `ReadRules` `max_records`, if lower |
 | `records` | Fields the SDK can write, other than formula, lookup, summary, built-in, and user fields | `WriteRules` `insert` or `update` |
-| `report` | Table reports, or summary and chart reports, that can run through the API | `ReadRules` `reports` or `summary_reports`, and `reports=` |
+| `report` | Table reports, or summary and chart reports, that can run through the API, by ID. `run()` also takes an ID as a number or a report's exact name, ignoring case, and says which operation runs a report of the other kind | `ReadRules` `reports` or `summary_reports`, and `reports=` |
 | `field`, for files | File fields | `ReadRules` `files`, or `WriteRules` `delete_files` |
 
 `fields=` narrows all of these to the fields you list. An operation that the client can't run at all,

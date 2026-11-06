@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **The `run_report` and `summary_report` operations refused a report sent any way but its ID as
+  text**, so a model that sent `8` rather than `"8"`, or the report's name, was told it couldn't run
+  a report its tool listed. `run()` now also takes the ID as a number, or the report's exact name,
+  ignoring case, of a report the tool lists. A name shared by two of them is refused, asking for
+  the ID. The schema still lists the IDs, and its description says a name works too.
+- **A report of the other kind gets a refusal that says what to do.** A table report sent to
+  `summary_report`, or a chart sent to `run_report`, says which operation runs it, where the message
+  only said it couldn't be run.
+
 ## [1.0.0rc9] - 2026-11-05
 
 This candidate fixes filters on percent and duration fields, which matched the wrong records with no

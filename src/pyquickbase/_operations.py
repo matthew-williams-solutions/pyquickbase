@@ -493,15 +493,50 @@ def _report(reports: Sequence[ReportInfo], ctx: Context) -> dict[str, Any]:
     return {
         "report": {
             "enum": [item.id for item in reports],
-            "description": f"The report's ID. Reports: {'; '.join(entries)}.",
+            "description": f"The report's ID, or its name. Reports: {'; '.join(entries)}.",
         }
     }
 
 
-def _read_report(value: Any, reports: Sequence[ReportInfo]) -> str:
-    if value not in [item.id for item in reports]:
-        raise QueryError("report isn't a report this tool may run. Use an ID its schema lists.")
-    return cast(str, value)
+def _find_report(value: Any, reports: Sequence[ReportInfo]) -> str | None:
+    """The ID of the listed report that `value` names, as its ID, its ID as a number, or its exact
+    name ignoring case, as models send all three. None if it names none of them."""
+    ids = [item.id for item in reports]
+    if isinstance(value, str) and value in ids:
+        return value
+    if isinstance(value, int) and not isinstance(value, bool) and str(value) in ids:
+        return str(value)
+    if isinstance(value, str):
+        named = [item.id for item in reports if item.name.casefold() == value.casefold()]
+        if len(named) > 1:
+            raise QueryError(
+                "Several reports this tool may run have that name. Use the report's ID instead."
+            )
+        if named:
+            return named[0]
+    return None
+
+
+def _read_report(
+    value: Any, reports: Sequence[ReportInfo], other: Sequence[ReportInfo], *, summary: bool
+) -> str:
+    found = _find_report(value, reports)
+    if found is not None:
+        return found
+    try:
+        elsewhere = _find_report(value, other)
+    except QueryError:
+        elsewhere = None
+    if elsewhere is not None:
+        # The ID is one the client may run anyway, so naming it reveals nothing.
+        kind, use = (
+            ("a table", "run_report") if summary else ("a summary or chart", "summary_report")
+        )
+        raise QueryError(
+            f"Report {elsewhere} isn't a report this tool may run: it's {kind} report, so use the "
+            f"{use} operation."
+        )
+    raise QueryError("report isn't a report this tool may run. Use an ID or name its schema lists.")
 
 
 def _records(ctx: Context, *, update: bool, group: str) -> dict[str, Any]:
@@ -733,7 +768,9 @@ def _no_scope(scope: Expression | None) -> None:
 
 def _plan_report(ctx: Context, arguments: Mapping[str, Any], scope: Expression | None) -> Call:
     _no_scope(scope)
-    report_id = _read_report(arguments["report"], ctx.allowed.reports)
+    report_id = _read_report(
+        arguments["report"], ctx.allowed.reports, ctx.allowed.summary_reports, summary=False
+    )
     found = {
         "top": _read_limit(ctx, arguments),
         "skip": _whole(arguments.get("skip", 0), "skip", minimum=0),
@@ -745,7 +782,9 @@ def _plan_summary_report(
     ctx: Context, arguments: Mapping[str, Any], scope: Expression | None
 ) -> Call:
     _no_scope(scope)
-    report_id = _read_report(arguments["report"], ctx.allowed.summary_reports)
+    report_id = _read_report(
+        arguments["report"], ctx.allowed.summary_reports, ctx.allowed.reports, summary=True
+    )
     found = {"limit": _read_limit(ctx, arguments)}
     return Call(method="summary_rows", arguments=found, report_id=report_id)
 

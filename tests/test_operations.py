@@ -464,6 +464,58 @@ def test_reports_are_chosen_from_the_list_and_take_no_scope() -> None:
     assert summary.plan({"report": "5"}, None).arguments == {"limit": 20}
 
 
+@pytest.mark.parametrize("report", ["1", 1, "List All", "list all"])
+def test_a_report_can_be_named_by_its_id_as_a_number_or_by_its_name(report: Any) -> None:
+    # Models send a numeric-looking ID as a number, and often use the name the schema shows.
+    assert spec("run_report").plan({"report": report}, None).report_id == "1"
+    assert "or its name" in spec("run_report").schema["properties"]["report"]["description"]
+
+
+@pytest.mark.parametrize("report", [True, 1.0, "2", 2, "List", "Ask", None, ["1"]])
+def test_anything_else_is_refused_without_being_repeated(report: Any) -> None:
+    with pytest.raises(QueryError, match="isn't a report this tool may run") as caught:
+        spec("run_report").plan({"report": report}, None)
+    assert "Ask" not in str(caught.value)
+
+
+def test_a_report_of_the_other_kind_says_which_operation_runs_it() -> None:
+    with pytest.raises(
+        QueryError, match="it's a summary or chart report, so use the summary_report operation"
+    ):
+        spec("run_report").plan({"report": "Totals"}, None)
+    with pytest.raises(QueryError, match="it's a table report, so use the run_report operation"):
+        spec("summary_report").plan({"report": 1}, None)
+
+
+def test_a_name_shared_by_two_reports_needs_the_id() -> None:
+    twins = [
+        ReportInfo(id=str(n), name="Same", type="table", description="", incomplete=False, raw={})
+        for n in (1, 2)
+    ]
+    run = make_spec(
+        "run_report",
+        allowed_for(
+            FIELDS,
+            twins,
+            table_id=TASKS,
+            key_field_id=3,
+            read_rules=(),
+            write_rules=(),
+            read_only=False,
+            wanted=None,
+            wanted_reports=None,
+        ),
+        descriptions=None,
+        report_descriptions={},
+        max_records=None,
+        max_rows=100,
+        formula=None,
+    )
+    with pytest.raises(QueryError, match="Several reports"):
+        run.plan({"report": "same"}, None)
+    assert run.plan({"report": "2"}, None).report_id == "2"
+
+
 def test_a_formula_is_fixed_by_code_and_the_model_picks_the_record() -> None:
     formula = spec("run_formula")
     assert list(formula.schema["properties"]) == ["record_id"]

@@ -321,6 +321,24 @@ async def test_reports() -> None:
     ]
 
 
+async def test_reports_can_be_named_by_number_or_name() -> None:
+    fake = Fake()
+    async with client(fake, read_only=True) as qb:
+        tasks = qb.app("bq1234567").table("Tasks")
+        run = await tasks.operation("run_report")
+        assert isinstance(await run.run({"report": 1}), Page)
+        assert isinstance(await run.run({"report": "list all"}), Page)
+        summary = await tasks.operation("summary_report")
+        assert await summary.run({"report": "Totals"}) == [{"Record ID#": 1}]
+        with pytest.raises(QueryError, match="use the run_report operation"):
+            await summary.run({"report": "List All"})
+    assert [name for name, _ in fake.sent if "/run" in name] == [
+        "POST /reports/1/run",
+        "POST /reports/1/run",
+        "POST /reports/5/run",
+    ]
+
+
 async def test_an_operation_the_client_cant_run_is_refused_when_made() -> None:
     async with client(Fake(), read_only=True) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
