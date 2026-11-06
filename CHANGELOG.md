@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0rc9] - 2026-11-05
+
+This candidate fixes filters on percent and duration fields, which matched the wrong records with no
+error, and helps a model's tools say why a delete or write would be refused before anyone approves
+it. Each was found by testing an MCP server built on the SDK, and checked against the live API.
+
+**Upgrading.** A percent or duration filter that worked around the bug by sending Quickbase's own
+units as a number, such as `F("Done") >= 50` for 50%, now means 5,000%. Send `0.5`, or the text
+`"50"`, which is still sent as written.
+
 ### Fixed
 
 - **Filters on `percent` and `duration` fields compared the wrong values, and matched the wrong
