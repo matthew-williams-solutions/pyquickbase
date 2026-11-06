@@ -85,6 +85,9 @@ any text you don't control.
 | Text on a date or timestamp field | Read as a date: `today`, `yesterday`, and `1 day ago` matched. Text it can't read, such as `garbage`, `last week`, or `now`, **matched nothing, with no error** |
 | `today` and `yesterday` in a query, and `Today()` in a formula | Follow Quickbase's date rather than the client's, which can differ near midnight: at 00:55 EST on 2026-11-05, `Today()` returned `11-04-2026`. Live API, 2026-11-05 |
 | `TRUE`, `NULL`, `today`, `*`, `%`, `_` on a text field | Literal |
+| A number on a `percent` field | **Compared as whole percent**, though a percent reads and writes as a fraction: `{f.EX.'100'}` matched the 45 records at 100%, and `{f.EX.'1'}` matched none. `25`, `25.00`, and `25%` matched the records at 25%, and `0.25` matched none. `F` sends a number times 100. Live API, 2026-11-05 |
+| A number on a `duration` field | **Matches nonsense, with no error.** On durations from 30 minutes to 20 hours, `GT 0.9999` matched every record with a value and `GT 1` matched none, and so did 8 hours as `8`, `480`, `28800`, or `28800000`. Live API, 2026-11-05 |
+| Text on a `duration` field | Read as a duration: `6:00:00`, `6:00`, `6 hours`, `360 minutes`, `21600 seconds`, `0.25 days`, and `21600000 milliseconds` each matched the 7 records of 6 hours. **`N milliseconds` is exact**: `GT '71999999 milliseconds'` matched the one record of 20 hours. `ms` matched nothing. Negative values and `0 milliseconds` work, and `''` matches empty. `F` sends `N milliseconds`. Live API, 2026-11-05 |
 
 ## Writes
 
@@ -259,6 +262,7 @@ many other mistakes, these are checked:
 | **A timestamp formula** | **`timestamp` returns 400, `[formula] property is not supported`. `datetime` works, and the field then reports its type as `timestamp`** |
 | `text-multi-line` | 400, `[formula] property is not supported` |
 | Reading formula fields in a query | Full precision, unlike a formula run: `1/3` returns `0.3333333333333333`. A duration returns milliseconds, and a time of day `11:34:49.896` |
+| **A blank number in a formula** | **Can read as 0, not empty.** With a numeric field made through the API left empty, and no child records, `If(IsNull([Hours]), null, [Hours] - Nz([Hours Logged]))` returned 0, so `IsNull([Hours])` was false. This is probably the field's "treat blank as zero" setting, which wasn't checked or turned off. Live API, 2026-11-05 |
 
 ## Rate limits
 

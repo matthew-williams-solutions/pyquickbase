@@ -255,6 +255,22 @@ def test_a_delete_that_matches_too_many_records_is_refused() -> None:
     assert count["where"] == "{9.EX.'Alpha'}AND{7.EX.'Open'}"
 
 
+@pytest.mark.parametrize(("matching", "over"), [(10, False), (11, True)])
+def test_a_delete_preview_says_when_a_delete_would_be_refused(matching: int, over: bool) -> None:
+    with client(Fake(matching=matching)) as qb:
+        preview = qb.app("bq1234567").table("Tasks").operation("preview_delete", max_records=10)
+        page = preview.run({"where": OPEN})
+    assert isinstance(page, Page)
+    assert page.total == matching
+    result = tool_result(page)
+    if over:
+        assert result["over_limit"]["max_records"] == 10
+        assert "11 records match" in result["over_limit"]["message"]
+        assert "would be refused" in result["over_limit"]["message"]
+    else:
+        assert "over_limit" not in result
+
+
 def test_preview_update_offers_only_fields_it_can_read() -> None:
     reads = ReadRules({TASKS: ReadAccess(fields=[6, 7], write_only=[9])})
     writes = WriteRules({TASKS: WriteAccess(update=[7, 9])})

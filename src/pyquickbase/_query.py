@@ -9,7 +9,7 @@ import re
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, ClassVar
 
@@ -36,6 +36,7 @@ _ESCAPE = re.compile(r"\\(.)")
 _LIST_WORD = re.compile(r"\b(?:OR|AND)\b")
 _FIELD_REFERENCE = re.compile(r"(?:^|\s)_fid_", re.IGNORECASE)
 _FIELD_REFERENCE_ANYWHERE = re.compile(r"_fid_", re.IGNORECASE)
+_HUNDRED = Decimal(100)
 _WHERE_HELP = (
     "Each condition must be {fieldId.OPERATOR.'value'} in its own braces, joined outside the "
     "braces with AND or OR in uppercase. Write an apostrophe in a value as \\'."
@@ -84,6 +85,8 @@ def format_value(value: Any) -> str:
         return str(int(value.timestamp() * 1000))
     if isinstance(value, date):
         return value.isoformat()
+    if isinstance(value, timedelta):
+        return str(_whole_milliseconds(value / timedelta(milliseconds=1)))
     if isinstance(value, str):
         if "{" in value or "}" in value:
             raise QueryError("Quickbase can't search for values containing { or }.")
@@ -92,6 +95,40 @@ def format_value(value: Any) -> str:
         lowered = _LIST_WORD.sub(lambda word: word[0].lower(), value)
         return lowered.replace("\\", "\\\\").replace("'", "\\'")
     raise QueryError(f"Can't use a value of type {type(value).__name__} in a query.")
+
+
+def _whole_milliseconds(value: float | Decimal) -> int:
+    if value != int(value):
+        raise QueryError(
+            "A duration in a query must be whole milliseconds, as Quickbase keeps no less."
+        )
+    return int(value)
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, int | float | Decimal) and not isinstance(value, bool)
+
+
+def typed_value(item: Field, text: str, original: Any) -> str:
+    """Adjust a value for the field it's compared with, where Quickbase reads it differently.
+
+    A percent is a fraction everywhere else, but a query compares whole percent, so `0.5` would
+    match 0.5%. A duration is milliseconds everywhere else, but a query reads a bare number as
+    something else and matches nonsense, so it's sent as `N milliseconds`, which compares exactly.
+    Text is sent as written, such as `8 hours`. See docs/api-notes.md.
+    """
+    if text == "":
+        return text
+    if item.type == "percent" and _is_number(original):
+        return format(Decimal(text) * _HUNDRED, "f")
+    if item.type == "duration" and (_is_number(original) or isinstance(original, timedelta)):
+        return f"{_whole_milliseconds(Decimal(text))} milliseconds"
+    if isinstance(original, timedelta):
+        raise QueryError(
+            f"Field {item.label!r} is {item.type}, not a duration, so it can't be compared with a "
+            "timedelta."
+        )
+    return text
 
 
 class Expression:
@@ -145,7 +182,8 @@ class Condition(Expression):
         operator = self.operator
         if item.type == "user":
             operator = _USER_FIELD_OPERATORS.get(operator, operator)
-        return f"{{{item.id}.{operator}.'{self.value}'}}"
+        value = typed_value(item, self.value, self.original)
+        return f"{{{item.id}.{operator}.'{value}'}}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,7 +217,10 @@ class F:
     `(F("Status") == "Done") & (F("Due Date") < date.today())`. Values are escaped for you, so
     this is the safe way to use text you don't control. `== None` matches empty fields.
 
-    On a `user` or `multiuser` field, compare with an email or user ID.
+    On a `user` or `multiuser` field, compare with an email or user ID. On a `percent` field, a
+    number is a fraction, as it is when writing, so `F("Done") >= 0.5` means 50%. On a `duration`
+    field, a number is milliseconds, or use a `timedelta`. Text is sent as written, such as
+    `F("Budget") > "8 hours"`.
 
     Args:
         field: The field's label or ID.

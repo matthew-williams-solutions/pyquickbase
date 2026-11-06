@@ -136,6 +136,9 @@ class _CheckedCondition(Condition):
                 value = _timestamp(value, item.label)
             elif item.type in _NUMERIC_TYPES:
                 value = _number(value, item.label)
+                # A model's numbers mean what they mean when writing: a fraction for a percent,
+                # and milliseconds for a duration.
+                return Condition(self.field, operator, value, Decimal(value)).compile(fields)
             elif item.type == "checkbox":
                 value = _checkbox(value, item.label)
         if item.type in _DATE_TYPES:

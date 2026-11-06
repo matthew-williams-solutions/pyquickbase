@@ -541,6 +541,7 @@ def _read_records(ctx: Context, value: Any, *, update: bool, group: str) -> list
         )
     offered: Sequence[Field] = getattr(ctx.allowed, group)
     converters = {item.label: _Converter(item) for item in offered}
+    readable = {item.label for item in ctx.allowed.readable}
     built: list[dict[str, Any]] = []
     for index, row in enumerate(rows):
         path = f"records[{index}]"
@@ -552,6 +553,11 @@ def _read_records(ctx: Context, value: Any, *, update: bool, group: str) -> list
                 cells[key] = _whole_id(item, f"{path}.{_RECORD_ID_LABEL}")
                 continue
             converter = converters.get(key)
+            if converter is None and key in readable:
+                # The label is one the tool offers to read, so naming it reveals nothing.
+                raise InvalidValueError(
+                    f"{path}.{key} can be read, but this tool may not write it. Leave it out."
+                )
             if converter is None:
                 raise InvalidValueError(
                     f"{path} has a field this tool may not write. Use only the fields its schema "

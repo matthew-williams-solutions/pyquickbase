@@ -6,6 +6,29 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Filters on `percent` and `duration` fields compared the wrong values, and matched the wrong
+  records with no error.** A query compares a percent in whole percent, so `F("Done") >= 0.5` matched
+  0.5% and up. A bare number on a duration matches nonsense, so `F("Budget") > 28800000` matched
+  nothing. `F` and `where_from_dict()` now send a percent as whole percent and a duration as
+  `N milliseconds`, which compares exactly, so a number means what it means when writing: a fraction,
+  and milliseconds. Text is still sent as written. The same applies to a `scope` and to `delete()`.
+
+### Added
+
+- `F` takes a `timedelta` on a `duration` field.
+- A `preview_delete` operation's result says, in `tool_result()`'s `over_limit`, when more records
+  match than its `max_records`, so a model knows the delete would be refused before asking anyone
+  to approve it.
+- A write that sets a field the tool may read but not write now names the field. A field it can't
+  read still isn't named.
+
+### Changed
+
+- The refusal for a read past `ReadAccess(max_records=...)` says that it limits how far paging can go,
+  not only the size of a page, and so do the docs for `ReadAccess` and `table.operation()`.
+
 ## [1.0.0rc8] - 2026-11-05
 
 This candidate holds the fixes from a review before 1.0. Most important, it closes gaps in what a model's

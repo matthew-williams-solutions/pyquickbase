@@ -614,6 +614,14 @@ class Page:
         return self.skip + len(self.records)
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DeletePreviewPage(Page):
+    """What a `preview_delete` operation found, with the most its delete may match, so
+    `tool_result()` can say when a delete with the same filter would be refused. Private."""
+
+    most: int
+
+
 def require_summary_report(report: ReportInfo) -> None:
     """Refuse reports whose rows are records, or that Quickbase can't run through the API."""
     if report.type not in ("summary", "chart"):

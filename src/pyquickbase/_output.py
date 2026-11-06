@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Any, Literal, cast
 
 from ._models import (
+    DeletePreviewPage,
     Field,
     FileAttachment,
     FileDownload,
@@ -470,7 +471,7 @@ def _download(value: FileDownload, state: _State) -> dict[str, Any]:
 def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, Any]:
     if isinstance(value, Page | TypedPage):
         page = cast(Page | TypedPage[Any], value)
-        return _paged(
+        found = _paged(
             page.records,
             state,
             max_records,
@@ -478,6 +479,16 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
             skip=page.skip,
             has_more=page.has_more,
         )
+        if isinstance(page, DeletePreviewPage) and page.total > page.most:
+            found["over_limit"] = {
+                "max_records": page.most,
+                "message": (
+                    f"{page.total} records match, and a delete may match at most {page.most}, so "
+                    "deleting with this filter would be refused, and nothing would be deleted. "
+                    "Narrow the filter."
+                ),
+            }
+        return found
     if value is None or isinstance(value, Record | TypedRecord):
         return {"record": None if value is None else _record(value, state)}
     if isinstance(value, WriteResult):
@@ -537,6 +548,7 @@ def tool_result(
     | `WriteResult` | `created_ids`, `updated_ids`, and `unchanged_ids` |
     | A list of `SummaryRow` | `groups`, each with `group`, `count`, and the totals it has |
     | `UpdatePreview` | `changes`, `unchanged_ids`, and `missing_ids` |
+    | A `preview_delete` operation's result | As for a `Page`, and `over_limit` if needed |
     | `FormulaResult` | `value` and `type` |
     | Text, a number, a date, or a bool | `value` |
     | `TableInfo`, `Field`, or `ReportInfo` | `table`, `field`, or `report`, without `raw` |
@@ -548,6 +560,10 @@ def tool_result(
 
     `page` holds `returned`, `total`, `skip`, `next_skip`, and `has_more`, so a model can tell
     whether it has every record, and ask for the next page. An empty list counts as no records.
+
+    A `preview_delete` operation's result also has `over_limit` when more records match than the
+    operation's `max_records`, with that limit and a message saying a delete with the same filter
+    would be refused. Give both operations the same `max_records` for this to be right.
 
     Values are written the same way whatever their field: a date as `YYYY-MM-DD`, a timestamp in
     UTC as `2026-03-04T05:06:07Z`, a `Decimal` as a number when that's exact and as text otherwise,

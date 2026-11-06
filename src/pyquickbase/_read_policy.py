@@ -373,7 +373,9 @@ class ReadAccess:
         summary_reports: Summary and chart reports it may run, by ID. Their columns can't be
             matched to fields, so listing one allows all of them.
         max_records: The most records one query or report can reach, counting `skip`, so a query
-            needs a `limit` of at most this.
+            needs a `limit` of at most this. It's how far paging can go, not the size of a page,
+            so give an operation its own, lower `max_records` for that, and set this as high as
+            you want a caller to be able to page.
         max_summary_records: The most records `summarize()` may read for one summary.
         user_emails: Whether to keep email addresses in user values, and the uploader's details
             in file values. Without this, a user is only their `id` and `name`.
@@ -457,7 +459,8 @@ def _check_window(request: ReadRequest, limit: int, name: str) -> None:
         raise _refused(
             request,
             f"table {request.table_id} allows reaching at most {limit} records, counting skip, "
-            f"set by {name}. Ask for fewer with limit or top, or narrow the filter.",
+            f"set by {name}, which is how far paging can go, not only the size of a page. Ask "
+            "for fewer with limit or top, or narrow the filter.",
         )
 
 

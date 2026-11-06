@@ -1,7 +1,7 @@
 """Tests for query building, models, and the schema cache, which do no network access."""
 
 import re
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -547,3 +547,53 @@ def test_user_and_file_values_read_as_objects_and_hide_emails() -> None:
     assert record["Spec"] is None
     assert record["Odd"] == {"name": "no id"}  # Unexpected shapes are left as they are
     assert not isinstance(record["Spec"], FileAttachment)
+
+
+TYPED_FIELDS = FieldIndex(
+    [
+        field(3, "Record ID#", "recordid"),
+        field(6, "Done", "percent"),
+        field(7, "Budget", "duration"),
+        field(8, "Hours", "numeric"),
+        field(9, "Note", "text"),
+    ]
+)
+
+
+@pytest.mark.parametrize(
+    ("condition", "expected"),
+    [
+        # Quickbase compares a percent in whole percent, though it reads and writes a fraction.
+        (F("Done") >= 0.5, "{6.GTE.'50.0'}"),
+        (F("Done") == 1, "{6.EX.'100'}"),
+        (F("Done") == 0.35, "{6.EX.'35.00'}"),
+        (F("Done") == Decimal("0.125"), "{6.EX.'12.500'}"),
+        (F("Done").is_in([0, 1]), "{6.EX.'0'}OR{6.EX.'100'}"),
+        # A bare number on a duration matches nonsense, but milliseconds as text compare exactly.
+        (F("Budget") > 28_800_000, "{7.GT.'28800000 milliseconds'}"),
+        (F("Budget") > timedelta(hours=8), "{7.GT.'28800000 milliseconds'}"),
+        (F("Budget") <= -1000, "{7.LTE.'-1000 milliseconds'}"),
+        # Empty, and text, are sent as written.
+        (F("Done") == None, "{6.EX.''}"),  # noqa: E711
+        (F("Budget") != None, "{7.XEX.''}"),  # noqa: E711
+        (F("Done") >= "50", "{6.GTE.'50'}"),
+        (F("Budget") > "8 hours", "{7.GT.'8 hours'}"),
+        # Other numbers are unchanged.
+        (F("Hours") >= 0.5, "{8.GTE.'0.5'}"),
+    ],
+)
+def test_percent_and_duration_values_are_sent_as_quickbase_compares_them(
+    condition: Any, expected: str
+) -> None:
+    assert compile_where(condition, TYPED_FIELDS) == expected
+
+
+def test_a_duration_must_be_whole_milliseconds_and_a_timedelta_needs_a_duration() -> None:
+    with pytest.raises(QueryError, match="whole milliseconds"):
+        compile_where(F("Budget") > 1.5, TYPED_FIELDS)
+    with pytest.raises(QueryError, match="whole milliseconds"):
+        _ = F("Budget") > timedelta(microseconds=1500)
+    with pytest.raises(QueryError, match="not a duration"):
+        compile_where(F("Hours") > timedelta(hours=1), TYPED_FIELDS)
+    # A hand-written string is the caller's to get right.
+    assert compile_where("{7.GT.'5'}", TYPED_FIELDS) == "{7.GT.'5'}"

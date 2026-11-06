@@ -8,6 +8,7 @@ from typing import Any, Generic, Self, TypeVar, cast
 from .._models import (
     RECORD_ID_FIELD,
     AppInfo,
+    DeletePreviewPage,
     Field,
     FieldIndex,
     FileDownload,
@@ -1674,8 +1675,10 @@ class AsyncTable:
             formula: For `run_formula`, the formula's text, which your code fixes. The model only
                 chooses the record, as a formula can read any table.
             max_records: The most records one call may return, or for `delete`, may match. A
-                delete that matches more is refused. Defaults to 100, or for `summarize`, 10,000
-                records read. The client's `ReadRules` can lower it.
+                delete that matches more is refused. Give `preview_delete` the same number, and
+                its result says when a delete would be refused. Defaults to 100, or for
+                `summarize`, 10,000 records read. The client's `ReadRules` can lower it, and
+                their own `max_records` also limits how far `skip` can page.
             max_rows: The most records one `insert` or `update` may send.
 
         Returns:
@@ -1970,7 +1973,14 @@ class AsyncOperation:
             return await getattr(report, call.method)(**call.arguments)
         if call.method in ("insert", "update", "preview_update"):
             return await getattr(table, call.method)(call.arguments["rows"])
-        return await getattr(table, call.method)(**call.arguments)
+        result = await getattr(table, call.method)(**call.arguments)
+        if call.method == "preview_delete":
+            page = cast(Page, result)
+            limit = self._spec.context.limit
+            return DeletePreviewPage(
+                records=page.records, total=page.total, skip=page.skip, most=limit
+            )
+        return result
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._spec.name!r}, table={self._table!r})"

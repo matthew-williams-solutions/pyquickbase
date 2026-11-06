@@ -196,6 +196,52 @@ async def test_query_conditions_match_what_they_should(
     assert await table.count(where) == len(expected)
 
 
+MEASURES = [("Code", "text"), ("Done", "percent"), ("Budget", "duration")]
+MEASURE_ROWS = [
+    {"Code": "M1", "Done": 0.25, "Budget": 1_800_000},
+    {"Code": "M2", "Done": 0.5, "Budget": 28_800_000},
+    {"Code": "M3", "Done": 1, "Budget": 28_800_001},
+    {"Code": "M4", "Done": None, "Budget": None},
+]
+
+
+@pytest.fixture(scope="module")
+def measures(scratch: Any) -> str:
+    table = scratch.table(*MEASURES)
+    scratch.fill(table, MEASURE_ROWS)
+    return table.info().id
+
+
+@pytest.mark.parametrize(
+    ("where", "expected"),
+    [
+        # A percent compares as a fraction, as it's written, though Quickbase's queries use whole
+        # percent. A duration compares as milliseconds, which Quickbase reads as nonsense bare.
+        (F("Done") >= 0.5, ["M2", "M3"]),
+        (F("Done") == 0.25, ["M1"]),
+        (F("Done") == 1, ["M3"]),
+        (F("Done").is_in([0.25, 1]), ["M1", "M3"]),
+        (F("Done") == None, ["M4"]),  # noqa: E711
+        (F("Budget") > 28_800_000, ["M3"]),
+        (F("Budget") >= timedelta(hours=8), ["M2", "M3"]),
+        (F("Budget") < timedelta(hours=1), ["M1"]),
+        (F("Budget") == None, ["M4"]),  # noqa: E711
+        # Text is sent as written.
+        (F("Budget") > "7 hours", ["M2", "M3"]),
+        (F("Done") >= "50", ["M2", "M3"]),
+        (where_from_dict({"field": "Done", "op": ">", "value": 0.3}), ["M2", "M3"]),
+        (where_from_dict({"field": "Budget", "op": "<=", "value": 28_800_000}), ["M1", "M2"]),
+    ],
+)
+async def test_percent_and_duration_filters_compare_as_they_are_written(
+    qb: AsyncQuickbase, scratch: Any, measures: str, where: Any, expected: list[str]
+) -> None:
+    table = get(qb, scratch, measures)
+    found = [r["Code"] async for r in table.query(select=["Code"], where=where, order_by="Code")]
+    assert found == expected
+    assert await table.count(where) == len(expected)
+
+
 @pytest.mark.parametrize(
     "value",
     [

@@ -38,6 +38,14 @@ tasks.create_field("Priority", "text-multiple-choice", choices=["Low", "High"])
 
 [Generated classes](guides/codegen.md) read these more strictly, such as `currency` as `Decimal`.
 
+**In a query, numbers mean the same as when writing**, though Quickbase reads them differently, so
+`F` converts them: `F("Done") >= 0.5` is 50%, and `F("Budget") > timedelta(hours=8)` or
+`> 28_800_000` is 8 hours. A hand-written string is sent as written, where Quickbase compares a percent
+in whole percent, `{f.GTE.'50'}`, and needs a duration as text, `{f.GT.'8 hours'}`.
+
+**A blank number can read as 0 in a formula**, so `IsNull([Hours])` was false for an empty Hours
+field made through the API. See [API notes](api-notes.md#formulas).
+
 ## Date and time types
 
 | `field_type` | Holds | Write | Reads as | Empty reads as | Takes a formula |

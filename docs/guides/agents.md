@@ -95,7 +95,9 @@ pass `user_emails=True`. Formulas are always refused, because a formula can read
   seeing which records match, even if the field isn't returned, so `filter` and `sort` are separate
   lists.
 - **Limits apply per query.** `max_records` stops one query from returning a whole table, but a model
-  can still make more queries.
+  can still make more queries. `ReadRules` `max_records` is how far paging can reach, counting
+  `skip`, while an operation's own `max_records` is the size of each page, so set the rules' number as
+  high as you want a model to page.
 - **`read_only` promises only that it changes no records.** It still runs reports, which adds to
   their usage count in Quickbase, and formulas.
 - **Formulas reach further than the table you run them on.** A formula can read other tables with
@@ -299,7 +301,7 @@ The schema goes in your framework's tool definition, under the name it uses, suc
 | `update` | `records`, each with `Record ID#` | `update()` | `WriteResult` |
 | `delete` | `where`, which is required. It's refused if it matches more than `max_records` | `delete()` | `int` |
 | `preview_update` | As `update` | `preview_update()` | `UpdatePreview` |
-| `preview_delete` | `where`, `select`, `limit` | `preview_delete()` | `Page` |
+| `preview_delete` | `where`, `select`, `limit`. Give it the same `max_records` as `delete`, and `tool_result()` says in `over_limit` when a delete would be refused | `preview_delete()` | `Page` |
 | `run_report` | `report`, `limit`, `skip` | `Report.run_page()` | `Page` |
 | `summary_report` | `report`, `limit` | `Report.summary_rows()` | A list of rows |
 | `run_formula` | `record_id` | `run_formula()`, with the formula your code gives | `FormulaResult` |
@@ -336,8 +338,9 @@ they can't be asked about a field without a request, so one may refuse more than
 | Field type | The model sends |
 |---|---|
 | Text, email, URL, phone, predecessor | Text. A multiple-choice field that doesn't allow new choices offers only its choices |
-| Number, currency, percent, rating | A number |
-| Duration | Whole milliseconds, so an hour is `3600000`. A fraction is refused, as Quickbase would drop it |
+| Number, currency, rating | A number |
+| Percent | A fraction, so 50% is `0.5`, in writes and filters alike |
+| Duration | Whole milliseconds, so an hour is `3600000`, in writes and filters alike. A fraction is refused, as Quickbase would drop it |
 | Checkbox | `true` or `false` |
 | Date | `YYYY-MM-DD`, so `today` is refused |
 | Timestamp | ISO 8601 with a time zone, like `2026-12-01T09:30:00Z` |

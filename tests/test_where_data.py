@@ -509,3 +509,35 @@ def test_descriptions_are_added_and_must_be_for_offered_fields() -> None:
         where_schema(descriptions={"Title": "x"})
     with pytest.raises(QueryError, match="isn't empty"):
         where_schema(fields=["Status"], descriptions={"Status": " "})
+
+
+TYPED = FieldIndex(
+    field_from_api({"id": number, "label": label, "fieldType": kind})
+    for number, label, kind in (
+        (3, "Record ID#", "recordid"),
+        (6, "Done", "percent"),
+        (7, "Budget", "duration"),
+    )
+)
+
+
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        (cond("Done", ">=", 0.5), "{6.GTE.'50.0'}"),
+        (cond("Done", "==", "1"), "{6.EX.'100'}"),
+        (cond("Done", "in", [0.25, 1]), "{6.EX.'25.00'}OR{6.EX.'100'}"),
+        (cond("Budget", ">", 3_600_000), "{7.GT.'3600000 milliseconds'}"),
+        (cond("Budget", "==", None), "{7.EX.''}"),
+    ],
+)
+def test_a_models_percent_is_a_fraction_and_a_duration_is_milliseconds(
+    data: dict[str, Any], expected: str
+) -> None:
+    # As they are when the model writes them, which Quickbase's queries don't share.
+    assert compile_where(where_from_dict(data), TYPED) == expected
+
+
+def test_a_models_duration_must_be_whole_milliseconds() -> None:
+    with pytest.raises(QueryError, match="whole milliseconds"):
+        compile_where(where_from_dict(cond("Budget", ">", 1.5)), TYPED)

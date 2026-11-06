@@ -408,6 +408,19 @@ def test_bad_values_are_refused_without_repeating_them(record: dict[str, Any], m
     assert "today" not in str(caught.value)
 
 
+def test_a_field_it_may_read_but_not_write_is_named() -> None:
+    # The label is one the tool offers to read, so naming it reveals nothing.
+    with pytest.raises(InvalidValueError, match=r"records\[0\]\.Doubled can be read"):
+        spec("insert").plan({"records": [{"Doubled": 1}]}, None)
+    # A field it can't read, or one that doesn't exist, isn't named or confirmed.
+    hidden = allowed(read_rules=(ReadRules({TASKS: ReadAccess(fields=[3, 6])}),))
+    for key in ("Doubled", "Secret"):
+        with pytest.raises(InvalidValueError) as caught:
+            spec("insert", hidden).plan({"records": [{key: 1}]}, None)
+        assert key not in str(caught.value)
+        assert "has a field this tool may not write" in str(caught.value)
+
+
 def test_null_clears_a_field_except_a_file() -> None:
     rows = spec("insert").plan({"records": [{"Title": None, "Hours": None}]}, None).arguments
     assert rows["rows"] == [{"Title": None, "Hours": None}]
