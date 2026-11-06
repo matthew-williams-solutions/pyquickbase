@@ -541,7 +541,9 @@ may change them without notice.
 
 The interface's own links add `skip=0` to a report, `rl=...&page=1` to a record, `chain=1` to a
 field, `originalQid=...` to a new record or a report's settings, and `page=1` to a new record. These
-look like the interface's state, so the SDK leaves them out. The API can't list forms, so a form's ID
+look like the interface's state, so the SDK leaves them out. Without `originalQid` and `page`, the
+app settings, report settings, new record, field list, relationships, table settings, and form
+links each opened the right page (browser, 2026-11-05). The API can't list forms, so a form's ID
 comes from its address in the interface.
 
 A link to the records that match a filter isn't built, because no form has been confirmed. The
