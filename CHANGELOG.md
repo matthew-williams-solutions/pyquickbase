@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0rc11] - 2026-11-05
+
+This candidate adds links to the Quickbase interface, so that a tool built on the SDK can show a
+person where to check what a model read or changed. Nothing that worked before has changed.
+
 ### Added
 
 - **Links to the Quickbase interface**, so a tool can show a person where to check what a model read
