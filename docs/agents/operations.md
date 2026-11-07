@@ -37,6 +37,23 @@ async def search_tasks(search, project: str, arguments: dict) -> dict:
 The schema goes in your framework's tool definition, under the name it uses, such as `input_schema` or
 `parameters`. It's plain JSON Schema with no `$ref`, and a new dictionary each time, so you can add to it.
 
+Each call to `run()` goes through these steps, and stops with an error at the first one that fails.
+Only the last step changes anything:
+
+```mermaid
+flowchart TD
+    A[The model's arguments] --> N["Read spellings models guess,<br/>such as sort or starts with"]
+    N --> C["Check every key, field, and value<br/>against the schema"]
+    C --> S["Add the scope to the filter, or<br/>fill its fields in on an insert"]
+    S --> K["Count what a delete matches, and<br/>check named records are in the scope"]
+    K --> P{"require_preview?"}
+    P -- yes --> CF{"Confirmation matches<br/>these arguments?"}
+    CF -- no --> E[ConfirmationError]
+    CF -- yes --> T
+    P -- no --> T["Call the table method,<br/>under the client's policy"]
+    T --> R["The result, for tool_result()"]
+```
+
 ### What each operation takes
 
 | Operation | The model sends | Runs | Returns |

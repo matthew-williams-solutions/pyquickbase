@@ -34,6 +34,45 @@ with Quickbase(realm="acme", token="your_user_token") as qb:
 
 The other examples on this page use `tasks`, a table from a client made in the same way.
 
+Catching a class catches everything under it. `WritePermissionError` is under both `WriteError` and
+`PermissionDeniedError`, so either one catches a refused write.
+
+```mermaid
+flowchart LR
+    Q[QuickbaseError] --> Before
+    Q --> Answer
+    Q --> W[WriteError]
+    Q --> API[APIError]
+    subgraph Before [Caught before sending]
+        direction TB
+        CE[ConfigurationError]
+        QE[QueryError]
+        IV[InvalidValueError]
+        CF[ConfirmationError]
+        PR[PolicyRefusedError]
+        UN["UnknownTableError<br/>UnknownFieldError<br/>UnknownReportError"]
+        US[UnsupportedReportError]
+        SM[SchemaMismatchError]
+    end
+    subgraph Answer [No usable answer]
+        direction TB
+        NE[NetworkError] --> RT[RequestTimeoutError]
+        IR[InvalidResponseError]
+    end
+    W --> SC[SchemaChangeError]
+    W --> WP[WritePermissionError]
+    API --> BR[BadRequestError]
+    API --> AU[AuthenticationError]
+    API --> PD[PermissionDeniedError]
+    API --> NF[NotFoundError]
+    API --> RL[RateLimitError]
+    API --> SE[ServerError]
+    PD --> WP
+```
+
+`ConfigurationError`, `QueryError`, and `InvalidValueError` are also `ValueError`s, and the three
+`Unknown...Error`s are also `LookupError`s.
+
 Reading a missing key from a `Record` raises Python's `KeyError`, as any mapping does. That includes
 `record.id` on a report row without a Record ID# column.
 

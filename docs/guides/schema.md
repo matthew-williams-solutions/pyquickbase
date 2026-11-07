@@ -97,6 +97,27 @@ child table.
 - `ensure_summary_field()` calculates a value from the child's records, and puts it on the parent.
 - `ensure_count_field()` counts the child's records, and puts the count on the parent.
 
+```mermaid
+flowchart LR
+    subgraph Projects [Projects, the parent]
+        PID["Record ID#"]
+        PN[Name]
+        PT["Total Hours<br/>summary"]
+        PC["Task Count<br/>count"]
+    end
+    subgraph Tasks [Tasks, the child]
+        FK["Project<br/>foreign key"]
+        LK["Project Name<br/>lookup"]
+        TH[Hours]
+    end
+    FK -- "holds a project's ID" --> PID
+    PN -. shown on each task .-> LK
+    TH -. added up per project .-> PT
+    Tasks -. counted per project .-> PC
+```
+
+Every method is called on the child, but a summary or count is created on the parent.
+
 ```python
 app = qb.app("bq1234567")
 projects = app.table("Projects")

@@ -61,6 +61,28 @@ can send it while still limiting. Use `max_retries=0` to disable retrying.
 
 What's retried:
 
+```mermaid
+flowchart TD
+    S[Send the request] --> O{What happened?}
+    O -- "couldn't connect,<br/>nothing was sent" --> B[Wait with backoff]
+    O -- "timed out or dropped<br/>after sending" --> RD1{A read?}
+    O -- "502, 503, or 504" --> RD2{A read?}
+    O -- 429 --> RA{Retry-After?}
+    O -- "anything else" --> DONE[Return it, or raise its error]
+    RD1 -- yes --> B
+    RD1 -- no --> X[Raise, as it may have been applied]
+    RD2 -- yes --> B
+    RD2 -- no --> DONE
+    RA -- "missing or 0" --> B
+    RA -- "up to max_retry_after" --> WA[Wait that long]
+    RA -- longer --> RL[Raise RateLimitError]
+    B --> L{Retries left?}
+    WA --> L
+    L -- yes --> S
+    L -- no --> DONE
+```
+
+
 | Failure | Reads | Writes |
 |---|---|---|
 | 429, rate limited | Yes | Yes |
