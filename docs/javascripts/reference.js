@@ -1,4 +1,4 @@
-// The "Copy for an LLM" button on the API reference pages. Without clipboard access, the button
+// The "Copy for LLM" button on the API reference pages. Without clipboard access, the button
 // stays hidden and the "View as Markdown" link still works.
 document.addEventListener("DOMContentLoaded", () => {
   const button = document.querySelector(".ref-copy");

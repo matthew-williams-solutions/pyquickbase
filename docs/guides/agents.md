@@ -476,7 +476,7 @@ way whatever their field:
   number, and `{"url": "", "versions": []}` for an empty file, so a model would otherwise have to know each.
 - A `Decimal` is a number when that's exact, and text when a number would lose digits.
 - A user is `{"id", "name", "email"}`, with a null email when a client's
-  [read rules](#limiting-what-it-reads) leave it out. A file is
+  [read rules](#limiting-access) leave it out. A file is
   `{"url", "versions": [{"number", "file_name", "uploaded", "creator"}]}`, or with `compact`, the latest
   file's name.
 
@@ -571,7 +571,7 @@ bug's details, and any values in them, don't reach the model. Log it yourself be
 - **They don't make record data safe.** Labels and values are still [untrusted](#reading-results), so a
   record can hold text meant to steer the model. Keep results apart from your instructions.
 - **They don't hide fields.** They return what you give them, so select only what the model should see, or
-  use [read rules](#limiting-what-it-reads), which the SDK enforces.
+  use [read rules](#limiting-access), which the SDK enforces.
 - **Quickbase's own wording passes through.** An error from Quickbase keeps its message, up to 500
   characters, because a model needs it to fix a request Quickbase refused, such as `Criteria is invalid`.
   A row's `messages` are Quickbase's too. They can contain HTML, and may repeat what was sent.

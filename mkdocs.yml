@@ -12,16 +12,22 @@ theme:
     - content.code.copy
     - content.tabs.link
     - navigation.sections
+    - navigation.tabs
+    - navigation.footer
     - navigation.top
     - search.suggest
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
+      primary: white
+      accent: indigo
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
+      primary: black
+      accent: indigo
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
@@ -29,7 +35,6 @@ theme:
 nav:
   - Home: index.md
   - Getting started: getting-started.md
-  - Playground: playground.md
   - Guides:
       - Reading records: guides/reading.md
       - Writing records: guides/writing.md
@@ -40,8 +45,8 @@ nav:
       - Handling errors: guides/errors.md
       - Configuring clients: guides/clients.md
       - Using pyquickbase from an AI agent: guides/agents.md
-  - API reference: reference.md
-  - API reference pages:
+  - Reference:
+      - Overview: reference.md
       - Quickbase: reference/quickbase.md
       - App: reference/app.md
       - Table: reference/table.md
@@ -57,12 +62,15 @@ nav:
       - Tools for models: reference/tools.md
       - Generated classes: reference/generated.md
       - Errors: reference/errors.md
-  - Field types: field-types.md
-  - Stability and versioning: stability.md
-  - Quickbase API notes: api-notes.md
-  - Changelog: changelog.md
+      - Field types: field-types.md
+  - Playground: playground.md
+  - Project:
+      - Stability and versioning: stability.md
+      - Quickbase API notes: api-notes.md
+      - Changelog: changelog.md
 
 extra_css:
+  - stylesheets/site.css
   - stylesheets/reference.css
 
 extra_javascript:

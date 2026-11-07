@@ -1,4 +1,4 @@
-"""Write the two-column API reference pages, ready for `mkdocs build`.
+"""Write the API reference pages, ready for `mkdocs build`.
 
 uv run scripts/build_reference.py
 
@@ -30,7 +30,6 @@ EXAMPLES = ROOT / "docs_src" / "reference"
 CONSTRUCTOR = "__init__"
 # Methods that the async client names differently.
 ASYNC_NAMES = {"close": "aclose"}
-OVERVIEW = "../reference.md"
 
 # Classes you make yourself, so they show a constructor rather than a list of attributes.
 HAS_PUBLIC_CONSTRUCTOR = {
@@ -130,7 +129,7 @@ class Group(NamedTuple):
 
 
 def _setup(last_line: str) -> tuple[str, str]:
-    """Return the setup code for each client, narrow enough for the code column."""
+    """Return the setup code for each client."""
     body = f'    realm="acme", token="your_user_token"\n) as qb:\n    {last_line}'
     return (
         f"from pyquickbase import Quickbase\n\nwith Quickbase(\n{body}",
@@ -545,7 +544,8 @@ SYMBOL_PAGES = (
         "possible as well, as Quickbase's own permissions are still the real boundary.",
         "Each example makes its own client from the environment, with `bqtasks123` standing for "
         f"the ID of the `Job Tasks` table. {_LIVE_TEST}",
-        *_setup(_TABLE_LINE),
+        "",
+        "",
         (
             Group(
                 "Policies",
@@ -590,7 +590,8 @@ SYMBOL_PAGES = (
         "the tools themselves.",
         "Each example makes its own client from the environment, with `bqtasks123` standing for "
         f"the ID of the `Job Tasks` table. {_JOB_TASKS} {_LIVE_TEST}",
-        *_setup(_TABLE_LINE),
+        "",
+        "",
         (
             Group("Results", "results", _AGENTS, ("tool_result",)),
             Group("Errors", "errors", _AGENTS, ("tool_error", "ToolErrorCode")),
@@ -707,7 +708,8 @@ _ENTRY = re.compile(r"\*{0,2}(\w+): (.*)")
 _NAME = re.compile(r"\b[A-Za-z_]\w*\b")
 _CALL = re.compile(r"`(\w+)\(\)`")
 _SEE = re.compile(r"See `(\w+)`")
-_PUBLIC_CODE = re.compile(r"`([A-Za-z]\w*)`")
+# Not a name that an earlier pass has already linked, as in [`Quickbase`](quickbase.md).
+_PUBLIC_CODE = re.compile(r"(?<!\[)`([A-Za-z]\w*)`")
 _QUALIFIED = re.compile(r"`(" + "|".join(CLASS_PAGES) + r")\.(\w+)(\(\))?`")
 _SYNC_WORDS = (
     ("await ", ""),
@@ -1331,8 +1333,10 @@ def _describe(method: Method, methods: dict[str, Method]) -> list[str]:
     return lines + _raises_lines(doc, methods)
 
 
-def _describe_symbol(symbol: Symbol, *, anchors: bool) -> list[str]:
-    """Write a public name's description as Markdown."""
+def _describe_symbol(
+    symbol: Symbol, *, anchors: bool, example: list[str] | None = None
+) -> list[str]:
+    """Write a public name's description as Markdown, with any example before its methods."""
     doc = symbol.doc
     none: dict[str, Method] = {}
     lines = _prose_lines(doc, none)
@@ -1347,6 +1351,7 @@ def _describe_symbol(symbol: Symbol, *, anchors: bool) -> list[str]:
         lines += ["**Attributes**", "", *_attribute_lines(symbol.attributes, none)]
     lines += _return_lines(symbol.returns, doc, none)
     lines += _raises_lines(doc, none)
+    lines += example or []
     for method in symbol.methods:
         anchor = f" {{#{method.anchor}}}" if anchors else ""
         lines += [f"#### `{method.heading}`{anchor}", "", *_describe(method, none)]
@@ -1371,26 +1376,18 @@ def _tabs(sync_code: str, async_code: str) -> list[str]:
     ]
 
 
-def _columns(doc: list[str], code: list[str]) -> list[str]:
-    return [
-        '<div class="ref-row" markdown>',
-        '<div class="ref-doc" markdown>',
-        "",
-        *doc,
-        "</div>",
-        '<div class="ref-code" markdown>',
-        "",
-        *code,
-        "</div>",
-        "</div>",
-        "",
-    ]
-
-
 def _output_lines(output: str) -> list[str]:
     if not output:
         return []
-    return ['<p class="ref-output-label">Output</p>', "", f"```text\n{output}\n```", ""]
+    return ['<p class="ref-label">Output</p>', "", f"```text\n{output}\n```", ""]
+
+
+def _example_lines(sync_code: str, async_code: str, output: str) -> list[str]:
+    """Write an example below its description, with a tab for each client."""
+    if not sync_code:
+        return []
+    label = ['<p class="ref-label">Example</p>', ""]
+    return label + _tabs(sync_code, async_code) + _output_lines(output)
 
 
 def _returned_types(methods: dict[str, Method]) -> dict[str, list[str]]:
@@ -1422,43 +1419,30 @@ def _guide_line(group: Group) -> list[str]:
     return [f"For the full picture, see [{group.guide[0]}]({group.guide[1]}).", ""]
 
 
-def _page_links(current: Resource | SymbolPage) -> str:
-    """Link to the other reference pages. This is plain Markdown, so it suits any docs tool."""
-    links = [
-        f"**{item.name}**" if item is current else f"[{item.name}]({item.slug}.md)"
-        for item in ALL_PAGES
-    ]
-    return " ".join(['<p class="ref-links ref-links--pages" markdown>', *links, "</p>"])
-
-
-def _page_header(page: Resource | SymbolPage) -> list[str]:
-    return [
-        "---",
-        "hide:",
-        "  - navigation",
-        "---",
+def _page_header(page: Resource | SymbolPage, methods: dict[str, Method]) -> list[str]:
+    """Write the title, with links to the page as Markdown, and the introduction."""
+    lines = [
+        '<p class="ref-actions">'
+        f'<a class="ref-markdown" href="../{page.slug}.txt" '
+        'title="Open this page as plain Markdown">Markdown</a>'
+        '<button class="ref-copy" type="button" '
+        'title="Copy this page as Markdown, to give to an LLM" hidden>Copy for LLM</button>'
+        "</p>",
         "",
         f"# {page.name}",
         "",
-        _page_links(page),
+        _add_links(page.intro, methods),
         "",
-        '<p class="ref-links" markdown>'
-        f"[Overview]({OVERVIEW})"
-        f'<a class="ref-markdown" href="../{page.slug}.txt">View as Markdown</a>'
-        '<button class="ref-copy" type="button" hidden>Copy for an LLM</button>'
-        "</p>",
+        _add_links(page.note, methods),
         "",
     ]
+    return lines + (_tabs(page.setup, page.async_setup) if page.setup else [])
 
 
 def build_page(resource: Resource, methods: dict[str, Method]) -> str:
-    """Return a class's page for the site, with two columns and a tab for each client."""
+    """Return a class's page for the site, with a tab for each client in every example."""
     lines = [
-        *_page_header(resource),
-        *_columns(
-            [_add_links(resource.intro, methods), "", _add_links(resource.note, methods), ""],
-            _tabs(resource.setup, resource.async_setup),
-        ),
+        *_page_header(resource, methods),
         "## What the methods return {#returns}",
         "",
         *_return_table(methods),
@@ -1467,35 +1451,25 @@ def build_page(resource: Resource, methods: dict[str, Method]) -> str:
         lines += [f"## {group.title} {{#{group.anchor}}}", "", *_guide_line(group)]
         for name in group.members:
             method = methods[name]
-            heading = [f"### `{method.heading}` {{#{method.anchor}}}", ""]
-            code = _tabs(method.sync_code, method.async_code) + _output_lines(method.output)
-            lines += _columns(heading + _describe(method, methods), code)
+            lines += [f"### `{method.heading}` {{#{method.anchor}}}", ""]
+            lines += _describe(method, methods)
+            lines += _example_lines(method.sync_code, method.async_code, method.output)
     return "\n".join(lines)
-
-
-def _symbol_code(symbol: Symbol) -> list[str]:
-    if symbol.sync_code:
-        return _tabs(symbol.sync_code, symbol.async_code) + _output_lines(symbol.output)
-    return [f"```python\n{symbol.definition}\n```", ""] if symbol.definition else []
 
 
 def build_symbol_page(page: SymbolPage, symbols: dict[str, Symbol]) -> str:
     """Return a page of several public names for the site."""
-    none: dict[str, Method] = {}
-    lines = [
-        *_page_header(page),
-        *_columns(
-            [_add_links(page.intro, none), "", _add_links(page.note, none), ""],
-            _tabs(page.setup, page.async_setup),
-        ),
-    ]
+    lines = _page_header(page, {})
     for group in page.groups:
         lines += [f"## {group.title} {{#{group.anchor}}}", "", *_guide_line(group)]
         for name in group.members:
             symbol = symbols[name]
-            heading = [f"### `{name}` {{#{name}}}", ""]
-            body = _describe_symbol(symbol, anchors=True)
-            lines += _columns(heading + body, _symbol_code(symbol))
+            if symbol.sync_code:
+                example = _example_lines(symbol.sync_code, symbol.async_code, symbol.output)
+            else:
+                example = [f"```python\n{symbol.definition}\n```", ""] if symbol.definition else []
+            body = _describe_symbol(symbol, anchors=True, example=example)
+            lines += [f"### `{name}` {{#{name}}}", "", *body]
     return "\n".join(lines)
 
 
@@ -1533,14 +1507,14 @@ def _plain_intro(page: Resource | SymbolPage, site_url: str, *, both: bool) -> l
             "",
         ]
     lines += [_add_links(page.intro, none), "", _add_links(page.note, none), ""]
-    if both:
+    if page.setup and both:
         lines += [
             f"Sync:\n\n```python\n{page.setup}\n```",
             "",
             f"Async:\n\n```python\n{page.async_setup}\n```",
             "",
         ]
-    else:
+    elif page.setup:
         lines += [f"```python\n{page.setup}\n```", ""]
     return lines
 

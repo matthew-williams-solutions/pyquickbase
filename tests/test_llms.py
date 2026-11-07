@@ -51,7 +51,8 @@ def test_the_nav_lists_every_page() -> None:
 
 def test_the_nav_keeps_its_sections() -> None:
     assert {page.path: page.section for page in CONFIG.pages}["guides/agents.md"] == "Guides"
-    assert {page.path: page.section for page in CONFIG.pages}["reference.md"] is None
+    assert {page.path: page.section for page in CONFIG.pages}["reference.md"] == "Reference"
+    assert {page.path: page.section for page in CONFIG.pages}["index.md"] is None
 
 
 @pytest.mark.parametrize("page", COVERED, ids=[page.path for page in COVERED])
@@ -84,7 +85,12 @@ def test_the_index_follows_the_format() -> None:
     assert "\n" not in summary
     assert "not affiliated" not in summary
     assert "isn't affiliated with or endorsed by Quickbase, Inc." in INDEX
-    assert re.findall(r"^## (.+)$", INDEX, re.MULTILINE) == ["Docs", "Guides"]
+    assert re.findall(r"^## (.+)$", INDEX, re.MULTILINE) == [
+        "Docs",
+        "Guides",
+        "Reference",
+        "Project",
+    ]
     assert f"]({SITE}llms-full.txt): " in INDEX
 
 

@@ -1,4 +1,4 @@
-"""The two-column API reference: it must cover each class, and stop the build on any gaps."""
+"""The API reference: it must cover each class, and stop the build on any gaps."""
 
 import ast
 import importlib
@@ -66,7 +66,7 @@ def test_examples_parse_and_show_each_client_properly(name: str, member: str) ->
 
 
 @pytest.mark.parametrize(("name", "member"), EVERY_METHOD, ids=ids(EVERY_METHOD))
-def test_examples_fit_in_the_code_column(name: str, member: str) -> None:
+def test_examples_fit_on_a_phone(name: str, member: str) -> None:
     method = METHODS[name][member]
     assert max(len(line) for line in method.async_code.splitlines()) <= 62
 
@@ -89,7 +89,7 @@ def test_a_name_has_an_example_unless_there_is_a_reason(page: str, name: str) ->
         for text in ("await ", "async ", "Async", "aclose"):
             assert text not in symbol.sync_code
     else:
-        assert symbol.definition, "Something must fill the code column."
+        assert symbol.definition, "Something must show what it is."
 
 
 @pytest.mark.parametrize("name", sorted(set(pyquickbase.__all__) - {"__version__"}))
@@ -158,12 +158,11 @@ def test_in_page_links_reach_an_anchor(name: str) -> None:
 
 
 @pytest.mark.parametrize("name", PAGES)
-def test_each_page_links_to_the_others(name: str) -> None:
+def test_each_markdown_page_links_to_the_others(name: str) -> None:
+    """The site's nav links the pages, so only the plain Markdown needs its own links."""
     for other in build_reference.ALL_PAGES:
         if other.name != name:
-            assert f"[{other.name}]({other.slug}.md)" in PAGES[name]
             assert f"reference/{other.slug}.txt" in MARKDOWN[name]
-    assert f"**{name}**" in PAGES[name]
 
 
 @pytest.mark.parametrize("name", PAGES)

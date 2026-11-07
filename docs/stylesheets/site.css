@@ -1,0 +1,35 @@
+/* A quieter header on every page: the page's own background, with a line under it. */
+
+[data-md-color-scheme="slate"][data-md-color-primary="black"] {
+  --md-primary-fg-color: var(--md-default-bg-color);
+  --md-primary-bg-color: var(--md-default-fg-color);
+}
+
+.md-header,
+.md-header--shadow {
+  box-shadow: none;
+}
+
+.md-header:not(:has(+ .md-container .md-tabs)),
+.md-tabs {
+  border-bottom: 0.05rem solid var(--md-default-fg-color--lightest);
+}
+
+.md-tabs__link {
+  font-size: 0.7rem;
+}
+
+.md-tabs__item--active .md-tabs__link {
+  font-weight: 500;
+}
+
+/* The stars and forks counts next to the repository's name. */
+.md-source__facts {
+  display: none;
+}
+
+/* Smaller Sync and Async tabs, so the code reads first. */
+.md-typeset .tabbed-labels > label {
+  font-size: 0.65rem;
+  padding: 0.6em 1em 0.4em;
+}
