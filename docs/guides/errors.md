@@ -153,4 +153,4 @@ use up a call's retries and raise `RateLimitError`, so handle it if you make man
 ## Errors for a model
 
 `tool_error()` turns any of these into plain data with a fixed `code`, whether anything `changed`, and
-whether it's `retryable`. See [Returning results to a model](agents.md#returning-results-to-a-model).
+whether it's `retryable`. See [Returning results to a model](../agents/results.md#returning-results-to-a-model).

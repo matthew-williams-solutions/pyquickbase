@@ -273,7 +273,7 @@ change all the time.
 counts as `no_change`, so planning the same list again shows only what's left.
 
 To give a model these steps as tools, see
-[Changing the schema from an agent](agents.md#changing-the-schema-from-an-agent).
+[Changing the schema from an agent](../agents/changes.md#changing-the-schema-from-an-agent).
 
 ## When something is refused
 

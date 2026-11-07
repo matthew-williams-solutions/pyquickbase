@@ -63,15 +63,22 @@ nav:
       - Changing the schema: guides/schema.md
       - Handling errors: guides/errors.md
       - Configuring clients: guides/clients.md
-      - Using pyquickbase from an AI agent: guides/agents.md
+  - AI agents:
+      - Using pyquickbase from an AI agent: agents/index.md
+      - Untrusted input: agents/untrusted-input.md
+      - Giving a model operations: agents/operations.md
+      - Results and errors: agents/results.md
+      - Previews and schema changes: agents/changes.md
   - Policies:
       - Policies: policies/index.md
+      - Your first policy: policies/tutorial.md
       - Writing rules: policies/rules.md
       - Classes and new fields: policies/classes.md
       - Limiting rows: policies/rows.md
       - Schema changes: policies/schema.md
       - Rules of your own: policies/custom-rules.md
       - Debugging refusals: policies/debugging.md
+      - Recipes: policies/recipes.md
       - What a policy doesn't do: policies/limits.md
   - Reference:
       - Overview: reference.md

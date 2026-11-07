@@ -73,3 +73,11 @@
   margin: 1.5em 0;
   text-align: center;
 }
+
+/* The home page's opening line. */
+.md-typeset .hero-lede {
+  color: var(--md-default-fg-color--light);
+  font-size: 1.05rem;
+  line-height: 1.5;
+  max-width: 34rem;
+}

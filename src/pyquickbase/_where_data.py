@@ -326,7 +326,7 @@ def where_from_dict(
 
     This protects a query's shape, not its meaning. A model that chooses the field and operator
     chooses the result, so a condition can still match every record. See
-    [Using pyquickbase from an AI agent](guides/agents.md#filters-from-a-model).
+    [Using pyquickbase from an AI agent](agents/untrusted-input.md#filters-from-a-model).
 
     Args:
         data: The condition or group. `value` is required on every condition, so that a dropped key

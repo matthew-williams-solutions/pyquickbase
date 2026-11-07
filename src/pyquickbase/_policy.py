@@ -1,7 +1,7 @@
 """What a client may do, written as rules over tables and fields. No network access.
 
 A `Policy` is only a description, by label. `Policy.bind()` resolves it against an app once, and
-the `BoundPolicy` it returns, in `_bound.py`, makes every decision. See docs/guides/agents.md.
+the `BoundPolicy` it returns, in `_bound.py`, makes every decision. See docs/policies/.
 """
 
 from collections.abc import Mapping, Sequence

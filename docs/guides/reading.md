@@ -142,7 +142,7 @@ print(tasks.count(where))
 ```
 
 It's stricter than `F`, because plain data can't hold a `date` object. For a model's filters, see
-[Filters from a model](agents.md#filters-from-a-model).
+[Filters from a model](../agents/untrusted-input.md#filters-from-a-model).
 
 ## Fetching records
 

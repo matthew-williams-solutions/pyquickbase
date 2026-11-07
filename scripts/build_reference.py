@@ -184,7 +184,7 @@ _POLICIES = ("Policies", "../policies/index.md")
 _CODEGEN = ("Generated classes", "../guides/codegen.md")
 _FILES = ("File attachments", "../guides/files.md")
 _FORMULAS = ("Formulas", "../guides/formulas.md")
-_AGENTS = ("Using pyquickbase from an AI agent", "../guides/agents.md")
+_AGENTS = ("Using pyquickbase from an AI agent", "../agents/index.md")
 _ERRORS = ("Handling errors", "../guides/errors.md")
 _LINKS = "Link to the Quickbase interface"
 
@@ -1244,7 +1244,7 @@ def _add_links(text: str, methods: dict[str, Method]) -> str:
         return _public_link(found[1]) if found[1] in NAME_LINKS else found[0]
 
     # A docstring's links are relative to the docs folder, and these pages are a level below it.
-    text = text.replace("](guides/", "](../guides/")
+    text = text.replace("](guides/", "](../guides/").replace("](agents/", "](../agents/")
     # Leave code blocks in a docstring alone.
     pieces = re.split(r"(```.*?```)", text, flags=re.DOTALL)
     for index in range(0, len(pieces), 2):

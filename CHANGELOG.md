@@ -461,7 +461,7 @@ These changes come from building a customer portal on the SDK.
 ### Added
 
 - A guide to
-  [using pyquickbase from an AI agent](https://matthew-williams-solutions.github.io/pyquickbase/guides/agents/).
+  [using pyquickbase from an AI agent](https://matthew-williams-solutions.github.io/pyquickbase/agents/).
 - [`llms.txt`](https://matthew-williams-solutions.github.io/pyquickbase/llms.txt) and
   [`llms-full.txt`](https://matthew-williams-solutions.github.io/pyquickbase/llms-full.txt) on the
   docs site, which hold a list of the docs and all of them in one file.

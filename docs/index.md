@@ -1,13 +1,10 @@
 # pyquickbase
 
-An unofficial, typed Python SDK for the [Quickbase](https://www.quickbase.com/) API, with matching
-sync and async clients.
+<p class="hero-lede">A typed Python SDK for the <a href="https://www.quickbase.com/">Quickbase</a> API,
+with matching sync and async clients, and policies that limit what a client, or an AI agent, can do.</p>
 
-!!! warning "Release candidate"
-    This is a release candidate, so small changes are still possible before 1.0. Pin the exact version
-    you install. It isn't affiliated with or endorsed by Quickbase, Inc.
-
-[Try it in your browser](playground.md), with nothing to install.
+[Get started](getting-started.md){ .md-button .md-button--primary }
+[Try it in your browser](playground.md){ .md-button }
 
 ```python
 from datetime import date
@@ -24,6 +21,35 @@ with Quickbase(realm="acme", token="your_user_token") as qb:
 ```
 
 ## Why use it
+
+<div class="grid cards" markdown>
+
+-   **Names, not IDs**
+
+    Field labels and table names everywhere, with real `date` and `datetime` values.
+
+-   **Queries that can't silently fail**
+
+    `F("Status") == "Done"` instead of `{7.EX.'Done'}`, checked before it's sent.
+
+-   **Errors that say what happened**
+
+    A failed row raises `WriteError`, listing what was written and what wasn't.
+
+-   **[Policies](policies/index.md)**
+
+    Limit a client to the tables, fields, and records its job needs.
+
+-   **[Built for AI agents](agents/index.md)**
+
+    Typed operations for tool calls, results as plain data, and these docs as
+    [llms.txt](llms.txt).
+
+-   **[Generated classes](guides/codegen.md)**
+
+    Typed classes for your tables, so a renamed field breaks at type-check time.
+
+</div>
 
 The Quickbase REST API accepts many mistakes without complaint. A lowercase operator acts like
 "contains", an unknown field matches nothing, a failed row sits inside a successful response, and
@@ -85,9 +111,3 @@ pip install pyquickbase==1.0.0rc11
 ```
 
 It needs Python 3.11 or newer. Next, see [Getting started](getting-started.md).
-
-## Using it from an AI agent
-
-If you let an AI agent use the SDK, [Using pyquickbase from an AI agent](guides/agents.md) covers
-how to limit what it can do. These docs are also available as [llms.txt](llms.txt), a list of the
-pages, and [llms-full.txt](llms-full.txt), all of them in one file.

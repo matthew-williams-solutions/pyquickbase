@@ -2163,7 +2163,7 @@ class AsyncTable:
         page = await search.run(arguments, scope=F("Project") == project)
         ```
 
-        See [Using pyquickbase from an AI agent](guides/agents.md#giving-a-model-operations) for
+        See [Using pyquickbase from an AI agent](agents/operations.md#giving-a-model-operations) for
         what each operation takes.
 
         Args:

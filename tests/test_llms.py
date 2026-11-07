@@ -50,7 +50,7 @@ def test_the_nav_lists_every_page() -> None:
 
 
 def test_the_nav_keeps_its_sections() -> None:
-    assert {page.path: page.section for page in CONFIG.pages}["guides/agents.md"] == "Guides"
+    assert {page.path: page.section for page in CONFIG.pages}["agents/index.md"] == "AI agents"
     assert {page.path: page.section for page in CONFIG.pages}["reference.md"] == "Reference"
     assert {page.path: page.section for page in CONFIG.pages}["index.md"] is None
 
@@ -88,6 +88,7 @@ def test_the_index_follows_the_format() -> None:
     assert re.findall(r"^## (.+)$", INDEX, re.MULTILINE) == [
         "Docs",
         "Guides",
+        "AI agents",
         "Policies",
         "Reference",
         "Project",
@@ -158,7 +159,6 @@ def test_async_methods_are_not_repeated() -> None:
 def test_warnings_are_kept() -> None:
     assert "> **Warning: Don't run formula text you don't control**\n>\n> A formula" in FULL
     assert "> **Warning: Messages can contain HTML**" in FULL
-    assert "> **Warning: Release candidate**" in FULL
     assert "> **Note: A missing app is a 401**" in FULL
 
 
