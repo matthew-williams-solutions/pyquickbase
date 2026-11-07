@@ -23,6 +23,7 @@ from .._formula import field_id_reference, formula_parts, unsafe_functions
 from .._models import RECORD_ID_FIELD, Field, FieldIndex, Relationship, TableInfo
 from .._query import F, compile_where, where_field_ids
 from .._schema_plan import (
+    SUMMARY_FUNCTIONS,
     CreateField,
     CreateLookupField,
     CreateRelationship,
@@ -42,6 +43,8 @@ from .._schema_plan import (
     UpdateTable,
     change_risk,
     fingerprint,
+    quickbase_function,
+    summary_function,
 )
 from ..errors import (
     InvalidValueError,
@@ -440,7 +443,7 @@ class AsyncPlanner:
             matched = "" if existing.name == change.name else ", ignoring case and spaces,"
             return self._result(
                 change,
-                "no_change",
+                "already_done",
                 f"Table {existing.name} already exists{matched} so it's kept as it is.",
                 warnings=[
                     f"Later changes to {change.name} change the existing {existing.name}. If you "
@@ -465,7 +468,7 @@ class AsyncPlanner:
             )
         return self._result(
             change,
-            "change",
+            "ready",
             f"Create table {change.name}.",
             settings=settings,
             blockers=blockers,
@@ -484,7 +487,7 @@ class AsyncPlanner:
             plural_record_name=(raw.get("pluralRecordName"), change.plural_record_name),
         )
         if not settings:
-            return self._result(change, "no_change", f"Table {table.name} already has these.")
+            return self._result(change, "already_done", f"Table {table.name} already has these.")
         blockers: list[str] = []
         if change.name is not None:
             self._names_used = True
@@ -499,7 +502,7 @@ class AsyncPlanner:
         if change.name is not None:
             table.name = change.name
         return self._result(
-            change, "change", summary, settings=settings, blockers=blockers,
+            change, "ready", summary, settings=settings, blockers=blockers,
             link=await self._link(table),
         )  # fmt: skip
 
@@ -529,7 +532,7 @@ class AsyncPlanner:
         effects, lost = self._deletion_effects(table, whole=True)
         table.dropped = True
         return self._result(
-            change, "change", f"Delete table {table.name} and all its records.",
+            change, "ready", f"Delete table {table.name} and all its records.",
             warnings=warnings, blockers=[*blockers, *lost], affected=records, effects=effects,
         )  # fmt: skip
 
@@ -548,7 +551,7 @@ class AsyncPlanner:
                 matched = "" if existing.label == change.label else ", which matches ignoring case"
                 return self._result(
                     change,
-                    "no_change",
+                    "already_done",
                     f'{table.name} already has {kind} "{existing.label}"{matched}.',
                 )
             raise _Blocked(
@@ -603,7 +606,7 @@ class AsyncPlanner:
         )
         sources = () if change.formula is None else self._formula_sources(table, change.formula)
         return self._result(
-            change, "change", f'Add {kind} "{change.label}" ({change.type}) to {table.name}.',
+            change, "ready", f'Add {kind} "{change.label}" ({change.type}) to {table.name}.',
             settings=settings, blockers=blockers, warnings=warnings, link=await self._link(table),
             effects=self._new_field_effects(table, sources),
         )  # fmt: skip
@@ -641,7 +644,7 @@ class AsyncPlanner:
         )
         name = f'"{target.label}" on {table.name}'
         if not settings:
-            return self._result(change, "no_change", f"{name} already has these settings.")
+            return self._result(change, "already_done", f"{name} already has these settings.")
         blockers: list[str] = []
         warnings: list[str] = []
         if change.label is not None:
@@ -685,7 +688,7 @@ class AsyncPlanner:
         if change.formula is not None:
             target.formula = change.formula
         return self._result(
-            change, "change", f"Change {name}.", settings=settings, warnings=warnings,
+            change, "ready", f"Change {name}.", settings=settings, warnings=warnings,
             blockers=blockers, link=await self._link(table),
         )  # fmt: skip
 
@@ -761,7 +764,7 @@ class AsyncPlanner:
         effects, lost = self._deletion_effects(table, [target.id])
         table.fields.remove(target)
         return self._result(
-            change, "change", f"Delete field {name}.", warnings=warnings,
+            change, "ready", f"Delete field {name}.", warnings=warnings,
             blockers=[*blockers, *lost], affected=records, link=await self._link(table),
             effects=effects,
         )  # fmt: skip
@@ -818,12 +821,12 @@ class AsyncPlanner:
         return found
 
     async def _create_relationship(self, change: CreateRelationship) -> PlannedChange:
-        child = await self._table(change.child)
-        parent = await self._table(change.parent)
+        child = await self._table(change.child_table)
+        parent = await self._table(change.parent_table)
         existing = child.link(change.foreign_key)
         if existing is not None and existing.parent is parent:
             return self._result(
-                change, "no_change",
+                change, "already_done",
                 f'{child.name} already links to {parent.name} by "{existing.foreign_key.label}".',
             )  # fmt: skip
         if child.field(change.foreign_key) is not None:
@@ -841,7 +844,7 @@ class AsyncPlanner:
         child.fields.append(key)
         child.links.append(_Link(None, parent, key))
         return self._result(
-            change, "change",
+            change, "ready",
             f'Link {child.name} to {parent.name} through a new field "{change.foreign_key}" on '
             f"{child.name}.",
             settings=_settings(parent=(None, parent.name), foreign_key=(None, change.foreign_key)),
@@ -867,7 +870,7 @@ class AsyncPlanner:
         return child, link
 
     async def _create_lookup(self, change: CreateLookupField) -> PlannedChange:
-        child, link = await self._relationship(change.child, change.foreign_key)
+        child, link = await self._relationship(change.child_table, change.foreign_key)
         parent = link.parent
         target = self._field(parent, change.parent_field)
         existing = next(
@@ -882,7 +885,7 @@ class AsyncPlanner:
         )
         if existing is not None and (change.label is None or existing.label == change.label):
             return self._result(
-                change, "no_change", f'{child.name} already shows "{target.label}" as '
+                change, "already_done", f'{child.name} already shows "{target.label}" as '
                 f'"{existing.label}".',
             )  # fmt: skip
         label = change.label or f"{link.foreign_key.label} - {target.label}"
@@ -908,7 +911,7 @@ class AsyncPlanner:
             _Field(None, label, target.type, mode="lookup", lookup=(link.foreign_key.id, target.id))
         )
         return self._result(
-            change, "change",
+            change, "ready",
             f'Show "{target.label}" from {parent.name} on each {child.name} record, as "{label}".',
             settings=_settings(label=(None, label), parent_field=(None, target.label)),
             warnings=_lookalikes(child, label), blockers=blockers, link=await self._link(child),
@@ -916,13 +919,16 @@ class AsyncPlanner:
         )  # fmt: skip
 
     async def _create_summary(self, change: CreateSummaryField) -> PlannedChange:
-        child, link = await self._relationship(change.child, change.foreign_key)
+        child, link = await self._relationship(change.child_table, change.foreign_key)
         parent = link.parent
-        counting = change.function == "COUNT"
+        function = summary_function(change.function)
+        if function is None:
+            raise _Blocked(f"function must be one of: {', '.join(SUMMARY_FUNCTIONS)}.")
+        counting = function == "count"
         if counting and change.child_field is not None:
-            raise _Blocked("A COUNT counts the child records, so it takes no child_field.")
+            raise _Blocked("A count counts the child records, so it takes no child_field.")
         if not counting and change.child_field is None:
-            raise _Blocked(f"A {change.function} needs the child_field to combine.")
+            raise _Blocked(f"A {function} needs the child_field to combine.")
         target = None if counting else self._field(child, change.child_field or "")
         blockers: list[str] = []
         clause = change.where.strip() if change.where is not None else None
@@ -937,7 +943,8 @@ class AsyncPlanner:
         policy = self._transport.policy
         if child.id is not None:
             clause = limited_where(policy, child.id, clause)
-        wanted = (link.foreign_key.id, 0 if target is None else target.id, change.function, clause)
+        code = quickbase_function(function)
+        wanted = (link.foreign_key.id, 0 if target is None else target.id, code, clause)
         existing = parent.field(change.label)
         if existing is not None:
             # A policy shows a summary's filter only when the client can read its fields.
@@ -952,7 +959,8 @@ class AsyncPlanner:
             )
             if same and existing.id is not None:
                 return self._result(
-                    change, "no_change", f'{parent.name} already has summary "{existing.label}".',
+                    change, "already_done",
+                    f'{parent.name} already has summary "{existing.label}".',
                     warnings=(
                         ["This client can't read a summary's filter, so it may filter differently."]
                         if hidden_filter and clause is not None
@@ -982,15 +990,13 @@ class AsyncPlanner:
                     json={"summaryFields": [{}]}, parent=parent,
                 )  # fmt: skip
         parent.fields.append(_Field(None, change.label, "numeric", mode="summary", summary=wanted))
-        what = (
-            "the number of" if target is None else f'the {change.function} of "{target.label}" on'
-        )
+        what = "the number of" if target is None else f'the {function} of "{target.label}" on'
         matching = "" if clause is None else f" that match {clause}"
         return self._result(
-            change, "change",
+            change, "ready",
             f'Add "{change.label}" to {parent.name}: {what} its {child.name} records{matching}.',
             settings=_settings(
-                label=(None, change.label), function=(None, change.function),
+                label=(None, change.label), function=(None, function),
                 child_field=(None, None if target is None else target.label),
                 where=(None, clause),
             ),
@@ -1015,7 +1021,7 @@ class AsyncPlanner:
         return found
 
     async def _delete_relationship(self, change: DeleteRelationship) -> PlannedChange:
-        child, link = await self._relationship(change.child, change.foreign_key)
+        child, link = await self._relationship(change.child_table, change.foreign_key)
         parent = link.parent
         key = link.foreign_key.id
         lookups = [
@@ -1051,7 +1057,7 @@ class AsyncPlanner:
         link.foreign_key.foreign_key = False
         child.links.remove(link)
         return self._result(
-            change, "change", f"Unlink {child.name} from {parent.name}.", warnings=warnings,
+            change, "ready", f"Unlink {child.name} from {parent.name}.", warnings=warnings,
             blockers=blockers, link=await self._link(child),
         )  # fmt: skip
 
@@ -1177,15 +1183,15 @@ async def apply_checked(app: "AsyncApp", fresh: SchemaPlan) -> SchemaChangeResul
             f"This plan can't be applied, so nothing was changed: {' '.join(fresh.blockers)}"
         )
     applied: list[PlannedChange] = []
-    unchanged = [item for item in fresh.changes if item.status == "no_change"]
-    pending = [item for item in fresh.changes if item.status == "change"]
+    already_done = [item for item in fresh.changes if item.status == "already_done"]
+    pending = [item for item in fresh.changes if item.status == "ready"]
     for position, item in enumerate(pending):
         try:
             await _apply(app, item.change)
         except QuickbaseError as error:
             result = SchemaChangeResult(
                 applied=tuple(applied),
-                unchanged=tuple(unchanged),
+                already_done=tuple(already_done),
                 failed=item,
                 not_attempted=tuple(pending[position + 1 :]),
                 error=str(error),
@@ -1199,7 +1205,7 @@ async def apply_checked(app: "AsyncApp", fresh: SchemaPlan) -> SchemaChangeResul
             failure._changed = bool(applied) or error._changed  # pyright: ignore[reportPrivateUsage]
             raise failure from error
         applied.append(item)
-    return SchemaChangeResult(applied=tuple(applied), unchanged=tuple(unchanged))
+    return SchemaChangeResult(applied=tuple(applied), already_done=tuple(already_done))
 
 
 async def _apply(app: "AsyncApp", change: SchemaChange) -> None:
@@ -1243,16 +1249,16 @@ async def _apply(app: "AsyncApp", change: SchemaChange) -> None:
     elif isinstance(change, DeleteField):
         await app.table(change.table).delete_fields(change.field)
     elif isinstance(change, CreateRelationship):
-        await app.table(change.child).create_relationship(
-            app.table(change.parent), foreign_key_label=change.foreign_key
+        await app.table(change.child_table).create_relationship(
+            app.table(change.parent_table), foreign_key_label=change.foreign_key
         )
     else:
-        child = app.table(change.child)
+        child = app.table(change.child_table)
         relationship = await _find_relationship(child, change.foreign_key)
         if isinstance(change, CreateLookupField):
             await child.ensure_lookup_field(relationship, change.parent_field, label=change.label)
         elif isinstance(change, CreateSummaryField):
-            if change.function == "COUNT":
+            if summary_function(change.function) == "count":
                 await child.ensure_count_field(relationship, change.label, where=change.where)
             else:
                 await child.ensure_summary_field(

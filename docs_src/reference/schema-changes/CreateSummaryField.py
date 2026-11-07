@@ -3,15 +3,15 @@ from pyquickbase import (
     CreateSummaryField,
 )
 
-plan = await app.plan_schema(
+plan = await app.preview_schema_changes(
     [
         CreateRelationship(
-            child="Job Tasks",
-            parent="Job Projects",
+            child_table="Job Tasks",
+            parent_table="Job Projects",
             foreign_key="Project",
         ),
         CreateSummaryField(
-            child="Job Tasks",
+            child_table="Job Tasks",
             foreign_key="Project",
             label="Total Hours",
             child_field="Hours",

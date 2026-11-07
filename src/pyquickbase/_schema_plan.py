@@ -2,10 +2,10 @@
 
 A change says what someone wants, such as a new field. A plan is that list of changes compared
 with the app as it is now: what each would change, what it would affect, what would stop it, and a
-fingerprint of what it was checked against. `App.plan_schema()` makes one, and
-`App.apply_schema()` applies it, refusing if the app has changed since.
+fingerprint of what it was checked against. `App.preview_schema_changes()` makes one, and
+`App.apply_schema_changes()` applies it, refusing if the app has changed since.
 
-Each change also has a JSON form, `{"kind": "create_field", ...}`, which is what a model sends.
+Each change also has a JSON form, `{"action": "create_field", ...}`, which is what a model sends.
 """
 
 import hashlib
@@ -17,12 +17,40 @@ from typing import Any, Literal, cast, get_args
 from .errors import InvalidValueError
 
 SummaryFunction = Literal[
-    "SUM", "AVG", "MAX", "MIN", "STD-DEV", "COUNT", "DISTINCT-COUNT", "COMBINED-TEXT",
-    "COMBINED-USER",
+    "sum", "avg", "max", "min", "std_dev", "count", "distinct_count", "combined_text",
+    "combined_user",
 ]  # fmt: skip
-"""How a summary field combines a child's values. `COUNT` counts the child records."""
+"""How a summary field combines a child's values. `count` counts the child records."""
 
 SUMMARY_FUNCTIONS: tuple[str, ...] = get_args(SummaryFunction)
+
+# Other names for a function, which models and people write. Quickbase's own, such as `STD-DEV`,
+# are read by folding case and hyphens.
+_FUNCTION_ALIASES = {
+    "total": "sum",
+    "average": "avg",
+    "mean": "avg",
+    "minimum": "min",
+    "maximum": "max",
+    "stddev": "std_dev",
+    "standard_deviation": "std_dev",
+    "count_distinct": "distinct_count",
+}
+
+
+def summary_function(value: Any) -> SummaryFunction | None:
+    """The function a name means, such as `sum` for `SUM` or `total`, or None for no function."""
+    if not isinstance(value, str):
+        return None
+    key = "_".join(value.strip().casefold().replace("-", " ").replace("_", " ").split())
+    key = _FUNCTION_ALIASES.get(key, key)
+    return cast(SummaryFunction, key) if key in SUMMARY_FUNCTIONS else None
+
+
+def quickbase_function(function: SummaryFunction) -> str:
+    """Quickbase's name for a function, such as `STD-DEV` for `std_dev`."""
+    return function.upper().replace("_", "-")
+
 
 FIELD_TYPES = (
     "text", "text-multiple-choice", "text-multi-line", "rich-text", "numeric", "currency",
@@ -151,13 +179,13 @@ class CreateRelationship:
     Record ID#. A plan treats a link with this foreign key as already made.
 
     Args:
-        child: The child table, by name or ID, such as `Tasks`.
-        parent: The parent table, such as `Projects`.
+        child_table: The child table, by name or ID, such as `Tasks`.
+        parent_table: The parent table, such as `Projects`.
         foreign_key: The label of the new field on the child, such as `Project`.
     """
 
-    child: str
-    parent: str
+    child_table: str
+    parent_table: str
     foreign_key: str
 
 
@@ -166,13 +194,13 @@ class CreateLookupField:
     """Show a parent's field on each child record.
 
     Args:
-        child: The child table, by name or ID.
+        child_table: The child table, by name or ID.
         foreign_key: The label of the relationship's foreign key on the child.
         parent_field: The parent's field to show, by label or ID.
         label: The lookup's label. Quickbase names one `<foreign key> - <field>` without it.
     """
 
-    child: str
+    child_table: str
     foreign_key: str
     parent_field: FieldRefValue
     label: str | None = None
@@ -183,10 +211,10 @@ class CreateSummaryField:
     """Total, average, or count a child's records on each parent record.
 
     Args:
-        child: The child table, by name or ID.
+        child_table: The child table, by name or ID.
         foreign_key: The label of the relationship's foreign key on the child.
         label: The label of the new field on the parent.
-        function: How to combine the values, such as `SUM`. `COUNT` counts the child records,
+        function: How to combine the values, such as `sum`. `count` counts the child records,
             and takes no `child_field`.
         child_field: The child's field to combine, by label or ID.
         where: Only combine the child records that match, in Quickbase's query language with
@@ -194,10 +222,10 @@ class CreateSummaryField:
             Quickbase saves one it can't use and the summary is then always empty.
     """
 
-    child: str
+    child_table: str
     foreign_key: str
     label: str
-    function: SummaryFunction = "SUM"
+    function: SummaryFunction = "sum"
     child_field: FieldRefValue | None = None
     where: str | None = None
 
@@ -208,11 +236,11 @@ class DeleteRelationship:
     and summaries, and keeps the foreign key field, with its values, as a plain number.
 
     Args:
-        child: The child table, by name or ID.
+        child_table: The child table, by name or ID.
         foreign_key: The label of the relationship's foreign key on the child.
     """
 
-    child: str
+    child_table: str
     foreign_key: str
 
 
@@ -230,12 +258,12 @@ SchemaChange = (
 )
 """One change to an app's schema."""
 
-ChangeKind = Literal[
+SchemaAction = Literal[
     "create_table", "update_table", "delete_table", "create_field", "update_field",
-    "delete_field", "create_relationship", "create_lookup", "create_summary",
+    "delete_field", "create_relationship", "create_lookup_field", "create_summary_field",
     "delete_relationship",
 ]  # fmt: skip
-"""The `kind` of a change in its JSON form."""
+"""The `action` of a change in its JSON form."""
 
 CHANGE_TYPES: dict[str, type[Any]] = {
     "create_table": CreateTable,
@@ -245,11 +273,15 @@ CHANGE_TYPES: dict[str, type[Any]] = {
     "update_field": UpdateField,
     "delete_field": DeleteField,
     "create_relationship": CreateRelationship,
-    "create_lookup": CreateLookupField,
-    "create_summary": CreateSummaryField,
+    "create_lookup_field": CreateLookupField,
+    "create_summary_field": CreateSummaryField,
     "delete_relationship": DeleteRelationship,
 }
-_KINDS = {kind_type: kind for kind, kind_type in CHANGE_TYPES.items()}
+_ACTIONS = {change_type: action for action, change_type in CHANGE_TYPES.items()}
+# Values models write for a change's action, other than the schema's.
+_ACTION_ALIASES = {"create_lookup": "create_lookup_field", "create_summary": "create_summary_field"}
+# Keys models write, read as the ones the schema lists.
+_KEY_ALIASES = {"kind": "action", "child": "child_table", "parent": "parent_table"}
 
 Risk = Literal["additive", "modifying", "destructive"]
 """How much a change can lose: `additive` only adds, `modifying` changes what's there, and
@@ -259,8 +291,8 @@ _RISKS: dict[str, Risk] = {
     "create_table": "additive",
     "create_field": "additive",
     "create_relationship": "additive",
-    "create_lookup": "additive",
-    "create_summary": "additive",
+    "create_lookup_field": "additive",
+    "create_summary_field": "additive",
     "update_table": "modifying",
     "update_field": "modifying",
     "delete_table": "destructive",
@@ -268,23 +300,23 @@ _RISKS: dict[str, Risk] = {
     "delete_relationship": "destructive",
 }
 
-Status = Literal["change", "no_change", "blocked"]
-"""What a planned change would do: `change` the app, nothing because it's `no_change`, or nothing
-because it's `blocked`, which stops the whole plan."""
+Status = Literal["ready", "already_done", "blocked"]
+"""Whether a planned change is `ready` to change the app, `already_done` because the app has it,
+or `blocked`, which stops the whole plan."""
 
 
-def change_kind(change: SchemaChange) -> ChangeKind:
-    """A change's `kind`, as its JSON form names it."""
-    return cast(ChangeKind, _KINDS[type(change)])
+def change_action(change: SchemaChange) -> SchemaAction:
+    """A change's `action`, as its JSON form names it."""
+    return cast(SchemaAction, _ACTIONS[type(change)])
 
 
 def change_risk(change: SchemaChange) -> Risk:
-    return _RISKS[change_kind(change)]
+    return _RISKS[change_action(change)]
 
 
 def change_to_json(change: SchemaChange) -> dict[str, Any]:
     """A change as JSON, leaving out what isn't set."""
-    found: dict[str, Any] = {"kind": change_kind(change)}
+    found: dict[str, Any] = {"action": change_action(change)}
     for item in fields(change):
         value = getattr(change, item.name)
         if value is not None:
@@ -313,16 +345,16 @@ def change_from_json(data: Any, position: int = 0) -> SchemaChange:
     """
     where = f"changes[{position}]"
     if not isinstance(data, Mapping):
-        raise InvalidValueError(f"{where} must be an object with a kind.")
-    found = cast(Mapping[str, Any], data)
-    kind = found.get("kind")
-    change_type = CHANGE_TYPES.get(kind) if isinstance(kind, str) else None
+        raise InvalidValueError(f"{where} must be an object with an action.")
+    found = normalize_change(cast(Mapping[str, Any], data))
+    action = found.get("action")
+    change_type = CHANGE_TYPES.get(action) if isinstance(action, str) else None
     if change_type is None:
-        raise InvalidValueError(f"{where}.kind must be one of: {', '.join(CHANGE_TYPES)}.")
+        raise InvalidValueError(f"{where}.action must be one of: {', '.join(CHANGE_TYPES)}.")
     names = {item.name: item for item in fields(change_type)}
-    unknown = sorted(set(found) - set(names) - {"kind"})
+    unknown = sorted(set(found) - set(names) - {"action"})
     if unknown:
-        raise InvalidValueError(f"{where} has keys this kind doesn't take: {', '.join(unknown)}.")
+        raise InvalidValueError(f"{where} has keys this action doesn't take: {', '.join(unknown)}.")
     values: dict[str, Any] = {}
     for name, item in names.items():
         value = found.get(name)
@@ -332,6 +364,25 @@ def change_from_json(data: Any, position: int = 0) -> SchemaChange:
             continue
         values[name] = _read_value(change_type, name, value, f"{where}.{name}")
     return change_type(**values)
+
+
+def normalize_change(data: Mapping[str, Any]) -> dict[str, Any]:
+    """A change in the spelling the schema lists, from the ones models tend to write: `kind` for
+    `action`, `create_lookup` for `create_lookup_field`, `child` for `child_table`, and a
+    function such as `SUM` or `total` for `sum`. Each means exactly one thing. Anything else is
+    left as it is, to be checked."""
+    found = dict(data)
+    for old, new in _KEY_ALIASES.items():
+        if old in found and new not in found:
+            found[new] = found.pop(old)
+    action = found.get("action")
+    if isinstance(action, str):
+        key = "_".join(action.strip().casefold().replace("-", " ").split())
+        key = _ACTION_ALIASES.get(key, key)
+        found["action"] = key if key in CHANGE_TYPES else action
+    if "function" in found:
+        found["function"] = summary_function(found["function"]) or found["function"]
+    return found
 
 
 def _read_value(change_type: type[Any], name: str, value: Any, what: str) -> Any:
@@ -394,7 +445,7 @@ class PlannedChange:
 
     Attributes:
         change: The change asked for.
-        status: `change` if it would change the app, `no_change` if the app already has it, and
+        status: `ready` if it would change the app, `already_done` if the app already has it, and
             `blocked` if it can't be applied, which stops the whole plan.
         risk: `additive`, `modifying`, or `destructive`.
         summary: What it does, in a sentence, such as `Add field "Due" (date) to Tasks.`
@@ -425,14 +476,14 @@ class PlannedChange:
 class SchemaPlan:
     """What a list of changes would do to an app, checked against it as it is now.
 
-    Pass it to `App.apply_schema()`, which refuses it if the app has changed since.
+    Pass it to `App.apply_schema_changes()`, which refuses it if the app has changed since.
 
     Attributes:
         app_id: The app it's for.
         changes: What each change would do, in order.
         fingerprint: A digest of everything the plan was checked against.
-        confirmation: From a `plan_schema` operation, what its `apply_schema` operation needs.
-            Empty otherwise.
+        confirmation: From a `preview_schema_changes` operation, what its `apply_schema_changes`
+            operation needs. Empty otherwise.
     """
 
     app_id: str
@@ -453,7 +504,7 @@ class SchemaPlan:
     @property
     def has_changes(self) -> bool:
         """Whether applying it would change anything."""
-        return any(change.status == "change" for change in self.changes)
+        return any(change.status == "ready" for change in self.changes)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -462,14 +513,14 @@ class SchemaChangeResult:
 
     Attributes:
         applied: The changes made, in order.
-        unchanged: The changes the app already had.
+        already_done: The changes the app already had.
         failed: The change that failed, if one did. The ones after it weren't attempted.
         not_attempted: The changes after one that failed.
         error: Why it failed, if it did.
     """
 
     applied: tuple[PlannedChange, ...] = ()
-    unchanged: tuple[PlannedChange, ...] = ()
+    already_done: tuple[PlannedChange, ...] = ()
     failed: PlannedChange | None = None
     not_attempted: tuple[PlannedChange, ...] = ()
     error: str | None = None

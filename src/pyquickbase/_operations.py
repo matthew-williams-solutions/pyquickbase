@@ -50,7 +50,7 @@ OperationName = Literal[
     "preview_update",
     "preview_delete",
     "run_report",
-    "summary_report",
+    "run_summary_report",
     "run_formula",
     "download_file",
     "delete_file_version",
@@ -593,7 +593,7 @@ def _read_report(
     if elsewhere is not None:
         # The ID is one the client may run anyway, so naming it reveals nothing.
         kind, use = (
-            ("a table", "run_report") if summary else ("a summary or chart", "summary_report")
+            ("a table", "run_report") if summary else ("a summary or chart", "run_summary_report")
         )
         raise QueryError(
             f"Report {elsewhere} isn't a report this tool may run: it's {kind} report, so use the "
@@ -987,7 +987,7 @@ _KINDS: dict[OperationName, Kind] = {
         available=_needs("reports", "it may not run any table report on this table"),
         scoped=False,
     ),
-    "summary_report": Kind(
+    "run_summary_report": Kind(
         fields=(),
         properties=lambda ctx: {
             **_report(ctx.allowed.summary_reports, ctx),
@@ -1354,7 +1354,7 @@ def refused_operation(
         "delete_file_version": "delete_file",
         "download_file": "download",
         "run_report": "report",
-        "summary_report": "report",
+        "run_summary_report": "report",
         "run_formula": "run_formula",
     }.get(name, "read")
     return PolicyRefusedError(

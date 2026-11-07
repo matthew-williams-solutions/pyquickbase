@@ -1,7 +1,7 @@
 from pyquickbase import DeleteRelationship
 
 change = DeleteRelationship(
-    child="Job Tasks", foreign_key="Project"
+    child_table="Job Tasks", foreign_key="Project"
 )
-plan = await app.plan_schema([change])
+plan = await app.preview_schema_changes([change])
 print(plan.changes[0].summary)

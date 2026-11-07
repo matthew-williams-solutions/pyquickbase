@@ -506,7 +506,7 @@ def test_reports_are_chosen_from_the_list_and_take_no_scope() -> None:
         run.plan({"report": "5"}, None)
     with pytest.raises(QueryError, match="can't take a scope"):
         run.plan({"report": "1"}, F("Project") == "x")
-    summary = spec("summary_report", report_descriptions={"5": "Hours by status."})
+    summary = spec("run_summary_report", report_descriptions={"5": "Hours by status."})
     assert "5: Totals, Hours by status." in summary.schema["properties"]["report"]["description"]
     assert summary.plan({"report": "5"}, None).arguments == {"limit": 20}
 
@@ -527,11 +527,11 @@ def test_anything_else_is_refused_without_being_repeated(report: Any) -> None:
 
 def test_a_report_of_the_other_kind_says_which_operation_runs_it() -> None:
     with pytest.raises(
-        QueryError, match="it's a summary or chart report, so use the summary_report operation"
+        QueryError, match="it's a summary or chart report, so use the run_summary_report operation"
     ):
         spec("run_report").plan({"report": "Totals"}, None)
     with pytest.raises(QueryError, match="it's a table report, so use the run_report operation"):
-        spec("summary_report").plan({"report": 1}, None)
+        spec("run_summary_report").plan({"report": 1}, None)
 
 
 def test_a_name_shared_by_two_reports_needs_the_id() -> None:
@@ -672,7 +672,7 @@ def test_what_plan_accepts_matches_the_schema() -> None:
         "preview_update": {"records": [{"Record ID#": 1, "Hours": 3}]},
         "download_file": {"record_id": 1, "field": "Attachment"},
         "run_formula": {"record_id": 1},
-        "summary_report": {"report": "5", "limit": 2},
+        "run_summary_report": {"report": "5", "limit": 2},
     }
     for name, arguments in examples.items():
         operation = spec(name)

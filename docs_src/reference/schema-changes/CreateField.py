@@ -1,6 +1,6 @@
 from pyquickbase import CreateField
 
-plan = await app.plan_schema(
+plan = await app.preview_schema_changes(
     [
         CreateField(
             table="Job Tasks",

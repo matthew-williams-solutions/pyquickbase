@@ -68,8 +68,8 @@ result with the preview's `total`, and tell the user if they differ.
 ## Changing the schema from an agent
 
 `app.operation()` offers three schema tools. `describe_schema` lists the tables and fields the client
-can read. `plan_schema` says what a list of changes would do. `apply_schema` makes them, but only with
-the `confirmation` that `plan_schema` returned for exactly those changes, within 15 minutes, while the
+can read. `preview_schema_changes` says what a list of changes would do. `apply_schema_changes` makes them, but only with
+the `confirmation` that `preview_schema_changes` returned for exactly those changes, within 15 minutes, while the
 schema is as it was. Unlike `require_preview` for records, this can't be turned off.
 
 ```python
@@ -95,15 +95,25 @@ async with AsyncQuickbase.from_env() as setup:
 async with AsyncQuickbase.from_env(token_env="QB_SCHEMA_TOKEN", policy=bound) as qb:
     app = qb.app("bq1234567")
     describe = await app.operation("describe_schema")
-    plan = await app.operation("plan_schema", max_changes=10)
-    apply = await app.operation("apply_schema", max_changes=10)
+    plan = await app.operation("preview_schema_changes", max_changes=10)
+    apply = await app.operation("apply_schema_changes", max_changes=10)
     # What a model sends, such as adding a text field to Tasks.
-    arguments = {"changes": [{"kind": "create_field", "table": "Tasks", "label": "Crew", "type": "text"}]}
+    arguments = {
+        "changes": [{"action": "create_field", "table": "Tasks", "label": "Crew", "type": "text"}]
+    }
     shown = tool_result(await plan.run(arguments))  # holds "confirmation" if nothing blocks it
 ```
 
-- **Each schema offers only what the policy allows:** the kinds of change, the tables that can change,
-  and the field types they can create. A plan reports anything the policy would refuse as a blocker,
+A change names what it does in `action`, such as `create_field`, `create_lookup_field`, or
+`create_summary_field`, and a relationship's tables in `child_table` and `parent_table`. A summary's
+`function` is `sum`, `avg`, `min`, `max`, `count`, `std_dev`, `distinct_count`, `combined_text`, or
+`combined_user`. `run()` also reads what models tend to send instead: `kind` for `action`,
+`create_lookup` and `create_summary`, `child` and `parent`, and Quickbase's own function names, such
+as `SUM` or `STD-DEV`, or words like `total` and `average`. The result lists each change with its
+`status`: `ready`, `already_done`, or `blocked`.
+
+- **Each schema offers only what the policy allows:** the actions, the tables that can change, and
+  the field types they can create. A plan reports anything the policy would refuse as a blocker,
   so the person sees it before approving.
 - **Each change is granted where it lands.** A lookup is granted on the child, and needs `read` on
   the parent's field. A summary is granted on the parent, and needs `read` on the child's field and
@@ -128,7 +138,7 @@ async with AsyncQuickbase.from_env(token_env="QB_SCHEMA_TOKEN", policy=bound) as
 
 A plan's `tool_result()` has `plan.changes`, each with its `summary`, `risk`, `settings`, `warnings`,
 `blockers`, any `policy_effects`, and a `link` to check it in Quickbase, then `blockers`, `warnings`, `confirmation`, and
-`expires_at`. Show the person the summaries and warnings, and send `apply_schema` the same changes with
+`expires_at`. Show the person the summaries and warnings, and send `apply_schema_changes` the same changes with
 the confirmation once they approve. It makes sure a plan happened, not that a person saw it, so ask
 your client to show each change for approval too.
 

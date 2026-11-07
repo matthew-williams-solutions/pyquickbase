@@ -1,6 +1,6 @@
 changes = plan.schema["properties"]["changes"]
 kinds = [
-    item["properties"]["kind"]["const"]
+    item["properties"]["action"]["const"]
     for item in changes["items"]["oneOf"]
 ]
 print(kinds[:3])

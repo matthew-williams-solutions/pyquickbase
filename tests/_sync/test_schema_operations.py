@@ -22,7 +22,7 @@ from pyquickbase import (
 from pyquickbase._confirm import key_id
 from tests.schema_fake import APP, PROJECTS, TASKS, FakeApp
 
-NEW_FIELD = {"kind": "create_field", "table": "Tasks", "label": "Due", "type": "date"}
+NEW_FIELD = {"action": "create_field", "table": "Tasks", "label": "Due", "type": "date"}
 
 
 def client(fake: FakeApp, **kwargs: Any) -> Quickbase:
@@ -30,19 +30,19 @@ def client(fake: FakeApp, **kwargs: Any) -> Quickbase:
     return Quickbase(realm="acme", token="t", http_client=http, **kwargs)
 
 
-def kinds(schema: dict[str, Any]) -> list[str]:
+def actions(schema: dict[str, Any]) -> list[str]:
     items = schema["properties"]["changes"]["items"]["oneOf"]
-    return [item["properties"]["kind"]["const"] for item in items]
+    return [item["properties"]["action"]["const"] for item in items]
 
 
 def test_a_plan_then_its_confirmation_applies_the_changes() -> None:
     fake = FakeApp()
     with client(fake) as qb:
         app = qb.app(APP)
-        plan = app.operation("plan_schema")
-        apply = app.operation("apply_schema")
+        plan = app.operation("preview_schema_changes")
+        apply = app.operation("apply_schema_changes")
         shown = tool_result(plan.run({"changes": [NEW_FIELD]}))
-        assert shown["plan"]["changes"][0]["summary"] == 'Add field "Due" (date) to Tasks.'
+        assert shown["changes"][0]["summary"] == 'Add field "Due" (date) to Tasks.'
         assert shown["expires_at"].endswith("Z")
         assert not fake.writes()
         result = apply.run({"changes": [NEW_FIELD], "confirmation": shown["confirmation"]})
@@ -51,14 +51,29 @@ def test_a_plan_then_its_confirmation_applies_the_changes() -> None:
     assert fake.writes() == [("POST", "/fields")]
 
 
+def test_a_plan_and_its_apply_share_a_confirmation_across_spellings() -> None:
+    fake = FakeApp()
+    with client(fake) as qb:
+        app = qb.app(APP)
+        plan = app.operation("preview_schema_changes")
+        apply = app.operation("apply_schema_changes")
+        guessed = {"kind": "Create Field", "table": "Tasks", "label": "Due", "type": "date"}
+        shown = tool_result(plan.run({"changes": [guessed]}))
+        apply.run({"changes": [NEW_FIELD], "confirmation": shown["confirmation"]})
+    assert fake.writes() == [("POST", "/fields")]
+
+
 @pytest.mark.parametrize(
     ("confirmation", "match"),
-    [(None, "needs the confirmation that plan_schema returns"), ("OWN.1.x", "has expired")],
+    [
+        (None, "needs the confirmation that preview_schema_changes returns"),
+        ("OWN.1.x", "has expired"),
+    ],
 )
 def test_apply_needs_a_current_confirmation(confirmation: Any, match: str) -> None:
     fake = FakeApp()
     with client(fake) as qb:
-        apply = qb.app(APP).operation("apply_schema")
+        apply = qb.app(APP).operation("apply_schema_changes")
         arguments: dict[str, Any] = {"changes": [NEW_FIELD]}
         if confirmation is not None:
             own = key_id(qb._transport.confirmation_key)  # pyright: ignore[reportPrivateUsage]
@@ -72,10 +87,10 @@ def test_a_confirmation_only_applies_the_changes_it_was_given_for() -> None:
     fake = FakeApp()
     with client(fake) as qb:
         app = qb.app(APP)
-        confirmation = (app.operation("plan_schema")).run({"changes": [NEW_FIELD]})
+        confirmation = (app.operation("preview_schema_changes")).run({"changes": [NEW_FIELD]})
         other = {**NEW_FIELD, "label": "Deadline"}
         with pytest.raises(ConfirmationError, match="these arguments differ"):
-            (app.operation("apply_schema")).run(
+            (app.operation("apply_schema_changes")).run(
                 {"changes": [other], "confirmation": confirmation.confirmation}
             )
     assert not fake.writes()
@@ -83,13 +98,13 @@ def test_a_confirmation_only_applies_the_changes_it_was_given_for() -> None:
 
 def test_a_confirmation_is_refused_once_the_schema_changes() -> None:
     fake = FakeApp()
-    change = {"kind": "update_field", "table": "Tasks", "field": "Code", "label": "Ref"}
+    change = {"action": "update_field", "table": "Tasks", "field": "Code", "label": "Ref"}
     with client(fake) as qb:
         app = qb.app(APP)
-        plan = (app.operation("plan_schema")).run({"changes": [change]})
+        plan = (app.operation("preview_schema_changes")).run({"changes": [change]})
         fake.fields[TASKS][7]["unique"] = True  # Someone changes the field in the UI.
         with pytest.raises(ConfirmationError, match="the schema has changed since"):
-            (app.operation("apply_schema")).run(
+            (app.operation("apply_schema_changes")).run(
                 {"changes": [change], "confirmation": plan.confirmation}
             )
     assert not fake.writes()
@@ -98,10 +113,10 @@ def test_a_confirmation_is_refused_once_the_schema_changes() -> None:
 def test_a_plan_with_blockers_or_nothing_to_do_gives_no_confirmation() -> None:
     fake = FakeApp()
     with client(fake) as qb:
-        plan = qb.app(APP).operation("plan_schema")
+        plan = qb.app(APP).operation("preview_schema_changes")
         blocked = plan.run({"changes": [{**NEW_FIELD, "label": "Hours"}]})
         done = plan.run(
-            {"changes": [{"kind": "create_field", "table": "Tasks", "label": "Hours",
+            {"changes": [{"action": "create_field", "table": "Tasks", "label": "Hours",
                           "type": "numeric"}]}
         )  # fmt: skip
     assert isinstance(blocked, SchemaPlan)
@@ -118,9 +133,9 @@ def test_the_schema_offers_only_what_the_rules_could_allow() -> None:
         allow.read(TASKS), allow.schema(TASKS, "add_field", field_types=["text", "date"])
     )
     with client(fake, policy=rules) as qb:
-        plan = qb.app(APP).operation("plan_schema", max_changes=3)
+        plan = qb.app(APP).operation("preview_schema_changes", max_changes=3)
     schema = plan.schema
-    assert kinds(schema) == ["create_field"]
+    assert actions(schema) == ["create_field"]
     item = schema["properties"]["changes"]["items"]["oneOf"][0]
     assert item["properties"]["type"]["enum"] == ["text", "date"]
     assert "formula" not in item["properties"]
@@ -132,9 +147,9 @@ def test_a_change_the_tool_doesnt_offer_is_refused() -> None:
     fake = FakeApp()
     rules = fake.bind(allow.read(TASKS), allow.schema(TASKS, "add_field"))
     with client(fake, policy=rules) as qb:
-        plan = qb.app(APP).operation("plan_schema", max_changes=1)
+        plan = qb.app(APP).operation("preview_schema_changes", max_changes=1)
         with pytest.raises(InvalidValueError, match="isn't one this tool offers: create_field"):
-            plan.run({"changes": [{"kind": "delete_table", "table": "Tasks"}]})
+            plan.run({"changes": [{"action": "delete_table", "table": "Tasks"}]})
         with pytest.raises(InvalidValueError, match="at most 1"):
             plan.run({"changes": [NEW_FIELD, NEW_FIELD]})
         with pytest.raises(InvalidValueError, match="doesn't take: confirmation"):
@@ -144,7 +159,7 @@ def test_a_change_the_tool_doesnt_offer_is_refused() -> None:
 def test_a_client_that_cant_change_the_schema_cant_offer_it() -> None:
     with client(FakeApp(), policy=Policy.read_only()) as qb:
         with pytest.raises(ConfigurationError, match="allows no schema change"):
-            qb.app(APP).operation("plan_schema")
+            qb.app(APP).operation("preview_schema_changes")
         assert (qb.app(APP).operation("describe_schema")).name == "describe_schema"
     with pytest.raises(ConfigurationError, match="name must be one of"):
         with client(FakeApp()) as qb:
@@ -166,7 +181,12 @@ def test_describe_shows_what_the_client_can_read() -> None:
     ]  # fmt: skip
     assert tasks["fields"][3]["formula"] == "[Hours] * 2"
     assert tasks["relationships"] == [
-        {"parent_table_id": PROJECTS, "foreign_key": "Project", "lookups": []}
+        {
+            "parent_table": "Projects",
+            "parent_table_id": PROJECTS,
+            "foreign_key": "Project",
+            "lookups": [],
+        }
     ]
     assert [item["name"] for item in only["tables"]] == ["Projects"]
 
@@ -174,7 +194,7 @@ def test_describe_shows_what_the_client_can_read() -> None:
 def test_a_refused_confirmation_says_how_to_get_one() -> None:  # F20
     fake = FakeApp()
     with client(fake) as qb:
-        apply = qb.app(APP).operation("apply_schema")
+        apply = qb.app(APP).operation("apply_schema_changes")
         own = key_id(qb._transport.confirmation_key)  # pyright: ignore[reportPrivateUsage]
         with pytest.raises(ConfirmationError) as missing:
             apply.run({"changes": [NEW_FIELD], "confirmation": f"{own}.1.x"})
@@ -183,7 +203,9 @@ def test_a_refused_confirmation_says_how_to_get_one() -> None:  # F20
         assert "Preview or plan the same change again" in error["hint"]
         assert "a plan's confirmation lasts 15 minutes" in error["message"]
         with client(fake) as other:
-            elsewhere = (other.app(APP).operation("plan_schema")).run({"changes": [NEW_FIELD]})
+            elsewhere = (other.app(APP).operation("preview_schema_changes")).run(
+                {"changes": [NEW_FIELD]}
+            )
         with pytest.raises(ConfirmationError, match="another client or server process"):
             apply.run({"changes": [NEW_FIELD], "confirmation": elsewhere.confirmation})
 
@@ -194,12 +216,12 @@ def test_a_confirmation_from_a_client_with_another_policy_doesnt_match() -> None
     wide = fake.bind(allow.read(tables.all()), allow.schema(TASKS, "add_field"))
     narrow = fake.bind(allow.read(TASKS), allow.schema(TASKS, "add_field"))
     with client(fake, policy=wide, confirmation_key=key) as qb:
-        plan = (qb.app(APP).operation("plan_schema")).run({"changes": [NEW_FIELD]})
+        plan = (qb.app(APP).operation("preview_schema_changes")).run({"changes": [NEW_FIELD]})
     with client(fake, policy=narrow, confirmation_key=key) as other:
-        apply = other.app(APP).operation("apply_schema")
+        apply = other.app(APP).operation("apply_schema_changes")
         with pytest.raises(ConfirmationError, match="a client with a different policy"):
             apply.run({"changes": [NEW_FIELD], "confirmation": plan.confirmation})
     with client(fake, policy=wide, confirmation_key=key) as same:
-        apply = same.app(APP).operation("apply_schema")
+        apply = same.app(APP).operation("apply_schema_changes")
         apply.run({"changes": [NEW_FIELD], "confirmation": plan.confirmation})
     assert fake.writes() == [("POST", "/fields")]

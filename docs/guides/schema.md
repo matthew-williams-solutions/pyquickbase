@@ -107,24 +107,25 @@ tasks.ensure_lookup_field(link, "Name", label="Project Name")
 
 tasks.ensure_field("Hours", "numeric")
 tasks.ensure_summary_field(link, "Hours", "Total Hours")
-tasks.ensure_summary_field(link, "Hours", "Longest Task", function="MAX")
+tasks.ensure_summary_field(link, "Hours", "Longest Task", function="max")
 tasks.ensure_count_field(link, "Task Count")
 projects.ensure_field("Hours Or Zero", "numeric", formula="Nz([Total Hours])")
 ```
 
-`function` defaults to `SUM`, and must be in capitals:
+`function` defaults to `sum`. Quickbase's own names, such as `STD-DEV`, work too, and a field's
+`summary_function` reads back in Quickbase's spelling:
 
 | `function` | Worked on | The summary's type |
 |---|---|---|
-| `SUM` | `numeric`, `currency` | The same as the child's field |
-| `AVG`, `STD-DEV` | `numeric` | `numeric` |
-| `MAX`, `MIN` | `numeric`, `date` | The same as the child's field |
-| `DISTINCT-COUNT` | `numeric`, `text` | `numeric` |
-| `COMBINED-TEXT` | `text` | `multitext` |
-| `COMBINED-USER` | `user` | `multiuser` |
+| `sum` | `numeric`, `currency` | The same as the child's field |
+| `avg`, `std_dev` | `numeric` | `numeric` |
+| `max`, `min` | `numeric`, `date` | The same as the child's field |
+| `distinct_count` | `numeric`, `text` | `numeric` |
+| `combined_text` | `text` | `multitext` |
+| `combined_user` | `user` | `multiuser` |
 
-We tested these combinations, and others may work. Quickbase refused `SUM` of a `checkbox` and `MAX` of
-`text`, with `BadRequestError`. `COUNT` takes no field, so it has its own method, `ensure_count_field()`,
+We tested these combinations, and others may work. Quickbase refused `sum` of a `checkbox` and `max` of
+`text`, with `BadRequestError`. `count` takes no field, so it has its own method, `ensure_count_field()`,
 and `ensure_summary_field()` raises `InvalidValueError` for it.
 
 **A summary with no child records is empty, not 0**, except a count, which is 0. Code that expects a number should read a formula
@@ -227,19 +228,19 @@ exist, it raises `UnknownFieldError` and deletes nothing.
 
 ## Planning changes before making them
 
-`plan_schema()` checks a list of changes against the app as it is, and says what each would do without
-making it. `apply_schema()` then makes them, in order, if the app hasn't changed since.
+`preview_schema_changes()` checks a list of changes against the app as it is, and says what each would do without
+making it. `apply_schema_changes()` then makes them, in order, if the app hasn't changed since.
 
 ```python
 from pyquickbase import CreateField, CreateRelationship, CreateSummaryField, DeleteField
 
 app = qb.app("bq1234567")
-plan = app.plan_schema(
+plan = app.preview_schema_changes(
     [
         CreateField(table="Tasks", label="Due", type="date"),
-        CreateRelationship(child="Tasks", parent="Projects", foreign_key="Project"),
+        CreateRelationship(child_table="Tasks", parent_table="Projects", foreign_key="Project"),
         CreateSummaryField(
-            child="Tasks", foreign_key="Project", label="Total Hours", child_field="Hours"
+            child_table="Tasks", foreign_key="Project", label="Total Hours", child_field="Hours"
         ),
         DeleteField(table="Tasks", field="Old Notes"),
     ]
@@ -247,12 +248,12 @@ plan = app.plan_schema(
 for change in plan.changes:
     print(change.status, change.risk, change.summary, change.warnings)
 if not plan.blockers:
-    app.apply_schema(plan)
+    app.apply_schema_changes(plan)
 ```
 
 Each `PlannedChange` has:
 
-- **`status`:** `change`, `no_change` if the app already has it, or `blocked`.
+- **`status`:** `ready`, `already_done` if the app already has it, or `blocked`.
 - **`risk`:** `additive`, `modifying`, or `destructive`.
 - **`settings`:** each setting it would set, before and after.
 - **`warnings`:** what else it would do. For example, deleting a field lists how many records lose a
@@ -263,14 +264,14 @@ Each `PlannedChange` has:
 A later change can use a table or field an earlier one makes, so a plan can create a table, add its
 fields, and link it to another.
 
-**Applying is checked again.** `apply_schema()` plans the same changes again first. If the tables and
+**Applying is checked again.** `apply_schema_changes()` plans the same changes again first. If the tables and
 fields they touch have changed, it raises `SchemaMismatchError`. If anything blocks them, it raises
 `InvalidValueError`. Either way, nothing is sent. Record counts aren't part of that check, as they
 change all the time.
 
-**Quickbase can't undo a change.** If one fails, `apply_schema()` raises `SchemaChangeError`, whose
+**Quickbase can't undo a change.** If one fails, `apply_schema_changes()` raises `SchemaChangeError`, whose
 `result` lists the changes made, the one that failed, and the ones not attempted. A change already made
-counts as `no_change`, so planning the same list again shows only what's left.
+counts as `already_done`, so planning the same list again shows only what's left.
 
 To give a model these steps as tools, see
 [Changing the schema from an agent](../agents/changes.md#changing-the-schema-from-an-agent).
@@ -289,9 +290,9 @@ To give a model these steps as tools, see
 | A field label or ID that doesn't exist | `UnknownFieldError` | Nothing was changed |
 | `update_field()` with nothing to change, `delete_fields([])`, or the wrong `confirm` | `InvalidValueError` | Nothing was sent |
 | `delete_fields()` with a field that can't be deleted | `WriteError` | The other fields were deleted |
-| `apply_schema()` after the schema changed | `SchemaMismatchError` | Nothing was sent |
-| `apply_schema()` with a plan that has blockers | `InvalidValueError` | Nothing was sent |
-| A change in `apply_schema()` that fails | `SchemaChangeError` | **The changes before it were made**, as `result` lists |
+| `apply_schema_changes()` after the schema changed | `SchemaMismatchError` | Nothing was sent |
+| `apply_schema_changes()` with a plan that has blockers | `InvalidValueError` | Nothing was sent |
+| A change in `apply_schema_changes()` that fails | `SchemaChangeError` | **The changes before it were made**, as `result` lists |
 
 See [Handling errors](errors.md) for how these exceptions relate.
 

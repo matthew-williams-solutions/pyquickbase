@@ -41,29 +41,33 @@ async def test_a_plan_links_tables_and_planning_again_finds_it_done(
     changes = [
         CreateField(table=child_name, label="Hours", type="numeric"),
         CreateField(table=child_name, label="Double", type="numeric", formula="[Hours] * 2"),
-        CreateRelationship(child=child_name, parent=parent_name, foreign_key="Parent"),
-        CreateLookupField(child=child_name, foreign_key="Parent", parent_field="Name"),
+        CreateRelationship(child_table=child_name, parent_table=parent_name, foreign_key="Parent"),
+        CreateLookupField(child_table=child_name, foreign_key="Parent", parent_field="Name"),
         CreateSummaryField(
-            child=child_name, foreign_key="Parent", label="Total Hours", child_field="Hours"
+            child_table=child_name, foreign_key="Parent", label="Total Hours", child_field="Hours"
         ),
-        CreateSummaryField(child=child_name, foreign_key="Parent", label="Count", function="COUNT"),
+        CreateSummaryField(
+            child_table=child_name, foreign_key="Parent", label="Count", function="count"
+        ),
     ]
     app = qb.app(scratch.app_id)
-    plan = await app.plan_schema(changes)
-    assert [item.status for item in plan.changes] == ["change"] * 6, plan.blockers
-    result = await app.apply_schema(plan)
+    plan = await app.preview_schema_changes(changes)
+    assert [item.status for item in plan.changes] == ["ready"] * 6, plan.blockers
+    result = await app.apply_schema_changes(plan)
     assert len(result.applied) == 6
 
-    again = await app.plan_schema(changes)
-    assert [item.status for item in again.changes] == ["no_change"] * 6
+    again = await app.preview_schema_changes(changes)
+    assert [item.status for item in again.changes] == ["already_done"] * 6
     labels = {item.label for item in await app.table(child_name).fields(refresh=True)}
     assert {"Hours", "Double", "Parent", "Parent - Name"} <= labels
 
-    unlink = await app.plan_schema([DeleteRelationship(child=child_name, foreign_key="Parent")])
+    unlink = await app.preview_schema_changes(
+        [DeleteRelationship(child_table=child_name, foreign_key="Parent")]
+    )
     warnings = " ".join(unlink.changes[0].warnings)
     assert '"Parent - Name"' in warnings
     assert '"Total Hours"' in warnings
-    await app.apply_schema(unlink)
+    await app.apply_schema_changes(unlink)
     assert await app.table(child_name).relationships(refresh=True) == []
     labels = {item.label for item in await app.table(child_name).fields(refresh=True)}
     assert "Parent" in labels
@@ -75,7 +79,7 @@ async def test_a_plan_counts_what_a_deletion_loses(qb: AsyncQuickbase, scratch: 
     table.insert([{"Title": "a", "Code": "x"}, {"Title": "b", "Code": "x"}, {"Title": "c"}])
     name = table.info().name
     app = qb.app(scratch.app_id)
-    plan = await app.plan_schema(
+    plan = await app.preview_schema_changes(
         [
             DeleteField(table=name, field="Code"),
             UpdateField(table=name, field="Title", required=True),
@@ -84,16 +88,18 @@ async def test_a_plan_counts_what_a_deletion_loses(qb: AsyncQuickbase, scratch: 
     )
     code, required, unique = plan.changes
     assert code.affected_records == 2
-    assert required.status == "change"
-    assert unique.status == "change"
-    duplicate = await app.plan_schema([UpdateField(table=name, field="Code", unique=True)])
+    assert required.status == "ready"
+    assert unique.status == "ready"
+    duplicate = await app.preview_schema_changes(
+        [UpdateField(table=name, field="Code", unique=True)]
+    )
     assert "1 values appear on more than one record" in duplicate.blockers[0]
 
 
 async def test_a_plan_can_create_change_and_drop_a_table(qb: AsyncQuickbase, scratch: Any) -> None:
     name = f"ZZ Live {secrets.token_hex(4)}"
     app = qb.app(scratch.app_id)
-    plan = await app.plan_schema(
+    plan = await app.preview_schema_changes(
         [
             CreateTable(name=name, single_record_name="Visit"),
             CreateField(table=name, label="Notes", type="text"),
@@ -101,13 +107,13 @@ async def test_a_plan_can_create_change_and_drop_a_table(qb: AsyncQuickbase, scr
         ]
     )
     assert not plan.blockers
-    await app.apply_schema(plan)
+    await app.apply_schema_changes(plan)
     made = scratch.client.app(scratch.app_id).table(name)
     scratch.created.append(made)
     assert made.info().description == "Made by a plan."
-    drop = await app.plan_schema([DeleteTable(table=name)])
+    drop = await app.preview_schema_changes([DeleteTable(table=name)])
     assert drop.changes[0].affected_records == 0
-    await app.apply_schema(drop)
+    await app.apply_schema_changes(drop)
     scratch.created.remove(made)
     assert name not in {item.name for item in await app.tables(refresh=True)}
 
@@ -125,9 +131,9 @@ async def test_operations_hold_a_model_to_its_limits(scratch: Any) -> None:
     bound = policy.bind(scratch.client.app(scratch.app_id))
     async with AsyncQuickbase(realm=scratch.realm, token=scratch.token, policy=bound) as limited:
         app = limited.app(scratch.app_id)
-        plan = await app.operation("plan_schema")
-        apply = await app.operation("apply_schema")
-        hidden = {"kind": "create_field", "table": info.name, "label": "Pay", "type": "numeric",
+        plan = await app.operation("preview_schema_changes")
+        apply = await app.operation("apply_schema_changes")
+        hidden = {"action": "create_field", "table": info.name, "label": "Pay", "type": "numeric",
                   "formula": "[Salary] / 12"}  # fmt: skip
         refused = tool_result(await plan.run({"changes": [hidden]}))
         assert "uses [Salary]" in refused["blockers"][0]

@@ -296,7 +296,7 @@ async def test_ensure_summary_refuses_a_label_used_by_something_else(
         await tasks.ensure_summary_field(project(fake), "Hours", "Owner")
     await tasks.ensure_summary_field(project(fake), "Hours", "Total Hours")
     with pytest.raises(SchemaMismatchError):
-        await tasks.ensure_summary_field(project(fake), "Hours", "Total Hours", function="AVG")
+        await tasks.ensure_summary_field(project(fake), "Hours", "Total Hours", function="avg")
 
 
 async def test_ensure_count_creates_once_without_a_field(app: Any, fake: FakeSchema) -> None:
@@ -318,7 +318,7 @@ async def test_ensure_count_creates_once_without_a_field(app: Any, fake: FakeSch
 async def test_count_is_its_own_method(app: Any, fake: FakeSchema) -> None:
     tasks = app.table("Tasks")
     with pytest.raises(InvalidValueError, match="ensure_count_field"):
-        await tasks.ensure_summary_field(project(fake), "Hours", "Count", function="COUNT")
+        await tasks.ensure_summary_field(project(fake), "Hours", "Count", function="count")
     await tasks.ensure_summary_field(project(fake), "Hours", "Total Hours")
     with pytest.raises(SchemaMismatchError):
         await tasks.ensure_count_field(project(fake), "Total Hours")

@@ -49,7 +49,6 @@ from ._read_request import ReadAction, ReadRequest
 from ._retry import RetryPolicy
 from ._schema_operations import SchemaOperationName
 from ._schema_plan import (
-    ChangeKind,
     CreateField,
     CreateLookupField,
     CreateRelationship,
@@ -60,6 +59,7 @@ from ._schema_plan import (
     DeleteTable,
     PlannedChange,
     Risk,
+    SchemaAction,
     SchemaChange,
     SchemaChangeResult,
     SchemaPlan,
@@ -139,7 +139,6 @@ __all__ = [
     "AuthenticationError",
     "BadRequestError",
     "BoundPolicy",
-    "ChangeKind",
     "Column",
     "ConfigurationError",
     "ConfirmationError",
@@ -202,6 +201,7 @@ __all__ = [
     "Row",
     "RowError",
     "Rule",
+    "SchemaAction",
     "SchemaChange",
     "SchemaChangeError",
     "SchemaChangeResult",

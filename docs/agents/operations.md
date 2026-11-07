@@ -50,7 +50,7 @@ The schema goes in your framework's tool definition, under the name it uses, suc
 | `preview_update` | As `update` | `preview_update()` | `UpdatePreview` |
 | `preview_delete` | `where`, `select`, `limit`. Give it the same `max_records` as `delete`, and `tool_result()` lists a blocker when a delete would be refused | `preview_delete()` | `Page` |
 | `run_report` | `report`, as its ID, its ID as a number, or its name, and `limit`, `skip` | `Report.run_page()` | `Page` |
-| `summary_report` | `report`, as for `run_report`, and `limit` | `Report.summary_rows()` | A list of rows |
+| `run_summary_report` | `report`, as for `run_report`, and `limit` | `Report.summary_rows()` | A list of rows |
 | `run_formula` | `record_id` | `run_formula()`, with the formula your code gives | `FormulaResult` |
 | `download_file` | `record_id`, `field`, `version` | `download_file()` | `FileDownload` |
 | `delete_file_version` | `record_id`, `field`, `version` | `delete_file_version()` | None |

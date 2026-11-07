@@ -45,16 +45,21 @@ before they're made, for scripts and for agents. **It breaks every client that u
   filter may only use fields the client can filter on, and it's shown, and compared with an existing
   summary's, when every field it uses is readable on the child. `Field.summary_query` holds a
   summary's filter, and a plan warns when a deleted field is one a summary filters on.
-- **`App.plan_schema()` and `App.apply_schema()`.** Changes such as `CreateField`, `UpdateField`,
+- **`App.preview_schema_changes()` and `App.apply_schema_changes()`.** Changes such as `CreateField`, `UpdateField`,
   `DeleteField`, `CreateTable`, `CreateRelationship`, `CreateLookupField`, and `CreateSummaryField` are
   checked against the app as it is. Each `PlannedChange` says what it would set, its `risk`, what else it
   would do or affect, such as records that lose a deleted field's values or formulas that use it, and
   anything that blocks it, including the client's policy. Applying plans again first, and refuses if
   the touched tables and fields have changed. A failure raises `SchemaChangeError`, which says what was
   made, and planning again shows only what's left.
-- **Schema operations for models:** `App.operation()` offers `describe_schema`, `plan_schema`, and
-  `apply_schema`, which only runs with the confirmation its plan returned, for the same changes, while
-  the schema is as it was. Each schema offers only what the client's policy allows.
+- **Schema operations for models:** `App.operation()` offers `describe_schema`,
+  `preview_schema_changes`, and `apply_schema_changes`, which only runs with the confirmation its plan
+  returned, for the same changes, while the schema is as it was. Each schema offers only what the
+  client's policy allows. A change names what it does in `action`, such as `create_lookup_field`, a
+  relationship's tables in `child_table` and `parent_table`, and a summary's `function` in lower
+  case, such as `sum` or `std_dev`. `kind`, `child`, `parent`, `create_lookup`, and Quickbase's own
+  function names are read too. Each planned change is `ready`, `already_done`, or `blocked`, and a
+  plan's result has the same top-level `changes` and approval keys as an update preview.
 - **Checks on what a new formula, lookup, or summary reads.** Under a policy, one may only use fields
   the client can read, and a formula may only call functions known to stay on the record. A formula
   can't make a link or rich text.
@@ -75,6 +80,11 @@ before they're made, for scripts and for agents. **It breaks every client that u
 
 ### Changed
 
+- **The `summary_report` operation is `run_summary_report`**, to match `run_report`.
+- **`ensure_summary_field()` takes `function` in lower case**, such as `sum` or `std_dev`, as schema
+  changes do. Quickbase's names, such as `SUM`, still work, and an unknown one raises
+  `InvalidValueError` before anything is sent.
+- **`describe_schema` names each relationship's parent table** in `parent_table`, beside its ID.
 - **`order_by` items take `"direction": "asc"` or `"desc"`**, defaulting to `asc`, in place of
   `"descending": true`, which is still read.
 - **The filter operators `HAS` and `XHAS` are `has` and `not_has`** in `where_from_dict()` and the

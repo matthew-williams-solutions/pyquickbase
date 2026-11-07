@@ -319,7 +319,7 @@ async def test_reports() -> None:
         assert "1: List All, Every task." in run.schema["properties"]["report"]["description"]
         page = await run.run({"report": "1", "limit": 2})
         assert isinstance(page, Page)
-        summary = await tasks.operation("summary_report")
+        summary = await tasks.operation("run_summary_report")
         assert await summary.run({"report": "5"}) == [{"Record ID#": 1}]
     assert [name for name, _ in fake.sent if "/run" in name] == [
         "POST /reports/1/run",
@@ -334,7 +334,7 @@ async def test_reports_can_be_named_by_number_or_name() -> None:
         run = await tasks.operation("run_report")
         assert isinstance(await run.run({"report": 1}), Page)
         assert isinstance(await run.run({"report": "list all"}), Page)
-        summary = await tasks.operation("summary_report")
+        summary = await tasks.operation("run_summary_report")
         assert await summary.run({"report": "Totals"}) == [{"Record ID#": 1}]
         with pytest.raises(QueryError, match="use the run_report operation"):
             await summary.run({"report": "List All"})

@@ -90,12 +90,15 @@ from .._schema_operations import (
     schema_operation_schema,
 )
 from .._schema_plan import (
+    SUMMARY_FUNCTIONS,
     SchemaChange,
     SchemaChangeResult,
     SchemaPlan,
     canonical_changes,
     change_to_json,
     changes_from_json,
+    quickbase_function,
+    summary_function,
 )
 from .._summary import Summary, SummaryGroups, SummaryRow
 from .._typed import (
@@ -340,7 +343,7 @@ class AsyncApp:
         self._transport.table_created(table_id, name)
         return self.table(table_id)
 
-    async def plan_schema(self, changes: Sequence[SchemaChange]) -> SchemaPlan:
+    async def preview_schema_changes(self, changes: Sequence[SchemaChange]) -> SchemaPlan:
         """Work out what schema changes would do, without making them.
 
         Each change is compared with the app as it is now, in order, so a later one can use a
@@ -356,16 +359,16 @@ class AsyncApp:
             changes: The changes, such as `CreateField(table="Tasks", label="Due", type="date")`.
 
         Returns:
-            A `SchemaPlan`, for `apply_schema()`.
+            A `SchemaPlan`, for `apply_schema_changes()`.
 
         Raises:
             InvalidValueError: `changes` is empty. Nothing was read.
         """
         if not changes:
-            raise InvalidValueError("plan_schema() needs at least one change.")
+            raise InvalidValueError("preview_schema_changes() needs at least one change.")
         return await AsyncPlanner(self).plan(changes)
 
-    async def apply_schema(self, plan: SchemaPlan) -> SchemaChangeResult:
+    async def apply_schema_changes(self, plan: SchemaPlan) -> SchemaChangeResult:
         """Make the changes in a plan, in order, if the app hasn't changed since it was made.
 
         The changes are planned again first, and nothing is sent unless that finds the same
@@ -373,7 +376,7 @@ class AsyncApp:
         the ones before it stay made, and the ones after it aren't attempted.
 
         Args:
-            plan: From `plan_schema()`.
+            plan: From `preview_schema_changes()`.
 
         Returns:
             A `SchemaChangeResult`, with what was made and what was already there.
@@ -390,10 +393,11 @@ class AsyncApp:
     ) -> "AsyncSchemaOperation":
         """Make a schema operation into a tool for a model, with its JSON Schema.
 
-        `describe_schema` lists the tables and fields the client can read. `plan_schema` says what
-        a list of changes would do, without making them, and `apply_schema` makes them, but only
-        with the `confirmation` that `plan_schema` returned for exactly those changes, within 15
-        minutes, while the schema is as it was then. Show the person each plan before they approve
+        `describe_schema` lists the tables and fields the client can read.
+        `preview_schema_changes` says what a list of changes would do, without making them, and
+        `apply_schema_changes` makes them, but only with the `confirmation` that
+        `preview_schema_changes` returned for exactly those changes, within 15 minutes, while the
+        schema is as it was then. Show the person each plan before they approve
         it.
 
         The schema offers only the kinds of change, tables, and field types the client's policy
@@ -402,13 +406,13 @@ class AsyncApp:
         it adds can only show what it could already read.
 
         ```python
-        plan = await app.operation("plan_schema")
+        plan = await app.operation("preview_schema_changes")
         tool = {"name": "plan_changes", "input_schema": plan.schema}
         result = await plan.run(arguments)
         ```
 
         Args:
-            name: `describe_schema`, `plan_schema`, or `apply_schema`.
+            name: `describe_schema`, `preview_schema_changes`, or `apply_schema_changes`.
             max_changes: The most changes one plan may hold.
 
         Returns:
@@ -416,8 +420,8 @@ class AsyncApp:
 
         Raises:
             ConfigurationError: `name` isn't a schema operation, `max_changes` isn't a positive
-                whole number, or the client's policy allows no schema change for `plan_schema` or
-                `apply_schema`.
+                whole number, or the client's policy allows no schema change for
+                `preview_schema_changes` or `apply_schema_changes`.
         """
         if name not in get_args(SchemaOperationName):
             raise ConfigurationError(
@@ -1988,7 +1992,7 @@ class AsyncTable:
         child_field: FieldRef,
         label: str,
         *,
-        function: str = "SUM",
+        function: str = "sum",
         where: Expression | str | None = None,
     ) -> Field:
         """Return the summary of this table's `child_field` on the parent, creating it if needed.
@@ -2001,8 +2005,9 @@ class AsyncTable:
             relationship: The relationship, from `ensure_relationship()`.
             child_field: This table's field to summarize, by label or ID.
             label: The label of the summary field on the parent.
-            function: Quickbase's name for the calculation, in capitals: `SUM`, `AVG`, `MAX`, `MIN`,
-                `STD-DEV`, `DISTINCT-COUNT`, `COMBINED-TEXT`, or `COMBINED-USER`.
+            function: The calculation: `sum`, `avg`, `max`, `min`, `std_dev`, `distinct_count`,
+                `combined_text`, or `combined_user`. Quickbase's names, such as `STD-DEV`, work
+                too.
             where: Only combine the child records that match, as a condition on this table built
                 with `F`, or a string such as `{7.EX.true}`. It's checked first, as Quickbase saves
                 one it can't use and the summary is then always empty.
@@ -2011,21 +2016,26 @@ class AsyncTable:
             The summary `Field`, on the parent.
 
         Raises:
-            InvalidValueError: `function` is `COUNT`, which takes no field. Nothing was sent.
+            InvalidValueError: `function` isn't one of these, or is `count`, which takes no field.
+                Nothing was sent.
             UnknownFieldError: This table has no such field. Nothing was sent.
             QueryError: `where` can't be sent as written. Nothing was sent.
             SchemaMismatchError: The label is already used on the parent by anything but this
                 summary. It wasn't changed.
-            BadRequestError: Quickbase can't apply `function` to this field, such as `SUM` of a
+            BadRequestError: Quickbase can't apply `function` to this field, such as `sum` of a
                 checkbox.
         """
-        if function == "COUNT":
+        found = summary_function(function)
+        if found is None:
+            raise InvalidValueError(f"function must be one of: {', '.join(SUMMARY_FUNCTIONS)}.")
+        if found == "count":
             raise InvalidValueError(
-                "COUNT counts the child records rather than summarizing a field, so use "
+                "count counts the child records rather than summarizing a field, so use "
                 "ensure_count_field()."
             )
         target_id = (await self.resolve_field_ids([child_field]))[0]
-        return await self._ensure_summary(relationship, label, function, target_id, where)
+        code = quickbase_function(found)
+        return await self._ensure_summary(relationship, label, code, target_id, where)
 
     async def ensure_count_field(
         self, relationship: Relationship, label: str, *, where: Expression | str | None = None
@@ -2168,12 +2178,12 @@ class AsyncTable:
 
         Args:
             name: What the operation does, such as `query` or `insert`. Each runs the method of the
-                same name, and `run_report` and `summary_report` run a report.
+                same name, and `run_report` and `run_summary_report` run a report.
             fields: The only fields it may use, by label or ID. Defaults to every field the client
                 may use for the operation.
             descriptions: What fields mean, as `{label or ID: text}`, which the schema shows the
                 model. Each must be for a field the operation offers.
-            reports: The reports `run_report` or `summary_report` may run, by ID, or as `{ID:
+            reports: The reports `run_report` or `run_summary_report` may run, by ID, or as `{ID:
                 description}`. Defaults to every report of that kind the client may run.
             formula: For `run_formula`, the formula's text, which your code fixes. The model only
                 chooses the record, as a formula can read any table.
@@ -2217,7 +2227,7 @@ class AsyncTable:
             report_ids = list(report_notes)
         elif reports is not None:
             report_ids = [str(item) for item in reports]
-        needs_reports = name in ("run_report", "summary_report")
+        needs_reports = name in ("run_report", "run_summary_report")
         allowed = allowed_for(
             await self.fields(),
             await self.reports() if needs_reports else (),
@@ -2666,7 +2676,7 @@ class AsyncSchemaOperation:
 
     @property
     def name(self) -> SchemaOperationName:
-        """What the operation does, such as `plan_schema`."""
+        """What the operation does, such as `preview_schema_changes`."""
         return self._name
 
     @property
@@ -2684,13 +2694,14 @@ class AsyncSchemaOperation:
             arguments: The arguments from the model's tool call.
 
         Returns:
-            For `describe_schema`, a list of `TableSchema`. For `plan_schema`, a `SchemaPlan`,
-            whose `confirmation` `apply_schema` needs, unless the plan has blockers or changes
-            nothing. For `apply_schema`, a `SchemaChangeResult`. `tool_result()` takes each.
+            For `describe_schema`, a list of `TableSchema`. For `preview_schema_changes`, a
+            `SchemaPlan`, whose `confirmation` `apply_schema_changes` needs, unless the plan has
+            blockers or changes nothing. For `apply_schema_changes`, a `SchemaChangeResult`.
+            `tool_result()` takes each.
 
         Raises:
             InvalidValueError: An argument can't be used. Nothing was sent.
-            QueryError: `apply_schema` has no confirmation, or one that doesn't match these
+            QueryError: `apply_schema_changes` has no confirmation, or one that doesn't match these
                 changes and the schema as it is now. Nothing was changed.
             SchemaChangeError: A change failed while applying. Its `result` says which were made.
         """
@@ -2703,12 +2714,12 @@ class AsyncSchemaOperation:
         if self._name == "describe_schema":
             return await self._describe(arguments.get("tables"))
         changes = changes_from_json(arguments.get("changes"), most=self._max_changes)
-        offered = {item["properties"]["kind"]["const"] for item in self._kinds()}
+        offered = {item["properties"]["action"]["const"] for item in self._actions()}
         for position, change in enumerate(changes):
-            if change_to_json(change)["kind"] not in offered:
-                kinds = ", ".join(sorted(offered))
+            if change_to_json(change)["action"] not in offered:
+                actions = ", ".join(sorted(offered))
                 raise InvalidValueError(
-                    f"changes[{position}].kind isn't one this tool offers: {kinds}."
+                    f"changes[{position}].action isn't one this tool offers: {actions}."
                 )
         plan = await AsyncPlanner(self._app).plan(changes)
         transport = self._app._transport  # pyright: ignore[reportPrivateUsage]
@@ -2716,14 +2727,14 @@ class AsyncSchemaOperation:
             self._app.id, canonical_changes(changes), plan.fingerprint, transport.policy_hash
         )
         key = transport.confirmation_key
-        if self._name == "plan_schema":
+        if self._name == "preview_schema_changes":
             if plan.blockers or not plan.has_changes:
                 return plan
             return replace(plan, confirmation=issue_confirmation(key, "schema", bound))
         check_confirmation(key, "schema", arguments.get("confirmation"), bound)
         return await apply_checked(self._app, plan)
 
-    def _kinds(self) -> list[dict[str, Any]]:
+    def _actions(self) -> list[dict[str, Any]]:
         return self._schema["properties"]["changes"]["items"]["oneOf"]
 
     async def _describe(self, wanted: Any) -> list[TableSchema]:

@@ -80,9 +80,13 @@ ALIASES = {
     "PeriodUnit": "How much time each group of a `Period` covers.",
     "SummaryGroups": "What `Table.summarize()` can group by.",
     "WriteAction": "What kind of write a `WriteRequest` is.",
-    "SchemaChange": "Any one of the changes on this page, as `App.plan_schema()` takes them.",
-    "ChangeKind": "The `kind` of a change in the JSON form a model sends, such as `create_field`.",
-    "SummaryFunction": "How `CreateSummaryField` combines a child's values. `COUNT` counts the "
+    "SchemaChange": (
+        "Any one of the changes on this page, as `App.preview_schema_changes()` takes them."
+    ),
+    "SchemaAction": (
+        "The `action` of a change in the JSON form a model sends, such as `create_field`."
+    ),
+    "SummaryFunction": "How `CreateSummaryField` combines a child's values. `count` counts the "
     "child records.",
     "Risk": "How much a planned change can lose: `additive` only adds, `modifying` changes what's "
     "there, and `destructive` deletes data or fields.",
@@ -189,7 +193,7 @@ _ERRORS = ("Handling errors", "../guides/errors.md")
 _LINKS = "Link to the Quickbase interface"
 
 _TABLE_LINE = 'tasks = qb.app("bq1234567").table("Job Tasks")'
-_PLAN_LINES = '\n    plan = await app.operation("plan_schema")'
+_PLAN_LINES = '\n    plan = await app.operation("preview_schema_changes")'
 _SEARCH_LINES = (
     '\n    search = await tasks.operation(\n        "query", fields=["Title", "Status"]\n    )'
 )
@@ -248,7 +252,7 @@ RESOURCES = (
                 "Change the schema with a plan",
                 "plan-schema",
                 _SCHEMA,
-                ("plan_schema", "apply_schema"),
+                ("preview_schema_changes", "apply_schema_changes"),
             ),
             Group("Give a model the schema", "operations", _AGENTS, ("operation",)),
         ),
@@ -370,9 +374,9 @@ RESOURCES = (
         pyquickbase.SchemaOperation,
         pyquickbase.AsyncSchemaOperation,
         "A `SchemaOperation` is one schema operation offered to a model as a tool: "
-        "`describe_schema`, `plan_schema`, or `apply_schema`. Get one from `App.operation()`. "
-        "`apply_schema` only runs with the confirmation `plan_schema` returned for the same "
-        "changes, while the schema is as it was.",
+        "`describe_schema`, `preview_schema_changes`, or `apply_schema_changes`. Get one from "
+        "`App.operation()`. `apply_schema_changes` only runs with the confirmation "
+        "`preview_schema_changes` returned for the same changes, while the schema is as it was.",
         f"The examples below use `plan`, made as shown here. {_JOB_TASKS} {_LIVE_TEST}",
         _setup('app = qb.app("bq1234567")')[0] + _PLAN_LINES.replace("await ", ""),
         _setup('app = qb.app("bq1234567")')[1] + _PLAN_LINES,
@@ -502,9 +506,9 @@ SYMBOL_PAGES = (
         "Schema changes",
         "schema-changes",
         "Describe changes to an app's tables, fields, and relationships, then pass them to "
-        "`App.plan_schema()`, which says what each would do without making it, and "
-        "`App.apply_schema()`, which makes them if the app hasn't changed since. A change the app "
-        "already has counts as done.",
+        "`App.preview_schema_changes()`, which says what each would do without making it, and "
+        "`App.apply_schema_changes()`, which makes them if the app hasn't changed since. A change "
+        "the app already has counts as done.",
         f"{_SYMBOL_NOTE} {_PROJECTS} The examples only plan, unless they say otherwise.",
         *_setup(_TABLE_LINE),
         (
@@ -533,7 +537,7 @@ SYMBOL_PAGES = (
                 _SCHEMA,
                 ("SchemaPlan", "PlannedChange", "SettingChange", "SchemaChangeResult", "Risk"),
             ),
-            Group("Any change", "any-change", _AGENTS, ("SchemaChange", "ChangeKind")),
+            Group("Any change", "any-change", _AGENTS, ("SchemaChange", "SchemaAction")),
         ),
     ),
     SymbolPage(

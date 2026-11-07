@@ -1,6 +1,6 @@
 from pyquickbase import CreateField, UpdateField
 
-plan = await app.plan_schema(
+plan = await app.preview_schema_changes(
     [
         CreateField(
             table="Job Tasks", label="Crew", type="text"
@@ -10,5 +10,5 @@ plan = await app.plan_schema(
         ),
     ]
 )
-result = await app.apply_schema(plan)
-print(len(result.applied), len(result.unchanged))
+result = await app.apply_schema_changes(plan)
+print(len(result.applied), len(result.already_done))

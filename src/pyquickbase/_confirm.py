@@ -4,8 +4,9 @@ A model is told to preview before it changes anything, and to wait for the perso
 nothing made it. With `require_preview`, an `update` or `delete` operation only runs with the
 `confirmation` its preview returned, and only for exactly the arguments previewed, within
 `CONFIRMATION_SECONDS`. A delete's confirmation also holds how many records matched, so a delete is
-refused if that has changed since. An `apply_schema` operation always needs the confirmation
-`plan_schema` returned, which holds a fingerprint of the schema the plan was checked against.
+refused if that has changed since. An `apply_schema_changes` operation always needs the
+confirmation `preview_schema_changes` returned, which holds a fingerprint of the schema the plan was
+checked against.
 
 A confirmation is signed with the client's key, so nothing is stored and a confirmation can't be
 made up. Each client makes a random key, so a confirmation only works with operations from the
@@ -31,7 +32,7 @@ ConfirmationKind = Literal["update", "delete", "schema"]
 _PREVIEWS: dict[str, str] = {
     "update": "preview_update",
     "delete": "preview_delete",
-    "schema": "plan_schema",
+    "schema": "preview_schema_changes",
 }
 _NOUNS: dict[str, str] = {"update": "preview", "delete": "preview", "schema": "plan"}
 

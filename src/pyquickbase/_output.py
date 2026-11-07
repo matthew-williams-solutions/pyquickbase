@@ -38,7 +38,7 @@ from ._schema_plan import (
     PlannedChange,
     SchemaChangeResult,
     SchemaPlan,
-    change_kind,
+    change_action,
 )
 from ._summary import SummaryRow
 from ._typed import TypedPage, TypedRecord
@@ -483,7 +483,7 @@ def _metadata(value: TableInfo | Field | ReportInfo, state: _State) -> dict[str,
 
 def _planned(item: PlannedChange) -> dict[str, Any]:
     found: dict[str, Any] = {
-        "kind": change_kind(item.change),
+        "action": change_action(item.change),
         "status": item.status,
         "risk": item.risk,
         "summary": item.summary,
@@ -507,7 +507,7 @@ def _applied(result: SchemaChangeResult) -> dict[str, Any]:
     """What applying a plan did, by each change's summary."""
     found: dict[str, Any] = {
         "applied": [_summary_link(item) for item in result.applied],
-        "unchanged": [item.summary for item in result.unchanged],
+        "already_done": [item.summary for item in result.already_done],
     }
     if result.failed is not None:
         found["failed"] = result.failed.summary
@@ -522,18 +522,22 @@ def _summary_link(item: PlannedChange) -> dict[str, Any]:
     return found
 
 
-def _table_schema(value: TableSchema, state: _State) -> dict[str, Any]:
+def _table_schema(value: TableSchema, state: _State, tables: Mapping[str, str]) -> dict[str, Any]:
     labels = {item.id: item.label for item in value.fields}
     return {
         **_metadata(value.info, state),
         "fields": [_metadata(item, state) for item in value.fields],
-        "relationships": [_relationship(item, labels) for item in value.relationships],
+        "relationships": [_relationship(item, labels, tables) for item in value.relationships],
     }
 
 
-def _relationship(value: Relationship, labels: Mapping[int, str]) -> dict[str, Any]:
-    """A relationship from its child's side, with its child's fields by label."""
+def _relationship(
+    value: Relationship, labels: Mapping[int, str], tables: Mapping[str, str]
+) -> dict[str, Any]:
+    """A relationship from its child's side, with its child's fields by label, and its parent by
+    name when the parent is among the tables described."""
     return {
+        "parent_table": tables.get(value.parent_table_id),
         "parent_table_id": value.parent_table_id,
         "foreign_key": labels.get(value.foreign_key_field_id or 0),
         "lookups": [labels[item] for item in value.lookup_field_ids if item in labels],
@@ -597,10 +601,8 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
         return found
     if isinstance(value, SchemaPlan):
         return {
-            "plan": {
-                "changes": [_planned(item) for item in value.changes],
-                "has_changes": value.has_changes,
-            },
+            "changes": [_planned(item) for item in value.changes],
+            "has_changes": value.has_changes,
             **_approval(value.confirmation, value.blockers, value.warnings),
         }
     if isinstance(value, SchemaChangeResult):
@@ -619,7 +621,9 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
         if items and all(isinstance(item, SummaryRow) for item in items):
             return {"groups": [_summary(item, state) for item in items]}
         if items and all(isinstance(item, TableSchema) for item in items):
-            return {"tables": [_table_schema(item, state) for item in items]}
+            schemas = cast(list[TableSchema], items)
+            tables = {item.info.id: item.info.name for item in schemas}
+            return {"tables": [_table_schema(item, state, tables) for item in schemas]}
         for cls, key in ((TableInfo, "tables"), (Field, "fields"), (ReportInfo, "reports")):
             if items and all(isinstance(item, cls) for item in items):
                 return {key: [_metadata(item, state) for item in items]}
@@ -662,8 +666,8 @@ def tool_result(
     | `UpdatePreview` | `changes`, `unchanged_ids`, and `missing_ids` |
     | A `preview_update` operation's result | As for an `UpdatePreview`, with the approval keys |
     | A `preview_delete` operation's result | As for a `Page`, with the approval keys |
-    | `SchemaPlan` | `plan`, with `changes` and `has_changes`, and the approval keys |
-    | `SchemaChangeResult` | `applied` and `unchanged`, and `failed` and `not_attempted` if needed |
+    | `SchemaPlan` | `changes` and `has_changes`, and the approval keys |
+    | `SchemaChangeResult` | `applied` and `already_done`, and `failed` and `not_attempted` too |
     | A list of `TableSchema` | `tables`, each with `fields` and `relationships` |
     | `FormulaResult` | `value` and `type` |
     | Text, a number, a date, or a bool | `value` |

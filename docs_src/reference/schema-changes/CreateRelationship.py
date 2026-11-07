@@ -1,10 +1,10 @@
 from pyquickbase import CreateRelationship
 
-plan = await app.plan_schema(
+plan = await app.preview_schema_changes(
     [
         CreateRelationship(
-            child="Job Tasks",
-            parent="Job Projects",
+            child_table="Job Tasks",
+            parent_table="Job Projects",
             foreign_key="Project",
         )
     ]

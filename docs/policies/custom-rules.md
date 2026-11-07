@@ -9,11 +9,13 @@ do.
 ```python
 from pyquickbase import Decision, Policy, WriteRequest, allow, fields
 
+
 class SmallBatches:
     def decide(self, request):
         if isinstance(request, WriteRequest) and (request.row_count or 0) > 100:
             return Decision(allowed=False, verb="insert", reason="Up to 100 rows at a time")
         return None
+
 
 policy = Policy(rules=[allow.insert("Job Tasks", fields.all()), SmallBatches()])
 ```
