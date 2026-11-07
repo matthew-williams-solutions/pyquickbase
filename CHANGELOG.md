@@ -6,9 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-This replaces the permission classes with one `Policy`, and adds schema changes that are planned
-before they're made, for scripts and for agents. **It breaks every client that used `read_only`,
-`read_policy`, or `write_policy`,** with no compatibility layer, as listed below.
+## [1.0.0rc12] - 2026-11-07
+
+This candidate replaces the permission classes with one `Policy`, and adds schema changes that are
+planned before they're made, for scripts and for agents. **It breaks every client that used
+`read_only`, `read_policy`, or `write_policy`,** with no compatibility layer, as listed below.
 
 ### Added
 
