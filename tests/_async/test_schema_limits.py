@@ -10,6 +10,7 @@ from pyquickbase import (
     AsyncQuickbase,
     ConfigurationError,
     InvalidValueError,
+    QueryError,
     ReadAccess,
     ReadRefusedError,
     ReadRules,
@@ -105,7 +106,9 @@ class Fake:
                      "mode": "summary", "properties": {
                          "summaryReferenceFieldId": 9,
                          "summaryTargetFieldId": summary.get("summaryFid", 0),
-                         "summaryFunction": summary["accumulationType"]}}
+                         "summaryFunction": summary["accumulationType"],
+                         **({"summaryQuery": summary["where"]} if "where" in summary
+                            else {})}}
                 )  # fmt: skip
             return httpx.Response(200, json=self.relationship)
         if request.method == "DELETE" and path == f"/tables/{TASKS}/relationship/9":
@@ -314,6 +317,33 @@ async def test_a_summary_of_a_hidden_child_field_is_refused() -> None:
         with pytest.raises(ReadRefusedError, match="foreign key"):
             await child.ensure_count_field(hidden_key, "Tasks")
     assert len(fake.writes()) == 1
+
+
+async def test_a_summary_filter_needs_fields_the_client_may_filter_on() -> None:
+    fake = Fake()
+    rules = ReadRules(
+        {
+            TASKS: ReadAccess(fields=[3, 6, 8, 9, 10], filter=[3, 6, 7, 9]),
+            PROJECTS: ReadAccess(fields=True),
+        }
+    )
+    async with client(fake, read_policy=rules) as qb:
+        tasks = qb.app(APP).table("Tasks")
+        relationship = (await tasks.relationships())[0]
+        # Owner is returned but not filterable, so a count of matching tasks would show more.
+        with pytest.raises(ReadRefusedError, match=f"filter uses field 8 of table {TASKS}"):
+            await tasks.ensure_count_field(relationship, "Mine", where="{8.EX.'alex'}")
+        with pytest.raises(ReadRefusedError, match="field reference"):
+            await tasks.ensure_count_field(relationship, "Same", where="{6.EX._FID_8}")
+        # Pay is hidden, so it's as if it didn't exist.
+        with pytest.raises(QueryError, match="field 11 doesn't exist"):
+            await tasks.ensure_count_field(relationship, "High Pay", where="{11.GT.5000}")
+        # Salary can be filtered on, though not returned.
+        await tasks.ensure_count_field(relationship, "Well Paid", where="{7.GT.5000}")
+        # The rules hide a summary's filter, so an existing one is matched without it.
+        await tasks.ensure_count_field(relationship, "Well Paid", where="{7.GT.9000}")
+    assert len(fake.writes()) == 1
+    assert fake.writes()[0][2]["summaryFields"][0]["where"] == "{7.GT.5000}"
 
 
 async def test_a_new_field_the_rules_hide_says_it_was_made() -> None:

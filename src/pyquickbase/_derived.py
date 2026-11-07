@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from ._formula import check_formula, field_id_reference
 from ._models import Field
+from ._query import where_field_ids
 from ._read_policy import ReadAccess, ReadRules, _allows  # pyright: ignore[reportPrivateUsage]
 from .errors import ReadRefusedError
 
@@ -118,3 +119,32 @@ def check_readable(
         f"{what} would show field {field.id} of table {table_id}, which this client can't read. "
         "Nothing was sent."
     )
+
+
+def check_filterable(
+    where: str, access: Sequence[ReadAccess] | None, table_id: str, what: str
+) -> None:
+    """Refuse a summary's filter unless the client may filter on every field it uses, as the
+    summary's value shows which records match, as a query's filter would.
+
+    Raises:
+        ReadRefusedError: It uses a field the client can't filter on, or compares with a field
+            reference such as `_FID_7`, so the fields it uses can't be told.
+    """
+    if access is None:
+        return
+    used = where_field_ids(where)
+    if used is None:
+        raise ReadRefusedError(
+            f"{what}'s filter compares with a field reference, such as _FID_7, so the fields it "
+            "uses can't be checked. Compare with values instead. Nothing was sent."
+        )
+    hidden = sorted(
+        item for item in used if not all(_allows(rules.filter, item) for rules in access)
+    )
+    if hidden:
+        listed = ", ".join(str(item) for item in hidden)
+        raise ReadRefusedError(
+            f"{what}'s filter uses field {listed} of table {table_id}, which this client can't "
+            "filter on, so its value would show which records match. Nothing was sent."
+        )

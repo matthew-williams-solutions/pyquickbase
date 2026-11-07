@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from .._derived import (
     Source,
+    check_filterable,
     check_formula_against,
     check_readable,
     emails_shown,
@@ -20,7 +21,7 @@ from .._derived import (
 )
 from .._formula import field_id_reference, formula_parts
 from .._models import RECORD_ID_FIELD, Field, FieldIndex, Relationship, TableInfo
-from .._query import F
+from .._query import F, compile_where, where_field_ids
 from .._schema_plan import (
     CreateField,
     CreateLookupField,
@@ -44,6 +45,7 @@ from .._schema_plan import (
 )
 from ..errors import (
     InvalidValueError,
+    QueryError,
     QuickbaseError,
     RequestRefusedError,
     SchemaChangeError,
@@ -77,7 +79,8 @@ class _Field:
     help_text: str = ""
     foreign_key: bool = False
     lookup: tuple[int | None, int | None] | None = None
-    summary: tuple[int | None, int | None, str | None] | None = None
+    # The foreign key, the child's field (0 for a count), the function, and the filter.
+    summary: tuple[int | None, int | None, str | None, str | None] | None = None
 
     @classmethod
     def of(cls, item: Field) -> "_Field":
@@ -89,6 +92,7 @@ class _Field:
                 item.summary_reference_field_id,
                 item.summary_target_field_id or 0,
                 item.summary_function,
+                item.summary_query,
             )
         return cls(
             id=item.id,
@@ -743,7 +747,7 @@ class Planner:
                 for item in other.fields
                 if item.summary is not None
                 and item.summary[0] == link.foreign_key.id
-                and item.summary[1] == field.id
+                and (item.summary[1] == field.id or _filters_on(item.summary[3], field.id))
             ]
             if summaries:
                 found.append((other, "Summaries", summaries))
@@ -854,18 +858,35 @@ class Planner:
         if not counting and change.child_field is None:
             raise _Blocked(f"A {change.function} needs the child_field to combine.")
         target = None if counting else self._field(child, change.child_field or "")
-        wanted = (link.foreign_key.id, 0 if target is None else target.id, change.function)
-        existing = parent.field(change.label)
-        if existing is not None:
-            if existing.summary == wanted and existing.id is not None:
-                return self._result(
-                    change, "no_change", f'{parent.name} already has summary "{existing.label}".'
-                )
-            raise _Blocked(f'{parent.name} already has a field labeled "{existing.label}".')
         blockers: list[str] = []
+        clause = change.where.strip() if change.where is not None else None
+        fields: FieldIndex | None = None
         if child.id is not None and child.handle is not None:
             fields = FieldIndex(child.handle.fields())
-            access = table_access(self._transport.read_rules, child.id)
+            if clause is not None:
+                try:
+                    clause = compile_where(clause, fields)
+                except (QueryError, UnknownFieldError) as error:
+                    raise _Blocked(f"The summary's filter can't be used: {error}") from None
+        wanted = (link.foreign_key.id, 0 if target is None else target.id, change.function, clause)
+        existing = parent.field(change.label)
+        if existing is not None:
+            hidden_filter = bool(self._transport.read_rules)
+            same = existing.summary is not None and (
+                existing.summary[:3] == wanted[:3] if hidden_filter else existing.summary == wanted
+            )
+            if same and existing.id is not None:
+                return self._result(
+                    change, "no_change", f'{parent.name} already has summary "{existing.label}".',
+                    warnings=(
+                        ["This client can't read a summary's filter, so it may filter differently."]
+                        if hidden_filter and clause is not None
+                        else []
+                    ),
+                )  # fmt: skip
+            raise _Blocked(f'{parent.name} already has a field labeled "{existing.label}".')
+        if fields is not None:
+            access = table_access(self._transport.read_rules, child.id or "")
             shown = [link.foreign_key.id] + ([] if target is None else [target.id])
 
             def readable() -> None:
@@ -876,6 +897,11 @@ class Planner:
                         )
 
             blockers += self._sources(readable)
+            if clause is not None:
+                found = clause
+                blockers += self._sources(
+                    lambda: check_filterable(found, access, child.id or "", "The summary")
+                )
             if link.id is not None:
                 blockers += self._allowed(
                     "POST", f"/tables/{child.id}/relationship/{link.id}",
@@ -885,12 +911,14 @@ class Planner:
         what = (
             "the number of" if target is None else f'the {change.function} of "{target.label}" on'
         )
+        matching = "" if clause is None else f" that match {clause}"
         return self._result(
             change, "change",
-            f'Add "{change.label}" to {parent.name}: {what} its {child.name} records.',
+            f'Add "{change.label}" to {parent.name}: {what} its {child.name} records{matching}.',
             settings=_settings(
                 label=(None, change.label), function=(None, change.function),
                 child_field=(None, None if target is None else target.label),
+                where=(None, clause),
             ),
             warnings=_lookalikes(parent, change.label, own=parent.fields[-1]),
             blockers=blockers, link=self._link(parent),
@@ -1025,6 +1053,14 @@ def _records_lost(count: int | None, what: str) -> str:
     return f"{_records(count, 'lose')} {what}."
 
 
+def _filters_on(query: str | None, field_id: int | None) -> bool:
+    """Whether a summary's filter uses a field, counting one that can't be read as using it."""
+    if not query or field_id is None:
+        return False
+    used = where_field_ids(query)
+    return used is None or field_id in used
+
+
 def _names(labels: Any) -> str:
     return ", ".join(f'"{label}"' for label in labels)
 
@@ -1135,10 +1171,14 @@ def _apply(app: "App", change: SchemaChange) -> None:
             child.ensure_lookup_field(relationship, change.parent_field, label=change.label)
         elif isinstance(change, CreateSummaryField):
             if change.function == "COUNT":
-                child.ensure_count_field(relationship, change.label)
+                child.ensure_count_field(relationship, change.label, where=change.where)
             else:
                 child.ensure_summary_field(
-                    relationship, change.child_field or "", change.label, function=change.function
+                    relationship,
+                    change.child_field or "",
+                    change.label,
+                    function=change.function,
+                    where=change.where,
                 )
         else:
             child.delete_relationship(relationship)

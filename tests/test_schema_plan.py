@@ -29,6 +29,9 @@ from pyquickbase._schema_plan import (
         UpdateField(table="Tasks", field=7, choices=("Open", "Done")),
         DeleteField(table="Tasks", field="Notes"),
         CreateSummaryField(child="Tasks", foreign_key="Project", label="N", function="COUNT"),
+        CreateSummaryField(
+            child="Tasks", foreign_key="Project", label="Open", function="COUNT", where="{7.EX.1}"
+        ),
     ],
 )
 def test_a_change_survives_its_json_form(change: Any) -> None:

@@ -189,6 +189,9 @@ class CreateSummaryField:
         function: How to combine the values, such as `SUM`. `COUNT` counts the child records,
             and takes no `child_field`.
         child_field: The child's field to combine, by label or ID.
+        where: Only combine the child records that match, in Quickbase's query language with
+            field IDs, such as `{7.EX.true}`. The plan checks it against the child's fields, as
+            Quickbase saves one it can't use and the summary is then always empty.
     """
 
     child: str
@@ -196,6 +199,7 @@ class CreateSummaryField:
     label: str
     function: SummaryFunction = "SUM"
     child_field: FieldRefValue | None = None
+    where: str | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

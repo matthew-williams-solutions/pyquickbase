@@ -13,6 +13,9 @@ to keep are explained in the guides, not here.
   allowed, but each one added must only read the record's own values.
 - A plan checks a table it creates against the client's limits only when it's applied, so a change to
   that table can still be refused partway through. Planning again resumes from there.
+- `ReadRules` hide every summary's filter (`Field.summary_query`), as a field's details don't say which
+  table the filter reads, so an existing summary is matched without it. The planned `Policy` binds
+  relationships, so it can show a filter whose fields are readable.
 - In the 1.0 release commit:
   - Change the classifier in `pyproject.toml` from Beta to Production/Stable.
   - Remove the release candidate warnings from `README.md` and `docs/index.md`, and the advice to pin

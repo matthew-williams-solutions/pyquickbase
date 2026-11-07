@@ -11,6 +11,11 @@ on what a client may change. It breaks a few things, listed below.
 
 ### Added
 
+- **Summaries of some child records.** `ensure_summary_field()`, `ensure_count_field()`, and
+  `CreateSummaryField` take `where`, which is checked against the child's fields before it's sent, as
+  Quickbase saves a filter it can't use and the summary then reads as empty. On a client with
+  `ReadRules`, the filter may only use fields the client can filter on. `Field.summary_query` holds a
+  summary's filter, and a plan warns when a deleted field is one a summary filters on.
 - **`App.plan_schema()` and `App.apply_schema()`.** Changes such as `CreateField`, `UpdateField`,
   `DeleteField`, `CreateTable`, `CreateRelationship`, `CreateLookupField`, and `CreateSummaryField` are
   checked against the app as it is. Each `PlannedChange` says what it would set, its `risk`, what else it

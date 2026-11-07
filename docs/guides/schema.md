@@ -130,6 +130,30 @@ and `ensure_summary_field()` raises `InvalidValueError` for it.
 **A summary with no child records is empty, not 0**, except a count, which is 0. Code that expects a number should read a formula
 that uses `Nz()`, such as `Hours Or Zero` in the example here, rather than the summary.
 
+### Summarizing only some child records
+
+Pass `where` to either method to combine only the child records that match. It's a condition on the
+child table, built with `F` or written as a string, as in a query:
+
+```python
+tasks.ensure_summary_field(link, "Hours", "Open Hours", where=F("Status") == "Open")
+tasks.ensure_count_field(link, "Done Tasks", where="{9.EX.'Done'}")
+```
+
+- **The filter is checked before anything is sent.** Quickbase saves a filter it can't use, such as one
+  with a typo or a field that doesn't exist, without an error, and the summary then always reads as
+  empty. The SDK raises `QueryError` instead.
+- **It's part of what makes a summary the same.** If a summary with that label exists with a different
+  filter, or none, the method raises `SchemaMismatchError`. `Field.summary_query` holds a summary's
+  filter.
+- **On a client with `ReadRules`,** the filter may only use fields the client can filter on, since the
+  summary shows how many records match. The rules also hide every summary's filter, because a field's
+  details don't say which table it reads. So `summary_query` is None, and an existing summary is
+  matched without its filter.
+- **Deleting a field a filter uses** stops the summary working. A plan lists it with the summaries that
+  stop working.
+- `CreateSummaryField` takes the same `where`, as a string.
+
 [Try it in the playground](../playground-app/index.html#watch-computed-fields-update), with simulated data.
 
 ## Setup scripts you can run again
@@ -159,8 +183,8 @@ projects.ensure_field("Total Hours", "numeric", formula="Nz([Hours Sum])")
 | `ensure_field()` | Its label, ignoring case | Changes only what you passed that differs, including `formula`. Raises `SchemaMismatchError` rather than changing its type |
 | `ensure_relationship()` | The parent, and the foreign key's label ignoring case | Returns it unchanged |
 | `ensure_lookup_field()` | The parent's field it points at, so a renamed lookup is still found | Applies `label` if you passed one |
-| `ensure_summary_field()` | Its label on the parent, ignoring case | Returns it. Raises `SchemaMismatchError` if that field isn't this same summary |
-| `ensure_count_field()` | Its label on the parent, ignoring case | Returns it. Raises `SchemaMismatchError` if that field isn't a count of this relationship |
+| `ensure_summary_field()` | Its label on the parent, ignoring case | Returns it. Raises `SchemaMismatchError` if that field isn't this same summary, with the same `where` |
+| `ensure_count_field()` | Its label on the parent, ignoring case | Returns it. Raises `SchemaMismatchError` if that field isn't a count of this relationship, with the same `where` |
 
 `required=True` in `ensure_field()` follows
 [the same rules as anywhere else](#making-a-field-required-or-unique), so a script that adds a required

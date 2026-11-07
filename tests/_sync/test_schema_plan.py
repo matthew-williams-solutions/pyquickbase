@@ -329,6 +329,58 @@ def test_a_deletion_follows_formulas_to_what_uses_them() -> None:  # F22, F15
     assert 'Summaries on Projects stop working, through "Double": "Total Double".' in warnings
 
 
+def test_a_summary_can_filter_its_child_records() -> None:
+    fake = FakeApp()
+    change = CreateSummaryField(
+        child="Tasks", foreign_key="Project", label="Open Hours", child_field="Hours",
+        where=" {7.EX.'Open'} ",
+    )  # fmt: skip
+    with client(fake) as qb:
+        app = qb.app(APP)
+        plan = app.plan_schema([change])
+        planned = plan.changes[0]
+        assert planned.status == "change", plan.blockers
+        assert planned.settings["where"].after == "{7.EX.'Open'}"
+        assert planned.summary.endswith("its Tasks records that match {7.EX.'Open'}.")
+        app.apply_schema(plan)
+        again = app.plan_schema([change])
+        other = app.plan_schema(
+            [CreateSummaryField(child="Tasks", foreign_key="Project", label="Open Hours",
+                                child_field="Hours")]
+        )  # fmt: skip
+    assert fake.fields[PROJECTS][-1]["properties"]["summaryQuery"] == "{7.EX.'Open'}"
+    assert again.changes[0].status == "no_change"
+    assert other.changes[0].status == "blocked"
+
+
+@pytest.mark.parametrize(
+    ("where", "match"),
+    [("{nonsense", "expected"), ("{99.EX.1}", "field 99 doesn't exist")],
+)
+def test_a_summary_filter_quickbase_would_save_broken_blocks_the_plan(
+    where: str, match: str
+) -> None:
+    change = CreateSummaryField(
+        child="Tasks", foreign_key="Project", label="X", child_field="Hours", where=where
+    )
+    with client(FakeApp()) as qb:
+        plan = qb.app(APP).plan_schema([change])
+    assert plan.changes[0].status == "blocked"
+    assert any("filter can't be used" in item and match in item for item in plan.blockers)
+
+
+def test_deleting_a_field_a_summary_filters_on_warns() -> None:
+    fake = FakeApp()
+    fake.fields[PROJECTS].append(
+        {"id": 8, "label": "Open Hours", "fieldType": "numeric", "mode": "summary",
+         "properties": {"summaryReferenceFieldId": 9, "summaryTargetFieldId": 6,
+                        "summaryFunction": "SUM", "summaryQuery": "{7.EX.'Open'}"}}
+    )  # fmt: skip
+    with client(fake) as qb:
+        plan = qb.app(APP).plan_schema([DeleteField(table="Tasks", field="Status")])
+    assert 'Summaries on Projects stop working: "Open Hours".' in plan.changes[0].warnings
+
+
 def test_a_field_list_warns_that_a_hidden_label_is_refused_late() -> None:  # F14
     reads = ReadRules({TASKS: ReadAccess(fields=[6, 7, 8])})
     with client(FakeApp(), read_policy=reads) as qb:

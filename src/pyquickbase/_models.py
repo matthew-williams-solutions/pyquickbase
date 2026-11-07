@@ -145,6 +145,9 @@ class Field:
         summary_reference_field_id: For a summary, the foreign key field on the child table.
         summary_target_field_id: For a summary, the field it reads on the child.
         summary_function: For a summary, Quickbase's name for its calculation, such as `SUM`.
+        summary_query: For a summary, the filter on which child records it combines, such as
+            `{7.EX.true}`, or None for all of them. On a client with `ReadRules` it's always None,
+            as a field's details don't say which table the filter reads.
         raw: Everything Quickbase returned, for anything not listed here.
     """
 
@@ -166,6 +169,7 @@ class Field:
     summary_reference_field_id: int | None = None
     summary_target_field_id: int | None = None
     summary_function: str | None = None
+    summary_query: str | None = None
     raw: Mapping[str, Any] = field(repr=False, compare=False)
 
 
@@ -190,6 +194,7 @@ def field_from_api(data: Mapping[str, Any]) -> Field:
         summary_reference_field_id=properties.get("summaryReferenceFieldId"),
         summary_target_field_id=properties.get("summaryTargetFieldId"),
         summary_function=properties.get("summaryFunction"),
+        summary_query=properties.get("summaryQuery") or None,
         raw=data,
     )
 

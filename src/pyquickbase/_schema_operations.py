@@ -261,6 +261,10 @@ def _change_schemas(allowed: SchemaAllowed) -> list[dict[str, Any]]:
                     "description": "How to combine them. COUNT counts the child records.",
                 },
                 "child_field": _field_ref("The child's field to combine, for anything but COUNT"),
+                "where": _text(
+                    "Only combine the child records that match, in Quickbase's query language "
+                    "with the child's field IDs, such as {7.EX.true}. Leave it out for all of them."
+                ),
             },
             ["child", "foreign_key", "label", "function"],
         ),

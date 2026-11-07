@@ -77,11 +77,11 @@ class AsyncTable(object)
     async def delete_relationship(self, relationship: Relationship) -> None
     async def download_file(self, record_id: int, field: str | int, *, version: int | None = None, timeout: float | None = None) -> FileDownload
     async def drop(self, *, confirm: str) -> None
-    async def ensure_count_field(self, relationship: Relationship, label: str) -> Field
+    async def ensure_count_field(self, relationship: Relationship, label: str, *, where: Expression | str | None = None) -> Field
     async def ensure_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None) -> Field
     async def ensure_lookup_field(self, relationship: Relationship, parent_field: str | int, *, label: str | None = None) -> Field
     async def ensure_relationship(self, parent: 'AsyncTable', *, foreign_key_label: str) -> Relationship
-    async def ensure_summary_field(self, relationship: Relationship, child_field: str | int, label: str, *, function: str = 'SUM') -> Field
+    async def ensure_summary_field(self, relationship: Relationship, child_field: str | int, label: str, *, function: str = 'SUM', where: Expression | str | None = None) -> Field
     async def field_url(self, field: str | int) -> str
     async def fields(self, *, refresh: bool = False) -> list[Field]
     async def fields_url(self) -> str
@@ -171,12 +171,13 @@ class CreateRelationship(object)
     field parent: str
 class CreateSummaryField(object)
     def __eq__(self, other)
-    def __init__(self, *, child: str, foreign_key: str, label: str, function: Literal['SUM', 'AVG', 'MAX', 'MIN', 'STD-DEV', 'COUNT', 'DISTINCT-COUNT', 'COMBINED-TEXT', 'COMBINED-USER'] = 'SUM', child_field: str | int | None = None) -> None
+    def __init__(self, *, child: str, foreign_key: str, label: str, function: Literal['SUM', 'AVG', 'MAX', 'MIN', 'STD-DEV', 'COUNT', 'DISTINCT-COUNT', 'COMBINED-TEXT', 'COMBINED-USER'] = 'SUM', child_field: str | int | None = None, where: str | None = None) -> None
     field child: str
     field child_field: str | int | None
     field foreign_key: str
     field function: Literal['SUM', 'AVG', 'MAX', 'MIN', 'STD-DEV', 'COUNT', 'DISTINCT-COUNT', 'COMBINED-TEXT', 'COMBINED-USER']
     field label: str
+    field where: str | None
 class CreateTable(object)
     def __eq__(self, other)
     def __init__(self, *, name: str, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> None
@@ -220,7 +221,7 @@ class F(object)
     def starts_with(self, value: Any) -> Condition
 class Field(object)
     def __eq__(self, other)
-    def __init__(self, *, id: int, label: str, type: str, mode: str | None, required: bool, unique: bool, appears_by_default: bool, choices: tuple[str, ...], allow_new_choices: bool, formula: str | None = None, help_text: str = '', decimal_places: int | None = None, is_foreign_key: bool = False, lookup_reference_field_id: int | None = None, lookup_target_field_id: int | None = None, summary_reference_field_id: int | None = None, summary_target_field_id: int | None = None, summary_function: str | None = None, raw: Mapping[str, Any]) -> None
+    def __init__(self, *, id: int, label: str, type: str, mode: str | None, required: bool, unique: bool, appears_by_default: bool, choices: tuple[str, ...], allow_new_choices: bool, formula: str | None = None, help_text: str = '', decimal_places: int | None = None, is_foreign_key: bool = False, lookup_reference_field_id: int | None = None, lookup_target_field_id: int | None = None, summary_reference_field_id: int | None = None, summary_target_field_id: int | None = None, summary_function: str | None = None, summary_query: str | None = None, raw: Mapping[str, Any]) -> None
     field allow_new_choices: bool
     field appears_by_default: bool
     field choices: tuple[str, ...]
@@ -236,6 +237,7 @@ class Field(object)
     field raw: Mapping[str, Any]
     field required: bool
     field summary_function: str | None
+    field summary_query: str | None
     field summary_reference_field_id: int | None
     field summary_target_field_id: int | None
     field type: str
@@ -503,11 +505,11 @@ class Table(object)
     def delete_relationship(self, relationship: Relationship) -> None
     def download_file(self, record_id: int, field: str | int, *, version: int | None = None, timeout: float | None = None) -> FileDownload
     def drop(self, *, confirm: str) -> None
-    def ensure_count_field(self, relationship: Relationship, label: str) -> Field
+    def ensure_count_field(self, relationship: Relationship, label: str, *, where: Expression | str | None = None) -> Field
     def ensure_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None) -> Field
     def ensure_lookup_field(self, relationship: Relationship, parent_field: str | int, *, label: str | None = None) -> Field
     def ensure_relationship(self, parent: 'Table', *, foreign_key_label: str) -> Relationship
-    def ensure_summary_field(self, relationship: Relationship, child_field: str | int, label: str, *, function: str = 'SUM') -> Field
+    def ensure_summary_field(self, relationship: Relationship, child_field: str | int, label: str, *, function: str = 'SUM', where: Expression | str | None = None) -> Field
     def field_url(self, field: str | int) -> str
     def fields(self, *, refresh: bool = False) -> list[Field]
     def fields_url(self) -> str

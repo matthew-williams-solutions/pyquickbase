@@ -465,6 +465,9 @@ Tested on 2026-11-03 and 2026-11-04 in a real app, using `POST /tables/{child}/r
 | Fields added to the parent | A `dblink` such as `Task records`, and a `url` formula such as `Add Task`, containing `a=API_GenAddRecordForm` |
 | `DELETE /tables/{child}/relationship/{id}` | 200, `{"relationshipId": 7}`. **Deletes the lookups on the child, and the summaries and the link and add-record fields on the parent. The foreign key field stays.** A second delete is 404, `Parent table not found. Delete the field 'Parent' to remove this relationship.` Live API, 2026-11-06 |
 | `GET /tables/{parent}/relationships` | **Empty for the parent.** Only the child lists a relationship. Live API, 2026-11-06 |
+| `where` on a `summaryFields` item | **Filters the child records the summary combines**, in a create or an update of the relationship, in Quickbase's query language. With child records of 10 and 7 matching and 5 not, a filtered `SUM` read 17 and an unfiltered one 22, and a filtered `COUNT` read 2. Live API, 2026-11-06 |
+| A summary's filter, read back | `properties.summaryQuery` from `GET /fields` and `GET /fields/{id}`, exactly as sent. **It's left out for a summary with no filter.** The relationship's response doesn't include it. Live API, 2026-11-06 |
+| **A summary filter Quickbase can't use** | **Saved with 200 and no error**, both a malformed one (`{nonsense`) and one on a field that doesn't exist (`{999.EX.true}`). The summary then reads as empty. Live API, 2026-11-06 |
 | **Summaries and the reader's role** | **They only total the child records the reader can see.** With 4 child records and a custom rule letting a restricted role see 2, an admin read a count of 4 and a total of 40, while the restricted user read 2 and 20. With View set to None on the child table, the restricted user read both as empty, even the `COUNT`. Live API, 2026-11-06 |
 
 ## Field types

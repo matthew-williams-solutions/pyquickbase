@@ -11,7 +11,7 @@ from .._confirm import ConfirmationKind, schema_binding
 from .._confirm import binding as confirmation_binding
 from .._confirm import check as check_confirmation
 from .._confirm import issue as issue_confirmation
-from .._derived import check_formula_sources, check_readable, table_access
+from .._derived import check_filterable, check_formula_sources, check_readable, table_access
 from .._links import (
     app_url,
     field_url,
@@ -1899,6 +1899,7 @@ class Table:
         label: str,
         *,
         function: str = "SUM",
+        where: Expression | str | None = None,
     ) -> Field:
         """Return the summary of this table's `child_field` on the parent, creating it if needed.
 
@@ -1912,6 +1913,9 @@ class Table:
             label: The label of the summary field on the parent.
             function: Quickbase's name for the calculation, in capitals: `SUM`, `AVG`, `MAX`, `MIN`,
                 `STD-DEV`, `DISTINCT-COUNT`, `COMBINED-TEXT`, or `COMBINED-USER`.
+            where: Only combine the child records that match, as a condition on this table built
+                with `F`, or a string such as `{7.EX.true}`. It's checked first, as Quickbase saves
+                one it can't use and the summary is then always empty.
 
         Returns:
             The summary `Field`, on the parent.
@@ -1919,6 +1923,7 @@ class Table:
         Raises:
             InvalidValueError: `function` is `COUNT`, which takes no field. Nothing was sent.
             UnknownFieldError: This table has no such field. Nothing was sent.
+            QueryError: `where` can't be sent as written. Nothing was sent.
             SchemaMismatchError: The label is already used on the parent by anything but this
                 summary. It wasn't changed.
             BadRequestError: Quickbase can't apply `function` to this field, such as `SUM` of a
@@ -1930,9 +1935,11 @@ class Table:
                 "ensure_count_field()."
             )
         target_id = (self.resolve_field_ids([child_field]))[0]
-        return self._ensure_summary(relationship, label, function, target_id)
+        return self._ensure_summary(relationship, label, function, target_id, where)
 
-    def ensure_count_field(self, relationship: Relationship, label: str) -> Field:
+    def ensure_count_field(
+        self, relationship: Relationship, label: str, *, where: Expression | str | None = None
+    ) -> Field:
         """Return the count of this table's records for each parent, creating it if needed.
 
         Call this on the child table, and the new field is on the parent. Unlike other summaries,
@@ -1941,6 +1948,7 @@ class Table:
         Args:
             relationship: The relationship, from `ensure_relationship()`.
             label: The label of the count field on the parent.
+            where: Only count the records that match, as in `ensure_summary_field()`.
 
         Returns:
             The count `Field`, on the parent.
@@ -1948,14 +1956,27 @@ class Table:
         Raises:
             SchemaMismatchError: The label is already used on the parent by anything but this
                 count. It wasn't changed.
+            UnknownFieldError: `where` uses a field this table doesn't have. Nothing was sent.
+            QueryError: `where` can't be sent as written. Nothing was sent.
         """
-        return self._ensure_summary(relationship, label, "COUNT", None)
+        return self._ensure_summary(relationship, label, "COUNT", None, where)
 
     def _ensure_summary(
-        self, relationship: Relationship, label: str, function: str, target_id: int | None
+        self,
+        relationship: Relationship,
+        label: str,
+        function: str,
+        target_id: int | None,
+        where: Expression | str | None,
     ) -> Field:
         """Find or create a summary on the parent. A count has no target, which Quickbase records
-        as field 0."""
+        as field 0. With `ReadRules` a summary's filter can't be read, so an existing one is
+        matched without it."""
+        table_id = (self.info()).id
+        clause = None if where is None else self.compile_where(where)
+        if clause is not None:
+            access = table_access(self._transport.read_rules, table_id)
+            check_filterable(clause, access, table_id, "A summary")
         parent = self._app.table(relationship.parent_table_id)
         fields = parent.fields(refresh=True)
         found = next((item for item in fields if item.label.casefold() == label.casefold()), None)
@@ -1965,15 +1986,17 @@ class Table:
                 or (found.summary_target_field_id or 0) != (target_id or 0)
                 or found.summary_reference_field_id != relationship.foreign_key_field_id
                 or found.summary_function != function
+                or (not self._transport.read_rules and found.summary_query != clause)
             ):
                 raise SchemaMismatchError(
                     f"Field {found.label!r} on the parent isn't this summary, so it wasn't changed."
                 )
             return found
-        table_id = (self.info()).id
         summary: dict[str, Any] = {"label": label, "accumulationType": function}
         if target_id is not None:
             summary["summaryFid"] = target_id
+        if clause is not None:
+            summary["where"] = clause
         shown = [relationship.foreign_key_field_id]
         self._check_own_fields([*shown, target_id] if target_id is not None else shown, "A summary")
         self._transport.request(

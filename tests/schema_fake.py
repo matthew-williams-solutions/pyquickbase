@@ -138,7 +138,9 @@ class FakeApp:
                      "mode": "summary", "properties": {
                          "summaryReferenceFieldId": relationship_id,
                          "summaryTargetFieldId": summary.get("summaryFid", 0),
-                         "summaryFunction": summary["accumulationType"]}}
+                         "summaryFunction": summary["accumulationType"],
+                         **({"summaryQuery": summary["where"]} if "where" in summary
+                            else {})}}
                 )  # fmt: skip
             return httpx.Response(200, json=found)
         if method == "DELETE" and "/relationship/" in path:

@@ -8,8 +8,10 @@ import pytest
 
 from pyquickbase import (
     AsyncQuickbase,
+    F,
     InvalidResponseError,
     InvalidValueError,
+    QueryError,
     Relationship,
     SchemaMismatchError,
 )
@@ -136,7 +138,9 @@ class FakeSchema:
                  "mode": "summary",
                  "properties": {"summaryReferenceFieldId": 7,
                                 "summaryTargetFieldId": summary.get("summaryFid", 0),
-                                "summaryFunction": summary["accumulationType"]}},
+                                "summaryFunction": summary["accumulationType"],
+                                **({"summaryQuery": summary["where"]} if "where" in summary
+                                   else {})}},
             ]  # fmt: skip
 
 
@@ -327,3 +331,34 @@ async def test_ensure_summary_reports_one_quickbase_did_not_create(
     fake.ignore_new_fields = True
     with pytest.raises(InvalidResponseError):
         await app.table("Tasks").ensure_summary_field(project(fake), "Hours", "Total Hours")
+
+
+async def test_ensure_summary_sends_a_checked_filter(app: Any, fake: FakeSchema) -> None:
+    tasks = app.table("Tasks")
+    rel = project(fake)
+    created = await tasks.ensure_summary_field(rel, "Hours", "Open Hours", where="{9.EX.'Open'}")
+    assert created.summary_query == "{9.EX.'Open'}"
+    again = await tasks.ensure_summary_field(rel, "Hours", "Open Hours", where=" {9.EX.'Open'} ")
+    assert again.id == created.id
+    with pytest.raises(SchemaMismatchError):
+        await tasks.ensure_summary_field(rel, "Hours", "Open Hours")
+    with pytest.raises(SchemaMismatchError):
+        await tasks.ensure_summary_field(rel, "Hours", "Open Hours", where="{9.EX.'Done'}")
+    counted = await tasks.ensure_count_field(rel, "Done Tasks", where=F("Status") == "Done")
+    assert counted.summary_query == await tasks.compile_where(F("Status") == "Done")
+    sent = [body["summaryFields"][0] for _, body in fake.writes()]
+    assert sent == [
+        {"summaryFid": 6, "label": "Open Hours", "accumulationType": "SUM",
+         "where": "{9.EX.'Open'}"},
+        {"label": "Done Tasks", "accumulationType": "COUNT", "where": counted.summary_query},
+    ]  # fmt: skip
+
+
+@pytest.mark.parametrize("where", ["{nonsense", "{99.EX.1}", "{9.ex.'Open'}"])
+async def test_a_summary_filter_quickbase_would_save_broken_sends_nothing(
+    app: Any, fake: FakeSchema, where: str
+) -> None:
+    # Quickbase accepts these with 200, and the summary is then always empty.
+    with pytest.raises(QueryError):
+        await app.table("Tasks").ensure_summary_field(project(fake), "Hours", "X", where=where)
+    assert not fake.writes()
