@@ -59,6 +59,7 @@ from .errors import (
     QuickbaseError,
     RateLimitError,
     RequestTimeoutError,
+    SchemaChangeError,
     SchemaMismatchError,
     ServerError,
     UnknownFieldError,
@@ -174,6 +175,11 @@ _HINTS: dict[ToolErrorCode, str] = {
     "quickbase_error": "The request failed. Tell the user.",
     "internal": "The tool failed. Tell the user, as trying again won't help.",
 }
+# A schema change that failed has no failed rows, and Quickbase can't undo the changes before it.
+_SCHEMA_CHANGE_HINT = (
+    "Changes made before this one stay made. Preview the same changes again, which shows only "
+    "what's left, and show the user the result."
+)
 _RETRYABLE = frozenset({"rate_limited", "server_error", "timeout", "network_error"})
 _UNCERTAIN = (NetworkError, ServerError, InvalidResponseError)
 _INTERNAL_MESSAGE = "An unexpected error occurred in the tool."
@@ -233,6 +239,12 @@ def _written(result: WriteResult) -> dict[str, list[int]]:
     }
 
 
+def _hint(error: BaseException, code: ToolErrorCode) -> str:
+    if isinstance(error, SchemaChangeError):
+        return _SCHEMA_CHANGE_HINT
+    return _HINTS[code]
+
+
 def tool_error(error: BaseException) -> dict[str, Any]:
     """Describe an exception for a model, as the result of its tool call.
 
@@ -248,7 +260,8 @@ def tool_error(error: BaseException) -> dict[str, Any]:
 
     - `code` is one of `ToolErrorCode`, which doesn't change between 1.x versions, unlike the
       wording of `message`.
-    - `hint` says what the model should do next, in fixed words for each code.
+    - `hint` says what the model should do next, in fixed words for each code. A failed schema
+      change has its own, as it has no failed rows.
     - `retryable` is true when the same call can succeed later, such as after a rate limit or a
       timeout. `retry_after` is added when Quickbase said how long to wait.
     - `data_changed` is `no` if nothing was changed, `partly` if part of a write was, and
@@ -274,7 +287,7 @@ def tool_error(error: BaseException) -> dict[str, Any]:
     found: dict[str, Any] = {
         "code": code,
         "message": message,
-        "hint": _HINTS[code],
+        "hint": _hint(error, code),
         "retryable": code in _RETRYABLE,
         "data_changed": _changed(error),
     }

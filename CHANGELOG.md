@@ -80,6 +80,10 @@ before they're made, for scripts and for agents. **It breaks every client that u
 
 ### Changed
 
+- **`Layer` no longer lists `confirmation`,** which no check made. A missing or mismatched
+  confirmation raises `ConfirmationError`, not `PolicyRefusedError`.
+- **A failed schema change has its own `hint`** in `tool_error()`: preview the same changes again,
+  which shows only what's left, as it has no failed rows to fix.
 - **Each limit is named for what it limits.** `Table.operation()` takes `max_records_per_call` and
   `max_records_per_write` for `max_records` and `max_rows`. `summarize()` takes
   `max_records_scanned`. `allow.read()` takes `max_paging_depth` and `max_records_scanned` for

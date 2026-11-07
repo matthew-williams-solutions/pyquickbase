@@ -220,11 +220,11 @@ class CreateTable(object)
     field single_record_name: str | None
 class Decision(object)
     def __eq__(self, other)
-    def __init__(self, *, allowed: bool, verb: Literal['read', 'filter', 'sort', 'insert', 'update', 'delete', 'download', 'delete_file', 'report', 'run_formula', 'add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table', 'create_tables'], layer: Literal['policy', 'rows', 'derived', 'confirmation'] = 'policy', rule: str | None = None, reason: str = '', hint: str | None = None, table: Named | None = None, fields: tuple[Named, ...] = ()) -> None
+    def __init__(self, *, allowed: bool, verb: Literal['read', 'filter', 'sort', 'insert', 'update', 'delete', 'download', 'delete_file', 'report', 'run_formula', 'add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table', 'create_tables'], layer: Literal['policy', 'rows', 'derived'] = 'policy', rule: str | None = None, reason: str = '', hint: str | None = None, table: Named | None = None, fields: tuple[Named, ...] = ()) -> None
     field allowed: bool
     field fields: tuple[Named, ...]
     field hint: str | None
-    field layer: Literal['policy', 'rows', 'derived', 'confirmation']
+    field layer: Literal['policy', 'rows', 'derived']
     def message(self) -> str
     field reason: str
     field rule: str | None
@@ -334,7 +334,7 @@ class FormulaResult(object)
     property value -> Any
 class InvalidResponseError(QuickbaseError)
 class InvalidValueError(QuickbaseError, ValueError)
-value Layer = Literal['policy', 'rows', 'derived', 'confirmation']
+value Layer = Literal['policy', 'rows', 'derived']
 class Named(object)
     def __eq__(self, other)
     def __init__(self, id: str | int, name: str) -> None

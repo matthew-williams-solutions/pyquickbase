@@ -42,7 +42,7 @@ SchemaVerb = Literal[
 ]
 """What `allow.schema()` grants on a table."""
 
-Layer = Literal["policy", "rows", "derived", "confirmation"]
+Layer = Literal["policy", "rows", "derived"]
 """Which check made a decision. See `Decision`."""
 
 VERBS: tuple[str, ...] = get_args(Verb)
@@ -106,9 +106,9 @@ class Decision:
     Args:
         allowed: Whether the request may be sent.
         verb: What was asked, such as `update`, for the first part refused, or the last allowed.
-        layer: Which check decided: `policy` for the rules, `rows` for a row limit, `derived`
-            for what a formula, lookup, or summary reads, and `confirmation` for a preview or
-            plan's confirmation.
+        layer: Which check decided: `policy` for the rules, `rows` for a row limit, and `derived`
+            for what a formula, lookup, or summary reads. A preview's confirmation isn't part of
+            the policy, and raises `ConfirmationError`.
         rule: The rule that decided, as written, such as `deny.all(fields.classed("pay"))`, or
             None when nothing allowed it.
         reason: Why, in a sentence.
