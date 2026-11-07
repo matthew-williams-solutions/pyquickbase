@@ -97,6 +97,8 @@ async with AsyncQuickbase.from_env(token_env="QB_SCHEMA_TOKEN", policy=bound) as
     describe = await app.operation("describe_schema")
     plan = await app.operation("plan_schema", max_changes=10)
     apply = await app.operation("apply_schema", max_changes=10)
+    # What a model sends, such as adding a text field to Tasks.
+    arguments = {"changes": [{"kind": "create_field", "table": "Tasks", "label": "Crew", "type": "text"}]}
     shown = tool_result(await plan.run(arguments))  # holds "confirmation" if nothing blocks it
 ```
 

@@ -26,7 +26,6 @@ SKIPPED = {
     'app.ensure_table("Projects")': "Makes lasting tables. test_sdk.py tests these methods",
     "movements.insert(": "Needs a table the page doesn't set up, with a role that can only add",
     'token_env="QB_SERVICE_TOKEN"': "Needs a second token in the environment",
-    'token_env="QB_SCHEMA_TOKEN"': "Needs a second token in the environment",
     'report("Hours by Project")': "Needs a report built in the UI. test_sdk.py tests this method",
 }
 
@@ -92,6 +91,8 @@ def shared_tasks(scratch: Any) -> Any:
 def world(scratch: Any, shared_tasks: Any, tmp_path: Path, monkeypatch: Any) -> Iterator[Any]:
     """Make the sandbox settings available as the docs' placeholders expect, and clean up after."""
     monkeypatch.chdir(tmp_path)
+    # The schema example reads its own token, which is the run's token here.
+    monkeypatch.setenv("QB_SCHEMA_TOKEN", scratch.token)
     (tmp_path / "spec.pdf").write_bytes(b"spec")
     (tmp_path / "downloads").mkdir()
     with Quickbase(realm=scratch.realm, token=scratch.token) as qb:
