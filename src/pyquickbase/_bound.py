@@ -1302,7 +1302,7 @@ class BoundPolicy:
             found = cast(Mapping[str, Any], properties)
             kept["properties"] = pick(found, FIELD_PROPERTIES)
             formula = found.get("formula")
-            if isinstance(formula, str) and shows_only(formula, readable):
+            if isinstance(formula, str) and formula and shows_only(formula, readable):
                 kept["properties"]["formula"] = formula
             query = found.get("summaryQuery")
             if isinstance(query, str) and self._query_shown(table_id, found, query):

@@ -854,3 +854,11 @@ def test_row_limits_bind_by_label() -> None:
     assert policy.filterable(TASKS, 7)
     with pytest.raises(ConfigurationError, match="Missing"):
         bind(limit.rows(TASKS, F("Missing") == 1))
+
+
+def test_an_empty_formula_on_a_plain_field_is_left_out() -> None:
+    request = describe_read("GET", "/fields", {"tableId": TASKS}, None)
+    payload = [{"id": 6, "label": "Title", "fieldType": "text", "properties": {"formula": ""}}]
+    assert trim(reads(), request, payload) == [
+        {"id": 6, "label": "Title", "fieldType": "text", "properties": {}}
+    ]

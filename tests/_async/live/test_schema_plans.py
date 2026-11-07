@@ -21,13 +21,10 @@ from pyquickbase import (
     DeleteField,
     DeleteRelationship,
     DeleteTable,
-    ReadAccess,
-    ReadRules,
-    SchemaAccess,
+    Policy,
     UpdateField,
     UpdateTable,
-    WriteAccess,
-    WriteRules,
+    allow,
     tool_result,
 )
 
@@ -119,13 +116,14 @@ async def test_operations_hold_a_model_to_its_limits(scratch: Any) -> None:
     table = scratch.table(("Title", "text"), ("Salary", "numeric"))
     info = table.info()
     title, salary = table.resolve_field_ids(["Title", "Salary"])
-    reads = ReadRules({info.id: ReadAccess(fields=[title], filter=[title, salary])})
-    writes = WriteRules(
-        {info.id: WriteAccess(schema=SchemaAccess(create_fields=True, formulas=True))}
+    policy = Policy(
+        rules=[
+            allow.read(info.id, [title], filter=[title, salary]),
+            allow.schema(info.id, "add_field", "formula"),
+        ]
     )
-    async with AsyncQuickbase(
-        realm=scratch.realm, token=scratch.token, read_policy=reads, write_policy=writes
-    ) as limited:
+    bound = policy.bind(scratch.client.app(scratch.app_id))
+    async with AsyncQuickbase(realm=scratch.realm, token=scratch.token, policy=bound) as limited:
         app = limited.app(scratch.app_id)
         plan = await app.operation("plan_schema")
         apply = await app.operation("apply_schema")
