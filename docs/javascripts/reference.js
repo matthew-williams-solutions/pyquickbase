@@ -1,6 +1,7 @@
 // The "Copy for LLM" button on the API reference pages. Without clipboard access, the button
-// stays hidden and the "View as Markdown" link still works.
-document.addEventListener("DOMContentLoaded", () => {
+// stays hidden and the "Markdown" link still works. With instant navigation, pages load without a
+// full reload, so this runs again on each one through Material's document$.
+function setUpCopyButton() {
   const button = document.querySelector(".ref-copy");
   const link = document.querySelector(".ref-markdown");
   if (!button || !link || !navigator.clipboard) return;
@@ -24,4 +25,10 @@ document.addEventListener("DOMContentLoaded", () => {
       show("Couldn't copy");
     }
   });
-});
+}
+
+if (typeof document$ !== "undefined") {
+  document$.subscribe(setUpCopyButton);
+} else {
+  document.addEventListener("DOMContentLoaded", setUpCopyButton);
+}

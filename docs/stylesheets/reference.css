@@ -69,3 +69,8 @@
     display: none;
   }
 }
+
+/* These pages are generated, so there's no source to edit. */
+.md-content:has(.ref-actions) .md-content__button {
+  display: none;
+}

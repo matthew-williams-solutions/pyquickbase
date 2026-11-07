@@ -33,3 +33,43 @@
   font-size: 0.65rem;
   padding: 0.6em 1em 0.4em;
 }
+
+/* Inline code: a lighter tint in prose, and none in headings and links, where it's only a name. */
+.md-typeset code {
+  background-color: var(--md-code-bg-color);
+  border-radius: 0.15rem;
+  font-size: 0.82em;
+  padding: 0 0.25em;
+}
+
+.md-typeset :is(h1, h2, h3, h4, h5, h6) code,
+.md-typeset a code {
+  background: none;
+  color: inherit;
+  padding: 0;
+}
+
+.md-typeset a code {
+  color: var(--md-typeset-a-color);
+}
+
+:root {
+  --md-code-bg-color: #f4f5f9;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-code-bg-color: #23252f;
+}
+
+/* The release-candidate notice. */
+.md-banner {
+  background: var(--md-default-fg-color--lightest);
+  color: var(--md-default-fg-color);
+  font-size: 0.65rem;
+}
+
+/* Diagrams sit in the reading column, centered. */
+.md-typeset .mermaid {
+  margin: 1.5em 0;
+  text-align: center;
+}
