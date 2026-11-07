@@ -180,6 +180,7 @@ _READING = ("Reading records", "../guides/reading.md")
 _WRITING = ("Writing records", "../guides/writing.md")
 _SCHEMA = ("Changing the schema", "../guides/schema.md")
 _CLIENTS = ("Configuring clients", "../guides/clients.md")
+_POLICIES = ("Policies", "../policies/index.md")
 _CODEGEN = ("Generated classes", "../guides/codegen.md")
 _FILES = ("File attachments", "../guides/files.md")
 _FORMULAS = ("Formulas", "../guides/formulas.md")
@@ -550,25 +551,25 @@ SYMBOL_PAGES = (
             Group(
                 "Policies",
                 "policies",
-                _CLIENTS,
+                _POLICIES,
                 ("Policy", "BoundPolicy", "Decision", "Named", "Offers"),
             ),
             Group(
                 "Rules",
                 "rules",
-                _CLIENTS,
+                _POLICIES,
                 ("allow", "deny", "limit", "PolicyRule", "Verb", "SchemaVerb", "Layer"),
             ),
             Group(
                 "Tables and fields",
                 "selectors",
-                _CLIENTS,
+                _POLICIES,
                 ("fields", "tables", "FieldSelector", "TableSelector"),
             ),
             Group(
                 "Rules of your own",
                 "own-rules",
-                _CLIENTS,
+                _POLICIES,
                 (
                     "Rule",
                     "WriteRequest",

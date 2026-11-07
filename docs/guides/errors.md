@@ -51,7 +51,7 @@ These mean the request wasn't sent, though the SDK may have read the table's met
 | `UnknownFieldError` | No field with that label or ID in this table, or the token's role or the client's policy hides it |
 | `UnknownReportError` | No report with that name or ID on this table, several with that name, or one the role can't use |
 | `UnsupportedReportError` | A report that can't be read as records, such as a summary or chart |
-| `PolicyRefusedError` | The client's [policy](clients.md#limiting-what-a-client-can-do) doesn't allow this request |
+| `PolicyRefusedError` | The client's [policy](../policies/index.md) doesn't allow this request |
 
 A `PolicyRefusedError`'s `decision` says what was refused, by name, which rule refused it, and what
 would allow it. Its message follows one form: `Refused by <layer>: <what>. <reason>. (rule: <rule>)

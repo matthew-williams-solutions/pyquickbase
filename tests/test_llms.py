@@ -88,6 +88,7 @@ def test_the_index_follows_the_format() -> None:
     assert re.findall(r"^## (.+)$", INDEX, re.MULTILINE) == [
         "Docs",
         "Guides",
+        "Policies",
         "Reference",
         "Project",
     ]

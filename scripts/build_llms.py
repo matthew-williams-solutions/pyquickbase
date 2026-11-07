@@ -65,9 +65,17 @@ DESCRIPTIONS = {
     "guides/schema.md": "Creating and changing tables, fields, relationships, lookups, and "
     "summaries, and what each refusal leaves behind",
     "guides/errors.md": "Every exception, and which ones mean a request wasn't sent",
-    "guides/clients.md": "Read-only clients, allowed writes, retries, proxies, and other settings",
+    "guides/clients.md": "Sync or async, tokens, retries, proxies, and other settings",
     "guides/agents.md": "Limiting what an agent can do, untrusted values, and reading results as "
     "data",
+    "policies/index.md": "What a policy is, how it decides, and read-only clients",
+    "policies/rules.md": "Allowing and refusing reads and writes by table and field",
+    "policies/classes.md": "Groups of fields, formulas that read them, and new fields",
+    "policies/rows.md": "Keeping a client to some records",
+    "policies/schema.md": "Allowing schema changes table by table",
+    "policies/custom-rules.md": "Refusing requests with logic of your own",
+    "policies/debugging.md": "Reading refusals, and asking a policy what it allows",
+    "policies/limits.md": "What a policy can't protect against",
     "reference.md": "An overview of the API reference, with where to find every public name",
     "field-types.md": "Every field type, what to write, what it reads as, and field settings",
     "stability.md": "What 1.x promises, and what it doesn't",

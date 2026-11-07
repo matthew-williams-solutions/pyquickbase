@@ -32,7 +32,7 @@ def open_tasks(project: str) -> list[dict]:
 
 ## Limiting access
 
-Give an agent a client with a [policy](clients.md#limiting-what-a-client-can-do) that allows only
+Give an agent a client with a [policy](../policies/index.md) that allows only
 what its job needs. `Policy.read_only()` is the place to start, and it only sends GET requests,
 record queries, report runs, and formula runs. If the agent also needs to write, or shouldn't see
 everything the token can, write a `Policy` and bind it to the app. Anything it doesn't allow raises
@@ -76,7 +76,7 @@ would allow it, without the values it sent. Return either one to the model as th
   table and field.
 
 You can add checks of your own, such as a limit on how many records one call can change, with a
-[rule of your own](clients.md#rules-of-your-own), which can only refuse.
+[rule of your own](../policies/custom-rules.md), which can only refuse.
 
 ### What these limits don't do
 

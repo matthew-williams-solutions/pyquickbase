@@ -53,8 +53,8 @@ theme:
 
 nav:
   - Home: index.md
-  - Getting started: getting-started.md
   - Guides:
+      - Getting started: getting-started.md
       - Reading records: guides/reading.md
       - Writing records: guides/writing.md
       - File attachments: guides/files.md
@@ -64,6 +64,15 @@ nav:
       - Handling errors: guides/errors.md
       - Configuring clients: guides/clients.md
       - Using pyquickbase from an AI agent: guides/agents.md
+  - Policies:
+      - Policies: policies/index.md
+      - Writing rules: policies/rules.md
+      - Classes and new fields: policies/classes.md
+      - Limiting rows: policies/rows.md
+      - Schema changes: policies/schema.md
+      - Rules of your own: policies/custom-rules.md
+      - Debugging refusals: policies/debugging.md
+      - What a policy doesn't do: policies/limits.md
   - Reference:
       - Overview: reference.md
       - Quickbase: reference/quickbase.md

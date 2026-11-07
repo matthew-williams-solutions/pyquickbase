@@ -1,0 +1,20 @@
+# Schema changes
+
+`allow.schema(tables, *verbs)` grants schema changes on the table where each change lands:
+
+| Verb | What it allows | Granted on |
+|---|---|---|
+| `add_field` | Adding fields, of `field_types=[...]` if given | The table |
+| `change_field`, `delete_field` | Changing or deleting the fields in `fields=`, or every field | The table |
+| `formula` | Making or changing a formula, with `add_field` or `change_field` | The table |
+| `lookup` | Adding a lookup, which also needs `read` on the parent's field | The child |
+| `summary` | Adding a summary, which also needs `read` on the child's field, and `filter` on every field its filter uses | The parent |
+| `link`, `unlink` | Making or deleting a relationship | **Both tables**, as Quickbase adds a link field and an "Add" record formula to the parent. `unlink` also needs `delete_field` wherever its lookups and summaries are |
+| `change_table`, `delete_table` | Renaming the table, or deleting it and its records | The table |
+
+A formula can't make a link or rich text (`url` or `rich-text`), as that acts as whoever clicks it.
+
+**Creating a table gives the client a new policy,** with the table in its `created` list, so that
+`tables.created()` covers it. `qb.policy` is always the current one, and nothing is changed in place.
+Save it with `qb.policy.to_json()` to use in another process, and load it with
+`BoundPolicy.from_json()`.

@@ -47,7 +47,7 @@ Quickbase always returns the result as a string, so `"0"` would count as true in
 
     A formula can read other tables with `GetRecord()` and `GetRecords()`, whichever table you run it on,
     and can return the realm and the token owner's email. Treat formula text from users or other systems
-    like code. A client with a [policy](clients.md#limiting-what-a-client-can-do) refuses
+    like code. A client with a [policy](../policies/index.md) refuses
     formulas, unless it's `Policy.read_only()`.
 
     It can't read a table in another app, even with a token that can reach both, or a table the token's

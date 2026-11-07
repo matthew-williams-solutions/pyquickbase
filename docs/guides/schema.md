@@ -2,7 +2,7 @@
 
 This page covers creating and changing tables, fields, and relationships. Every method here is also
 on the async client, where you `await` it. To stop a client from changing the schema, see
-[Limiting what a client can do](clients.md#limiting-what-a-client-can-do).
+[Limiting what a client can do](../policies/index.md).
 
 ## Creating a table and its fields
 

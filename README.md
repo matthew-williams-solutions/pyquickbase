@@ -176,7 +176,7 @@ metadata first. Running a report adds to its usage count in Quickbase, but chang
 
 To limit what a client reads and changes, such as for an AI agent, write a `Policy` of rules over
 tables and fields, by name, and bind it to the app. Anything it doesn't allow is refused, a deny always
-wins, and what it hides is left out of each response. See [Limiting what a client can do](https://matthew-williams-solutions.github.io/pyquickbase/guides/clients/#limiting-what-a-client-can-do)
+wins, and what it hides is left out of each response. See [Limiting what a client can do](https://matthew-williams-solutions.github.io/pyquickbase/policies/)
 for every rule, and what a policy doesn't do.
 
 ```python

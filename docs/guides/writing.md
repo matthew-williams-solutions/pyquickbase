@@ -112,7 +112,7 @@ print(deleted)
 ## Previewing a write
 
 `preview_update()` and `preview_delete()` show what a write would do, and change nothing. They only read,
-so they work on a [read-only client](clients.md#making-a-client-read-only).
+so they work on a [read-only client](../policies/index.md#making-a-client-read-only).
 
 `preview_update()` takes the same rows as `update()`:
 
@@ -155,7 +155,7 @@ A preview can't promise what the write will do:
   transactions. Check `WriteResult` afterward.
 - **It doesn't check whether Quickbase will accept the write.** A formula field, a value outside a field's
   choices, one of the table's data rules, or a role that can't edit a field all look like a normal change.
-- **It doesn't check a client's policy.** A [policy](clients.md#limiting-what-a-client-can-do) can still
+- **It doesn't check a client's policy.** A [policy](../policies/index.md) can still
   refuse the write that follows.
 
 ## What a write returns
@@ -244,10 +244,10 @@ A write that times out isn't retried, because Quickbase may already have applied
 | A value that can't be written, such as a `datetime` without a timezone | `InvalidValueError` | Nothing was sent |
 | A row names a field the table doesn't have, or the token can't see | `UnknownFieldError` | Nothing was sent |
 | `batch_size` below 1, or a `delete()` condition that can't be sent as written | `QueryError` | Nothing was sent |
-| The client is read-only, or its [policy](clients.md#limiting-what-a-client-can-do) doesn't allow this write | `PolicyRefusedError` | Nothing was sent, unless it's a later batch, below |
+| The client is read-only, or its [policy](../policies/index.md) doesn't allow this write | `PolicyRefusedError` | Nothing was sent, unless it's a later batch, below |
 | `merge_on` isn't a unique field | `BadRequestError` | Nothing was written |
 | Some rows failed, such as a duplicate or a formula field | `WriteError` | **The other rows were written** |
-| A later batch failed outright, or a [rule of your own](clients.md#rules-of-your-own) refused it | `WriteError` | **Earlier batches were written** |
+| A later batch failed outright, or a [rule of your own](../policies/custom-rules.md) refused it | `WriteError` | **Earlier batches were written** |
 | The role refused the write | `WritePermissionError` | Check `error.result` for earlier rows |
 | The request timed out | `RequestTimeoutError` | **It may have been applied.** It isn't retried |
 
