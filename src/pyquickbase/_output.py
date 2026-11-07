@@ -16,6 +16,7 @@ from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Any, Literal, cast
 
+from ._confirm import expires_at
 from ._models import (
     DeletePreviewPage,
     Field,
@@ -25,11 +26,19 @@ from ._models import (
     FormulaResult,
     Page,
     Record,
+    Relationship,
     ReportInfo,
     TableInfo,
+    TableSchema,
     User,
 )
 from ._preview import ConfirmedUpdatePreview, UpdatePreview
+from ._schema_plan import (
+    PlannedChange,
+    SchemaChangeResult,
+    SchemaPlan,
+    change_kind,
+)
 from ._summary import SummaryRow
 from ._typed import TypedPage, TypedRecord
 from ._writes import RowError, WriteResult
@@ -259,6 +268,8 @@ def tool_error(error: BaseException) -> dict[str, Any]:
     if isinstance(error, WriteError) and isinstance(error.result, WriteResult):
         found["written"] = _written(error.result)
         found["failed_rows"] = [_row_error(item) for item in error.result.errors]
+    if isinstance(error, WriteError) and isinstance(error.result, SchemaChangeResult):
+        found.update(_applied(error.result))
     return {"ok": False, "error": found}
 
 
@@ -405,6 +416,21 @@ def _summary(row: SummaryRow, state: _State) -> dict[str, Any]:
     return found
 
 
+def _approval(
+    confirmation: str | None, blockers: Sequence[str], warnings: Sequence[str]
+) -> dict[str, Any]:
+    """What every preview ends with: what stops the change, what else it does, and the
+    confirmation that the change needs, with when it expires."""
+    found: dict[str, Any] = {"blockers": list(blockers), "warnings": list(warnings)}
+    if confirmation:
+        found["confirmation"] = confirmation
+        expires = expires_at(confirmation)
+        if expires is not None:
+            when = datetime.fromtimestamp(expires, UTC)
+            found["expires_at"] = _value(when, _State(compact=False, max_text=None))
+    return found
+
+
 def _preview(preview: UpdatePreview, state: _State) -> dict[str, Any]:
     return {
         "changes": [
@@ -446,7 +472,68 @@ def _metadata(value: TableInfo | Field | ReportInfo, state: _State) -> dict[str,
     }
     if value.choices:
         found["choices"] = list(value.choices)
+    if value.mode is not None:
+        found["mode"] = value.mode
+    if value.formula is not None:
+        found["formula"] = value.formula
     return found
+
+
+def _planned(item: PlannedChange) -> dict[str, Any]:
+    found: dict[str, Any] = {
+        "kind": change_kind(item.change),
+        "status": item.status,
+        "risk": item.risk,
+        "summary": item.summary,
+        "settings": {
+            name: {"before": change.before, "after": change.after}
+            for name, change in item.settings.items()
+        },
+        "warnings": list(item.warnings),
+        "blockers": list(item.blockers),
+    }
+    if item.affected_records is not None:
+        found["affected_records"] = item.affected_records
+    if item.link is not None:
+        found["link"] = item.link
+    return found
+
+
+def _applied(result: SchemaChangeResult) -> dict[str, Any]:
+    """What applying a plan did, by each change's summary."""
+    found: dict[str, Any] = {
+        "applied": [_summary_link(item) for item in result.applied],
+        "unchanged": [item.summary for item in result.unchanged],
+    }
+    if result.failed is not None:
+        found["failed"] = result.failed.summary
+        found["not_attempted"] = [item.summary for item in result.not_attempted]
+    return found
+
+
+def _summary_link(item: PlannedChange) -> dict[str, Any]:
+    found: dict[str, Any] = {"summary": item.summary}
+    if item.link is not None:
+        found["link"] = item.link
+    return found
+
+
+def _table_schema(value: TableSchema, state: _State) -> dict[str, Any]:
+    labels = {item.id: item.label for item in value.fields}
+    return {
+        **_metadata(value.info, state),
+        "fields": [_metadata(item, state) for item in value.fields],
+        "relationships": [_relationship(item, labels) for item in value.relationships],
+    }
+
+
+def _relationship(value: Relationship, labels: Mapping[int, str]) -> dict[str, Any]:
+    """A relationship from its child's side, with its child's fields by label."""
+    return {
+        "parent_table_id": value.parent_table_id,
+        "foreign_key": labels.get(value.foreign_key_field_id or 0),
+        "lookups": [labels[item] for item in value.lookup_field_ids if item in labels],
+    }
 
 
 def _download(value: FileDownload, state: _State) -> dict[str, Any]:
@@ -479,17 +566,15 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
             skip=page.skip,
             has_more=page.has_more,
         )
-        if isinstance(page, DeletePreviewPage) and page.confirmation:
-            found["confirmation"] = page.confirmation
-        if isinstance(page, DeletePreviewPage) and page.total > page.most:
-            found["over_limit"] = {
-                "max_records": page.most,
-                "message": (
+        if isinstance(page, DeletePreviewPage):
+            blockers: list[str] = []
+            if page.total > page.most:
+                blockers.append(
                     f"{page.total} records match, and a delete may match at most {page.most}, so "
                     "deleting with this filter would be refused, and nothing would be deleted. "
                     "Narrow the filter."
-                ),
-            }
+                )
+            found.update(_approval(page.confirmation, blockers, ()))
         return found
     if value is None or isinstance(value, Record | TypedRecord):
         return {"record": None if value is None else _record(value, state)}
@@ -497,9 +582,25 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
         return _written(value)
     if isinstance(value, UpdatePreview):
         found = _preview(value, state)
-        if isinstance(value, ConfirmedUpdatePreview) and value.confirmation:
-            found["confirmation"] = value.confirmation
+        if isinstance(value, ConfirmedUpdatePreview):
+            warnings: list[str] = []
+            if value.missing_ids:
+                warnings.append(
+                    f"Records {list(value.missing_ids)} don't exist, or this tool can't see them, "
+                    "so the update would report them as failed rows."
+                )
+            found.update(_approval(value.confirmation, (), warnings))
         return found
+    if isinstance(value, SchemaPlan):
+        return {
+            "plan": {
+                "changes": [_planned(item) for item in value.changes],
+                "has_changes": value.has_changes,
+            },
+            **_approval(value.confirmation, value.blockers, value.warnings),
+        }
+    if isinstance(value, SchemaChangeResult):
+        return _applied(value)
     if isinstance(value, FormulaResult):
         return {"value": _value(value.value, state), "type": value.type}
     if isinstance(value, str | int | float | bool | Decimal | date | time):
@@ -513,6 +614,8 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
         items = cast(Sequence[Any], value)
         if items and all(isinstance(item, SummaryRow) for item in items):
             return {"groups": [_summary(item, state) for item in items]}
+        if items and all(isinstance(item, TableSchema) for item in items):
+            return {"tables": [_table_schema(item, state) for item in items]}
         for cls, key in ((TableInfo, "tables"), (Field, "fields"), (ReportInfo, "reports")):
             if items and all(isinstance(item, cls) for item in items):
                 return {key: [_metadata(item, state) for item in items]}
@@ -553,7 +656,11 @@ def tool_result(
     | `WriteResult` | `created_ids`, `updated_ids`, and `unchanged_ids` |
     | A list of `SummaryRow` | `groups`, each with `group`, `count`, and the totals it has |
     | `UpdatePreview` | `changes`, `unchanged_ids`, and `missing_ids` |
-    | A `preview_delete` operation's result | As for a `Page`, and `over_limit` if needed |
+    | A `preview_update` operation's result | As for an `UpdatePreview`, with the approval keys |
+    | A `preview_delete` operation's result | As for a `Page`, with the approval keys |
+    | `SchemaPlan` | `plan`, with `changes` and `has_changes`, and the approval keys |
+    | `SchemaChangeResult` | `applied` and `unchanged`, and `failed` and `not_attempted` if needed |
+    | A list of `TableSchema` | `tables`, each with `fields` and `relationships` |
     | `FormulaResult` | `value` and `type` |
     | Text, a number, a date, or a bool | `value` |
     | `TableInfo`, `Field`, or `ReportInfo` | `table`, `field`, or `report`, without `raw` |
@@ -566,9 +673,11 @@ def tool_result(
     `page` holds `returned`, `total`, `skip`, `next_skip`, and `has_more`, so a model can tell
     whether it has every record, and ask for the next page. An empty list counts as no records.
 
-    A `preview_delete` operation's result also has `over_limit` when more records match than the
-    operation's `max_records`, with that limit and a message saying a delete with the same filter
-    would be refused. Give both operations the same `max_records` for this to be right.
+    A preview's approval keys are `blockers`, what would stop the change, `warnings`, what else it
+    would do, and, if nothing stops it, the `confirmation` the change needs and the UTC time it
+    `expires_at`. A `preview_delete` operation's result has a blocker when more records match than
+    the operation's `max_records`, as a delete with the same filter would be refused. Give both
+    operations the same `max_records` for this to be right.
 
     Values are written the same way whatever their field: a date as `YYYY-MM-DD`, a timestamp in
     UTC as `2026-03-04T05:06:07Z`, a `Decimal` as a number when that's exact and as text otherwise,

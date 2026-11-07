@@ -113,9 +113,12 @@ Things to know:
   either one needs to include every field, including the `merge_on` field.
 - **`update()` doesn't need `Record ID#` in its list**, because that only says which record to change.
 - **A file upload counts as setting its field.**
-- **Only record and file writes can be allowed.** Changes to tables, fields, and relationships are all
-  refused, since those can affect other tables, and some of them don't say which. To allow them, write
-  your own policy, or use a separate client for setup.
+- **Schema changes need `WriteAccess(schema=SchemaAccess(...))`**, which grants changing or deleting the
+  table, adding, changing, or deleting fields, the field types it may create, and relationships, each
+  separately. Formula, lookup, and summary fields need their own grants too, and a relationship needs
+  both tables to allow it. `WriteRules(create_tables_in=[...], new_tables=WriteAccess(...))` allows
+  creating tables in an app, and says what the client may do to the ones it creates. Any other write is
+  refused.
 - **`insert` alone can't be limited to creating records on a table with a custom key field.** If someone
   has changed a table's key field in the Quickbase UI, a row with an existing value in that field
   [changes that record](../api-notes.md#writes). `table.insert()` refuses those tables, so use `upsert()`,
@@ -148,10 +151,14 @@ A `WriteRequest` says what the write would do. It holds no values, so it's safe 
 
 | Attribute | What it holds |
 |---|---|
-| `action` | `insert`, `update`, `upsert`, `delete`, `delete_file`, or `other` |
-| `table_id` | The table's ID |
-| `field_ids` | The IDs of the fields it sets |
+| `action` | `insert`, `update`, `upsert`, `delete`, `delete_file`, a schema change such as `create_field` or `delete_relationship`, or `other` |
+| `table_id` | The table's ID, or for a relationship, the child's |
+| `field_ids` | The IDs of the fields it sets, or for `update_field` and `delete_field`, the fields it changes |
 | `row_count` | How many rows are in this request |
+| `app_id` | For `create_table` and `update_table`, the app |
+| `parent_table_id` | For a relationship, the parent table |
+| `field_type` | For `create_field`, the new field's type |
+| `derived` | The formula, lookup, and summary fields it makes or changes |
 | `method`, `path` | The HTTP request, for anything `action` doesn't cover |
 
 **Treat `None` as "couldn't be determined", not as "nothing".** For example, `field_ids` is `None` if a
@@ -264,12 +271,17 @@ Things to know:
 - **A listed report's own filter and sort can use any field,** and someone can change them in the
   Quickbase interface, so list only reports you've checked. A summary report's columns can't be matched to
   fields, so listing one allows all of them.
-- **Metadata keeps only what the SDK reads.** A field's formula, a report's filter, and anything Quickbase
-  adds later are left out of the response, and so of `raw`.
+- **Metadata keeps only what the SDK reads.** A report's filter and anything Quickbase adds later are
+  left out of the response, and so of `raw`. A field's formula is kept only when every field it uses is
+  readable, and it calls no function that reads other records.
 - **Some things are always refused:** running a formula, which can read other tables and fields, an app's
   details and roles, running a report through `qb.request()`, which doesn't say what kind of report it
-  is, any request it doesn't recognize, and any change to tables or fields, as a new formula field could
-  read whatever the rules hide. Use a separate client for those.
+  is, and any request it doesn't recognize. Use a separate client for those.
+- **A new formula, lookup, or summary field may only read what the rules allow returning**, as anyone
+  who can read it sees what it shows. The SDK's methods check this before sending one, and
+  `qb.request()` can't make one. Changes to the schema are otherwise left to the limits on writes.
+- **`ReadRules(new_tables=ReadAccess(...))` says what the client may read from tables it creates.**
+  Without it, they're hidden from the client that made them.
 - **A generated class must only use allowed fields,** or `SchemaMismatchError` says a field no longer
   exists.
 - **A delete is held to `filter`,** because the number deleted shows how many records matched.
@@ -305,7 +317,7 @@ qb = Quickbase(realm="acme", token="your_user_token", read_policy=all_of(rules, 
 `None` means "couldn't be determined", as it does for writes. A query without `sortBy` has `None` for
 `sort_field_ids`, because the table's default sort would apply, and one without a `top` has `None` there,
 because Quickbase would return every record. Have your policy refuse an `action` it doesn't recognize.
-A read policy sees changes to tables and fields as `other`.
+A change to tables, fields, or relationships isn't a read, so a read policy doesn't see it.
 
 ### What these limits don't do
 

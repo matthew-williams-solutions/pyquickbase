@@ -301,7 +301,7 @@ The schema goes in your framework's tool definition, under the name it uses, suc
 | `update` | `records`, each with `Record ID#` | `update()` | `WriteResult` |
 | `delete` | `where`, which is required. It's refused if it matches more than `max_records` | `delete()` | `int` |
 | `preview_update` | As `update` | `preview_update()` | `UpdatePreview` |
-| `preview_delete` | `where`, `select`, `limit`. Give it the same `max_records` as `delete`, and `tool_result()` says in `over_limit` when a delete would be refused | `preview_delete()` | `Page` |
+| `preview_delete` | `where`, `select`, `limit`. Give it the same `max_records` as `delete`, and `tool_result()` lists a blocker when a delete would be refused | `preview_delete()` | `Page` |
 | `run_report` | `report`, as its ID, its ID as a number, or its name, and `limit`, `skip` | `Report.run_page()` | `Page` |
 | `summary_report` | `report`, as for `run_report`, and `limit` | `Report.summary_rows()` | A list of rows |
 | `run_formula` | `record_id` | `run_formula()`, with the formula your code gives | `FormulaResult` |
@@ -698,6 +698,63 @@ The values in a preview are record data, so treat them as [untrusted](#reading-r
 fields the model should see. A preview isn't a guarantee, as records can change before the write, and
 [it doesn't check](writing.md#previewing-a-write) whether Quickbase will accept it. Compare a delete's
 result with the preview's `total`, and tell the user if they differ.
+
+## Changing the schema from an agent
+
+`app.operation()` offers three schema tools. `describe_schema` lists the tables and fields the client
+can read. `plan_schema` says what a list of changes would do. `apply_schema` makes them, but only with
+the `confirmation` that `plan_schema` returned for exactly those changes, within 15 minutes, while the
+schema is as it was. Unlike `require_preview` for records, this can't be turned off.
+
+```python
+from pyquickbase import (
+    AsyncQuickbase,
+    ReadAccess,
+    ReadRules,
+    SchemaAccess,
+    WriteAccess,
+    WriteRules,
+    tool_result,
+)
+
+schema = SchemaAccess(
+    create_fields=True,
+    update_fields=True,
+    field_types=["text", "numeric", "date", "checkbox", "text-multiple-choice"],
+    formulas=True,
+)
+writes = WriteRules({tasks_id: WriteAccess(schema=schema)})
+reads = ReadRules({tasks_id: ReadAccess(fields=True)})
+async with AsyncQuickbase.from_env(
+    token_env="QB_SCHEMA_TOKEN", write_policy=writes, read_policy=reads
+) as qb:
+    app = qb.app("bq1234567")
+    describe = await app.operation("describe_schema")
+    plan = await app.operation("plan_schema", max_changes=10)
+    apply = await app.operation("apply_schema", max_changes=10)
+    shown = tool_result(await plan.run(arguments))  # holds "confirmation" if nothing blocks it
+```
+
+- **Each schema offers only what the rules allow:** the kinds of change, the tables that can change,
+  and the field types they can create. A plan reports anything the rules would refuse as a blocker, so
+  the person sees it before approving.
+- **Formulas, lookups, and summaries each need their own grant**, as they show other fields' values.
+  On a client with `ReadRules`, one may only use fields the client can already return. A formula can't
+  call a function that reads other records, such as `GetRecords()`. It can't make a link or rich text,
+  which act as whoever clicks them. A field's formula is only shown when everything it uses is
+  readable.
+- **Tables the client creates need access of their own.** Pass `new_tables` to `WriteRules` and
+  `ReadRules`. Without it, a table the model creates is off limits, even to the same client.
+- **Use a separate token for schema changes.** Changing the schema needs more rights than reading and
+  writing records, so keep those on a token with less.
+- **A confirmation is signed with the client's key.** Give clients in several processes the same
+  `confirmation_key` if a plan may be applied by another one.
+
+A plan's `tool_result()` has `plan.changes`, each with its `summary`, `risk`, `settings`, `warnings`,
+`blockers`, and a `link` to check it in Quickbase, then `blockers`, `warnings`, `confirmation`, and
+`expires_at`. Show the person the summaries and warnings, and send `apply_schema` the same changes with
+the confirmation once they approve. It makes sure a plan happened, not that a person saw it, so ask
+your client to show each change for approval too.
 
 ## Writes
 

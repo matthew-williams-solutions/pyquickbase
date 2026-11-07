@@ -131,6 +131,29 @@ class AsyncTransport:
         """Whether the client has any limits on what it reads or writes."""
         return self._read_only or self._read_policy is not None or self._write_policy is not None
 
+    def check_write(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: Mapping[str, Any] | None = None,
+        json: Any = None,
+        parent_table_id: str | None = None,
+    ) -> None:
+        """Raise what the limits on writes would raise for this request, without sending it.
+
+        A plan uses this to report a change the client would refuse. Formulas, lookups, and
+        summaries count as checked, as a plan checks what they read itself.
+        """
+        self._check_write(
+            method.upper(),
+            path,
+            params,
+            json,
+            parent_table_id=parent_table_id,
+            sources_checked=True,
+        )
+
     def table_created(self, table_id: str) -> None:
         """Give a table this client just created the access its rules give new tables."""
         for rules in (*self._read_rules, *self.write_rules):

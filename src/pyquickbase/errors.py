@@ -73,6 +73,17 @@ class WriteError(QuickbaseError):
         self.result = result
 
 
+class SchemaChangeError(WriteError):
+    """A change in a schema plan failed, so the ones after it weren't attempted.
+
+    Quickbase can't undo the changes before it, so `result` says which were made. Planning the
+    same changes again shows only what's left, as the ones made count as already done.
+
+    Attributes:
+        result: A `SchemaChangeResult`.
+    """
+
+
 class UnknownTableError(QuickbaseError, LookupError):
     """The app has no table with that name or ID."""
 

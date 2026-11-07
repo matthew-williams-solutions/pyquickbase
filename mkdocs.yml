@@ -47,10 +47,12 @@ nav:
       - Table: reference/table.md
       - Report: reference/report.md
       - Operation: reference/operation.md
+      - SchemaOperation: reference/schema-operation.md
       - TypedTable: reference/typed-table.md
       - Queries: reference/queries.md
       - Records and results: reference/records.md
       - Metadata: reference/metadata.md
+      - Schema changes: reference/schema-changes.md
       - Limits and retries: reference/limits.md
       - Tools for models: reference/tools.md
       - Generated classes: reference/generated.md

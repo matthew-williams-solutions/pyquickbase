@@ -1,10 +1,13 @@
 class APIError(QuickbaseError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
 class App(object)
+    def apply_schema(self, plan: SchemaPlan) -> SchemaChangeResult
     def create_table(self, name: str, *, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> 'Table'
     def ensure_table(self, name: str, *, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> 'Table'
     property id -> str
     def info(self) -> AppInfo
+    def operation(self, name: Literal['describe_schema', 'plan_schema', 'apply_schema'], *, max_changes: int = 20) -> 'SchemaOperation'
+    def plan_schema(self, changes: Sequence[CreateTable | UpdateTable | DeleteTable | CreateField | UpdateField | DeleteField | CreateRelationship | CreateLookupField | CreateSummaryField | DeleteRelationship]) -> SchemaPlan
     def roles(self, *, refresh: bool = False) -> list[Role]
     def settings_url(self) -> str
     def table(self, name_or_id: str) -> 'Table'
@@ -21,10 +24,13 @@ class AppInfo(object)
     field raw: Mapping[str, Any]
     field time_zone: str | None
 class AsyncApp(object)
+    async def apply_schema(self, plan: SchemaPlan) -> SchemaChangeResult
     async def create_table(self, name: str, *, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> 'AsyncTable'
     async def ensure_table(self, name: str, *, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> 'AsyncTable'
     property id -> str
     async def info(self) -> AppInfo
+    async def operation(self, name: Literal['describe_schema', 'plan_schema', 'apply_schema'], *, max_changes: int = 20) -> 'AsyncSchemaOperation'
+    async def plan_schema(self, changes: Sequence[CreateTable | UpdateTable | DeleteTable | CreateField | UpdateField | DeleteField | CreateRelationship | CreateLookupField | CreateSummaryField | DeleteRelationship]) -> SchemaPlan
     async def roles(self, *, refresh: bool = False) -> list[Role]
     def settings_url(self) -> str
     def table(self, name_or_id: str) -> 'AsyncTable'
@@ -55,6 +61,11 @@ class AsyncReport(object)
     async def run_page(self, *, top: int = 100, skip: int = 0) -> Page
     async def summary_rows(self, *, page_size: int = 1000, limit: int | None = None) -> list[dict[str, Any]]
     async def url(self, *, edit: bool = False) -> str
+class AsyncSchemaOperation(object)
+    def __init__(self, app: AsyncApp, name: Literal['describe_schema', 'plan_schema', 'apply_schema'], schema: dict[str, Any], max_changes: int) -> None
+    property name -> Literal['describe_schema', 'plan_schema', 'apply_schema']
+    async def run(self, arguments: Mapping[str, Any]) -> Any
+    property schema -> dict[str, Any]
 class AsyncTable(object)
     async def compile_where(self, where: Expression | str) -> str
     async def count(self, where: Expression | str | None = None) -> int
@@ -122,6 +133,7 @@ class AuthenticationError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
 class BadRequestError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
+value ChangeKind = Literal['create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'create_lookup', 'create_summary', 'delete_relationship']
 class Column(object)
     def __eq__(self, other)
     def __init__(self, name: str, id: int, field_type: str, writable: bool, label: str, read_as: str = '') -> None
@@ -132,6 +144,59 @@ class Column(object)
     field read_as: str
     field writable: bool
 class ConfigurationError(QuickbaseError, ValueError)
+class CreateField(object)
+    def __eq__(self, other)
+    def __init__(self, *, table: str, label: str, type: str, choices: tuple[str, ...] | None = None, required: bool | None = None, unique: bool | None = None, help_text: str | None = None, formula: str | None = None) -> None
+    field choices: tuple[str, ...] | None
+    field formula: str | None
+    field help_text: str | None
+    field label: str
+    field required: bool | None
+    field table: str
+    field type: str
+    field unique: bool | None
+class CreateLookupField(object)
+    def __eq__(self, other)
+    def __init__(self, *, child: str, foreign_key: str, parent_field: str | int, label: str | None = None) -> None
+    field child: str
+    field foreign_key: str
+    field label: str | None
+    field parent_field: str | int
+class CreateRelationship(object)
+    def __eq__(self, other)
+    def __init__(self, *, child: str, parent: str, foreign_key: str) -> None
+    field child: str
+    field foreign_key: str
+    field parent: str
+class CreateSummaryField(object)
+    def __eq__(self, other)
+    def __init__(self, *, child: str, foreign_key: str, label: str, function: Literal['SUM', 'AVG', 'MAX', 'MIN', 'STD-DEV', 'COUNT', 'DISTINCT-COUNT', 'COMBINED-TEXT', 'COMBINED-USER'] = 'SUM', child_field: str | int | None = None) -> None
+    field child: str
+    field child_field: str | int | None
+    field foreign_key: str
+    field function: Literal['SUM', 'AVG', 'MAX', 'MIN', 'STD-DEV', 'COUNT', 'DISTINCT-COUNT', 'COMBINED-TEXT', 'COMBINED-USER']
+    field label: str
+class CreateTable(object)
+    def __eq__(self, other)
+    def __init__(self, *, name: str, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> None
+    field description: str | None
+    field name: str
+    field plural_record_name: str | None
+    field single_record_name: str | None
+class DeleteField(object)
+    def __eq__(self, other)
+    def __init__(self, *, table: str, field: str | int) -> None
+    field field: str | int
+    field table: str
+class DeleteRelationship(object)
+    def __eq__(self, other)
+    def __init__(self, *, child: str, foreign_key: str) -> None
+    field child: str
+    field foreign_key: str
+class DeleteTable(object)
+    def __eq__(self, other)
+    def __init__(self, *, table: str) -> None
+    field table: str
 value DerivedKind = Literal['formula', 'lookup', 'summary']
 class Expression(object)
     def __and__(self, other: 'Expression') -> 'Group'
@@ -240,6 +305,18 @@ class Period(object)
 value PeriodUnit = Literal['day', 'week', 'month', 'quarter', 'year']
 class PermissionDeniedError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
+class PlannedChange(object)
+    def __eq__(self, other)
+    def __init__(self, *, change: CreateTable | UpdateTable | DeleteTable | CreateField | UpdateField | DeleteField | CreateRelationship | CreateLookupField | CreateSummaryField | DeleteRelationship, status: Literal['change', 'no_change', 'blocked'], risk: Literal['additive', 'modifying', 'destructive'], summary: str, settings: Mapping[str, SettingChange] = <factory>, warnings: tuple[str, ...] = (), blockers: tuple[str, ...] = (), affected_records: int | None = None, link: str | None = None) -> None
+    field affected_records: int | None
+    field blockers: tuple[str, ...]
+    field change: CreateTable | UpdateTable | DeleteTable | CreateField | UpdateField | DeleteField | CreateRelationship | CreateLookupField | CreateSummaryField | DeleteRelationship
+    field link: str | None
+    field risk: Literal['additive', 'modifying', 'destructive']
+    field settings: Mapping[str, SettingChange]
+    field status: Literal['change', 'no_change', 'blocked']
+    field summary: str
+    field warnings: tuple[str, ...]
 class QueryError(QuickbaseError, ValueError)
 class Quickbase(object)
     def __enter__(self) -> Self
@@ -337,6 +414,7 @@ class RetryPolicy(object)
     field max_retries: int
     field max_retry_after: float
     def rate_limit_delay(self, attempt: int, retry_after: float | None) -> float | None
+value Risk = Literal['additive', 'modifying', 'destructive']
 class Role(object)
     def __eq__(self, other)
     def __init__(self, *, id: int, name: str, access: str, raw: Mapping[str, Any]) -> None
@@ -366,10 +444,43 @@ class SchemaAccess(object)
     field summaries: bool
     field update_fields: bool | frozenset[int]
     field update_table: bool
+value SchemaChange = CreateTable | UpdateTable | DeleteTable | CreateField | UpdateField | DeleteField | CreateRelationship | CreateLookupField | CreateSummaryField | DeleteRelationship
+class SchemaChangeError(WriteError)
+    def __init__(self, summary: str, *, result: Any = None) -> None
+class SchemaChangeResult(object)
+    def __eq__(self, other)
+    def __init__(self, *, applied: tuple[PlannedChange, ...] = (), unchanged: tuple[PlannedChange, ...] = (), failed: PlannedChange | None = None, not_attempted: tuple[PlannedChange, ...] = (), error: str | None = None) -> None
+    field applied: tuple[PlannedChange, ...]
+    field error: str | None
+    field failed: PlannedChange | None
+    field not_attempted: tuple[PlannedChange, ...]
+    field unchanged: tuple[PlannedChange, ...]
 class SchemaMismatchError(QuickbaseError)
+class SchemaOperation(object)
+    def __init__(self, app: App, name: Literal['describe_schema', 'plan_schema', 'apply_schema'], schema: dict[str, Any], max_changes: int) -> None
+    property name -> Literal['describe_schema', 'plan_schema', 'apply_schema']
+    def run(self, arguments: Mapping[str, Any]) -> Any
+    property schema -> dict[str, Any]
+value SchemaOperationName = Literal['describe_schema', 'plan_schema', 'apply_schema']
+class SchemaPlan(object)
+    def __eq__(self, other)
+    def __init__(self, *, app_id: str, changes: tuple[PlannedChange, ...], fingerprint: str, confirmation: str = '') -> None
+    field app_id: str
+    property blockers -> tuple[str, ...]
+    field changes: tuple[PlannedChange, ...]
+    field confirmation: str
+    field fingerprint: str
+    property has_changes -> bool
+    property warnings -> tuple[str, ...]
 value Select = TypedField | Sequence[TypedField] | None
 class ServerError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
+class SettingChange(object)
+    def __eq__(self, other)
+    def __init__(self, before: Any, after: Any) -> None
+    field after: Any
+    field before: Any
+value SummaryFunction = Literal['SUM', 'AVG', 'MAX', 'MIN', 'STD-DEV', 'COUNT', 'DISTINCT-COUNT', 'COMBINED-TEXT', 'COMBINED-USER']
 value SummaryGroups = str | int | F | Period | Sequence[str | int | F | Period]
 class SummaryRow(object)
     def __eq__(self, other)
@@ -433,6 +544,12 @@ class TableInfo(object)
     field key_field_id: int | None
     field name: str
     field raw: Mapping[str, Any]
+class TableSchema(object)
+    def __eq__(self, other)
+    def __init__(self, *, info: TableInfo, fields: tuple[Field, ...], relationships: tuple[Relationship, ...] = ()) -> None
+    field fields: tuple[Field, ...]
+    field info: TableInfo
+    field relationships: tuple[Relationship, ...]
 value ToolErrorCode = Literal['configuration', 'invalid_query', 'invalid_value', 'read_refused', 'write_refused', 'refused', 'unknown_table', 'unknown_field', 'unknown_report', 'unsupported_report', 'schema_mismatch', 'partial_write', 'write_failed', 'write_permission', 'authentication', 'permission_denied', 'not_found', 'bad_request', 'rate_limited', 'server_error', 'api_error', 'timeout', 'network', 'invalid_response', 'error', 'internal']
 class TypedField(F)
     def __eq__(self, value: object) -> Condition
@@ -484,12 +601,31 @@ class UnknownReportError(QuickbaseError, LookupError)
 class UnknownTableError(QuickbaseError, LookupError)
 class Unset(object)
 class UnsupportedReportError(QuickbaseError)
+class UpdateField(object)
+    def __eq__(self, other)
+    def __init__(self, *, table: str, field: str | int, label: str | None = None, choices: tuple[str, ...] | None = None, required: bool | None = None, unique: bool | None = None, help_text: str | None = None, formula: str | None = None) -> None
+    field choices: tuple[str, ...] | None
+    field field: str | int
+    field formula: str | None
+    field help_text: str | None
+    field label: str | None
+    field required: bool | None
+    field table: str
+    field unique: bool | None
 class UpdatePreview(object)
     def __eq__(self, other)
     def __init__(self, *, changes: tuple[RecordChange, ...] = (), unchanged_ids: tuple[int, ...] = (), missing_ids: tuple[int, ...] = ()) -> None
     field changes: tuple[RecordChange, ...]
     field missing_ids: tuple[int, ...]
     field unchanged_ids: tuple[int, ...]
+class UpdateTable(object)
+    def __eq__(self, other)
+    def __init__(self, *, table: str, name: str | None = None, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> None
+    field description: str | None
+    field name: str | None
+    field plural_record_name: str | None
+    field single_record_name: str | None
+    field table: str
 class User(object)
     def __eq__(self, other)
     def __init__(self, *, id: str, name: str, email: str | None = None, user_name: str | None = None) -> None

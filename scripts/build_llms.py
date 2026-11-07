@@ -21,14 +21,24 @@ CONFIG = ROOT / "mkdocs.yml"
 # Reference pages with their own plain Markdown files, as `(title, name, what's in it)`.
 REFERENCE_PAGES = (
     ("Quickbase", "quickbase", "Creating and closing a client, and calling any endpoint"),
-    ("App", "app", "An app's details, getting its tables, and creating tables"),
+    ("App", "app", "An app's details, getting its tables, and changing its schema with a plan"),
     ("Table", "table", "Reading and writing records, files, and changing a table's fields"),
     ("Report", "report", "Running reports built in the Quickbase interface"),
     ("Operation", "operation", "One table operation offered to a model, with its JSON Schema"),
+    (
+        "SchemaOperation",
+        "schema-operation",
+        "One schema operation offered to a model, with its JSON Schema",
+    ),
     ("TypedTable", "typed-table", "Reading and writing through a generated class"),
     ("Queries", "queries", "`F`, conditions from plain data, and checking hand-written ones"),
     ("Records and results", "records", "What reads and writes return, files, and summaries"),
     ("Metadata", "metadata", "What describes apps, tables, fields, relationships, and reports"),
+    (
+        "Schema changes",
+        "schema-changes",
+        "Changes to tables, fields, and relationships, and the plans that check them",
+    ),
     (
         "Limits and retries",
         "limits",

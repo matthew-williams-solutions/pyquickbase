@@ -237,6 +237,21 @@ def relationship_from_api(data: Mapping[str, Any]) -> Relationship:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class TableSchema:
+    """A table's fields and the relationships in which it's the child, as the client can see them.
+
+    Attributes:
+        info: The table's details.
+        fields: Its fields.
+        relationships: The relationships in which it's the child.
+    """
+
+    info: TableInfo
+    fields: tuple[Field, ...]
+    relationships: tuple[Relationship, ...] = ()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ReportInfo:
     """A report's metadata.
 

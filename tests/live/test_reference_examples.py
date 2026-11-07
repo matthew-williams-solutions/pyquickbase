@@ -109,9 +109,11 @@ def tables(scratch: Any) -> Iterator[tuple[Any, Any]]:
 
 def prepare(slug: str, name: str, tasks: Any, projects: Any) -> None:
     """Add what a few examples need, which the page's setup doesn't show."""
+    if (slug, name) == ("schema-changes", "DeleteRelationship"):
+        tasks.ensure_relationship(projects, foreign_key_label="Project")
     if slug != "table":
         return
-    if name == "relationships":
+    if name in ("relationships", "delete_relationship"):
         tasks.ensure_relationship(projects, foreign_key_label="Project")
     if name in ("download_file", "delete_file_version"):
         tasks.update([{"Record ID#": 1, "Attachment": FileUpload("spec.txt", b"one")}])
@@ -161,6 +163,7 @@ def namespace(
 # What a page's setup makes beyond `tasks`, written for the async client.
 PAGE_SETUP = {
     "operation": 'search = await tasks.operation("query", fields=["Title", "Status"])\n',
+    "schema-operation": 'plan = await app.operation("plan_schema")\n',
 }
 
 

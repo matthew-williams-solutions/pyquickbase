@@ -3,9 +3,11 @@
 
 import difflib
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from dataclasses import replace
 from functools import partial
-from typing import Any, Generic, Self, TypeVar, cast
+from typing import Any, Generic, Self, TypeVar, cast, get_args
 
+from .._confirm import ConfirmationKind, schema_binding
 from .._confirm import binding as confirmation_binding
 from .._confirm import check as check_confirmation
 from .._confirm import issue as issue_confirmation
@@ -33,6 +35,7 @@ from .._models import (
     ReportInfo,
     Role,
     TableInfo,
+    TableSchema,
     app_info_from_api,
     field_from_api,
     file_download_from_response,
@@ -73,6 +76,20 @@ from .._preview import (
 )
 from .._query import Expression, F, FieldRef, FieldRefs, build_query_body, compile_where
 from .._schema import SchemaCache
+from .._schema_operations import (
+    DEFAULT_MAX_CHANGES,
+    SchemaOperationName,
+    schema_allowed,
+    schema_operation_schema,
+)
+from .._schema_plan import (
+    SchemaChange,
+    SchemaChangeResult,
+    SchemaPlan,
+    canonical_changes,
+    change_to_json,
+    changes_from_json,
+)
 from .._summary import Summary, SummaryGroups, SummaryRow
 from .._typed import (
     OrderBy,
@@ -122,6 +139,7 @@ from ..errors import (
     WriteError,
     WriteRefusedError,
 )
+from ._planner import Planner, apply_checked, apply_plan
 from ._transport import Transport
 
 T = TypeVar("T")
@@ -312,6 +330,101 @@ class App:
         table_id = parse(lambda data: table_info_from_api(data).id, payload, "table")
         self._transport.table_created(table_id)
         return self.table(table_id)
+
+    def plan_schema(self, changes: Sequence[SchemaChange]) -> SchemaPlan:
+        """Work out what schema changes would do, without making them.
+
+        Each change is compared with the app as it is now, in order, so a later one can use a
+        table or field an earlier one makes. The plan says what each would set, what else it
+        would do or affect, such as records that lose a deleted field's values, and anything that
+        stops it, including the client's own limits. A change the app already has counts as
+        done, so planning again after a failed apply shows only what's left.
+
+        This only reads. It may count records, and look for duplicates before making a field
+        unique, reading up to 10,000 records.
+
+        Args:
+            changes: The changes, such as `CreateField(table="Tasks", label="Due", type="date")`.
+
+        Returns:
+            A `SchemaPlan`, for `apply_schema()`.
+
+        Raises:
+            InvalidValueError: `changes` is empty. Nothing was read.
+        """
+        if not changes:
+            raise InvalidValueError("plan_schema() needs at least one change.")
+        return Planner(self).plan(changes)
+
+    def apply_schema(self, plan: SchemaPlan) -> SchemaChangeResult:
+        """Make the changes in a plan, in order, if the app hasn't changed since it was made.
+
+        The changes are planned again first, and nothing is sent unless that finds the same
+        schema and nothing stopping them. Quickbase has no way to undo a change, so if one fails,
+        the ones before it stay made, and the ones after it aren't attempted.
+
+        Args:
+            plan: From `plan_schema()`.
+
+        Returns:
+            A `SchemaChangeResult`, with what was made and what was already there.
+
+        Raises:
+            SchemaMismatchError: The schema has changed since the plan was made. Nothing was sent.
+            InvalidValueError: The plan has blockers, or is for another app. Nothing was sent.
+            SchemaChangeError: A change failed. Its `result` says which were made.
+        """
+        return apply_plan(self, plan)
+
+    def operation(
+        self, name: SchemaOperationName, *, max_changes: int = DEFAULT_MAX_CHANGES
+    ) -> "SchemaOperation":
+        """Make a schema operation into a tool for a model, with its JSON Schema.
+
+        `describe_schema` lists the tables and fields the client can read. `plan_schema` says what
+        a list of changes would do, without making them, and `apply_schema` makes them, but only
+        with the `confirmation` that `plan_schema` returned for exactly those changes, within 15
+        minutes, while the schema is as it was then. Show the person each plan before they approve
+        it.
+
+        The schema offers only the kinds of change, tables, and field types the client's
+        `WriteRules` could allow, and a plan reports anything they'd refuse. Give the model a
+        client with `WriteRules` and `ReadRules`, so that what it can change and see is limited,
+        and a formula, lookup, or summary it adds can only show what it could already read.
+
+        ```python
+        plan = app.operation("plan_schema")
+        tool = {"name": "plan_changes", "input_schema": plan.schema}
+        result = plan.run(arguments)
+        ```
+
+        Args:
+            name: `describe_schema`, `plan_schema`, or `apply_schema`.
+            max_changes: The most changes one plan may hold.
+
+        Returns:
+            A `SchemaOperation`, with its `schema` and `run()`.
+
+        Raises:
+            ConfigurationError: `name` isn't a schema operation, `max_changes` isn't a positive
+                whole number, or the client's limits allow no schema change for `plan_schema` or
+                `apply_schema`.
+        """
+        if name not in get_args(SchemaOperationName):
+            raise ConfigurationError(
+                f"name must be one of: {', '.join(get_args(SchemaOperationName))}."
+            )
+        if type(max_changes) is not int or max_changes < 1:
+            raise ConfigurationError("max_changes must be a positive whole number.")
+        transport = self._transport
+        tables = self.tables(refresh=True)
+        allowed = schema_allowed(
+            tables, transport.write_rules, app_id=self._id, read_only=transport.read_only
+        )
+        schema = schema_operation_schema(
+            name, allowed, max_changes=max_changes, tables=[item.name for item in tables]
+        )
+        return SchemaOperation(self, name, schema, max_changes)
 
     def table(self, name_or_id: str) -> "Table":
         """Get a table in this app by name or ID. It's checked when first used.
@@ -2391,7 +2504,7 @@ class Operation:
 
     def _confirmation(
         self,
-        kind: str,
+        kind: ConfirmationKind,
         arguments: Mapping[str, Any],
         scope: Expression | None,
         matching: int | None,
@@ -2404,7 +2517,7 @@ class Operation:
     def _check_confirmation(
         self, arguments: Mapping[str, Any], scope: Expression | None, matching: int | None
     ) -> None:
-        kind = self._spec.name
+        kind: ConfirmationKind = "delete" if self._spec.name == "delete" else "update"
         table_id = (self._table.info()).id
         bound = confirmation_binding(kind, table_id, arguments, scope, matching)
         key = self._table._transport.confirmation_key  # pyright: ignore[reportPrivateUsage]
@@ -2412,6 +2525,107 @@ class Operation:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._spec.name!r}, table={self._table!r})"
+
+
+class SchemaOperation:
+    """One schema operation, for a model's tool call. Create one with `app.operation()`."""
+
+    def __init__(
+        self,
+        app: App,
+        name: SchemaOperationName,
+        schema: dict[str, Any],
+        max_changes: int,
+    ) -> None:
+        self._app = app
+        self._name: SchemaOperationName = name
+        self._schema = schema
+        self._max_changes = max_changes
+
+    @property
+    def name(self) -> SchemaOperationName:
+        """What the operation does, such as `plan_schema`."""
+        return self._name
+
+    @property
+    def schema(self) -> dict[str, Any]:
+        """The JSON Schema of the arguments a model may send, for a tool's input.
+
+        It's self-contained, with no `$ref`, and a new dictionary each time, so you can add to it.
+        """
+        return copy_schema(self._schema)
+
+    def run(self, arguments: Mapping[str, Any]) -> Any:
+        """Check a model's arguments, and run the operation.
+
+        Args:
+            arguments: The arguments from the model's tool call.
+
+        Returns:
+            For `describe_schema`, a list of `TableSchema`. For `plan_schema`, a `SchemaPlan`,
+            whose `confirmation` `apply_schema` needs, unless the plan has blockers or changes
+            nothing. For `apply_schema`, a `SchemaChangeResult`. `tool_result()` takes each.
+
+        Raises:
+            InvalidValueError: An argument can't be used. Nothing was sent.
+            QueryError: `apply_schema` has no confirmation, or one that doesn't match these
+                changes and the schema as it is now. Nothing was changed.
+            SchemaChangeError: A change failed while applying. Its `result` says which were made.
+        """
+        if not isinstance(arguments, Mapping):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise InvalidValueError("The arguments must be an object.")
+        allowed = set(self._schema["properties"])
+        unknown = sorted(set(arguments) - allowed)
+        if unknown:
+            raise InvalidValueError(f"This tool doesn't take: {', '.join(unknown)}.")
+        if self._name == "describe_schema":
+            return self._describe(arguments.get("tables"))
+        changes = changes_from_json(arguments.get("changes"), most=self._max_changes)
+        offered = {item["properties"]["kind"]["const"] for item in self._kinds()}
+        for position, change in enumerate(changes):
+            if change_to_json(change)["kind"] not in offered:
+                kinds = ", ".join(sorted(offered))
+                raise InvalidValueError(
+                    f"changes[{position}].kind isn't one this tool offers: {kinds}."
+                )
+        plan = Planner(self._app).plan(changes)
+        bound = schema_binding(self._app.id, canonical_changes(changes), plan.fingerprint)
+        key = self._app._transport.confirmation_key  # pyright: ignore[reportPrivateUsage]
+        if self._name == "plan_schema":
+            if plan.blockers or not plan.has_changes:
+                return plan
+            return replace(plan, confirmation=issue_confirmation(key, "schema", bound))
+        check_confirmation(key, "schema", arguments.get("confirmation"), bound)
+        return apply_checked(self._app, plan)
+
+    def _kinds(self) -> list[dict[str, Any]]:
+        return self._schema["properties"]["changes"]["items"]["oneOf"]
+
+    def _describe(self, wanted: Any) -> list[TableSchema]:
+        tables = self._app.tables(refresh=True)
+        if wanted is not None:
+            if not isinstance(wanted, list) or not all(isinstance(item, str) for item in wanted):  # pyright: ignore[reportUnknownVariableType]
+                raise InvalidValueError("tables must be a list of table names.")
+            names = {item.casefold() for item in cast(list[str], wanted)}
+            known = {item.name.casefold() for item in tables}
+            missing = sorted(names - known)
+            if missing:
+                raise InvalidValueError(f"There's no table {missing[0]!r}.")
+            tables = [item for item in tables if item.name.casefold() in names]
+        found: list[TableSchema] = []
+        for info in tables:
+            table = self._app.table(info.id)
+            found.append(
+                TableSchema(
+                    info=info,
+                    fields=tuple(table.fields(refresh=True)),
+                    relationships=tuple(table.relationships(refresh=True)),
+                )
+            )
+        return found
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self._name!r}, app={self._app.id!r})"
 
 
 class TypedTable(Generic[R]):

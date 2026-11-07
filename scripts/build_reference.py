@@ -41,6 +41,16 @@ HAS_PUBLIC_CONSTRUCTOR = {
     "WriteAccess",
     "SchemaAccess",
     "ReadRules",
+    "CreateTable",
+    "UpdateTable",
+    "DeleteTable",
+    "CreateField",
+    "UpdateField",
+    "DeleteField",
+    "CreateRelationship",
+    "CreateLookupField",
+    "CreateSummaryField",
+    "DeleteRelationship",
     "ReadAccess",
     "RetryPolicy",
 }
@@ -53,6 +63,13 @@ ALIASES = {
     "PeriodUnit": "How much time each group of a `Period` covers.",
     "SummaryGroups": "What `Table.summarize()` can group by.",
     "WriteAction": "What kind of write a `WriteRequest` is.",
+    "SchemaChange": "Any one of the changes on this page, as `App.plan_schema()` takes them.",
+    "ChangeKind": "The `kind` of a change in the JSON form a model sends, such as `create_field`.",
+    "SummaryFunction": "How `CreateSummaryField` combines a child's values. `COUNT` counts the "
+    "child records.",
+    "Risk": "How much a planned change can lose: `additive` only adds, `modifying` changes what's "
+    "there, and `destructive` deletes data or fields.",
+    "SchemaOperationName": "What `App.operation()` can offer a model.",
     "DerivedKind": "A field whose values come from other fields: a `formula`, a `lookup` of a "
     "parent's field, or a `summary` of a child's. `WriteRequest.derived` lists the ones a write "
     "makes or changes.",
@@ -72,6 +89,8 @@ ALIASES = {
 }
 # What can't be shown happening in an example, and why.
 NO_EXAMPLE = {
+    "SchemaChangeError": "this needs a change to fail partway through a plan, which "
+    "tests/_async/test_schema_plan.py shows",
     "NetworkError": "`RequestTimeoutError` shows catching this",
     "InvalidResponseError": "only Quickbase returning something unexpected raises this",
     "PermissionDeniedError": "this needs a second token with less access",
@@ -153,6 +172,7 @@ _ERRORS = ("Handling errors", "../guides/errors.md")
 _LINKS = "Link to the Quickbase interface"
 
 _TABLE_LINE = 'tasks = qb.app("bq1234567").table("Job Tasks")'
+_PLAN_LINES = '\n    plan = await app.operation("plan_schema")'
 _SEARCH_LINES = (
     '\n    search = await tasks.operation(\n        "query", fields=["Title", "Status"]\n    )'
 )
@@ -207,6 +227,13 @@ RESOURCES = (
             Group("Get a table", "get-a-table", _CODEGEN, ("table", "typed")),
             Group(_LINKS, "links", _AGENTS, ("url", "settings_url")),
             Group("Create tables", "create-tables", _SCHEMA, ("ensure_table", "create_table")),
+            Group(
+                "Change the schema with a plan",
+                "plan-schema",
+                _SCHEMA,
+                ("plan_schema", "apply_schema"),
+            ),
+            Group("Give a model the schema", "operations", _AGENTS, ("operation",)),
         ),
     ),
     Resource(
@@ -321,6 +348,23 @@ RESOURCES = (
         ),
     ),
     Resource(
+        "SchemaOperation",
+        "schema-operation",
+        pyquickbase.SchemaOperation,
+        pyquickbase.AsyncSchemaOperation,
+        "A `SchemaOperation` is one schema operation offered to a model as a tool: "
+        "`describe_schema`, `plan_schema`, or `apply_schema`. Get one from `App.operation()`. "
+        "`apply_schema` only runs with the confirmation `plan_schema` returned for the same "
+        "changes, while the schema is as it was.",
+        f"The examples below use `plan`, made as shown here. {_JOB_TASKS} {_LIVE_TEST}",
+        _setup('app = qb.app("bq1234567")')[0] + _PLAN_LINES.replace("await ", ""),
+        _setup('app = qb.app("bq1234567")')[1] + _PLAN_LINES,
+        (
+            Group("Describe it to a model", "describe-it", _AGENTS, ("schema", "name")),
+            Group("Run it", "run-it", _AGENTS, ("run",)),
+        ),
+    ),
+    Resource(
         "TypedTable",
         "typed-table",
         pyquickbase.TypedTable,
@@ -429,7 +473,50 @@ SYMBOL_PAGES = (
             Group(
                 "Tables and reports", "tables-and-reports", _READING, ("TableInfo", "ReportInfo")
             ),
-            Group("Fields and relationships", "fields", _SCHEMA, ("Field", "Relationship")),
+            Group(
+                "Fields and relationships",
+                "fields",
+                _SCHEMA,
+                ("Field", "Relationship", "TableSchema"),
+            ),
+        ),
+    ),
+    SymbolPage(
+        "Schema changes",
+        "schema-changes",
+        "Describe changes to an app's tables, fields, and relationships, then pass them to "
+        "`App.plan_schema()`, which says what each would do without making it, and "
+        "`App.apply_schema()`, which makes them if the app hasn't changed since. A change the app "
+        "already has counts as done.",
+        f"{_SYMBOL_NOTE} {_PROJECTS} The examples only plan, unless they say otherwise.",
+        *_setup(_TABLE_LINE),
+        (
+            Group(
+                "Tables",
+                "tables",
+                _SCHEMA,
+                ("CreateTable", "UpdateTable", "DeleteTable"),
+            ),
+            Group("Fields", "fields", _SCHEMA, ("CreateField", "UpdateField", "DeleteField")),
+            Group(
+                "Relationships",
+                "relationships",
+                _SCHEMA,
+                (
+                    "CreateRelationship",
+                    "CreateLookupField",
+                    "CreateSummaryField",
+                    "DeleteRelationship",
+                    "SummaryFunction",
+                ),
+            ),
+            Group(
+                "Plans and results",
+                "plans",
+                _SCHEMA,
+                ("SchemaPlan", "PlannedChange", "SettingChange", "SchemaChangeResult", "Risk"),
+            ),
+            Group("Any change", "any-change", _AGENTS, ("SchemaChange", "ChangeKind")),
         ),
     ),
     SymbolPage(
@@ -485,7 +572,7 @@ SYMBOL_PAGES = (
         (
             Group("Results", "results", _AGENTS, ("tool_result",)),
             Group("Errors", "errors", _AGENTS, ("tool_error", "ToolErrorCode")),
-            Group("Operations", "operations", _AGENTS, ("OperationName",)),
+            Group("Operations", "operations", _AGENTS, ("OperationName", "SchemaOperationName")),
         ),
     ),
     SymbolPage(
@@ -538,7 +625,12 @@ SYMBOL_PAGES = (
                     "SchemaMismatchError",
                 ),
             ),
-            Group("Writes", "writes", _WRITING, ("WriteError", "WritePermissionError")),
+            Group(
+                "Writes",
+                "writes",
+                _WRITING,
+                ("WriteError", "WritePermissionError", "SchemaChangeError"),
+            ),
             Group(
                 "Responses from Quickbase",
                 "responses",
@@ -579,6 +671,7 @@ def _name_links() -> dict[str, str]:
     links["AsyncTable"] = links["Table"]
     links["AsyncReport"] = links["Report"]
     links["AsyncOperation"] = links["Operation"]
+    links["AsyncSchemaOperation"] = links["SchemaOperation"]
     links["AsyncTypedTable"] = links["TypedTable"]
     links["AsyncRecordIterator"] = links["RecordIterator"]
     links["AsyncTypedIterator"] = links["TypedIterator"]

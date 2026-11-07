@@ -501,6 +501,7 @@ def test_metadata_leaves_out_raw() -> None:
                 "required": True,
                 "unique": False,
                 "computed": True,
+                "mode": "formula",
             },
         ],
     }

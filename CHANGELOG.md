@@ -6,6 +6,43 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+This adds schema changes that are planned before they're made, for scripts and for agents, with limits
+on what a client may change. It breaks a few things, listed below.
+
+### Added
+
+- **`App.plan_schema()` and `App.apply_schema()`.** Changes such as `CreateField`, `UpdateField`,
+  `DeleteField`, `CreateTable`, `CreateRelationship`, `CreateLookupField`, and `CreateSummaryField` are
+  checked against the app as it is. Each `PlannedChange` says what it would set, its `risk`, what else it
+  would do or affect, such as records that lose a deleted field's values or formulas that use it, and
+  anything that blocks it, including the client's own limits. Applying plans again first, and refuses if
+  the touched tables and fields have changed. A failure raises `SchemaChangeError`, which says what was
+  made, and planning again shows only what's left.
+- **Schema operations for models:** `App.operation()` offers `describe_schema`, `plan_schema`, and
+  `apply_schema`, which only runs with the confirmation its plan returned, for the same changes, while
+  the schema is as it was. Each schema offers only what the client's `WriteRules` could allow.
+- **`SchemaAccess`**, given as `WriteAccess(schema=...)`, allows changing a table, adding, changing, or
+  deleting fields, field types, and relationships, and separately formulas, lookups, and summaries.
+  `WriteRules(create_tables_in=..., new_tables=...)` and `ReadRules(new_tables=...)` cover tables a
+  client creates.
+- **Checks on what a new formula, lookup, or summary reads.** On a client with `ReadRules`, one may only
+  use fields the client can return, and a formula may only call functions known to stay on the record.
+  A formula can't make a link or rich text under `WriteRules`.
+- **`Table.update_info()`** renames a table or changes its descriptions, and
+  **`Table.delete_relationship()`** unlinks a child from its parent.
+- **`confirmation_key`** on the client, so several processes accept each other's previews.
+- **`TableSchema`**, and `tool_result()` for plans, results, and table schemas.
+
+### Changed
+
+- **`ReadRules` no longer refuses schema changes.** The write limits decide them, and the SDK checks what
+  a new formula, lookup, or summary reads. `request()` can't make one on a client with limits.
+- **`WriteRequest.action` names each schema change**, such as `create_field`, rather than `other`, and
+  `WriteRequest` has `app_id`, `parent_table_id`, `field_type`, and `derived`.
+- **A field's formula is kept by `ReadRules`** when everything it uses is readable.
+- **Previews share their approval keys:** `blockers`, `warnings`, `confirmation`, and `expires_at`. A
+  delete preview over its limit lists a blocker, rather than `over_limit`.
+
 ## [1.0.0rc11] - 2026-11-05
 
 This candidate adds links to the Quickbase interface, so that a tool built on the SDK can show a

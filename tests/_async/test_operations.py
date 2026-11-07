@@ -272,12 +272,14 @@ async def test_a_delete_preview_says_when_a_delete_would_be_refused(
     assert isinstance(page, Page)
     assert page.total == matching
     result = tool_result(page)
+    assert result["warnings"] == []
     if over:
-        assert result["over_limit"]["max_records"] == 10
-        assert "11 records match" in result["over_limit"]["message"]
-        assert "would be refused" in result["over_limit"]["message"]
+        (blocker,) = result["blockers"]
+        assert "11 records match, and a delete may match at most 10" in blocker
+        assert "would be refused" in blocker
+        assert "confirmation" not in result
     else:
-        assert "over_limit" not in result
+        assert result["blockers"] == []
 
 
 async def test_preview_update_offers_only_fields_it_can_read() -> None:
@@ -524,7 +526,7 @@ async def test_a_delete_needs_a_preview_and_the_same_records_to_match() -> None:
         fake.matching = 11
         shown = tool_result(await preview.run({"where": OPEN}))
         assert "confirmation" not in shown
-        assert "over_limit" in shown
+        assert shown["blockers"]
 
 
 async def test_only_update_and_delete_can_require_a_preview() -> None:

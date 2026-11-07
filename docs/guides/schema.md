@@ -198,6 +198,56 @@ exist, it raises `UnknownFieldError` and deletes nothing.
 
 `drop()` deletes the table and all its records, so it requires the table's exact name.
 
+## Planning changes before making them
+
+`plan_schema()` checks a list of changes against the app as it is, and says what each would do without
+making it. `apply_schema()` then makes them, in order, if the app hasn't changed since.
+
+```python
+from pyquickbase import CreateField, CreateRelationship, CreateSummaryField, DeleteField
+
+app = qb.app("bq1234567")
+plan = app.plan_schema(
+    [
+        CreateField(table="Tasks", label="Due", type="date"),
+        CreateRelationship(child="Tasks", parent="Projects", foreign_key="Project"),
+        CreateSummaryField(
+            child="Tasks", foreign_key="Project", label="Total Hours", child_field="Hours"
+        ),
+        DeleteField(table="Tasks", field="Old Notes"),
+    ]
+)
+for change in plan.changes:
+    print(change.status, change.risk, change.summary, change.warnings)
+if not plan.blockers:
+    app.apply_schema(plan)
+```
+
+Each `PlannedChange` has:
+
+- **`status`:** `change`, `no_change` if the app already has it, or `blocked`.
+- **`risk`:** `additive`, `modifying`, or `destructive`.
+- **`settings`:** each setting it would set, before and after.
+- **`warnings`:** what else it would do. For example, deleting a field lists how many records lose a
+  value and which formulas, lookups, and summaries use it.
+- **`blockers`:** why it can't be applied. Examples are a label already in use, empty values on a
+  field being made required, duplicates on one being made unique, or the client's own limits.
+
+A later change can use a table or field an earlier one makes, so a plan can create a table, add its
+fields, and link it to another.
+
+**Applying is checked again.** `apply_schema()` plans the same changes again first. If the tables and
+fields they touch have changed, it raises `SchemaMismatchError`. If anything blocks them, it raises
+`InvalidValueError`. Either way, nothing is sent. Record counts aren't part of that check, as they
+change all the time.
+
+**Quickbase can't undo a change.** If one fails, `apply_schema()` raises `SchemaChangeError`, whose
+`result` lists the changes made, the one that failed, and the ones not attempted. A change already made
+counts as `no_change`, so planning the same list again shows only what's left.
+
+To give a model these steps as tools, see
+[Changing the schema from an agent](agents.md#changing-the-schema-from-an-agent).
+
 ## When something is refused
 
 | What happened | Exception | What's left behind |
@@ -212,6 +262,9 @@ exist, it raises `UnknownFieldError` and deletes nothing.
 | A field label or ID that doesn't exist | `UnknownFieldError` | Nothing was changed |
 | `update_field()` with nothing to change, `delete_fields([])`, or the wrong `confirm` | `InvalidValueError` | Nothing was sent |
 | `delete_fields()` with a field that can't be deleted | `WriteError` | The other fields were deleted |
+| `apply_schema()` after the schema changed | `SchemaMismatchError` | Nothing was sent |
+| `apply_schema()` with a plan that has blockers | `InvalidValueError` | Nothing was sent |
+| A change in `apply_schema()` that fails | `SchemaChangeError` | **The changes before it were made**, as `result` lists |
 
 See [Handling errors](errors.md) for how these exceptions relate.
 
