@@ -92,7 +92,7 @@ class AsyncTable(object)
     async def info(self) -> TableInfo
     async def insert(self, records: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     async def new_record_url(self) -> str
-    async def operation(self, name: Literal['query', 'count', 'summarize', 'insert', 'update', 'delete', 'preview_update', 'preview_delete', 'run_report', 'run_summary_report', 'run_formula', 'download_file', 'delete_file_version'], *, fields: Sequence[str | int] | None = None, descriptions: Mapping[str | int, str] | None = None, reports: Sequence[str] | Mapping[str, str] | None = None, formula: str | None = None, max_records: int | None = None, max_rows: int = 100, scope: Expression | None = None, require_preview: bool = False) -> 'AsyncOperation'
+    async def operation(self, name: Literal['query', 'count', 'summarize', 'insert', 'update', 'delete', 'preview_update', 'preview_delete', 'run_report', 'run_summary_report', 'run_formula', 'download_file', 'delete_file_version'], *, fields: Sequence[str | int] | None = None, field_descriptions: Mapping[str | int, str] | None = None, reports: Sequence[str] | None = None, report_descriptions: Mapping[str, str] | None = None, formula: str | None = None, max_records_per_call: int | None = None, max_records_per_write: int = 100, scope: Expression | None = None, require_preview: bool = False) -> 'AsyncOperation'
     async def preview_delete(self, where: Expression | str, *, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, limit: int = 100) -> Page
     async def preview_update(self, records: Iterable[Mapping[str | int, Any]]) -> UpdatePreview
     def query(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, page_size: int = 1000, max_total: int | None = None) -> AsyncRecordIterator
@@ -106,7 +106,7 @@ class AsyncTable(object)
     async def resolve_field_ids(self, fields: Sequence[str | int]) -> list[int]
     async def run_formula(self, formula: str, *, record_id: int | None = None) -> FormulaResult
     async def settings_url(self) -> str
-    async def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records: int | None = None, page_size: int = 1000) -> list[SummaryRow]
+    async def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records_scanned: int | None = None, page_size: int = 1000) -> list[SummaryRow]
     async def update(self, records: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     async def update_field(self, field: str | int, *, label: str | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None) -> Field
     async def update_info(self, *, name: str | None = None, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> TableInfo
@@ -126,7 +126,7 @@ class AsyncTypedTable(Generic)
     async def preview_update(self, records: Iterable[Row[~R]]) -> UpdatePreview
     def query(self, *, where: Expression | str | None = None, select: TypedField | Sequence[TypedField] | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, max_total: int | None = None) -> 'AsyncTypedIterator[R]'
     async def query_page(self, *, where: Expression | str | None = None, select: TypedField | Sequence[TypedField] | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, limit: int = 100, skip: int = 0) -> TypedPage[~R]
-    async def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records: int | None = None, page_size: int = 1000) -> list[SummaryRow]
+    async def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records_scanned: int | None = None, page_size: int = 1000) -> list[SummaryRow]
     property table -> AsyncTable
     async def update(self, records: Iterable[Row[~R]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     async def upsert(self, records: Iterable[Row[~R]], *, merge_on: TypedField, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
@@ -345,16 +345,16 @@ class NotFoundError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
 class Offers(Generic)
     def __eq__(self, other)
-    def __init__(self, *, table: Named, readable: tuple[~T, ...] = (), filterable: tuple[~T, ...] = (), sortable: tuple[~T, ...] = (), insertable: tuple[~T, ...] = (), updatable: tuple[~T, ...] = (), downloadable: tuple[~T, ...] = (), file_deletable: tuple[~T, ...] = (), can_delete: bool = False, reports: tuple[Any, ...] = (), schema: frozenset[str] = frozenset(), field_types: frozenset[str] | None = None, max_records: int | None = None, max_summary_records: int | None = None, max_delete: int | None = None, user_emails: bool = False, row_limit: str | None = None) -> None
+    def __init__(self, *, table: Named, readable: tuple[~T, ...] = (), filterable: tuple[~T, ...] = (), sortable: tuple[~T, ...] = (), insertable: tuple[~T, ...] = (), updatable: tuple[~T, ...] = (), downloadable: tuple[~T, ...] = (), file_deletable: tuple[~T, ...] = (), can_delete: bool = False, reports: tuple[Any, ...] = (), schema: frozenset[str] = frozenset(), field_types: frozenset[str] | None = None, max_paging_depth: int | None = None, max_records_scanned: int | None = None, max_records_per_delete: int | None = None, user_emails: bool = False, row_limit: str | None = None) -> None
     field can_delete: bool
     field downloadable: tuple[~T, ...]
     field field_types: frozenset[str] | None
     field file_deletable: tuple[~T, ...]
     field filterable: tuple[~T, ...]
     field insertable: tuple[~T, ...]
-    field max_delete: int | None
-    field max_records: int | None
-    field max_summary_records: int | None
+    field max_paging_depth: int | None
+    field max_records_per_delete: int | None
+    field max_records_scanned: int | None
     field readable: tuple[~T, ...]
     field reports: tuple[Any, ...]
     field row_limit: str | None
@@ -589,7 +589,7 @@ class Table(object)
     def info(self) -> TableInfo
     def insert(self, records: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     def new_record_url(self) -> str
-    def operation(self, name: Literal['query', 'count', 'summarize', 'insert', 'update', 'delete', 'preview_update', 'preview_delete', 'run_report', 'run_summary_report', 'run_formula', 'download_file', 'delete_file_version'], *, fields: Sequence[str | int] | None = None, descriptions: Mapping[str | int, str] | None = None, reports: Sequence[str] | Mapping[str, str] | None = None, formula: str | None = None, max_records: int | None = None, max_rows: int = 100, scope: Expression | None = None, require_preview: bool = False) -> 'Operation'
+    def operation(self, name: Literal['query', 'count', 'summarize', 'insert', 'update', 'delete', 'preview_update', 'preview_delete', 'run_report', 'run_summary_report', 'run_formula', 'download_file', 'delete_file_version'], *, fields: Sequence[str | int] | None = None, field_descriptions: Mapping[str | int, str] | None = None, reports: Sequence[str] | None = None, report_descriptions: Mapping[str, str] | None = None, formula: str | None = None, max_records_per_call: int | None = None, max_records_per_write: int = 100, scope: Expression | None = None, require_preview: bool = False) -> 'Operation'
     def preview_delete(self, where: Expression | str, *, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, limit: int = 100) -> Page
     def preview_update(self, records: Iterable[Mapping[str | int, Any]]) -> UpdatePreview
     def query(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, page_size: int = 1000, max_total: int | None = None) -> RecordIterator
@@ -603,7 +603,7 @@ class Table(object)
     def resolve_field_ids(self, fields: Sequence[str | int]) -> list[int]
     def run_formula(self, formula: str, *, record_id: int | None = None) -> FormulaResult
     def settings_url(self) -> str
-    def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records: int | None = None, page_size: int = 1000) -> list[SummaryRow]
+    def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records_scanned: int | None = None, page_size: int = 1000) -> list[SummaryRow]
     def update(self, records: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     def update_field(self, field: str | int, *, label: str | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None) -> Field
     def update_info(self, *, name: str | None = None, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> TableInfo
@@ -671,7 +671,7 @@ class TypedTable(Generic)
     def preview_update(self, records: Iterable[Row[~R]]) -> UpdatePreview
     def query(self, *, where: Expression | str | None = None, select: TypedField | Sequence[TypedField] | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, max_total: int | None = None) -> 'TypedIterator[R]'
     def query_page(self, *, where: Expression | str | None = None, select: TypedField | Sequence[TypedField] | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, limit: int = 100, skip: int = 0) -> TypedPage[~R]
-    def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records: int | None = None, page_size: int = 1000) -> list[SummaryRow]
+    def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records_scanned: int | None = None, page_size: int = 1000) -> list[SummaryRow]
     property table -> Table
     def update(self, records: Iterable[Row[~R]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     def upsert(self, records: Iterable[Row[~R]], *, merge_on: TypedField, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
@@ -753,9 +753,9 @@ value limit = <pyquickbase._policy._Limit object>
 def parse_where(where: str, fields: Iterable[Field]) -> list[WhereCondition]
 value tables = <pyquickbase._policy._Tables object>
 def tool_error(error: BaseException) -> dict[str, Any]
-def tool_result(value: Any, *, compact: bool = False, max_records: int | None = None, max_text: int | None = None) -> dict[str, Any]
+def tool_result(value: Any, *, compact: bool = False, max_records: int | None = None, max_text_chars: int | None = None) -> dict[str, Any]
 def where_from_dict(data: Mapping[str, Any], *, fields: Iterable[str | int] | Iterable[Field] | None = None) -> Expression
-def where_schema(*, fields: Iterable[str | int] | Iterable[Field] | None = None, descriptions: Mapping[str | int, str] | None = None, max_depth: int = 2) -> dict[str, Any]
+def where_schema(*, fields: Iterable[str | int] | Iterable[Field] | None = None, field_descriptions: Mapping[str | int, str] | None = None, max_depth: int = 2) -> dict[str, Any]
 command pyquickbase codegen
     --app (StoreAction, required)
     --output (StoreAction, required)

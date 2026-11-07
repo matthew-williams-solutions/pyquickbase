@@ -20,6 +20,7 @@ from pyquickbase import (
     PolicyRefusedError,
     QueryError,
     SummaryRow,
+    UnknownReportError,
     UpdatePreview,
     WriteResult,
     allow,
@@ -255,7 +256,9 @@ async def test_a_write_cant_set_a_field_the_scope_uses(name: str) -> None:
 async def test_a_delete_that_matches_too_many_records_is_refused() -> None:
     fake = Fake(matching=11)
     async with client(fake) as qb:
-        delete = await qb.app("bq1234567").table("Tasks").operation("delete", max_records=10)
+        delete = (
+            await qb.app("bq1234567").table("Tasks").operation("delete", max_records_per_call=10)
+        )
         assert "more than 10 records" in delete.schema["properties"]["where"]["description"]
         with pytest.raises(QueryError, match="11 records match"):
             await delete.run({"where": OPEN}, scope=F("Project") == "Alpha")
@@ -270,7 +273,9 @@ async def test_a_delete_preview_says_when_a_delete_would_be_refused(
 ) -> None:
     async with client(Fake(matching=matching)) as qb:
         preview = (
-            await qb.app("bq1234567").table("Tasks").operation("preview_delete", max_records=10)
+            await qb.app("bq1234567")
+            .table("Tasks")
+            .operation("preview_delete", max_records_per_call=10)
         )
         page = await preview.run({"where": OPEN})
     assert isinstance(page, Page)
@@ -305,17 +310,30 @@ async def test_preview_update_offers_only_fields_it_can_read() -> None:
 
 async def test_preview_update_reads_within_the_read_rules_limit() -> None:
     fake = Fake()
-    async with client(fake, policy=bound(allow.read(TASKS, max_records=2))) as qb:
+    async with client(fake, policy=bound(allow.read(TASKS, max_paging_depth=2))) as qb:
         rows = [{"Record ID#": record_id, "Status": "Done"} for record_id in (1, 2, 3)]
         await qb.app("bq1234567").table("Tasks").preview_update(rows)
     assert [body["options"]["top"] for body in fake.requests("POST /records/query")] == [2, 1]
+
+
+async def test_reports_are_chosen_by_id_and_described_separately() -> None:
+    async with client(Fake(), policy=Policy.read_only()) as qb:
+        tasks = qb.app("bq1234567").table("Tasks")
+        with pytest.raises(ConfigurationError, match="report_descriptions"):
+            await tasks.operation("run_report", reports={"1": "Every task."})  # pyright: ignore[reportArgumentType]
+        with pytest.raises(UnknownReportError, match="doesn't offer"):
+            await tasks.operation("run_report", report_descriptions={"99": "Missing."})
+        run = await tasks.operation("run_report", report_descriptions={"1": "Every task."})
+        assert "1: List All, Every task." in run.schema["properties"]["report"]["description"]
 
 
 async def test_reports() -> None:
     fake = Fake()
     async with client(fake, policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        run = await tasks.operation("run_report", reports={"1": "Every task."})
+        run = await tasks.operation(
+            "run_report", reports=["1"], report_descriptions={"1": "Every task."}
+        )
         assert "1: List All, Every task." in run.schema["properties"]["report"]["description"]
         page = await run.run({"report": "1", "limit": 2})
         assert isinstance(page, Page)
@@ -362,7 +380,7 @@ async def test_an_operation_the_client_cant_run_is_refused_when_made() -> None:
 
 
 async def test_read_rules_shape_what_is_offered_and_refuse_formulas() -> None:
-    rules = bound(allow.read(TASKS, [6, 7], filter=[7], max_records=10))
+    rules = bound(allow.read(TASKS, [6, 7], filter=[7], max_paging_depth=10))
     async with client(Fake(), policy=rules) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         search = await tasks.operation("query")
@@ -517,7 +535,9 @@ async def test_count_and_delete_say_what_their_number_is() -> None:
     async with client(Fake(matching=2)) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         count = await (await tasks.operation("count")).run({"where": OPEN})
-        deleted = await (await tasks.operation("delete", max_records=10)).run({"where": OPEN})
+        deleted = await (await tasks.operation("delete", max_records_per_call=10)).run(
+            {"where": OPEN}
+        )
     assert count == 2
     assert tool_result(count) == {"ok": True, "count": 2}
     assert tool_result(deleted) == {"ok": True, "deleted_count": 1}
@@ -527,8 +547,8 @@ async def test_a_delete_needs_a_preview_and_the_same_records_to_match() -> None:
     fake = Fake(matching=2)
     async with client(fake) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        preview = await tasks.operation("preview_delete", max_records=10)
-        delete = await tasks.operation("delete", max_records=10, require_preview=True)
+        preview = await tasks.operation("preview_delete", max_records_per_call=10)
+        delete = await tasks.operation("delete", max_records_per_call=10, require_preview=True)
         confirmation = tool_result(await preview.run({"where": OPEN}))["confirmation"]
         fake.matching = 3  # Another record now matches.
         with pytest.raises(ConfirmationError, match="the records that match have changed"):
@@ -546,8 +566,8 @@ async def test_a_delete_needs_a_preview_and_the_same_records_to_match() -> None:
 async def test_a_preview_and_its_delete_share_a_confirmation_across_spellings() -> None:
     async with client(Fake(matching=2)) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        preview = await tasks.operation("preview_delete", max_records=10)
-        delete = await tasks.operation("delete", max_records=10, require_preview=True)
+        preview = await tasks.operation("preview_delete", max_records_per_call=10)
+        delete = await tasks.operation("delete", max_records_per_call=10, require_preview=True)
         where = {"and": [{"field": "Status", "op": "eq", "value": "Open"}]}
         confirmation = tool_result(await preview.run({"where": where}))["confirmation"]
         same = {"all": [{"field": "Status", "op": "==", "value": "Open"}]}

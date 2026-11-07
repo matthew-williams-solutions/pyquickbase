@@ -13,10 +13,10 @@ policy = Policy(
         "internal": [("Tasks", "Code"), fields.labeled_like("Old*")],
     },
     rules=[
-        allow.read(tables.all(), max_records=50),
+        allow.read(tables.all(), max_paging_depth=50),
         allow.insert("Tasks", fields.all()),
         allow.update("Tasks", ["Status", "Due Date", "Notes"]),
-        allow.delete("Tasks", max_records=3),
+        allow.delete("Tasks", max_records_per_delete=3),
         limit.rows("Tasks", F("Project") == "Roof"),
         deny.all(fields.classed("pay", "internal")),
     ],
@@ -42,10 +42,10 @@ IDs, `fields.all()`, `fields.new()` for fields added after binding, `fields.clas
 
 | Rule | What it allows |
 |---|---|
-| `allow.read(tables, fields, ...)` | Reading the fields, and filtering and sorting by them, unless it gives its own `filter=` or `sort=`. It also takes `max_records`, `max_summary_records`, and `user_emails` |
+| `allow.read(tables, fields, ...)` | Reading the fields, and filtering and sorting by them, unless it gives its own `filter=` or `sort=`. It also takes `max_paging_depth`, `max_records_scanned`, and `user_emails` |
 | `allow.filter(...)`, `allow.sort(...)` | Filtering or sorting by fields without reading them |
 | `allow.insert(...)`, `allow.update(...)` | Setting the fields in new or existing records. An upsert needs both |
-| `allow.delete(tables, max_records=None)` | Deleting records. With `max_records`, the client counts what matches first |
+| `allow.delete(tables, max_records_per_delete=None)` | Deleting records. With `max_records_per_delete`, the client counts what matches first |
 | `allow.download(...)`, `allow.delete_file(...)` | Downloading files, or deleting their versions |
 | `allow.report(table, reports)` | Running these reports, by name or ID, or every report with `None` |
 | `allow.schema(tables, *verbs, ...)` | Changing the schema, as [below](schema.md) |
@@ -58,9 +58,9 @@ Things to know:
 - **Writing a field doesn't need read access to it,** so a client can set a field it can't see.
   Such a field can still be named, but its values aren't returned.
 - **`Record ID#` is readable wherever anything is,** because the SDK uses it to page through records.
-- **`max_records` limits each query, not the client.** A query needs a `limit` of at most this, and
+- **`max_paging_depth` limits each query, not the client.** A query needs a `limit` of at most this, and
   it's refused rather than cut short. Where several rules read a table, the highest applies. It
-  defaults to 100, and `max_summary_records` to 10,000.
+  defaults to 100, and `max_records_scanned` to 10,000.
 - **A field you may filter or sort by reveals something about its values,** even if it isn't
   returned, because a model can see which records match and in which order.
 - **A report's own filter and sort can use any field,** and someone can change them in the Quickbase

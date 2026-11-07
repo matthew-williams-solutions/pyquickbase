@@ -139,7 +139,7 @@ def test_without_limits_every_visible_field_is_offered_where_it_can_be() -> None
 
 def test_read_rules_decide_what_is_read_filtered_and_sorted() -> None:
     rules = bound(
-        allow.read(TASKS, [6, 7], filter=[7], sort=[3], max_records=30),
+        allow.read(TASKS, [6, 7], filter=[7], sort=[3], max_paging_depth=30),
         allow.download(TASKS, [13]),
         allow.report(TASKS, ["1"]),
     )
@@ -198,7 +198,7 @@ def test_what_cant_run_says_why() -> None:
 
 
 def test_the_limit_is_the_lower_of_the_tool_and_the_rules() -> None:
-    rules = bound(allow.read(TASKS, max_records=30))
+    rules = bound(allow.read(TASKS, max_paging_depth=30))
     schema = spec("query", allowed(policy=rules), max_records=50).schema
     assert schema["properties"]["limit"]["maximum"] == 30
     assert spec("query", max_records=10).schema["properties"]["limit"]["maximum"] == 10
@@ -354,7 +354,7 @@ def test_summarize_arguments() -> None:
     call = summarize.plan(arguments, None)
     assert call.arguments["group_by"] == ["Status", Period("Due Date", "month")]
     assert call.arguments["sum"] == ["Hours"]
-    assert call.arguments["max_records"] == 10_000
+    assert call.arguments["max_records_scanned"] == 10_000
     for bad in (
         {"group_by": ["Tags"]},
         {"group_by": [{"field": "Title", "unit": "month"}]},

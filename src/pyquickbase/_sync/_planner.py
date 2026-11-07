@@ -708,7 +708,7 @@ class Planner:
             rows = table.handle.summarize(
                 [target.id],
                 where=_has_value(target.id),
-                max_records=UNIQUE_CHECK_LIMIT,
+                max_records_scanned=UNIQUE_CHECK_LIMIT,
             )
         except QuickbaseError:
             warnings.append("Whether every value is different wasn't checked.")

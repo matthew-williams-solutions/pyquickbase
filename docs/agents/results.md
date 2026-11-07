@@ -86,7 +86,7 @@ Results cost tokens, so return as little as the model needs:
   saving is larger when labels are long and values short.
 - **Pass `max_records`** to cut a list your code already has. `page.has_more` is then true, so the model
   knows it doesn't have them all.
-- **Pass `max_text`** to shorten long text, such as notes. A shortened value ends by saying how many
+- **Pass `max_text_chars`** to shorten long text, such as notes. A shortened value ends by saying how many
   characters were left out, and the result has `"text_truncated": true`, so a model can't mistake it for
   the whole value.
 - **Select only the fields the tool needs.** Every field is in every record.
@@ -151,7 +151,7 @@ bug's details, and any values in them, don't reach the model. Log it yourself be
 |---|---|---|
 | `tool_result()` got something it can't describe, such as an `AppInfo`, a dictionary, or a set | `TypeError` | Nothing was returned |
 | A record holds a value of a type JSON can't hold, such as `bytes` | `TypeError` | Nothing was returned |
-| `max_records` or `max_text` isn't a positive whole number | `ValueError` | Nothing was returned |
+| `max_records` or `max_text_chars` isn't a positive whole number | `ValueError` | Nothing was returned |
 
 ### What these don't do
 
@@ -193,7 +193,7 @@ Quickbase's query text, such as `{7.EX.'Open'}`.
 ## Counts and totals
 
 Don't have a model count or add up records itself, because it can miss some or get the arithmetic wrong. Give
-it a tool that calls [`summarize()`](../guides/reading.md#summarizing-records), and always set `max_records`, so that a
+it a tool that calls [`summarize()`](../guides/reading.md#summarizing-records), and always set `max_records_scanned`, so that a
 broad request can't read a whole large table. If the limit is exceeded, nothing is returned but the error, so
 a model can't report a total from only part of the data.
 
@@ -218,12 +218,12 @@ def task_totals(project: str, where: dict | None = None) -> dict:
         with Quickbase.from_env(policy=Policy.read_only()) as qb:
             tasks = qb.app("bq1234567").table("Tasks")
             rows = tasks.summarize(
-                group_by="Status", where=condition, sum="Amount", max_records=5000
+                group_by="Status", where=condition, sum="Amount", max_records_scanned=5000
             )
         return tool_result(rows)
     except QuickbaseError as error:
         return tool_error(error)
 ```
 
-`tool_result()` writes dates in `min` and `max` as text, as it does everywhere. A `max_records`
+`tool_result()` writes dates in `min` and `max` as text, as it does everywhere. A `max_records_scanned`
 that's exceeded is an `invalid_arguments`, whose message says how many records matched.

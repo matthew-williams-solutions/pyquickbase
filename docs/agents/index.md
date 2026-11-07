@@ -47,7 +47,7 @@ policy = Policy(
     rules=[
         # It can read everything but costs and codes, 50 records at a time, add tasks, and
         # change two of their fields. It can't delete anything.
-        allow.read(tables.all(), max_records=50),
+        allow.read(tables.all(), max_paging_depth=50),
         allow.insert("Tasks", fields.all()),
         allow.update("Tasks", ["Status", "Notes"]),
         deny.all(fields.classed("internal")),

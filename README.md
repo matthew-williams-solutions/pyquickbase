@@ -186,7 +186,7 @@ from pyquickbase import Policy, Quickbase, allow, deny, fields, tables
 policy = Policy(
     classes={"pay": ["Technicians.Hourly Rate"]},
     rules=[
-        allow.read(tables.all(), max_records=50),
+        allow.read(tables.all(), max_paging_depth=50),
         allow.update("Job Tasks", ["Status", "Notes"]),
         deny.all(fields.classed("pay")),
     ],

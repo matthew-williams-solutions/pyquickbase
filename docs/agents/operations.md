@@ -16,8 +16,8 @@ async def make_search(qb: AsyncQuickbase):
     return await tasks.operation(
         "query",
         fields=["Title", "Status", "Technician", "Due Date"],
-        descriptions={"Technician": "ID of the assigned technician."},
-        max_records=50,
+        field_descriptions={"Technician": "ID of the assigned technician."},
+        max_records_per_call=50,
     )
 
 
@@ -46,9 +46,9 @@ The schema goes in your framework's tool definition, under the name it uses, suc
 | `summarize` | `where`, `group_by`, `sum`, `avg`, `min`, `max`. `total`, `average`, `minimum`, and `maximum` are read too | `summarize()` | A list of `SummaryRow` |
 | `insert` | `records` | `insert()` | `WriteResult` |
 | `update` | `records`, each with `Record ID#` | `update()` | `WriteResult` |
-| `delete` | `where`, which is required. It's refused if it matches more than `max_records` | `delete()` | An `int`, which `tool_result()` shows as `deleted_count` |
+| `delete` | `where`, which is required. It's refused if it matches more than `max_records_per_call` | `delete()` | An `int`, which `tool_result()` shows as `deleted_count` |
 | `preview_update` | As `update` | `preview_update()` | `UpdatePreview` |
-| `preview_delete` | `where`, `select`, `limit`. Give it the same `max_records` as `delete`, and `tool_result()` lists a blocker when a delete would be refused | `preview_delete()` | `Page` |
+| `preview_delete` | `where`, `select`, `limit`. Give it the same `max_records_per_call` as `delete`, and `tool_result()` lists a blocker when a delete would be refused | `preview_delete()` | `Page` |
 | `run_report` | `report`, as its ID, its ID as a number, or its name, and `limit`, `skip` | `Report.run_page()` | `Page` |
 | `run_summary_report` | `report`, as for `run_report`, and `limit` | `Report.summary_rows()` | A list of rows |
 | `run_formula` | `record_id` | `run_formula()`, with the formula your code gives | `FormulaResult` |
@@ -74,7 +74,7 @@ The schema lists only what the client may do, so a model isn't offered a field t
 | `where` | Fields it may filter on | `allow.read()` or `allow.filter()` |
 | `select`, `group_by`, totals | Fields it may return | `allow.read()` |
 | `order_by` | Fields it may sort by | `allow.read()` or `allow.sort()` |
-| `limit` | Up to `max_records`, 100 by default | The policy's `max_records`, if lower |
+| `limit` | Up to `max_records_per_call`, 100 by default | The policy's `max_paging_depth`, if lower |
 | `records` | Fields the SDK can write, other than formula, lookup, summary, built-in, and user fields | `allow.insert()` or `allow.update()` |
 | `report` | Table reports, or summary and chart reports, that can run through the API, by ID. `run()` also takes an ID as a number or a report's exact name, ignoring case, and says which operation runs a report of the other kind | `allow.report()`, and `reports=` |
 | `field`, for files | File fields | `allow.download()` or `allow.delete_file()` |
@@ -102,8 +102,8 @@ own is asked too, so one that decides each field on its own is offered exactly w
 | Multi-select text | A list of text |
 | File | `{"file_name": ..., "text": ...}`, which uploads the text as a new version |
 
-`null` clears a field, except a file field, as Quickbase ignores an empty file value. `max_rows`, 100 by
-default, limits how many records one `insert` or `update` may send.
+`null` clears a field, except a file field, as Quickbase ignores an empty file value. `max_records_per_write`,
+100 by default, limits how many records one `insert` or `update` may send.
 
 ### Limiting it to a scope
 
@@ -136,7 +136,8 @@ may filter on.
 ### Reports, formulas, and files
 
 - **Reports** are offered by ID, with their names in the schema's description, as names can repeat. Pass
-  `reports=` to choose them, as a list of IDs or as `{ID: description}`. A report's columns, filter, and
+  `reports=` to choose them, as a list of IDs, and `report_descriptions={ID: text}` to say what each
+  is for. A report's columns, filter, and
   sort are its own, so check what it shows before offering it.
 - **A formula's text is fixed by your code,** with `formula=`, and the model only chooses the record. A
   formula can read any table and field, and return the token owner's email, so a model never writes one.
@@ -146,7 +147,7 @@ may filter on.
 
 ### Describing fields
 
-`descriptions` takes `{label or ID: text}`, and the schema shows each one where the model reads it: on
+`field_descriptions` takes `{label or ID: text}`, and the schema shows each one where the model reads it: on
 each field of a record, and as a list after the description of `where`, `select`, and `order_by`. Each must
 be for a field the operation offers, so a field that's renamed or hidden raises `UnknownFieldError`
 instead of losing its description silently. `where_schema()` takes the same argument.
@@ -165,12 +166,12 @@ async def list_fields(table_id: str) -> dict:
 |---|---|---|
 | The client can't run the operation at all, such as `insert` when read-only | `PolicyRefusedError`, from `operation()` | Nothing was sent |
 | The table has nothing for it, such as no file fields, or `formula` is missing | `ConfigurationError`, from `operation()` | Nothing was sent |
-| `fields` or `descriptions` names a field the client can't see, or that the operation doesn't offer | `UnknownFieldError`, from `operation()` | Nothing was sent |
+| `fields` or `field_descriptions` names a field the client can't see, or that the operation doesn't offer | `UnknownFieldError`, from `operation()` | Nothing was sent |
 | An argument the schema doesn't allow, such as an unknown key or field, or a `limit` too high | `QueryError`, from `run()` | Nothing was sent |
 | A value that can't be written, such as `today` for a date | `InvalidValueError`, from `run()` | Nothing was sent |
 | A record named isn't in the scope, or doesn't exist | `QueryError`, from `run()` | Only the query that checks the scope |
 | A write sets a field the scope uses, or `insert` has a scope it can't fill in | `QueryError`, from `run()` | Nothing was sent |
-| A delete matches more than `max_records` | `QueryError`, from `run()` | Only the query that counts it |
+| A delete matches more than `max_records_per_call` | `QueryError`, from `run()` | Only the query that counts it |
 | Anything the table method raises | The same exception | As that method says |
 
 Return each one with `tool_error()`. Its message says where the mistake is, and doesn't repeat the values

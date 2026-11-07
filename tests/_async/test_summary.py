@@ -152,8 +152,8 @@ async def test_max_records_refuses_without_reading_records() -> None:
     fake = Fake(total=11)
     async with client(fake) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        with pytest.raises(QueryError, match=r"11 records match.*max_records of 10"):
-            await tasks.summarize("Status", max_records=10, page_size=5)
+        with pytest.raises(QueryError, match=r"11 records match.*max_records_scanned of 10"):
+            await tasks.summarize("Status", max_records_scanned=10, page_size=5)
     assert len(fake.queries) == 1
     assert fake.queries[0]["options"]["top"] == 1
 
@@ -161,7 +161,7 @@ async def test_max_records_refuses_without_reading_records() -> None:
 async def test_max_records_allows_exactly_that_many() -> None:
     fake = Fake(total=10)
     async with client(fake) as qb:
-        rows = await qb.app("bq1234567").table("Tasks").summarize(max_records=10)
+        rows = await qb.app("bq1234567").table("Tasks").summarize(max_records_scanned=10)
     assert rows[0].count == 10
 
 
@@ -177,7 +177,7 @@ class Growing(Fake):
 
 async def test_records_added_past_the_read_rules_limit_refuse_rather_than_cut_short() -> None:
     fake = Growing(total=10)
-    rules = bind(allow.read(TASKS, max_summary_records=10), tables={TASKS: ("Tasks", FIELDS)})
+    rules = bind(allow.read(TASKS, max_records_scanned=10), tables={TASKS: ("Tasks", FIELDS)})
     async with client(fake, policy=rules) as qb:
         with pytest.raises(PolicyRefusedError, match="no partial result"):
             await qb.app("bq1234567").table("Tasks").summarize("Status", page_size=5)
@@ -187,7 +187,7 @@ async def test_records_added_past_the_read_rules_limit_refuse_rather_than_cut_sh
 @pytest.mark.parametrize(
     ("options", "error"),
     [
-        ({"max_records": 0}, QueryError),
+        ({"max_records_scanned": 0}, QueryError),
         ({"page_size": 0}, QueryError),
         ({"sum": "Status"}, QueryError),
         ({"group_by": "Nope"}, UnknownFieldError),

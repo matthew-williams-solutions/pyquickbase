@@ -1226,7 +1226,7 @@ class AsyncTable:
             QueryError: `where` can't be sent as written. Nothing was deleted.
             UnknownFieldError: `where` names a field the table doesn't have. Nothing was deleted.
             PolicyRefusedError: The client's policy doesn't allow deleting here, or more records
-                match than its `max_records` for deletes. Nothing was deleted.
+                match than its `max_records_per_delete`. Nothing was deleted.
         """
         table_id = (await self.info()).id
         clause = await self._with_fields(lambda fields: compile_where(where, FieldIndex(fields)))
@@ -1240,7 +1240,7 @@ class AsyncTable:
                         verb="delete",
                         reason=f"{found} records match, and the policy allows deleting at most "
                         f"{most} at once. Narrow the filter",
-                        hint="raise allow.delete(..., max_records=...)",
+                        hint="raise allow.delete(..., max_records_per_delete=...)",
                         table=self._transport.policy._named_table(table_id),  # pyright: ignore[reportOptionalMemberAccess, reportPrivateUsage]
                     )
                 )
@@ -1258,7 +1258,7 @@ class AsyncTable:
         avg: FieldRefs | None = None,
         min: FieldRefs | None = None,
         max: FieldRefs | None = None,
-        max_records: int | None = None,
+        max_records_scanned: int | None = None,
         page_size: int = 1000,
     ) -> list[SummaryRow]:
         """Count and total records, overall or per group, without a saved report.
@@ -1275,9 +1275,10 @@ class AsyncTable:
             avg: Numeric fields to average. Empty values are skipped.
             min: Numeric, date, timestamp, or time of day fields to find the lowest of.
             max: Numeric, date, timestamp, or time of day fields to find the highest of.
-            max_records: Raise `QueryError` if more records match than this, without reading them.
+            max_records_scanned: Raise `QueryError` if more records match than this, without
+                reading them.
                 It never returns a partial result. An agent's tool should always set this. A
-                client's policy can set a limit of its own, `max_summary_records`.
+                client's policy can set a limit of its own, `max_records_scanned`.
             page_size: Records to request per call to Quickbase.
 
         Returns:
@@ -1287,15 +1288,15 @@ class AsyncTable:
 
         Raises:
             QueryError: An argument can't be used, such as a text field in `sum`, or more records
-                match than `max_records`. No records were read.
+                match than `max_records_scanned`. No records were read.
             UnknownFieldError: The table has no such field. No records were read.
             PolicyRefusedError: More records match than the client's policy allows summarizing,
                 or it doesn't allow a field. No records were read.
             InvalidResponseError: A value isn't what its field's type says it should be.
         """
         _require_positive("page_size", page_size)
-        if max_records is not None:
-            _require_positive("max_records", max_records)
+        if max_records_scanned is not None:
+            _require_positive("max_records_scanned", max_records_scanned)
         summary = await self._with_fields(
             lambda fields: Summary(
                 fields,
@@ -1307,12 +1308,12 @@ class AsyncTable:
             )
         )
         allowed = self._transport.summary_limit((await self.info()).id)
-        if max_records is not None or allowed is not None:
+        if max_records_scanned is not None or allowed is not None:
             found = await self.count(where)
-            if max_records is not None and found > max_records:
+            if max_records_scanned is not None and found > max_records_scanned:
                 raise QueryError(
-                    f"{found} records match, which is more than max_records of {max_records}. "
-                    "Narrow the filter, or raise the limit."
+                    f"{found} records match, which is more than max_records_scanned of "
+                    f"{max_records_scanned}. Narrow the filter, or raise the limit."
                 )
             if allowed is not None and found > allowed:
                 raise self._summary_refusal(
@@ -1340,7 +1341,7 @@ class AsyncTable:
                 allowed=False,
                 verb="read",
                 reason=reason,
-                hint="raise allow.read(..., max_summary_records=...)",
+                hint="raise allow.read(..., max_records_scanned=...)",
             )
         )
 
@@ -2155,11 +2156,12 @@ class AsyncTable:
         name: OperationName,
         *,
         fields: Sequence[FieldRef] | None = None,
-        descriptions: Mapping[FieldRef, str] | None = None,
-        reports: Sequence[str] | Mapping[str, str] | None = None,
+        field_descriptions: Mapping[FieldRef, str] | None = None,
+        reports: Sequence[str] | None = None,
+        report_descriptions: Mapping[str, str] | None = None,
         formula: str | None = None,
-        max_records: int | None = None,
-        max_rows: int = DEFAULT_MAX_ROWS,
+        max_records_per_call: int | None = None,
+        max_records_per_write: int = DEFAULT_MAX_ROWS,
         scope: Expression | None = None,
         require_preview: bool = False,
     ) -> "AsyncOperation":
@@ -2183,18 +2185,20 @@ class AsyncTable:
                 same name, and `run_report` and `run_summary_report` run a report.
             fields: The only fields it may use, by label or ID. Defaults to every field the client
                 may use for the operation.
-            descriptions: What fields mean, as `{label or ID: text}`, which the schema shows the
-                model. Each must be for a field the operation offers.
-            reports: The reports `run_report` or `run_summary_report` may run, by ID, or as `{ID:
-                description}`. Defaults to every report of that kind the client may run.
+            field_descriptions: What fields mean, as `{label or ID: text}`, which the schema shows
+                the model. Each must be for a field the operation offers.
+            reports: The reports `run_report` or `run_summary_report` may run, by ID. Defaults to
+                every report of that kind the client may run.
+            report_descriptions: What reports are for, as `{ID: text}`, which the schema shows the
+                model. Each must be for a report the operation offers.
             formula: For `run_formula`, the formula's text, which your code fixes. The model only
                 chooses the record, as a formula can read any table.
-            max_records: The most records one call may return, or for `delete`, may match. A
-                delete that matches more is refused. Give `preview_delete` the same number, and
-                its result says when a delete would be refused. Defaults to 100, or for
-                `summarize`, 10,000 records read. The client's policy can lower it, and its own
-                `max_records` also limits how far `skip` can page.
-            max_rows: The most records one `insert` or `update` may send.
+            max_records_per_call: The most records one call may return, or for `delete`, may
+                match. A delete that matches more is refused. Give `preview_delete` the same
+                number, and its result says when a delete would be refused. Defaults to 100, or for
+                `summarize`, 10,000 records read. The client's policy can lower it, and its
+                `max_paging_depth` also limits how far `skip` can page.
+            max_records_per_write: The most records one `insert` or `update` may send.
             scope: A condition your code fixes, such as the user's project, that every record the
                 operation reaches must match, as `run()`'s `scope` does. Given here, the schema
                 also tells the model what it is, leaves its fields out of what a write may set,
@@ -2214,21 +2218,21 @@ class AsyncTable:
             PolicyRefusedError: The client's policy doesn't allow this operation at all.
             ConfigurationError: The table has nothing for it, such as no file fields, or
                 `formula` is missing or given for another operation.
-            UnknownFieldError: `fields` or `descriptions` names a field the client can't see, or
-                one the operation doesn't offer.
-            UnknownReportError: `reports` has an ID this table doesn't have.
+            UnknownFieldError: `fields` or `field_descriptions` names a field the client can't see,
+                or one the operation doesn't offer.
+            UnknownReportError: `reports` has an ID this table doesn't have, or
+                `report_descriptions` has one the operation doesn't offer.
         """
         if name not in operation_names():
             raise ConfigurationError(f"name must be one of: {', '.join(operation_names())}.")
         transport = self._transport
         info = await self.info()
-        report_ids: Sequence[str] | None = None
-        report_notes: dict[str, str] = {}
         if isinstance(reports, Mapping):
-            report_notes = {str(key): str(text) for key, text in reports.items()}
-            report_ids = list(report_notes)
-        elif reports is not None:
-            report_ids = [str(item) for item in reports]
+            raise ConfigurationError(
+                "reports takes report IDs. Describe them with report_descriptions={ID: text}."
+            )
+        report_ids = None if reports is None else [str(item) for item in reports]
+        report_notes = {str(key): str(text) for key, text in (report_descriptions or {}).items()}
         needs_reports = name in ("run_report", "run_summary_report")
         allowed = allowed_for(
             await self.fields(),
@@ -2239,6 +2243,12 @@ class AsyncTable:
             wanted=fields,
             wanted_reports=report_ids if needs_reports else None,
         )
+        offered_reports = {item.id for item in (*allowed.reports, *allowed.summary_reports)}
+        unknown = sorted(set(report_notes) - offered_reports)
+        if unknown:
+            raise UnknownReportError(
+                f"report_descriptions has {', '.join(unknown)}, which this operation doesn't offer."
+            )
         scope_text, scope_labels = "", frozenset[str]()
         if scope is not None:
             index = FieldIndex(await self.fields())
@@ -2256,10 +2266,10 @@ class AsyncTable:
         spec = make_spec(
             name,
             allowed,
-            descriptions=descriptions,
+            descriptions=field_descriptions,
             report_descriptions=report_notes,
-            max_records=max_records,
-            max_rows=max_rows,
+            max_records=max_records_per_call,
+            max_rows=max_records_per_write,
             formula=formula,
             scope=scope,
             scope_text=scope_text,
@@ -2569,8 +2579,8 @@ class AsyncOperation:
 
         Raises:
             QueryError: An argument can't be used, a record named isn't in `scope`, a write sets
-                a field the scope uses, or a delete matches more than `max_records`. Nothing was
-                sent, other than the query that checks the scope or counts a delete.
+                a field the scope uses, or a delete matches more than `max_records_per_call`.
+                Nothing was sent, other than the query that checks the scope or counts a delete.
             InvalidValueError: A record or value can't be written. Nothing was sent.
         """
         # Read once in the schema's spelling, so a preview and its change sent with different
@@ -2631,7 +2641,7 @@ class AsyncOperation:
                 records=page.records,
                 total=page.total,
                 skip=page.skip,
-                most=limit,
+                max_deletable=limit,
                 confirmation=confirmation,
             )
         return result
@@ -3086,7 +3096,7 @@ class AsyncTypedTable(Generic[R]):
         avg: FieldRefs | None = None,
         min: FieldRefs | None = None,
         max: FieldRefs | None = None,
-        max_records: int | None = None,
+        max_records_scanned: int | None = None,
         page_size: int = 1000,
     ) -> list[SummaryRow]:
         """Count and total records, overall or per group. See `Table.summarize`.
@@ -3102,7 +3112,8 @@ class AsyncTypedTable(Generic[R]):
             avg: Numeric fields to average.
             min: Numeric, date, timestamp, or time of day fields to find the lowest of.
             max: Numeric, date, timestamp, or time of day fields to find the highest of.
-            max_records: Raise `QueryError` if more records match than this, without reading them.
+            max_records_scanned: Raise `QueryError` if more records match than this, without
+                reading them.
             page_size: Records to request per call to Quickbase.
 
         Returns:
@@ -3110,7 +3121,7 @@ class AsyncTypedTable(Generic[R]):
 
         Raises:
             SchemaMismatchError: The class no longer matches the table.
-            QueryError: An argument can't be used, or more records match than `max_records`.
+            QueryError: An argument can't be used, or more records match than `max_records_scanned`.
         """
         await self._check_once()
         return await self._table.summarize(
@@ -3120,7 +3131,7 @@ class AsyncTypedTable(Generic[R]):
             avg=avg,
             min=min,
             max=max,
-            max_records=max_records,
+            max_records_scanned=max_records_scanned,
             page_size=page_size,
         )
 

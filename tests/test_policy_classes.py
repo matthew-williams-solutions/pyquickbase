@@ -255,7 +255,7 @@ def test_several_row_limits_on_a_table_are_all_applied() -> None:
 
 def test_a_saved_policy_decides_the_same() -> None:
     policy = app(
-        allow.read(tables.all(), max_records=20),
+        allow.read(tables.all(), max_paging_depth=20),
         allow.update(TASKS, ["Status"]),
         allow.create_tables(),
         allow.schema(tables.created(), "add_field"),
@@ -410,7 +410,7 @@ def test_the_decision_grid_matches_the_snapshot() -> None:
             classes=PAY_CLASS,
         ),
         "Policy.read_only()": app(
-            allow.read(tables.all(), max_records=None), allow.download(tables.all())
+            allow.read(tables.all(), max_paging_depth=None), allow.download(tables.all())
         ),
     }
     current = "\n\n".join(

@@ -80,6 +80,15 @@ before they're made, for scripts and for agents. **It breaks every client that u
 
 ### Changed
 
+- **Each limit is named for what it limits.** `Table.operation()` takes `max_records_per_call` and
+  `max_records_per_write` for `max_records` and `max_rows`. `summarize()` takes
+  `max_records_scanned`. `allow.read()` takes `max_paging_depth` and `max_records_scanned` for
+  `max_records` and `max_summary_records`, and `allow.delete()` takes `max_records_per_delete`, as
+  do the fields of `Offers`. `tool_result()` takes `max_text_chars` for `max_text`, and a delete
+  preview's `most` is `max_deletable`.
+- **Descriptions say what they describe.** `Table.operation()` and `where_schema()` take
+  `field_descriptions`, and `Table.operation()` takes `report_descriptions={ID: text}`, with
+  `reports` holding only IDs.
 - **`create_field()` and `ensure_field()` take `type`**, not `field_type`, as `Field.type` and the
   schema changes do, and so does a generated class's `Column`.
 - **`create_relationship()` and `ensure_relationship()` take `foreign_key`**, not

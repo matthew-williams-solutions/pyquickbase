@@ -21,10 +21,10 @@
 - **Filtering and sorting reveal values.** A model that may filter on a field can find out what it
   holds by seeing which records match, even if the field isn't returned, so `allow.read()` takes its
   own `filter` and `sort`.
-- **Limits apply per query.** `max_records` stops one query from returning a whole table, but a model
-  can still make more queries. The policy's `max_records` is how far paging can reach, counting
-  `skip`, while an operation's own `max_records` is the size of each page, so set the policy's number
-  as high as you want a model to page.
+- **Limits apply per query.** `max_paging_depth` stops one query from returning a whole table, but a
+  model can still make more queries. The policy's `max_paging_depth` is how far paging can reach,
+  counting `skip`, while an operation's `max_records_per_call` is the size of each page, so set the
+  policy's number as high as you want a model to page.
 - **`Policy.read_only()` promises only that it changes no records.** It still runs reports, which adds
   to their usage count in Quickbase, and formulas.
 - **Formulas reach further than the table you run them on.** A formula can read other tables with

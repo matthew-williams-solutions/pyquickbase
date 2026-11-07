@@ -10,7 +10,7 @@ from pyquickbase import (
 policy = Policy(
     classes={"internal": [("Job Tasks", "Code")]},
     rules=[
-        allow.read(tables.all(), max_records=50),
+        allow.read(tables.all(), max_paging_depth=50),
         allow.update("Job Tasks", ["Status"]),
         deny.all(fields.classed("internal")),
     ],

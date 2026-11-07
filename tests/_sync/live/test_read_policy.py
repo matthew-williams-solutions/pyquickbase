@@ -141,7 +141,9 @@ def test_default_queries_return_only_allowed_fields(
 def test_filters_sorts_and_windows_are_held_to_the_rules(
     scratch: Any, table: Any, ids: dict[str, int]
 ) -> None:
-    rules = policy(scratch, table, ids, filter=[ids["Status"]], sort=[ids["Status"]], max_records=1)
+    rules = policy(
+        scratch, table, ids, filter=[ids["Status"]], sort=[ids["Status"]], max_paging_depth=1
+    )
     with limited(scratch, rules) as qb:
         tasks = qb.app(scratch.app_id).table(table.info().id)
         assert tasks.count(F("Status") == "Open") == 1
@@ -163,7 +165,7 @@ def test_summaries_group_users_without_emails(
         rows = tasks.summarize(group_by="Record Owner")
         assert [row.count for row in rows] == [2]
         assert "@" not in str(rows[0].group["Record Owner"])
-    with limited(scratch, policy(scratch, table, ids, max_summary_records=1)) as qb:
+    with limited(scratch, policy(scratch, table, ids, max_records_scanned=1)) as qb:
         tasks = qb.app(scratch.app_id).table(table.info().id)
         with pytest.raises(PolicyRefusedError, match="summarizing at most 1"):
             tasks.summarize(group_by="Status")

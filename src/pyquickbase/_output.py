@@ -591,9 +591,10 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
         )
         if isinstance(page, DeletePreviewPage):
             blockers: list[str] = []
-            if page.total > page.most:
+            if page.total > page.max_deletable:
                 blockers.append(
-                    f"{page.total} records match, and a delete may match at most {page.most}, so "
+                    f"{page.total} records match, and a delete may match at most "
+                    f"{page.max_deletable}, so "
                     "deleting with this filter would be refused, and nothing would be deleted. "
                     "Narrow the filter."
                 )
@@ -663,7 +664,7 @@ def tool_result(
     *,
     compact: bool = False,
     max_records: int | None = None,
-    max_text: int | None = None,
+    max_text_chars: int | None = None,
 ) -> dict[str, Any]:
     """Describe a result for a model, as the result of its tool call.
 
@@ -720,7 +721,7 @@ def tool_result(
             latest file's name. Use it when a tool returns many records, to save tokens.
         max_records: The most records to include. Any more are left out, and `page.has_more` is
             true, so a model knows it doesn't have them all.
-        max_text: The most characters to include of each text value. A longer one is cut and
+        max_text_chars: The most characters to include of each text value. A longer one is cut and
             ends by saying how much was left out, and `text_truncated` is true.
 
     Returns:
@@ -729,13 +730,13 @@ def tool_result(
     Raises:
         TypeError: The value isn't one of these, such as an `AppInfo`, or holds a value of another
             type.
-        ValueError: `max_records` or `max_text` isn't a positive whole number.
+        ValueError: `max_records` or `max_text_chars` isn't a positive whole number.
     """
     _limit("max_records", max_records)
-    _limit("max_text", max_text)
+    _limit("max_text_chars", max_text_chars)
     if not isinstance(compact, bool):  # pyright: ignore[reportUnnecessaryIsInstance]
         raise TypeError("compact takes True or False.")
-    state = _State(compact=compact, max_text=max_text)
+    state = _State(compact=compact, max_text=max_text_chars)
     found = _describe(value, state, max_records)
     result: dict[str, Any] = {"ok": True, **found}
     if state.truncated:

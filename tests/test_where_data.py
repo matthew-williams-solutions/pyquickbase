@@ -572,14 +572,14 @@ def test_fields_can_be_field_objects_in_both_halves() -> None:
 
 
 def test_descriptions_are_added_and_must_be_for_offered_fields() -> None:
-    schema = where_schema(fields=["Status"], descriptions={"Status": "Open or Done."})
+    schema = where_schema(fields=["Status"], field_descriptions={"Status": "Open or Done."})
     assert schema["description"].endswith(" Fields: Status: Open or Done.")
     with pytest.raises(QueryError, match="isn't one of the fields"):
-        where_schema(fields=["Status"], descriptions={"Title": "x"})
+        where_schema(fields=["Status"], field_descriptions={"Title": "x"})
     with pytest.raises(QueryError, match="needs fields"):
-        where_schema(descriptions={"Title": "x"})
+        where_schema(field_descriptions={"Title": "x"})
     with pytest.raises(QueryError, match="isn't empty"):
-        where_schema(fields=["Status"], descriptions={"Status": " "})
+        where_schema(fields=["Status"], field_descriptions={"Status": " "})
 
 
 TYPED = FieldIndex(

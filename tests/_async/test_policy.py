@@ -85,7 +85,7 @@ def client(fake: Fake, policy: Any, **kwargs: Any) -> AsyncQuickbase:
 
 def rules(*extra: Any) -> BoundPolicy:
     """A policy that reads everything, as the write tests did without read rules."""
-    return bind(allow.read(TASKS, max_records=None), *extra, tables={TASKS: ("Tasks", FIELDS)})
+    return bind(allow.read(TASKS, max_paging_depth=None), *extra, tables={TASKS: ("Tasks", FIELDS)})
 
 
 async def test_writes_the_rules_allow_are_sent() -> None:
@@ -227,7 +227,7 @@ async def test_a_later_batch_refused_reports_what_was_written() -> None:
 
 async def test_a_delete_with_a_limit_counts_first_and_request_cant_delete() -> None:
     fake = Fake()
-    async with client(fake, rules(allow.delete(TASKS, max_records=3))) as qb:
+    async with client(fake, rules(allow.delete(TASKS, max_records_per_delete=3))) as qb:
         assert await qb.app("bq1234567").table("Tasks").delete(F("Title") == "x") == 1
         with pytest.raises(PolicyRefusedError, match="counts them first"):
             await qb.request("DELETE", "/records", json={"from": TASKS, "where": "{6.EX.'x'}"})

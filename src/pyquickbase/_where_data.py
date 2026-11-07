@@ -470,7 +470,7 @@ def _group_schema(key: str, depth: int, condition: dict[str, Any]) -> dict[str, 
 def where_schema(
     *,
     fields: Iterable[FieldRef] | Iterable[Field] | None = None,
-    descriptions: Mapping[FieldRef, str] | None = None,
+    field_descriptions: Mapping[FieldRef, str] | None = None,
     max_depth: int = 2,
 ) -> dict[str, Any]:
     """Describe the format of `where_from_dict()` as JSON Schema, for a tool's input.
@@ -485,7 +485,7 @@ def where_schema(
             this shows them to the model, so only offer fields from an app you trust. Given
             `Field` objects, the description also says what a number means on a percent or
             duration field.
-        descriptions: What each field means, as `{label or ID: text}`, added to the schema's
+        field_descriptions: What each field means, as `{label or ID: text}`, added to the schema's
             description so the model can choose the right field. Each must be for a field in
             `fields`, so a renamed field can't silently keep a description.
         max_depth: How many levels of `all` and `any` to describe, from 0 to 5. The default allows
@@ -507,7 +507,7 @@ def where_schema(
             raise QueryError("fields takes a list of labels or IDs, not a single string.")
         offered = list(fields)
     allowed = None if offered is None else _field_set(offered)
-    glossary = "" if descriptions is None else _descriptions(descriptions, offered)
+    glossary = "" if field_descriptions is None else _descriptions(field_descriptions, offered)
     condition = _condition_schema(allowed)
     schema: dict[str, Any] = {"description": f"One filter condition. {_SCHEMA_DESCRIPTION}"}
     if max_depth == 0:

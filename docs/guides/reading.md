@@ -302,14 +302,14 @@ print(tasks.summarize(group_by=by_week))
 does the calculating in Quickbase, and is faster on a large table. See
 [Reading summary and chart reports](#reading-summary-and-chart-reports).
 
-To refuse a scan larger than you expect, set `max_records`. If more records match, it raises `QueryError` without
+To refuse a scan larger than you expect, set `max_records_scanned`. If more records match, it raises `QueryError` without
 reading them. It never returns a total from only part of the data.
 
 ```python
 from pyquickbase import QueryError
 
 try:
-    rows = tasks.summarize(group_by="Status", max_records=50_000)
+    rows = tasks.summarize(group_by="Status", max_records_scanned=50_000)
 except QueryError as error:
     print(error)
 ```
@@ -390,7 +390,7 @@ These all raise before the query is sent, though the SDK may read table metadata
 | The table has no such report, or several with that name | `UnknownReportError` |
 | `run()` on a summary, chart, or ask-the-user report, or `summary_rows()` on a table or ask-the-user report, or one with two columns of the same label | `UnsupportedReportError` |
 | `summarize()` with a field it can't use, such as text in `sum`, or a multi-select field in `group_by` | `QueryError` |
-| `summarize()` finds more records than `max_records` | `QueryError`, and no records are read |
+| `summarize()` finds more records than `max_records_scanned` | `QueryError`, and no records are read |
 | `summarize()` finds a value that isn't what its field's type says | `InvalidResponseError`, and there's no partial result |
 
 See [Handling errors](errors.md) for failures that come from Quickbase, such as a refused token.

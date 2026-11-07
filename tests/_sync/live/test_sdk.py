@@ -818,7 +818,7 @@ def test_write_rules_limit_tables_actions_and_fields(
     status_field = scratch.client.app(scratch.app_id).table(table_id).resolve_field_ids(["Title"])
     rules = Policy(
         rules=[
-            allow.read(tables.all(), max_records=None),
+            allow.read(tables.all(), max_paging_depth=None),
             allow.insert(table_id, fields.all()),
             allow.update(table_id, status_field),
         ]
@@ -861,7 +861,7 @@ def test_a_custom_policy_runs_on_real_writes(scratch: Any, table_id: str, seeded
 
     policy = Policy(
         rules=[
-            allow.read(table_id, max_records=None),
+            allow.read(table_id, max_paging_depth=None),
             allow.insert(table_id, fields.all()),
             allow.update(table_id, fields.all()),
             RecordActions(),
@@ -987,9 +987,9 @@ def test_summarize_matches_the_records(qb: Quickbase, scratch: Any, seeded: str)
     )
     assert (filtered[0].count, filtered[0].sum) == (3, {"Amount": 19})
 
-    with pytest.raises(QueryError, match="max_records"):
-        table.summarize(max_records=6)
-    assert (table.summarize(max_records=7))[0].count == 7
+    with pytest.raises(QueryError, match="max_records_scanned"):
+        table.summarize(max_records_scanned=6)
+    assert (table.summarize(max_records_scanned=7))[0].count == 7
 
 
 def test_summary_and_chart_reports_read_as_rows(qb: Quickbase, scratch: Any) -> None:

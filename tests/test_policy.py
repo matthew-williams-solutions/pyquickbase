@@ -407,7 +407,7 @@ def test_every_field_includes_ones_added_after_binding() -> None:
 
 
 def test_the_window_is_limited_counting_skip() -> None:
-    limited = reads(max_records=50)
+    limited = reads(max_paging_depth=50)
     assert allows(limited, query(select=[6], options={"top": 50, "skip": 0}))
     assert "at most 50 records" in refusal(
         limited, query(select=[6], options={"top": 51, "skip": 0})
@@ -416,11 +416,11 @@ def test_the_window_is_limited_counting_skip() -> None:
         limited, query(select=[6], options={"top": 10, "skip": 45})
     )
     assert "get all of them" in refusal(limited, query(select=[6]))
-    assert allows(reads(max_records=None), query(select=[6]))
+    assert allows(reads(max_paging_depth=None), query(select=[6]))
 
 
 def test_the_highest_record_limit_of_the_rules_that_read_a_table_applies() -> None:
-    policy = bind(allow.read(tables.all()), allow.read(TASKS, max_records=500))
+    policy = bind(allow.read(tables.all()), allow.read(TASKS, max_paging_depth=500))
     assert policy.max_records(TASKS) == 500
     assert policy.max_records(NOTES) == 100
 
@@ -429,8 +429,8 @@ def test_summary_pages_have_their_own_limit() -> None:
     body = {"from": TASKS, "select": [6], "sortBy": [], "options": {"top": 1000, "skip": 0}}
     page = describe_read("POST", "/records/query", None, body, summarizing=True)
     assert page is not None
-    assert allows(reads(max_records=10), page)
-    assert "max_summary_records" in refusal(reads(max_summary_records=999), page)
+    assert allows(reads(max_paging_depth=10), page)
+    assert "max_records_scanned" in refusal(reads(max_records_scanned=999), page)
 
 
 def test_tables_no_rule_reads_are_refused() -> None:
@@ -449,7 +449,7 @@ def test_reports_must_be_listed_by_name_or_id() -> None:
     )
     assert "add allow.report" in refusal(reads(), report())
     assert allows(reads(rules=[allow.report(TASKS, ["Totals"])]), report("summary", "8"))
-    assert "at most 5" in refusal(reads(rules=by_id, max_records=5), report())
+    assert "at most 5" in refusal(reads(rules=by_id, max_paging_depth=5), report())
     with pytest.raises(ConfigurationError, match="no report 'Gone'"):
         reads(rules=[allow.report(TASKS, ["Gone"])])
 
@@ -548,9 +548,9 @@ def test_a_rule_of_your_own_must_be_passed_again_to_load() -> None:
         lambda: allow.read(TASKS, []),
         lambda: allow.read(TASKS, [0]),
         lambda: allow.read(TASKS, [True]),
-        lambda: allow.read(TASKS, max_records=0),
-        lambda: allow.read(TASKS, max_records=1.5),
-        lambda: allow.read(TASKS, max_summary_records=True),
+        lambda: allow.read(TASKS, max_paging_depth=0),
+        lambda: allow.read(TASKS, max_paging_depth=1.5),
+        lambda: allow.read(TASKS, max_records_scanned=True),
         lambda: allow.read(TASKS, user_emails="yes"),
         lambda: allow.read([]),
         lambda: allow.report(TASKS, "Open"),

@@ -138,9 +138,9 @@ class Offers(Generic[T]):
         reports: Reports it may run.
         schema: The schema verbs allowed on the table, such as `add_field`.
         field_types: The field types `add_field` may create, or None for any.
-        max_records: The most records one query may reach, or None for no limit.
-        max_summary_records: The most records one summary may read, or None for no limit.
-        max_delete: The most records one delete may remove, or None for no limit.
+        max_paging_depth: The most records one query may reach, or None for no limit.
+        max_records_scanned: The most records one summary may read, or None for no limit.
+        max_records_per_delete: The most records one delete may remove, or None for no limit.
         user_emails: Whether user values keep email addresses.
         row_limit: The condition every query is limited to, or None.
     """
@@ -157,9 +157,9 @@ class Offers(Generic[T]):
     reports: tuple[Any, ...] = ()
     schema: frozenset[str] = frozenset()
     field_types: frozenset[str] | None = None
-    max_records: int | None = None
-    max_summary_records: int | None = None
-    max_delete: int | None = None
+    max_paging_depth: int | None = None
+    max_records_scanned: int | None = None
+    max_records_per_delete: int | None = None
     user_emails: bool = False
     row_limit: str | None = None
 
@@ -600,10 +600,10 @@ class BoundPolicy:
                 return decision
             if action == "summarize":
                 window = self._window(
-                    request, self.max_summary_records(table_id), "max_summary_records"
+                    request, self.max_summary_records(table_id), "max_records_scanned"
                 )
             else:
-                window = self._window(request, self.max_records(table_id), "max_records")
+                window = self._window(request, self.max_records(table_id), "max_paging_depth")
             return window or decision
         if action == "delete":
             if request.filter_field_ids is None:
@@ -618,7 +618,7 @@ class BoundPolicy:
             verdict = self._report(table_id, request.report_id)
             if not verdict.allowed:
                 return self._decision(verdict, "report", table_id)
-            window = self._window(request, self.max_records(table_id), "max_records")
+            window = self._window(request, self.max_records(table_id), "max_paging_depth")
             return window or self._decision(verdict, "report", table_id)
         if action == "file":
             if not request.field_ids:
@@ -1193,9 +1193,9 @@ class BoundPolicy:
             reports=tuple(offered_reports),
             schema=schema,
             field_types=self.field_types(table_id) if "add_field" in schema else frozenset(),
-            max_records=self.max_records(table_id),
-            max_summary_records=self.max_summary_records(table_id),
-            max_delete=self.max_delete(table_id),
+            max_paging_depth=self.max_records(table_id),
+            max_records_scanned=self.max_summary_records(table_id),
+            max_records_per_delete=self.max_delete(table_id),
             user_emails=self.user_emails(table_id),
             row_limit=self.row_limit(table_id),
         )

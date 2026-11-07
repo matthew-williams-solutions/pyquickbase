@@ -24,7 +24,7 @@ from pyquickbase import Policy, allow, deny, fields
 policy = Policy(
     classes={"internal": ["Tasks.Amount", "Tasks.Code"]},
     rules=[
-        allow.read("Tasks", max_records=50),
+        allow.read("Tasks", max_paging_depth=50),
         allow.update("Tasks", ["Status", "Notes"]),
         deny.all(fields.classed("internal")),
     ],
@@ -51,9 +51,9 @@ from pyquickbase import F, Policy, allow, limit
 
 policy = Policy(
     rules=[
-        allow.read("Tasks", max_records=100),
+        allow.read("Tasks", max_paging_depth=100),
         allow.update("Tasks", ["Status", "Notes", "Due Date"]),
-        allow.delete("Tasks", max_records=3),
+        allow.delete("Tasks", max_records_per_delete=3),
         limit.rows("Tasks", F("Project") == "Roof"),
     ]
 )

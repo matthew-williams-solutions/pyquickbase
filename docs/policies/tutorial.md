@@ -29,7 +29,7 @@ from pyquickbase import Policy, Quickbase, allow
 
 policy = Policy(
     rules=[
-        allow.read("Tasks", max_records=50),
+        allow.read("Tasks", max_paging_depth=50),
         allow.update("Tasks", ["Status", "Notes"]),
     ]
 )
@@ -40,7 +40,7 @@ print(bound.allows("update", "Tasks", field="Status").allowed)  # True
 print(bound.allows("update", "Tasks", field="Due Date").allowed)  # False
 ```
 
-`max_records=50` means one query can reach at most 50 records, so a mistake can't page through the
+`max_paging_depth=50` means one query can reach at most 50 records, so a mistake can't page through the
 whole table.
 
 ## 3. Hide what it shouldn't see
@@ -55,7 +55,7 @@ from pyquickbase import Policy, Quickbase, allow, deny, fields
 policy = Policy(
     classes={"internal": ["Tasks.Amount", "Tasks.Code"]},
     rules=[
-        allow.read("Tasks", max_records=50),
+        allow.read("Tasks", max_paging_depth=50),
         allow.update("Tasks", ["Status", "Notes"]),
         deny.all(fields.classed("internal")),
     ],
@@ -80,7 +80,7 @@ from pyquickbase import F, Policy, Quickbase, allow, deny, fields, limit
 policy = Policy(
     classes={"internal": ["Tasks.Amount", "Tasks.Code"]},
     rules=[
-        allow.read("Tasks", max_records=50),
+        allow.read("Tasks", max_paging_depth=50),
         allow.update("Tasks", ["Status", "Notes"]),
         deny.all(fields.classed("internal")),
         limit.rows("Tasks", F("Project") == "Roof"),

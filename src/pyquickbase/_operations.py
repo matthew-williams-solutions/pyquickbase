@@ -757,7 +757,7 @@ def _summary(ctx: Context) -> dict[str, Any]:
 
 def _read_summary(ctx: Context, arguments: Mapping[str, Any]) -> dict[str, Any]:
     offered = _summary_fields(ctx)
-    found: dict[str, Any] = {"max_records": ctx.limit}
+    found: dict[str, Any] = {"max_records_scanned": ctx.limit}
     if "group_by" in arguments:
         value = arguments["group_by"]
         if not isinstance(value, list) or not value:
@@ -1154,7 +1154,7 @@ def allowed_for(
             file_deletable=found.file_deletable,
             can_delete=found.can_delete,
             reports=found.reports,
-            max_records=found.max_records,
+            max_records=found.max_paging_depth,
             can_run_formula=policy.decide(
                 ReadRequest(action="formula", table_id=table_id, method="POST", path="/formula/run")
             ).allowed,
@@ -1229,10 +1229,12 @@ def make_spec(
     if formula is not None and (not isinstance(formula, str) or not formula.strip()):  # pyright: ignore[reportUnnecessaryIsInstance]
         raise ConfigurationError("formula must be the formula's text.")
     default = DEFAULT_MAX_SUMMARY_RECORDS if name == "summarize" else DEFAULT_MAX_RECORDS
-    limit = _whole(default if max_records is None else max_records, "max_records", minimum=1)
+    limit = _whole(
+        default if max_records is None else max_records, "max_records_per_call", minimum=1
+    )
     if allowed.max_records is not None and name != "summarize":
         limit = min(limit, allowed.max_records)
-    _whole(max_rows, "max_rows", minimum=1)
+    _whole(max_rows, "max_records_per_write", minimum=1)
     offered = {item.id: item for group in kind.fields for item in getattr(allowed, group)}
     context = Context(
         allowed=allowed,

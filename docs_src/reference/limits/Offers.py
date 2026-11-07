@@ -11,4 +11,4 @@ async with AsyncQuickbase.from_env() as setup:
 offers = bound.offers("Job Tasks")
 print([item.name for item in offers.readable])
 print([item.name for item in offers.updatable])
-print(offers.can_delete, offers.max_records)
+print(offers.can_delete, offers.max_paging_depth)

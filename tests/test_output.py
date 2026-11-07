@@ -201,10 +201,12 @@ def test_one_record_or_none() -> None:
 
 
 def test_max_text_shortens_and_says_so() -> None:
-    found = tool_result(record(Record_ID=1, Title="x" * 30), max_text=10)
+    found = tool_result(record(Record_ID=1, Title="x" * 30), max_text_chars=10)
     assert found["record"]["Title"] == "xxxxxxxxxx… (20 more characters)"
     assert found["text_truncated"] is True
-    assert "text_truncated" not in tool_result(record(Record_ID=1, Title="short"), max_text=10)
+    assert "text_truncated" not in tool_result(
+        record(Record_ID=1, Title="short"), max_text_chars=10
+    )
 
 
 @dataclass(frozen=True, slots=True, kw_only=True, repr=False)
@@ -304,7 +306,9 @@ def test_a_value_of_another_type_inside_a_record_is_refused() -> None:
         tool_result(Record({3: 1, 6: b"x"}, LABELS))
 
 
-@pytest.mark.parametrize("kwargs", [{"max_records": 0}, {"max_text": -1}, {"max_records": 1.5}])
+@pytest.mark.parametrize(
+    "kwargs", [{"max_records": 0}, {"max_text_chars": -1}, {"max_records": 1.5}]
+)
 def test_bad_limits(kwargs: dict[str, Any]) -> None:
     with pytest.raises(ValueError, match="positive"):
         tool_result([], **kwargs)
@@ -333,7 +337,7 @@ json_values = st.recursive(
 def test_results_always_dump_as_json(values: list[Any], compact: bool) -> None:
     labels = {f"F{index}": index + 6 for index in range(len(values))}
     item = Record({index + 6: value for index, value in enumerate(values)}, labels)
-    dumps(tool_result(Page(records=(item,), total=1, skip=0), compact=compact, max_text=5))
+    dumps(tool_result(Page(records=(item,), total=1, skip=0), compact=compact, max_text_chars=5))
 
 
 # Errors
@@ -542,7 +546,7 @@ def test_a_text_file_has_its_text_and_a_binary_one_says_so() -> None:
     assert binary["file"]["text"] is None
     assert binary["file"]["binary"] is True
     long = tool_result(
-        FileDownload(file_name="a.txt", data=b"x" * 30, content_type=None), max_text=10
+        FileDownload(file_name="a.txt", data=b"x" * 30, content_type=None), max_text_chars=10
     )
     assert long["text_truncated"] is True
     empty = tool_result(FileDownload(file_name="a.txt", data=b"", content_type=None))

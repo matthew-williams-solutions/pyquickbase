@@ -204,7 +204,7 @@ async def test_hand_written_filters_are_checked_too() -> None:
 
 async def test_a_query_needs_a_limit_within_max_records() -> None:
     fake = Fake()
-    async with client(fake, rules(max_records=50)) as qb:
+    async with client(fake, rules(max_paging_depth=50)) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         with pytest.raises(PolicyRefusedError, match="at most 50"):
             [record async for record in tasks.query()]
@@ -215,7 +215,7 @@ async def test_a_query_needs_a_limit_within_max_records() -> None:
 
 async def test_summarize_counts_first_and_has_its_own_limit() -> None:
     fake = Fake(total=11)
-    async with client(fake, rules(max_records=1, max_summary_records=10)) as qb:
+    async with client(fake, rules(max_paging_depth=1, max_records_scanned=10)) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         with pytest.raises(PolicyRefusedError, match="allows summarizing at most 10"):
             await tasks.summarize(group_by="Status")

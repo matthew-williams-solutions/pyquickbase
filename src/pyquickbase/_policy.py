@@ -187,7 +187,7 @@ class PolicyRule:
         effect: `allow`, `deny`, or `limit`.
         tables: The tables it covers, or None for the app itself, as for `create_tables`.
         grants: The verbs it covers, and on which fields.
-        options: Its limits, such as `max_records`, and for `limit.rows()`, its `where`.
+        options: Its limits, such as `max_paging_depth`, and for `limit.rows()`, its `where`.
         text: The rule as written, which a `Decision` names.
     """
 
@@ -423,8 +423,8 @@ class _AllowOnly(_Allow):
         *,
         filter: FieldsArg | None = None,
         sort: FieldsArg | None = None,
-        max_records: int | None = DEFAULT_MAX_RECORDS,
-        max_summary_records: int | None = DEFAULT_MAX_SUMMARY_RECORDS,
+        max_paging_depth: int | None = DEFAULT_MAX_RECORDS,
+        max_records_scanned: int | None = DEFAULT_MAX_SUMMARY_RECORDS,
         user_emails: bool = False,
     ) -> PolicyRule:
         """Reading fields' values and details, and filtering and sorting by them.
@@ -436,10 +436,10 @@ class _AllowOnly(_Allow):
             filter: The fields it may filter on instead, or None for the same as `fields`. A
                 filter shows which records match, so it reveals something about a field's values.
             sort: The fields it may sort by instead, or None for the same as `fields`.
-            max_records: The most records one query or report can reach, counting `skip`, or None
-                for no limit. It's how far paging can go, not the size of a page. Where several
-                rules read a table, the highest applies.
-            max_summary_records: The most records `summarize()` may read for one summary, or None
+            max_paging_depth: The most records one query or report can reach, counting `skip`, or
+                None for no limit. It's how far paging can go, not the size of a page. Where
+                several rules read a table, the highest applies.
+            max_records_scanned: The most records `summarize()` may read for one summary, or None
                 for no limit.
             user_emails: Whether to keep email addresses in user values, and the uploader's
                 details in file values. Without this, a user is only their `id` and `name`.
@@ -457,16 +457,16 @@ class _AllowOnly(_Allow):
             if value is not None:
                 grants.append(Grant(frozenset({verb}), _field_selectors(value, verb)))
         options = {
-            "max_records": _limit("max_records", max_records),
-            "max_summary_records": _limit("max_summary_records", max_summary_records),
+            "max_records": _limit("max_paging_depth", max_paging_depth),
+            "max_summary_records": _limit("max_records_scanned", max_records_scanned),
             "user_emails": user_emails,
         }
         written: dict[str, Any] = {}
         for key, value, default in (
             ("filter", filter, None),
             ("sort", sort, None),
-            ("max_records", max_records, DEFAULT_MAX_RECORDS),
-            ("max_summary_records", max_summary_records, DEFAULT_MAX_SUMMARY_RECORDS),
+            ("max_paging_depth", max_paging_depth, DEFAULT_MAX_RECORDS),
+            ("max_records_scanned", max_records_scanned, DEFAULT_MAX_SUMMARY_RECORDS),
             ("user_emails", user_emails, False),
         ):
             if value != default:
@@ -474,22 +474,23 @@ class _AllowOnly(_Allow):
         args = (tables,) if fields is None else (tables, fields)
         return self._rule("read", tables, tuple(grants), args, options, written)
 
-    def delete(self, tables: TablesArg, *, max_records: int | None = None) -> PolicyRule:
+    def delete(self, tables: TablesArg, *, max_records_per_delete: int | None = None) -> PolicyRule:
         """Deleting records, which removes all of their fields.
 
         Args:
             tables: The tables, by name or ID, or a `tables` selector.
-            max_records: The most records one delete may remove, or None for no limit. With a
-                limit, the client counts what matches before deleting, and refuses a delete
-                through `request()`, which it can't count.
+            max_records_per_delete: The most records one delete may remove, or None for no
+                limit. With a limit, the client counts what matches before deleting, and refuses a
+                delete through `request()`, which it can't count.
         """
-        written = {} if max_records is None else {"max_records": max_records}
+        limit = max_records_per_delete
+        written = {} if limit is None else {"max_records_per_delete": limit}
         return self._rule(
             "delete",
             tables,
             (Grant(frozenset({"delete"})),),
             (tables,),
-            {"max_records": _limit("max_records", max_records)},
+            {"max_records": _limit("max_records_per_delete", limit)},
             written,
         )
 
@@ -736,7 +737,7 @@ class Policy:
         return cls(
             rules=[
                 allow.read(
-                    tables.all(), max_records=None, max_summary_records=None, user_emails=True
+                    tables.all(), max_paging_depth=None, max_records_scanned=None, user_emails=True
                 ),
                 allow.download(tables.all()),
                 allow.report(tables.all()),
