@@ -7,17 +7,19 @@ import httpx
 import pytest
 
 from pyquickbase import (
+    BoundPolicy,
     F,
     InvalidValueError,
     QueryError,
     Quickbase,
-    ReadAccess,
-    ReadRules,
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
+    allow,
     where_from_dict,
 )
+
+from ..policy_helpers import bind
 
 APP = "bq1234567"
 TASKS = "bqtasks"
@@ -62,8 +64,14 @@ def client(server: Any, **kwargs: Any) -> Quickbase:
     return Quickbase(realm="acme", token="fake-user-token", http_client=http_client, **kwargs)
 
 
-def rules() -> ReadRules:
-    return ReadRules({TASKS: ReadAccess(fields=[6, 7], reports=["1"])})
+def rules() -> BoundPolicy:
+    return bind(
+        allow.read(TASKS, [6, 7]),
+        allow.report(TASKS, ["1"]),
+        tables={TASKS: ("Tasks", FIELDS)},
+        reports={TASKS: REPORTS},
+        app_id=APP,
+    )
 
 
 def test_app_url_makes_no_request() -> None:
@@ -168,7 +176,7 @@ def test_unknown_table_and_report_are_refused() -> None:
 
 
 def test_read_rules_hide_tables_fields_and_reports() -> None:
-    with client(FakeSchema(), read_policy=rules(), read_only=True) as qb:
+    with client(FakeSchema(), policy=rules()) as qb:
         app = qb.app(APP)
         tasks = app.table(TASKS)
         assert tasks.url() == f"{BASE}/td"
@@ -208,7 +216,7 @@ def test_compile_where() -> None:
 
 
 def test_compile_where_refuses_what_a_query_would() -> None:
-    with client(FakeSchema(), read_policy=rules(), read_only=True) as qb:
+    with client(FakeSchema(), policy=rules()) as qb:
         tasks = qb.app(APP).table("Tasks")
         with pytest.raises(UnknownFieldError):
             tasks.compile_where(F("Salary") > 1)
@@ -256,7 +264,7 @@ def test_report_edit_url() -> None:
 
 
 def test_read_rules_hide_table_pages() -> None:
-    with client(FakeSchema(), read_policy=rules(), read_only=True) as qb:
+    with client(FakeSchema(), policy=rules()) as qb:
         app = qb.app(APP)
         assert app.table(TASKS).settings_url() == f"{BASE}/KeyProps"
         secret = app.table(SECRET)

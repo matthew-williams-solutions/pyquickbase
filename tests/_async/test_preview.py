@@ -13,10 +13,11 @@ from pyquickbase import (
     F,
     FileUpload,
     InvalidValueError,
+    Policy,
+    PolicyRefusedError,
     QueryError,
     TypedRecord,
     UnknownFieldError,
-    WriteRefusedError,
     where_from_dict,
 )
 
@@ -82,7 +83,7 @@ def client(fake: Fake, **kwargs: Any) -> AsyncQuickbase:
 
 async def test_an_update_preview_compares_without_writing() -> None:
     fake = Fake({1: {6: "old"}, 2: {6: "same"}})
-    async with client(fake, read_only=True) as qb:
+    async with client(fake, policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         preview = await tasks.preview_update(
             [
@@ -151,7 +152,7 @@ async def test_no_rows_is_an_empty_preview() -> None:
 
 async def test_a_delete_preview_counts_every_match_without_deleting() -> None:
     fake = Fake({1: {6: "a"}, 2: {6: "b"}, 3: {6: "c"}})
-    async with client(fake, read_only=True) as qb:
+    async with client(fake, policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         page = await tasks.preview_delete(F("Status") == "Done", select=["Title"], top=2)
     assert page.total == 3
@@ -179,10 +180,10 @@ async def test_a_delete_preview_checks_where_like_a_delete(where: Any) -> None:
 
 async def test_previews_work_where_the_write_would_be_refused() -> None:
     fake = Fake({1: {6: "old"}})
-    async with client(fake, read_only=True) as qb:
+    async with client(fake, policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         assert (await tasks.preview_update([{"Record ID#": 1, "Title": "new"}])).changes
-        with pytest.raises(WriteRefusedError):
+        with pytest.raises(PolicyRefusedError):
             await tasks.update([{"Record ID#": 1, "Title": "new"}])
 
 

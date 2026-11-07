@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from pyquickbase import (
+    ConfirmationError,
     CreateField,
     CreateLookupField,
     CreateRelationship,
@@ -20,7 +21,6 @@ from pyquickbase import (
     DeleteField,
     DeleteRelationship,
     DeleteTable,
-    QueryError,
     Quickbase,
     ReadAccess,
     ReadRules,
@@ -134,7 +134,7 @@ def test_operations_hold_a_model_to_its_limits(scratch: Any) -> None:
 
         shown = {**hidden, "label": "Shout", "type": "text", "formula": "Upper([Title])"}
         planned = tool_result(plan.run({"changes": [shown]}))
-        with pytest.raises(QueryError, match="these arguments differ"):
+        with pytest.raises(ConfirmationError, match="these arguments differ"):
             apply.run({"changes": [hidden], "confirmation": planned["confirmation"]})
         result = apply.run({"changes": [shown], "confirmation": planned["confirmation"]})
         assert len(result.applied) == 1

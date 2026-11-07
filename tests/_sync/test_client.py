@@ -14,12 +14,13 @@ from pyquickbase import (
     NetworkError,
     NotFoundError,
     PermissionDeniedError,
+    Policy,
+    PolicyRefusedError,
     Quickbase,
     RateLimitError,
     RequestTimeoutError,
     RetryPolicy,
     ServerError,
-    WriteRefusedError,
 )
 
 TOKEN = "fake-user-token"
@@ -424,8 +425,8 @@ def test_read_only_client_never_sends_anything_else(method: str, path: str) -> N
         seen.append(request)
         return httpx.Response(200, json={})
 
-    with make_client(handler, read_only=True) as qb:
-        with pytest.raises(WriteRefusedError, match="read-only"):
+    with make_client(handler, policy=Policy.read_only()) as qb:
+        with pytest.raises(PolicyRefusedError, match="Nothing was sent"):
             qb.request(method, path, json={})
     assert seen == []
 
@@ -443,7 +444,7 @@ def test_read_only_client_allows_reads(method: str, path: str) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"ok": True})
 
-    with make_client(handler, read_only=True) as qb:
+    with make_client(handler, policy=Policy.read_only()) as qb:
         assert qb.request(method, path) == {"ok": True}
 
 

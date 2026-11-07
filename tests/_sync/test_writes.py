@@ -11,13 +11,14 @@ from pyquickbase import (
     F,
     InvalidResponseError,
     InvalidValueError,
+    Policy,
+    PolicyRefusedError,
     QueryError,
     Quickbase,
     ServerError,
     UnknownFieldError,
     UnknownTableError,
     WriteError,
-    WriteRefusedError,
     tool_error,
 )
 
@@ -301,7 +302,7 @@ def test_delete_never_sends_a_clause_it_cant_verify(where: str) -> None:
 
 def test_read_only_client_refuses_every_write() -> None:
     server = FakeQuickbase()
-    with client(server, read_only=True) as qb:
+    with client(server, policy=Policy.read_only()) as qb:
         app = qb.app(APP)
         table = app.table("Tasks")
         calls = [
@@ -317,7 +318,7 @@ def test_read_only_client_refuses_every_write() -> None:
             lambda: app.create_table("New"),
         ]
         for call in calls:
-            with pytest.raises(WriteRefusedError):
+            with pytest.raises(PolicyRefusedError):
                 call()
     assert {r.method for r in server.requests} == {"GET"}
 

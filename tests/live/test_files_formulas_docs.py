@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from pyquickbase import FileUpload, Quickbase
+from pyquickbase import FileUpload, Policy, Quickbase
 from pyquickbase.errors import (
     BadRequestError,
     NotFoundError,
@@ -108,7 +108,7 @@ def test_a_formula_cant_read_a_table_the_role_cant_access(scratch: Any) -> None:
     viewable = app.table(viewable_id)
     assert viewable.run_formula(read).text == note["Confidential Note"] != ""
 
-    with Quickbase(realm=scratch.realm, token=token, read_only=True) as restricted:
+    with Quickbase(realm=scratch.realm, token=token, policy=Policy.read_only()) as restricted:
         limited = restricted.app(scratch.app_id).table(viewable_id)
         assert limited.run_formula(read).text == ""
         count = f'ToText(Size(GetRecords("{{3.GT.0}}","{denied_id}")))'

@@ -16,18 +16,20 @@ from pyquickbase import (
     DeleteRelationship,
     DeleteTable,
     InvalidValueError,
-    ReadAccess,
-    ReadRules,
-    SchemaAccess,
     SchemaChangeError,
     SchemaMismatchError,
     UpdateField,
     UpdateTable,
-    WriteAccess,
-    WriteRules,
+    allow,
+    fields,
+    tables,
     tool_error,
 )
+from pyquickbase._decision import SCHEMA_VERBS
 from tests.schema_fake import FakeApp
+
+ANY_SCHEMA = allow.schema(tables.all(), *SCHEMA_VERBS)
+"""What a client without write rules could do."""
 
 pytestmark = pytest.mark.anyio
 
@@ -231,10 +233,8 @@ async def test_a_failure_stops_the_plan_and_says_what_was_made() -> None:
 
 async def test_a_plan_reports_what_the_clients_limits_would_refuse() -> None:
     fake = FakeApp()
-    rules = WriteRules(
-        {TASKS: WriteAccess(schema=SchemaAccess(create_fields=True, field_types=["text"]))}
-    )
-    async with client(fake, write_policy=rules) as qb:
+    policy = fake.bind(allow.read(TASKS), allow.schema(TASKS, "add_field", field_types=["text"]))
+    async with client(fake, policy=policy) as qb:
         plan = await qb.app(APP).plan_schema(
             [
                 CreateField(table="Tasks", label="Due", type="date"),
@@ -244,14 +244,15 @@ async def test_a_plan_reports_what_the_clients_limits_would_refuse() -> None:
         )
     due, code, note = plan.changes
     assert "only allows fields of type text" in due.blockers[0]
-    assert "deleting fields isn't allowed" in code.blockers[0]
-    assert "changing fields isn't allowed" in note.blockers[0]
+    assert "deleting Code (8) in Tasks" in code.blockers[0]
+    assert "changing Code (8) in Tasks" not in note.blockers[0]
+    assert "changing" in note.blockers[0]
 
 
 async def test_a_plan_reports_a_formula_that_reads_too_much() -> None:
     fake = FakeApp()
-    reads = ReadRules({TASKS: ReadAccess(fields=[6, 7, 8, 10], filter=[6, 7, 8, 9, 10])})
-    async with client(fake, read_policy=reads) as qb:
+    reads = allow.read(TASKS, [6, 7, 8, 10], filter=[6, 7, 8, 9, 10])
+    async with client(fake, policy=fake.bind(reads, ANY_SCHEMA)) as qb:
         plan = await qb.app(APP).plan_schema(
             [
                 CreateField(table="Tasks", label="Key", type="numeric", formula="[Project] + 1"),
@@ -276,14 +277,15 @@ async def test_a_formula_may_use_a_field_made_earlier_in_the_plan() -> None:  # 
         CreateField(table="Tasks", label="Base", type="numeric"),
         CreateField(table="Tasks", label="Twice", type="numeric", formula="[Base] * 2"),
     ]
-    every = ReadRules({TASKS: ReadAccess(fields=True)})
-    listed = ReadRules({TASKS: ReadAccess(fields=[6, 8])})
-    async with client(FakeApp(), read_policy=every) as qb:
+    fake = FakeApp()
+    every = fake.bind(allow.read(TASKS), ANY_SCHEMA)
+    listed = fake.bind(allow.read(TASKS, [6, 8]), ANY_SCHEMA)
+    async with client(FakeApp(), policy=every) as qb:
         plan = await qb.app(APP).plan_schema(changes)
     assert [item.status for item in plan.changes] == ["change", "change"], plan.blockers
-    async with client(FakeApp(), read_policy=listed) as qb:
+    async with client(FakeApp(), policy=listed) as qb:
         plan = await qb.app(APP).plan_schema(changes)
-    # A new field isn't on the list of fields this client may read, so a formula can't show it.
+    # A new field gets new_fields, and isn't one of the fields the rule names, so it's hidden.
     assert "uses [Base]" in plan.changes[1].blockers[0]
 
 
@@ -382,14 +384,21 @@ async def test_deleting_a_field_a_summary_filters_on_warns() -> None:
     assert 'Summaries on Projects stop working: "Open Hours".' in plan.changes[0].warnings
 
 
-async def test_a_field_list_warns_that_a_hidden_label_is_refused_late() -> None:  # F14
-    reads = ReadRules({TASKS: ReadAccess(fields=[6, 7, 8])})
-    async with client(FakeApp(), read_policy=reads) as qb:
-        plan = await qb.app(APP).plan_schema([CreateField(table="Tasks", label="Pay", type="text")])
-    assert any("can't see every field of Tasks" in item for item in plan.changes[0].warnings)
-    async with client(FakeApp()) as qb:
-        plan = await qb.app(APP).plan_schema([CreateField(table="Tasks", label="Pay", type="text")])
-    assert not plan.changes[0].warnings
+async def test_a_label_a_hidden_field_uses_is_a_blocker() -> None:  # F14
+    fake = FakeApp()
+    policy = fake.bind(allow.read(TASKS, [6, 7, 8]), allow.schema(TASKS, "add_field"))
+    async with client(FakeApp(), policy=policy) as qb:
+        hidden = await qb.app(APP).plan_schema(
+            [CreateField(table="Tasks", label="double", type="text")]
+        )
+        free = await qb.app(APP).plan_schema([CreateField(table="Tasks", label="Pay", type="text")])
+    assert hidden.changes[0].blockers == (
+        "A field you can't see already uses this label, so Quickbase would refuse it. Choose "
+        "another label.",
+    )
+    assert "Double" not in str(hidden)
+    assert not free.changes[0].blockers
+    assert not free.changes[0].warnings
 
 
 @pytest.mark.parametrize(
@@ -461,12 +470,15 @@ async def test_a_name_that_matches_says_how() -> None:  # F19
 
 
 async def test_refusals_name_tables_and_say_what_the_other_table_needs() -> None:  # F3, F4
-    rules = WriteRules(
-        {TASKS: WriteAccess(schema=SchemaAccess(relationships=True, lookups=True,
-                                                field_types=["date"], create_fields=True)),
-         PROJECTS: WriteAccess()}
-    )  # fmt: skip
-    async with client(FakeApp(), write_policy=rules) as qb:
+    fake = FakeApp()
+    # A lookup is granted on the child, and needs read access to the parent's field, which this
+    # client may only filter on.
+    policy = fake.bind(
+        allow.read(TASKS),
+        allow.filter(PROJECTS, fields.all()),
+        allow.schema(TASKS, "lookup", "add_field", field_types=["date"]),
+    )
+    async with client(fake, policy=policy) as qb:
         plan = await qb.app(APP).plan_schema(
             [
                 CreateField(table="Tasks", label="Note", type="text"),
@@ -474,9 +486,9 @@ async def test_refusals_name_tables_and_say_what_the_other_table_needs() -> None
             ]
         )
     field, lookup = plan.changes
-    assert "table Tasks only allows fields of type date" in field.blockers[0]
-    assert TASKS not in field.blockers[0]
-    assert lookup.blockers[0].startswith("This needs Projects to allow linking")
+    assert "The table only allows fields of type date" in field.blockers[0]
+    assert "adding a field to Tasks" in field.blockers[0]
+    assert "Total Hours (7) of Projects" in lookup.blockers[0]
 
 
 async def test_counts_say_what_they_count() -> None:  # F5, F7, F21

@@ -14,11 +14,12 @@ from pyquickbase import (
     NetworkError,
     NotFoundError,
     PermissionDeniedError,
+    Policy,
+    PolicyRefusedError,
     RateLimitError,
     RequestTimeoutError,
     RetryPolicy,
     ServerError,
-    WriteRefusedError,
 )
 
 pytestmark = pytest.mark.anyio
@@ -425,8 +426,8 @@ async def test_read_only_client_never_sends_anything_else(method: str, path: str
         seen.append(request)
         return httpx.Response(200, json={})
 
-    async with make_client(handler, read_only=True) as qb:
-        with pytest.raises(WriteRefusedError, match="read-only"):
+    async with make_client(handler, policy=Policy.read_only()) as qb:
+        with pytest.raises(PolicyRefusedError, match="Nothing was sent"):
             await qb.request(method, path, json={})
     assert seen == []
 
@@ -444,7 +445,7 @@ async def test_read_only_client_allows_reads(method: str, path: str) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"ok": True})
 
-    async with make_client(handler, read_only=True) as qb:
+    async with make_client(handler, policy=Policy.read_only()) as qb:
         assert await qb.request(method, path) == {"ok": True}
 
 

@@ -10,14 +10,10 @@ from pyquickbase import (
     ConfigurationError,
     ConfirmationError,
     InvalidValueError,
-    QueryError,
-    ReadAccess,
-    ReadRules,
-    SchemaAccess,
+    Policy,
     SchemaChangeResult,
     SchemaPlan,
-    WriteAccess,
-    WriteRules,
+    allow,
     tool_error,
     tool_result,
 )
@@ -65,7 +61,7 @@ async def test_apply_needs_a_current_confirmation(confirmation: Any, match: str)
         arguments: dict[str, Any] = {"changes": [NEW_FIELD]}
         if confirmation is not None:
             arguments["confirmation"] = confirmation
-        with pytest.raises(QueryError, match=match):
+        with pytest.raises(ConfirmationError, match=match):
             await apply.run(arguments)
     assert not fake.writes()
 
@@ -76,7 +72,7 @@ async def test_a_confirmation_only_applies_the_changes_it_was_given_for() -> Non
         app = qb.app(APP)
         confirmation = await (await app.operation("plan_schema")).run({"changes": [NEW_FIELD]})
         other = {**NEW_FIELD, "label": "Deadline"}
-        with pytest.raises(QueryError, match="these arguments differ"):
+        with pytest.raises(ConfirmationError, match="these arguments differ"):
             await (await app.operation("apply_schema")).run(
                 {"changes": [other], "confirmation": confirmation.confirmation}
             )
@@ -90,7 +86,7 @@ async def test_a_confirmation_is_refused_once_the_schema_changes() -> None:
         app = qb.app(APP)
         plan = await (await app.operation("plan_schema")).run({"changes": [change]})
         fake.fields[TASKS][7]["unique"] = True  # Someone changes the field in the UI.
-        with pytest.raises(QueryError, match="the schema has changed since"):
+        with pytest.raises(ConfirmationError, match="the schema has changed since"):
             await (await app.operation("apply_schema")).run(
                 {"changes": [change], "confirmation": plan.confirmation}
             )
@@ -116,10 +112,10 @@ async def test_a_plan_with_blockers_or_nothing_to_do_gives_no_confirmation() -> 
 
 async def test_the_schema_offers_only_what_the_rules_could_allow() -> None:
     fake = FakeApp()
-    rules = WriteRules(
-        {TASKS: WriteAccess(schema=SchemaAccess(create_fields=True, field_types=["text", "date"]))}
+    rules = fake.bind(
+        allow.read(TASKS), allow.schema(TASKS, "add_field", field_types=["text", "date"])
     )
-    async with client(fake, write_policy=rules) as qb:
+    async with client(fake, policy=rules) as qb:
         plan = await qb.app(APP).operation("plan_schema", max_changes=3)
     schema = plan.schema
     assert kinds(schema) == ["create_field"]
@@ -132,8 +128,8 @@ async def test_the_schema_offers_only_what_the_rules_could_allow() -> None:
 
 async def test_a_change_the_tool_doesnt_offer_is_refused() -> None:
     fake = FakeApp()
-    rules = WriteRules({TASKS: WriteAccess(schema=SchemaAccess(create_fields=True))})
-    async with client(fake, write_policy=rules) as qb:
+    rules = fake.bind(allow.read(TASKS), allow.schema(TASKS, "add_field"))
+    async with client(fake, policy=rules) as qb:
         plan = await qb.app(APP).operation("plan_schema", max_changes=1)
         with pytest.raises(InvalidValueError, match="isn't one this tool offers: create_field"):
             await plan.run({"changes": [{"kind": "delete_table", "table": "Tasks"}]})
@@ -144,7 +140,7 @@ async def test_a_change_the_tool_doesnt_offer_is_refused() -> None:
 
 
 async def test_a_client_that_cant_change_the_schema_cant_offer_it() -> None:
-    async with client(FakeApp(), read_only=True) as qb:
+    async with client(FakeApp(), policy=Policy.read_only()) as qb:
         with pytest.raises(ConfigurationError, match="allow no schema change"):
             await qb.app(APP).operation("plan_schema")
         assert (await qb.app(APP).operation("describe_schema")).name == "describe_schema"
@@ -155,8 +151,8 @@ async def test_a_client_that_cant_change_the_schema_cant_offer_it() -> None:
 
 async def test_describe_shows_what_the_client_can_read() -> None:
     fake = FakeApp()
-    reads = ReadRules({TASKS: ReadAccess(fields=[6, 9, 10, 11]), PROJECTS: ReadAccess(fields=[6])})
-    async with client(fake, read_policy=reads) as qb:
+    reads = fake.bind(allow.read(TASKS, [6, 9, 10, 11]), allow.read(PROJECTS, [6]))
+    async with client(fake, policy=reads) as qb:
         describe = await qb.app(APP).operation("describe_schema")
         everything = tool_result(await describe.run({}))
         only = tool_result(await describe.run({"tables": ["Projects"]}))

@@ -13,9 +13,9 @@ from pyquickbase import (
     AsyncQuickbase,
     F,
     FileUpload,
+    PolicyRefusedError,
     QueryError,
     ReadAccess,
-    ReadRefusedError,
     ReadRules,
     UnknownFieldError,
     UnknownReportError,
@@ -134,11 +134,11 @@ async def test_filters_sorts_and_windows_are_held_to_the_rules(
     async with await limited(scratch, rules) as qb:
         tasks = qb.app(scratch.app_id).table(table.info().id)
         assert await tasks.count(F("Status") == "Open") == 1
-        with pytest.raises(ReadRefusedError, match="filtering"):
+        with pytest.raises(PolicyRefusedError, match="filtering"):
             await tasks.count(F("Title") == "One")
-        with pytest.raises(ReadRefusedError, match="sorting"):
+        with pytest.raises(PolicyRefusedError, match="sorting"):
             await tasks.first(order_by="Title")
-        with pytest.raises(ReadRefusedError, match="at most 1"):
+        with pytest.raises(PolicyRefusedError, match="at most 1"):
             [record async for record in tasks.query(limit=2)]
         page = await tasks.query_page(top=1)
         assert (len(page.records), page.total, page.has_more) == (1, 2, True)
@@ -154,7 +154,7 @@ async def test_summaries_group_users_without_emails(
         assert "@" not in str(rows[0].group["Record Owner"])
     async with await limited(scratch, policy(table, ids, max_summary_records=1)) as qb:
         tasks = qb.app(scratch.app_id).table(table.info().id)
-        with pytest.raises(ReadRefusedError, match="summarizing at most 1"):
+        with pytest.raises(PolicyRefusedError, match="summarizing at most 1"):
             await tasks.summarize(group_by="Status")
 
 
@@ -182,7 +182,7 @@ async def test_downloads_need_the_field_in_files(
 ) -> None:
     async with await limited(scratch, policy(table, ids)) as qb:
         tasks = qb.app(scratch.app_id).table(table.info().id)
-        with pytest.raises(ReadRefusedError, match="downloading"):
+        with pytest.raises(PolicyRefusedError, match="downloading"):
             await tasks.download_file(1, "Attachment")
     async with await limited(scratch, policy(table, ids, files=[ids["Attachment"]])) as qb:
         tasks = qb.app(scratch.app_id).table(table.info().id)
@@ -198,13 +198,13 @@ async def test_write_only_fields_can_be_written_but_not_read(
         tasks = qb.app(scratch.app_id).table(table.info().id)
         result = await tasks.update([{"Record ID#": 2, "Notes": "private two"}])
         assert result.unchanged_ids == (2,)
-        with pytest.raises(ReadRefusedError, match="returning"):
+        with pytest.raises(PolicyRefusedError, match="returning"):
             await tasks.first(select=["Notes"])
-        with pytest.raises(ReadRefusedError, match="formula"):
+        with pytest.raises(PolicyRefusedError, match="formula"):
             await tasks.run_formula("1")
     # Even a write policy that allows everything can't add a field that would copy a hidden one.
     async with await limited(scratch, rules, write_policy=lambda _: True) as qb:
         tasks = qb.app(scratch.app_id).table(table.info().id)
-        with pytest.raises(ReadRefusedError, match="can't be changed"):
+        with pytest.raises(PolicyRefusedError, match="can't be changed"):
             await tasks.create_field("Copy", "text", formula="[Notes]")
     assert "Copy" not in {field.label for field in table.fields(refresh=True)}

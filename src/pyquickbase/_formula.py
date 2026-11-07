@@ -11,7 +11,8 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from .errors import ReadRefusedError
+from ._decision import Decision
+from .errors import PolicyRefusedError
 
 # Functions that only work on the values they're given, the current user, or the date. Compared in
 # lowercase, as Quickbase doesn't mind case. Size() only counts a list it's given. Anything that
@@ -148,7 +149,7 @@ def formula_parts(formula: str) -> FormulaParts:
     """Find the fields and functions a formula uses.
 
     Raises:
-        ReadRefusedError: A string, comment, or field reference isn't closed, so it can't be read.
+        PolicyRefusedError: A string, comment, or field reference isn't closed, so it can't be read.
     """
     fields: set[str] = set()
     functions: set[str] = set()
@@ -195,8 +196,15 @@ def _string_end(formula: str, start: int) -> int:
     raise _unreadable("a string isn't closed")
 
 
-def _unreadable(reason: str) -> ReadRefusedError:
-    return ReadRefusedError(f"The formula can't be checked, as {reason}. Nothing was sent.")
+def refused_formula(reason: str) -> PolicyRefusedError:
+    """A formula that can't be allowed, because of what it reads."""
+    return PolicyRefusedError(
+        Decision(allowed=False, verb="formula", layer="derived", reason=reason, hint=None)
+    )
+
+
+def _unreadable(reason: str) -> PolicyRefusedError:
+    return refused_formula(f"The formula can't be checked, as {reason}")
 
 
 def unsafe_functions(parts: FormulaParts) -> list[str]:
@@ -236,22 +244,21 @@ def check_formula(
     """Refuse a formula unless it only reads these fields, with functions known to be safe.
 
     Raises:
-        ReadRefusedError: It references another field, calls a function that isn't on the list,
+        PolicyRefusedError: It references another field, calls a function that isn't on the list,
             or can't be read. The message says which.
     """
     parts = formula_parts(formula)
     hidden = unreadable_fields(parts, readable_labels, readable_ids)
     if hidden:
         names = ", ".join(f"[{label}]" for label in hidden)
-        raise ReadRefusedError(
+        raise refused_formula(
             f"The formula uses {names}, which this client can't read, or which doesn't exist, so "
-            "a field showing its result would reveal it. Nothing was sent."
+            "a field showing its result would reveal it"
         )
     unknown = unsafe_functions(parts)
     if unknown:
-        raise ReadRefusedError(
+        raise refused_formula(
             f"The formula calls {', '.join(name + '()' for name in unknown)}, which this client "
-            "can't use in a formula, as it isn't known to only read the record's own values. "
-            "Nothing was sent."
+            "can't use in a formula, as it isn't known to only read the record's own values"
         )
     return parts

@@ -1,10 +1,13 @@
 from pyquickbase import (
     AsyncQuickbase,
+    Policy,
     QuickbaseError,
     tool_error,
 )
 
-async with AsyncQuickbase.from_env(read_only=True) as qb:
+async with AsyncQuickbase.from_env(
+    policy=Policy.read_only()
+) as qb:
     tasks = qb.app("bq1234567").table("bqtasks123")
     try:
         await tasks.insert([{"Title": "Paint walls"}])

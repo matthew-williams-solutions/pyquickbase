@@ -1,5 +1,5 @@
 # Generated from the async code by scripts/generate_sync.py. Do not edit.
-"""Read policies, used through a client, so every kind of read reaches the check."""
+"""A policy's reads, used through a client, so every kind of read reaches the check."""
 
 import json
 from dataclasses import dataclass
@@ -9,25 +9,27 @@ import httpx
 import pytest
 
 from pyquickbase import (
+    BoundPolicy,
     Column,
+    Decision,
     F,
+    Policy,
+    PolicyRefusedError,
     QueryError,
     Quickbase,
-    ReadAccess,
-    ReadRefusedError,
     ReadRequest,
-    ReadRules,
     SchemaMismatchError,
     TypedRecord,
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
     User,
-    WriteAccess,
-    WriteRefusedError,
-    WriteRules,
-    all_of,
+    WriteRequest,
+    allow,
+    fields,
 )
+
+from ..policy_helpers import bind
 
 TASKS = "bqtasks"
 SECRET = "bqsecret"
@@ -115,11 +117,27 @@ class Fake:
 
 def client(fake: Fake, policy: Any, **kwargs: Any) -> Quickbase:
     http = httpx.Client(transport=httpx.MockTransport(fake))
-    return Quickbase(realm="acme", token="t", http_client=http, read_policy=policy, **kwargs)
+    return Quickbase(realm="acme", token="t", http_client=http, policy=policy, **kwargs)
 
 
-def rules(**access: Any) -> ReadRules:
-    return ReadRules({TASKS: ReadAccess(**{"fields": [6, 7, 10], "filter": [7], **access})})
+REPORTS = [
+    {"id": "7", "name": "Open", "type": "table"},
+    {"id": "8", "name": "Totals", "type": "summary"},
+]
+
+
+def rules(*extra: Any, **access: Any) -> BoundPolicy:
+    """What `ReadAccess(fields=[6, 7, 10], filter=[7])` allowed, with the same options."""
+    options = {"filter": [7], **access}
+    readable = options.pop("fields", [6, 7, 10])
+    if "sort" not in options:
+        options["sort"] = readable
+    return bind(
+        allow.read(TASKS, readable, **options),
+        *extra,
+        tables={TASKS: ("Tasks", FIELDS)},
+        reports={TASKS: REPORTS},
+    )
 
 
 def queries(fake: Fake) -> list[str]:
@@ -161,11 +179,11 @@ def test_filtering_and_sorting_outside_the_lists_are_refused_without_sending() -
     fake = Fake()
     with client(fake, rules(sort=[7])) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        with pytest.raises(ReadRefusedError, match=r"filtering on fields \[6\]"):
+        with pytest.raises(PolicyRefusedError, match=r"filtering on Title \(6\)"):
             tasks.count(F("Title") == "x")
-        with pytest.raises(ReadRefusedError, match=r"filtering on fields \[6\]"):
+        with pytest.raises(PolicyRefusedError, match=r"filtering on Title \(6\)"):
             tasks.preview_delete(F("Title") == "x")
-        with pytest.raises(ReadRefusedError, match="sorting"):
+        with pytest.raises(PolicyRefusedError, match="sorting"):
             tasks.first(order_by="Title")
         assert tasks.count(F("Status") == "Open") == 1
     assert len(queries(fake)) == 1
@@ -175,7 +193,7 @@ def test_hand_written_filters_are_checked_too() -> None:
     fake = Fake()
     with client(fake, rules()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        with pytest.raises(ReadRefusedError):
+        with pytest.raises(PolicyRefusedError):
             tasks.count("{7.EX.'_FID_6'}")
         # The SDK's validator already refuses a field it can't see.
         with pytest.raises(QueryError):
@@ -187,10 +205,10 @@ def test_a_query_needs_a_limit_within_max_records() -> None:
     fake = Fake()
     with client(fake, rules(max_records=50)) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        with pytest.raises(ReadRefusedError, match="at most 50"):
+        with pytest.raises(PolicyRefusedError, match="at most 50"):
             [record for record in tasks.query()]
         assert len([record for record in tasks.query(limit=50)]) == 1
-        with pytest.raises(ReadRefusedError, match="at most 50"):
+        with pytest.raises(PolicyRefusedError, match="at most 50"):
             tasks.query_page(top=10, skip=41)
 
 
@@ -198,7 +216,7 @@ def test_summarize_counts_first_and_has_its_own_limit() -> None:
     fake = Fake(total=11)
     with client(fake, rules(max_records=1, max_summary_records=10)) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        with pytest.raises(ReadRefusedError, match="allow summarizing at most 10"):
+        with pytest.raises(PolicyRefusedError, match="allows summarizing at most 10"):
             tasks.summarize(group_by="Status")
         assert len(queries(fake)) == 1  # Only the count.
         fake.total = 1
@@ -217,7 +235,7 @@ def test_summarize_groups_users_by_id_without_emails() -> None:
 
 def test_reports_must_be_listed_and_lose_hidden_columns() -> None:
     fake = Fake()
-    with client(fake, rules(reports=["7"], summary_reports=["8"])) as qb:
+    with client(fake, rules(allow.report(TASKS, ["7", "Totals"]))) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         assert [item.name for item in tasks.reports()] == ["Open", "Totals"]
         assert all("query" not in item.raw for item in tasks.reports())
@@ -231,42 +249,42 @@ def test_reports_must_be_listed_and_lose_hidden_columns() -> None:
 
 def test_reports_through_request_are_refused() -> None:
     fake = Fake()
-    with client(fake, rules(reports=["7"])) as qb:
-        with pytest.raises(ReadRefusedError, match="request"):
+    with client(fake, rules(allow.report(TASKS, ["7"]))) as qb:
+        with pytest.raises(PolicyRefusedError, match="request"):
             qb.request("POST", "/reports/7/run", params={"tableId": TASKS, "top": 1})
     assert "POST /reports/7/run" not in fake.sent
 
 
-def test_downloads_need_the_field_listed_in_files() -> None:
+def test_downloads_need_their_own_grant() -> None:
     fake = Fake()
-    with client(fake, rules(files=[13])) as qb:
+    with client(fake, rules(allow.download(TASKS, ["Attachment"]))) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         assert (tasks.download_file(1, "Attachment")).data == b"hi"
     with client(fake, rules(fields=[6, 13])) as qb:
-        with pytest.raises(ReadRefusedError, match="downloading"):
+        with pytest.raises(PolicyRefusedError, match="downloading"):
             qb.app("bq1234567").table("Tasks").download_file(1, "Attachment")
 
 
 def test_formulas_app_details_and_roles_are_refused() -> None:
     fake = Fake()
-    with client(fake, rules(fields=True)) as qb:
+    with client(fake, rules(fields=fields.all())) as qb:
         app = qb.app("bq1234567")
-        with pytest.raises(ReadRefusedError, match="formula"):
+        with pytest.raises(PolicyRefusedError, match="formula"):
             app.table("Tasks").run_formula("1")
-        with pytest.raises(ReadRefusedError):
+        with pytest.raises(PolicyRefusedError):
             app.info()
-        with pytest.raises(ReadRefusedError):
+        with pytest.raises(PolicyRefusedError):
             app.roles()
     assert not [item for item in fake.sent if "formula" in item or "/apps" in item]
 
 
 def test_a_formula_that_reads_a_hidden_field_is_refused() -> None:
     fake = Fake()
-    with client(fake, rules(), write_policy=lambda _: True) as qb:
+    with client(fake, rules(allow.schema(TASKS, "add_field", "formula"))) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        with pytest.raises(ReadRefusedError, match=r"uses \[Notes\], which this client can't"):
+        with pytest.raises(PolicyRefusedError, match=r"uses \[Notes\], which this client can't"):
             tasks.create_field("Copy", "text", formula="[Notes]")
-        with pytest.raises(ReadRefusedError, match="check what they read"):
+        with pytest.raises(PolicyRefusedError, match="check what they read"):
             qb.request(
                 "POST",
                 "/fields",
@@ -278,20 +296,20 @@ def test_a_formula_that_reads_a_hidden_field_is_refused() -> None:
 
 def test_record_writes_still_work_and_deletes_are_held_to_the_filter() -> None:
     fake = Fake()
-    writes = WriteRules({TASKS: WriteAccess(insert=True, delete=True)})
-    with client(fake, rules(write_only=[9]), write_policy=writes) as qb:
+    writes = [allow.insert(TASKS, fields.all()), allow.delete(TASKS)]
+    with client(fake, rules(*writes)) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         assert (tasks.insert([{"Title": "x", "Notes": "private"}])).created_ids == (2,)
-        with pytest.raises(ReadRefusedError, match="filtering"):
+        with pytest.raises(PolicyRefusedError, match="filtering"):
             tasks.delete(F("Title") == "x")
         assert tasks.delete(F("Status") == "x") == 1
-        with pytest.raises(ReadRefusedError, match="returning"):
+        with pytest.raises(PolicyRefusedError, match="reading Notes"):
             tasks.first(select=["Notes"])
 
 
 def test_write_refusals_come_before_reads() -> None:
-    with client(Fake(), rules(), read_only=True) as qb:
-        with pytest.raises(WriteRefusedError):
+    with client(Fake(), Policy.read_only()) as qb:
+        with pytest.raises(PolicyRefusedError):
             qb.app("bq1234567").table("Tasks").delete(F("Title") == "x")
 
 
@@ -312,18 +330,18 @@ def test_request_is_checked_and_trimmed() -> None:
             {"from": TASKS, "select": [6], "sortBy": []},
             {"from": SECRET, "select": [6], "sortBy": [], "options": {"top": 1}},
         ):
-            with pytest.raises(ReadRefusedError):
+            with pytest.raises(PolicyRefusedError):
                 qb.request("POST", "/records/query", json=body)
-        with pytest.raises(ReadRefusedError):
+        with pytest.raises(PolicyRefusedError):
             qb.request("GET", "/fields", params={"tableId": SECRET})
     assert len(queries(fake)) == 1
 
 
 def test_preview_update_of_a_hidden_field_is_refused() -> None:
     fake = Fake()
-    with client(fake, rules(write_only=[9])) as qb:
+    with client(fake, rules(allow.update(TASKS, ["Notes", "Status"]))) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        with pytest.raises(ReadRefusedError, match="returning"):
+        with pytest.raises(PolicyRefusedError, match="reading Notes"):
             tasks.preview_update([{"Record ID#": 1, "Notes": "x"}])
         preview = tasks.preview_update([{"Record ID#": 1, "Status": "Done"}])
         assert [change.record_id for change in preview.changes] == [1]
@@ -344,23 +362,21 @@ def test_a_generated_class_with_a_hidden_field_doesnt_match() -> None:
             qb.app("bq1234567").typed(Tasks).first()
 
 
-def test_a_custom_policy_sees_every_read_and_trims_nothing() -> None:
-    seen: list[ReadRequest] = []
+class Log:
+    def __init__(self) -> None:
+        self.seen: list[ReadRequest | WriteRequest] = []
 
-    def log(request: ReadRequest) -> bool:
-        seen.append(request)
-        return True
+    def decide(self, request: ReadRequest | WriteRequest) -> Decision | None:
+        self.seen.append(request)
+        return None
 
-    with client(Fake(), log) as qb:
-        tasks = qb.app("bq1234567").table("Tasks")
-        record = tasks.first(select=["Notes"])
+
+def test_a_rule_of_your_own_sees_every_read_the_rules_allow() -> None:
+    log = Log()
+    policy = bind(allow.read(TASKS), log, tables={TASKS: ("Tasks", FIELDS)})
+    with client(Fake(), policy) as qb:
+        record = qb.app("bq1234567").table("Tasks").first(select=["Notes"])
     assert record is not None
     assert record[9] == "s3cret"
-    assert [item.action for item in seen] == ["tables", "fields", "query"]
-    assert seen[-1].field_ids == {3, 9}
-
-
-def test_rules_inside_all_of_still_trim() -> None:
-    with client(Fake(), all_of(rules(), lambda _: True)) as qb:
-        fields = qb.app("bq1234567").table("Tasks").fields()
-    assert 9 not in [field.id for field in fields]
+    assert [item.action for item in log.seen] == ["tables", "fields", "query"]
+    assert log.seen[-1].field_ids == {3, 9}  # pyright: ignore[reportAttributeAccessIssue]

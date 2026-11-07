@@ -11,23 +11,23 @@ import pytest
 
 from pyquickbase import (
     ConfigurationError,
+    ConfirmationError,
     F,
     FileDownload,
     InvalidValueError,
     Page,
+    Policy,
+    PolicyRefusedError,
     QueryError,
     Quickbase,
-    ReadAccess,
-    ReadRefusedError,
-    ReadRules,
     SummaryRow,
     UpdatePreview,
-    WriteAccess,
-    WriteRefusedError,
     WriteResult,
-    WriteRules,
+    allow,
     tool_result,
 )
+
+from ..policy_helpers import bind
 
 TASKS = "bqtasks"
 FIELDS = [
@@ -102,6 +102,10 @@ class Fake:
         return [body for sent, body in self.sent if sent == name]
 
 
+def bound(*rules: Any) -> Any:
+    return bind(*rules, tables={TASKS: ("Tasks", FIELDS)}, app_id="bq1234567")
+
+
 def client(fake: Fake, **kwargs: Any) -> Quickbase:
     http = httpx.Client(transport=httpx.MockTransport(fake))
     return Quickbase(realm="acme", token="t", http_client=http, **kwargs)
@@ -112,7 +116,7 @@ OPEN = {"field": "Status", "op": "==", "value": "Open"}
 
 def test_query_runs_a_page_query_within_its_scope() -> None:
     fake = Fake()
-    with client(fake, read_only=True) as qb:
+    with client(fake, policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         search = tasks.operation("query", fields=["Title", "Status"])
         assert search.name == "query"
@@ -276,9 +280,8 @@ def test_a_delete_preview_says_when_a_delete_would_be_refused(matching: int, ove
 
 
 def test_preview_update_offers_only_fields_it_can_read() -> None:
-    reads = ReadRules({TASKS: ReadAccess(fields=[6, 7], write_only=[9])})
-    writes = WriteRules({TASKS: WriteAccess(update=[7, 9])})
-    with client(Fake(), read_policy=reads, write_policy=writes) as qb:
+    policy = bound(allow.read(TASKS, [6, 7]), allow.update(TASKS, [7, 9]))
+    with client(Fake(), policy=policy) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         preview = tasks.operation("preview_update")
         record = preview.schema["properties"]["records"]["items"]
@@ -289,14 +292,13 @@ def test_preview_update_offers_only_fields_it_can_read() -> None:
             "Status",
             "Project",
         ]
-        with pytest.raises(WriteRefusedError, match="both read and change"):
+        with pytest.raises(PolicyRefusedError, match="both read and change"):
             tasks.operation("preview_update", fields=["Project"])
 
 
 def test_preview_update_reads_within_the_read_rules_limit() -> None:
     fake = Fake()
-    reads = ReadRules({TASKS: ReadAccess(fields=True, max_records=2)})
-    with client(fake, read_policy=reads) as qb:
+    with client(fake, policy=bound(allow.read(TASKS, max_records=2))) as qb:
         rows = [{"Record ID#": record_id, "Status": "Done"} for record_id in (1, 2, 3)]
         qb.app("bq1234567").table("Tasks").preview_update(rows)
     assert [body["options"]["top"] for body in fake.requests("POST /records/query")] == [2, 1]
@@ -304,7 +306,7 @@ def test_preview_update_reads_within_the_read_rules_limit() -> None:
 
 def test_reports() -> None:
     fake = Fake()
-    with client(fake, read_only=True) as qb:
+    with client(fake, policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         run = tasks.operation("run_report", reports={"1": "Every task."})
         assert "1: List All, Every task." in run.schema["properties"]["report"]["description"]
@@ -320,7 +322,7 @@ def test_reports() -> None:
 
 def test_reports_can_be_named_by_number_or_name() -> None:
     fake = Fake()
-    with client(fake, read_only=True) as qb:
+    with client(fake, policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         run = tasks.operation("run_report")
         assert isinstance(run.run({"report": 1}), Page)
@@ -337,15 +339,15 @@ def test_reports_can_be_named_by_number_or_name() -> None:
 
 
 def test_an_operation_the_client_cant_run_is_refused_when_made() -> None:
-    with client(Fake(), read_only=True) as qb:
+    with client(Fake(), policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         for name in ("insert", "update", "delete", "delete_file_version"):
-            with pytest.raises(WriteRefusedError, match=f"can't offer {name}"):
+            with pytest.raises(PolicyRefusedError, match=f"can't offer {name}"):
                 tasks.operation(name)  # type: ignore[arg-type]
-    rules = WriteRules({TASKS: WriteAccess(update=[7])})
-    with client(Fake(), write_policy=rules) as qb:
+    rules = bound(allow.read(TASKS), allow.update(TASKS, [7]))
+    with client(Fake(), policy=rules) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        with pytest.raises(WriteRefusedError, match="insert"):
+        with pytest.raises(PolicyRefusedError, match="insert"):
             tasks.operation("insert")
         update = tasks.operation("update")
         record = update.schema["properties"]["records"]["items"]
@@ -353,18 +355,18 @@ def test_an_operation_the_client_cant_run_is_refused_when_made() -> None:
 
 
 def test_read_rules_shape_what_is_offered_and_refuse_formulas() -> None:
-    rules = ReadRules({TASKS: ReadAccess(fields=[6, 7], filter=[7], max_records=10)})
-    with client(Fake(), read_policy=rules, read_only=True) as qb:
+    rules = bound(allow.read(TASKS, [6, 7], filter=[7], max_records=10))
+    with client(Fake(), policy=rules) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         search = tasks.operation("query")
         properties = search.schema["properties"]
         assert properties["select"]["items"]["enum"] == ["Record ID#", "Title", "Status"]
         assert properties["limit"]["maximum"] == 10
-        with pytest.raises(ReadRefusedError, match="formulas"):
+        with pytest.raises(PolicyRefusedError, match="formulas"):
             tasks.operation("run_formula", formula="1")
-        with pytest.raises(ReadRefusedError, match="download"):
+        with pytest.raises(PolicyRefusedError, match="download"):
             tasks.operation("download_file")
-        with pytest.raises(ReadRefusedError, match="report"):
+        with pytest.raises(PolicyRefusedError, match="report"):
             tasks.operation("run_report")
 
 
@@ -441,14 +443,16 @@ def test_an_insert_scope_is_left_out_of_the_schema_and_filled_in() -> None:
         (
             "insert",
             F("Project") == "Alpha",
-            {"write_policy": WriteRules({TASKS: WriteAccess(insert=[6])})},
-            "Allow them in WriteRules",
+            {"policy": "insert Title"},
+            r"Allow them with allow.insert\(\)",
         ),
     ],
 )
 def test_a_scope_that_cant_work_is_refused_when_made(
     name: str, scope: Any, kwargs: dict[str, Any], match: str
 ) -> None:
+    if kwargs.get("policy") == "insert Title":
+        kwargs = {"policy": bound(allow.read(TASKS), allow.insert(TASKS, [6]))}
     with client(Fake(), **kwargs) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         with pytest.raises(ConfigurationError, match=match):
@@ -468,7 +472,7 @@ def test_an_update_needs_the_confirmation_of_a_preview_of_the_same_records() -> 
         preview = tasks.operation("preview_update")
         update = tasks.operation("update", require_preview=True)
         assert "confirmation" in update.schema["required"]
-        with pytest.raises(QueryError, match="needs the confirmation that preview_update"):
+        with pytest.raises(ConfirmationError, match="needs the confirmation that preview_update"):
             update.run(CHANGE)
         shown = tool_result(preview.run(CHANGE))
         confirmation = shown["confirmation"]
@@ -477,9 +481,9 @@ def test_an_update_needs_the_confirmation_of_a_preview_of_the_same_records() -> 
         result = update.run({**reordered, "confirmation": confirmation})
         assert isinstance(result, WriteResult)
         other = {"records": [{"Record ID#": 1, "Status": "Open", "Title": "x"}]}
-        with pytest.raises(QueryError, match="doesn't match"):
+        with pytest.raises(ConfirmationError, match="doesn't match"):
             update.run({**other, "confirmation": confirmation})
-        with pytest.raises(QueryError, match="isn't one preview_update returned"):
+        with pytest.raises(ConfirmationError, match="isn't one preview_update returned"):
             update.run({**CHANGE, "confirmation": "nonsense"})
     assert len(fake.requests("POST /records")) == 1
 
@@ -493,12 +497,12 @@ def test_a_confirmation_expires_and_only_works_with_its_own_client(
         elsewhere = (
             other_qb.app("bq1234567").table("Tasks").operation("update", require_preview=True)
         )
-        with pytest.raises(QueryError, match="doesn't match"):
+        with pytest.raises(ConfirmationError, match="doesn't match"):
             elsewhere.run({**CHANGE, "confirmation": confirmation})
         update = qb.app("bq1234567").table("Tasks").operation("update", require_preview=True)
         later = time.time() + 16 * 60
         monkeypatch.setattr(time, "time", lambda: later)
-        with pytest.raises(QueryError, match="has expired"):
+        with pytest.raises(ConfirmationError, match="has expired"):
             update.run({**CHANGE, "confirmation": confirmation})
 
 
@@ -510,7 +514,7 @@ def test_a_delete_needs_a_preview_and_the_same_records_to_match() -> None:
         delete = tasks.operation("delete", max_records=10, require_preview=True)
         confirmation = tool_result(preview.run({"where": OPEN}))["confirmation"]
         fake.matching = 3  # Another record now matches.
-        with pytest.raises(QueryError, match="the records that match have changed"):
+        with pytest.raises(ConfirmationError, match="the records that match have changed"):
             delete.run({"where": OPEN, "confirmation": confirmation})
         assert fake.requests("DELETE /records") == []
         fake.matching = 2

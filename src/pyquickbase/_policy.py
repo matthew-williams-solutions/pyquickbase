@@ -1,670 +1,809 @@
-"""Decide whether a write may be sent. No network access.
+"""What a client may do, written as rules over tables and fields. No network access.
 
-There are two separate steps, so a new rule needs no new parsing and a new endpoint needs no new
-rules. `describe_write()` is the only code that knows how Quickbase's requests look, and a policy
-only sees the `WriteRequest` it produces. That holds no values, so a policy can't leak or log them.
-
-Anything that can't be understood is described as unknown, and the built-in rules refuse what's
-unknown wherever it matters. See docs/api-notes.md for how Quickbase reads these requests.
+A `Policy` is only a description, by label. `Policy.bind()` resolves it against an app once, and
+the `BoundPolicy` it returns, in `_bound.py`, makes every decision. See docs/guides/agents.md.
 """
 
-import inspect
-import re
-from collections.abc import Callable, Collection, Mapping
-from dataclasses import dataclass
-from typing import Any, Literal, cast, get_args
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Literal, Protocol, overload, runtime_checkable
 
-from ._models import RECORD_ID_FIELD
-from .errors import ConfigurationError, WriteRefusedError
+from ._decision import SCHEMA_VERBS, VERBS, Decision, SchemaVerb
+from ._query import Expression
+from .errors import ConfigurationError
 
-WriteAction = Literal[
-    "insert",
-    "update",
-    "upsert",
-    "delete",
-    "delete_file",
-    "create_table",
-    "update_table",
-    "delete_table",
-    "create_field",
-    "update_field",
-    "delete_field",
-    "create_relationship",
-    "update_relationship",
-    "delete_relationship",
-    "other",
-]
-"""What a write does. See `WriteRequest`."""
+if TYPE_CHECKING:
+    from ._async._resources import AsyncApp
+    from ._bound import BoundPolicy
+    from ._read_request import ReadRequest
+    from ._sync._resources import App
+    from ._write_request import WriteRequest
 
-DerivedKind = Literal["formula", "lookup", "summary"]
-"""A field whose values come from other fields. See `WriteRequest.derived`."""
+DEFAULT_MAX_RECORDS = 100
+DEFAULT_MAX_SUMMARY_RECORDS = 10_000
 
-SCHEMA_ACTIONS: frozenset[str] = frozenset(
-    action
-    for action in get_args(WriteAction)
-    if action.endswith(("_table", "_field", "_relationship"))
-)
-"""The actions that change tables, fields, and relationships, rather than records."""
+NewFields = Literal["read", "hidden"] | str
+"""What a field created after binding gets: `read`, `hidden`, or a class's name."""
 
-UNSAFE_FORMULA_TYPES = frozenset({"url", "rich-text"})
-"""Formula types that make links or markup someone may click, which act as whoever clicks them."""
 
-_FILE_PATH = re.compile(r"/files/([A-Za-z0-9]+)/[0-9]+/([0-9]+)/[0-9]+")
-_TABLE_PATH = re.compile(r"/tables/([A-Za-z0-9]+)")
-_FIELD_PATH = re.compile(r"/fields/([1-9][0-9]*)")
-_RELATIONSHIP_PATH = re.compile(r"/tables/([A-Za-z0-9]+)/relationship(?:/([1-9][0-9]*))?")
-_FIELD_KEY = re.compile(r"[1-9][0-9]*")
-_RECORD_ID_KEY = str(RECORD_ID_FIELD)
+@dataclass(frozen=True, slots=True)
+class FieldSelector:
+    """Which fields a rule or class covers. Make one with `fields`, or name fields by label or ID.
+
+    Attributes:
+        kind: `all`, `new`, `classed`, `labeled_like`, or `named`.
+        values: The classes, the pattern, or the labels and IDs.
+    """
+
+    kind: Literal["all", "new", "classed", "labeled_like", "named"]
+    values: tuple[str | int, ...] = ()
+
+    def __repr__(self) -> str:
+        if self.kind == "named":
+            return repr(list(self.values))
+        args = ", ".join(repr(item) for item in self.values)
+        return f"fields.{self.kind}({args})"
+
+
+@dataclass(frozen=True, slots=True)
+class TableSelector:
+    """Which tables a rule covers. Make one with `tables`, or name a table by name or ID.
+
+    Attributes:
+        kind: `all`, `created`, or `named`.
+        values: For `named`, the table's name or ID.
+    """
+
+    kind: Literal["all", "created", "named"]
+    values: tuple[str, ...] = ()
+
+    def __repr__(self) -> str:
+        if self.kind == "named":
+            return repr(self.values[0])
+        return f"tables.{self.kind}()"
+
+
+class _Fields:
+    """Field selectors, for rules and classes."""
+
+    @staticmethod
+    def all() -> FieldSelector:
+        """Every field, including ones added after binding, which `new_fields` limits."""
+        return FieldSelector("all")
+
+    @staticmethod
+    def new() -> FieldSelector:
+        """Only the fields added after the policy was bound."""
+        return FieldSelector("new")
+
+    @staticmethod
+    def classed(*names: str) -> FieldSelector:
+        """The fields in any of these classes, including formulas, lookups, and summaries that read
+        one, through any chain of them.
+
+        Args:
+            *names: The classes, from the policy's `classes`.
+        """
+        if not names or not all(isinstance(item, str) and item for item in names):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise ConfigurationError("fields.classed() takes one or more class names.")
+        return FieldSelector("classed", tuple(names))
+
+    @staticmethod
+    def labeled_like(pattern: str) -> FieldSelector:
+        """The fields whose labels match a pattern, ignoring case. Matched when the policy is bound.
+
+        Args:
+            pattern: The pattern, where `*` is any text and `?` is one character, such as `_*`.
+        """
+        if not isinstance(pattern, str) or not pattern:  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise ConfigurationError("fields.labeled_like() takes a pattern, such as '_*'.")
+        return FieldSelector("labeled_like", (pattern,))
+
+
+class _Tables:
+    """Table selectors, for rules."""
+
+    @staticmethod
+    def all() -> TableSelector:
+        """Every table in the bound app, and any this client creates."""
+        return TableSelector("all")
+
+    @staticmethod
+    def created() -> TableSelector:
+        """Only the tables this client creates after the policy is bound."""
+        return TableSelector("created")
+
+
+fields = _Fields()
+"""Field selectors: `fields.all()`, `fields.new()`, `fields.classed()`, and
+`fields.labeled_like()`."""
+
+tables = _Tables()
+"""Table selectors: `tables.all()` and `tables.created()`."""
+
+FieldTarget = str | int | FieldSelector
+"""A field in a rule: a label, an ID, or a `fields` selector."""
+FieldsArg = FieldTarget | Sequence[FieldTarget]
+"""One field target or a list of them."""
+TableTarget = str | TableSelector
+"""A table in a rule: a name, an ID, or a `tables` selector."""
+TablesArg = TableTarget | Sequence[TableTarget]
+"""One table target or a list of them."""
+ClassTarget = str | tuple[str, str | int] | FieldSelector
+"""A field in a class: `"Table.Field"`, `("Table", "Field")`, or a `fields` selector."""
+
+
+def _field_selectors(value: Any, argument: str) -> tuple[FieldSelector, ...]:
+    items: list[Any] = (
+        [value] if isinstance(value, str | int | FieldSelector) else list(value or ())
+    )
+    if not items:
+        raise ConfigurationError(f"{argument} needs at least one field, or fields.all().")
+    found: list[FieldSelector] = []
+    named: list[str | int] = []
+    for item in items:
+        if isinstance(item, FieldSelector):
+            found.append(item)
+        elif isinstance(item, bool) or not isinstance(item, str | int) or item == "":
+            raise ConfigurationError(f"{argument} takes labels, IDs, or fields.* selectors.")
+        elif isinstance(item, int) and item < 1:
+            raise ConfigurationError(f"{argument} has {item}, which isn't a field ID.")
+        else:
+            named.append(item)
+    if named:
+        found.append(FieldSelector("named", tuple(named)))
+    return tuple(found)
+
+
+def _table_selectors(value: Any, argument: str = "tables") -> tuple[TableSelector, ...]:
+    items: list[Any] = [value] if isinstance(value, str | TableSelector) else list(value or ())
+    if not items:
+        raise ConfigurationError(f"{argument} needs at least one table, or tables.all().")
+    found: list[TableSelector] = []
+    for item in items:
+        if isinstance(item, TableSelector):
+            found.append(item)
+        elif isinstance(item, str) and item:
+            found.append(TableSelector("named", (item,)))
+        else:
+            raise ConfigurationError(f"{argument} takes table names, IDs, or tables.* selectors.")
+    return tuple(found)
+
+
+@dataclass(frozen=True, slots=True)
+class Grant:
+    """Some verbs over some fields, within a `PolicyRule`. `fields` is None for verbs that apply to
+    a whole table."""
+
+    verbs: frozenset[str]
+    fields: tuple[FieldSelector, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class WriteRequest:
-    """What a write would do, for a write policy to decide on.
-
-    It holds no values from the request, so a policy can log it safely. `None` always means that
-    this couldn't be determined, so check for it rather than treating it as nothing.
+class PolicyRule:
+    """One rule of a `Policy`, made by `allow`, `deny`, or `limit`.
 
     Attributes:
-        action: `insert` only creates records, and `update` only changes them. `upsert` may do
-            either. That includes a write that merges on any field other than `Record ID#`, a row
-            whose field IDs aren't written in the usual way, and any write without a merge field to
-            a table whose key field isn't `Record ID#`, or through `request()`, which can't tell.
-            `delete` deletes records, and `delete_file` deletes a version of a file.
-            `create_table`, `update_table`, `delete_table`, `create_field`, `update_field`,
-            `delete_field`, `create_relationship`, `update_relationship`, and
-            `delete_relationship` change the schema. `update_relationship` adds lookup or summary
-            fields. `other` is any other write.
-        table_id: The table it writes to. For a relationship, the child table.
-        field_ids: The fields whose values it sets, or for `update_field` and `delete_field`, the
-            fields it changes or deletes. For `update`, this leaves out `Record ID#`, which only
-            says which record to change. `None` for `delete`, which affects whole records, and for
-            other schema changes.
-        row_count: How many rows are in this request, which is one batch of a larger write. `None`
-            for anything but `insert`, `update`, and `upsert`, as a delete by filter can't know.
-        method: The HTTP method.
-        path: The request's path, without its query parameters.
-        app_id: For `create_table` and `update_table`, the app.
-        parent_table_id: For a relationship, the parent table. Only `create_relationship` says
-            which it is, so through `request()` it's `None` for the others.
-        field_type: For `create_field`, the new field's type, such as `text`.
-        derived: The formula, lookup, and summary fields it makes or changes, which read other
-            fields. A summary is made on the parent table.
+        effect: `allow`, `deny`, or `limit`.
+        tables: The tables it covers, or None for the app itself, as for `create_tables`.
+        grants: The verbs it covers, and on which fields.
+        options: Its limits, such as `max_records`, and for `limit.rows()`, its `where`.
+        text: The rule as written, which a `Decision` names.
     """
 
-    action: WriteAction
-    table_id: str | None
-    field_ids: frozenset[int] | None
-    row_count: int | None
-    method: str
-    path: str
-    app_id: str | None = None
-    parent_table_id: str | None = None
-    field_type: str | None = None
-    derived: frozenset[DerivedKind] = frozenset()
+    effect: Literal["allow", "deny", "limit"]
+    tables: tuple[TableSelector, ...] | None
+    grants: tuple[Grant, ...]
+    options: Mapping[str, Any] = field(default_factory=dict[str, Any])
+    text: str
+
+    def __repr__(self) -> str:
+        return self.text
 
 
-WritePolicy = Callable[[WriteRequest], bool]
-"""A function that decides on a write. See `Quickbase`'s `write_policy` argument."""
+@runtime_checkable
+class Rule(Protocol):
+    """Custom logic, added to a policy's `rules`. It can only refuse.
 
-
-def _describe_rows(path: str, body: Mapping[str, Any], key_field_id: int | None) -> WriteRequest:
-    to = body.get("to")
-    table_id = to if isinstance(to, str) else None
-    rows = body.get("data")
-    if not isinstance(rows, list):
-        return _other("POST", path)
-    field_ids: set[int] | None = set()
-    with_record_id = 0
-    # Without a merge field, a row with an existing value in the table's key field changes that
-    # record. Only a key field of Record ID# can't do that by accident, as insert() refuses it.
-    insert_certain = key_field_id == RECORD_ID_FIELD
-    for row in rows:  # pyright: ignore[reportUnknownVariableType]
-        # Quickbase also accepts keys like "07" and " 7" as field 7, so only the usual form counts.
-        if not isinstance(row, Mapping) or not all(
-            isinstance(key, str) and _FIELD_KEY.fullmatch(key)
-            for key in row  # pyright: ignore[reportUnknownVariableType]
-        ):
-            field_ids = None
-            break
-        with_record_id += _RECORD_ID_KEY in row
-        field_ids.update(int(key) for key in row)  # pyright: ignore[reportUnknownArgumentType, reportUnknownVariableType]
-    if field_ids is None:
-        action: WriteAction = "upsert"
-    elif "mergeFieldId" in body:
-        merge = body["mergeFieldId"]
-        action = "update" if type(merge) is int and merge == RECORD_ID_FIELD else "upsert"
-    elif with_record_id == 0:
-        action = "insert" if insert_certain else "upsert"
-    else:
-        # A row with a Record ID# changes that record, or fails if it doesn't exist.
-        action = "update" if with_record_id == len(rows) else "upsert"  # pyright: ignore[reportUnknownArgumentType]
-    if field_ids is not None and action == "update":
-        field_ids.discard(RECORD_ID_FIELD)
-    return WriteRequest(
-        action=action,
-        table_id=table_id,
-        field_ids=None if field_ids is None else frozenset(field_ids),
-        row_count=len(rows),  # pyright: ignore[reportUnknownArgumentType]
-        method="POST",
-        path=path,
-    )
-
-
-def _other(method: str, path: str) -> WriteRequest:
-    return WriteRequest(
-        action="other", table_id=None, field_ids=None, row_count=None, method=method, path=path
-    )
-
-
-def describe_write(
-    method: str,
-    path: str,
-    body: Any,
-    *,
-    params: Mapping[str, Any] | None = None,
-    key_field_id: int | None = None,
-    parent_table_id: str | None = None,
-) -> WriteRequest:
-    """Describe a write from its request. Anything unrecognized is `other`.
-
-    `key_field_id` is the table's key field, which a request doesn't say. Without it, a write that
-    could be an insert is an `upsert`, as it could change an existing record. `parent_table_id` is
-    a relationship's parent, which only a request to create one says.
+    `decide()` gets each request the built-in rules allowed, and returns None to leave it, or a
+    `Decision` with `allowed=False` to refuse it. `BoundPolicy.offers()` asks about one field and
+    one verb at a time, so a rule that decides each field on its own is offered exactly what it
+    allows.
     """
-    if path == "/records" and isinstance(body, Mapping):
-        if method == "POST":
-            return _describe_rows(path, body, key_field_id)  # pyright: ignore[reportUnknownArgumentType]
-        if method == "DELETE":
-            source = body.get("from")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
-            return WriteRequest(
-                action="delete",
-                table_id=source if isinstance(source, str) else None,
-                field_ids=None,
-                row_count=None,
-                method=method,
-                path=path,
-            )
-    found = _FILE_PATH.fullmatch(path)
-    if method == "DELETE" and found:
-        return WriteRequest(
-            action="delete_file",
-            table_id=found[1],
-            field_ids=frozenset({int(found[2])}),
-            row_count=None,
-            method=method,
-            path=path,
-        )
-    schema = _describe_schema(method, path, body, params or {}, parent_table_id)
-    return _other(method, path) if schema is None else schema
+
+    def decide(self, request: "ReadRequest | WriteRequest") -> Decision | None:
+        """Refuse a request, or leave it to the other rules.
+
+        Args:
+            request: What the request would do, which holds no values.
+
+        Returns:
+            A `Decision` with `allowed=False` to refuse, or None.
+        """
+        ...
 
 
-def is_schema_write(method: str, path: str, body: Any, params: Mapping[str, Any] | None) -> bool:
-    """Whether a request changes a table, field, or relationship."""
-    return _describe_schema(method, path, body, params or {}, None) is not None
+RuleLike = PolicyRule | Rule
+"""A rule a `Policy` takes: one from `allow`, `deny`, or `limit`, or your own `Rule`."""
 
 
-def _text(value: Any) -> str | None:
-    return value if isinstance(value, str) and value else None
+def _text(name: str, *args: Any, **options: Any) -> str:
+    parts = [repr(_show(item)) for item in args]
+    parts += [f"{key}={value!r}" for key, value in options.items()]
+    return f"{name}({', '.join(parts)})"
 
 
-def _formula_in(body: Mapping[str, Any]) -> frozenset[DerivedKind]:
-    """A formula, if a field's body sets one, which even an empty one does."""
-    properties = body.get("properties")
-    if isinstance(properties, Mapping) and "formula" in properties:
-        return frozenset({"formula"})
-    return frozenset()
-
-
-def _id_set(value: Any) -> frozenset[int] | None:
-    """Field IDs from a request, or None unless they're all written in the usual way."""
-    if not isinstance(value, list):
+def _limit(name: str, value: Any) -> int | None:
+    if value is None:
         return None
-    ids = cast(list[Any], value)
-    if not all(type(item) is int and item > 0 for item in ids):
-        return None
-    return frozenset(cast(list[int], ids))
-
-
-def _relationship_fields(body: Mapping[str, Any]) -> frozenset[DerivedKind] | None:
-    """The derived fields a relationship request adds, or None if they can't be read."""
-    lookups, summaries = body.get("lookupFieldIds"), body.get("summaryFields")
-    if not isinstance(lookups, list | None) or not isinstance(summaries, list | None):
-        return None
-    kinds: set[DerivedKind] = set()
-    if lookups:
-        kinds.add("lookup")
-    if summaries:
-        kinds.add("summary")
-    return frozenset(kinds)
-
-
-def _describe_schema(
-    method: str,
-    path: str,
-    body: Any,
-    params: Mapping[str, Any],
-    parent_table_id: str | None,
-) -> WriteRequest | None:
-    """Describe a change to a table, field, or relationship, or return None if it isn't one."""
-
-    def schema(
-        action: WriteAction,
-        *,
-        table_id: str | None,
-        field_ids: frozenset[int] | None = None,
-        app_id: str | None = None,
-        parent_table_id: str | None = None,
-        field_type: str | None = None,
-        derived: frozenset[DerivedKind] = frozenset(),
-    ) -> WriteRequest:
-        return WriteRequest(
-            action=action,
-            table_id=table_id,
-            field_ids=field_ids,
-            row_count=None,
-            method=method,
-            path=path,
-            app_id=app_id,
-            parent_table_id=parent_table_id,
-            field_type=field_type,
-            derived=derived,
-        )
-
-    data = cast(Mapping[str, Any], body) if isinstance(body, Mapping) else None
-    table_param = _text(params.get("tableId"))
-    if path == "/tables" and method == "POST":
-        return schema("create_table", table_id=None, app_id=_text(params.get("appId")))
-    if (found := _TABLE_PATH.fullmatch(path)) and method in ("POST", "DELETE"):
-        action: WriteAction = "update_table" if method == "POST" else "delete_table"
-        return schema(action, table_id=found[1], app_id=_text(params.get("appId")))
-    if path == "/fields" and method == "POST" and data is not None:
-        return schema(
-            "create_field",
-            table_id=table_param,
-            field_type=_text(data.get("fieldType")),
-            derived=_formula_in(data),
-        )
-    if (found := _FIELD_PATH.fullmatch(path)) and method == "POST" and data is not None:
-        return schema(
-            "update_field",
-            table_id=table_param,
-            field_ids=frozenset({int(found[1])}),
-            derived=_formula_in(data),
-        )
-    if path == "/fields" and method == "DELETE" and data is not None:
-        return schema("delete_field", table_id=table_param, field_ids=_id_set(data.get("fieldIds")))
-    found = _RELATIONSHIP_PATH.fullmatch(path)
-    if found is None:
-        return None
-    child, relationship_id = found[1], found[2]
-    if method == "DELETE" and relationship_id:
-        return schema("delete_relationship", table_id=child, parent_table_id=parent_table_id)
-    if method != "POST" or data is None:
-        return None
-    derived = _relationship_fields(data)
-    if derived is None:
-        return None
-    if relationship_id:
-        return schema(
-            "update_relationship", table_id=child, parent_table_id=parent_table_id, derived=derived
-        )
-    return schema(
-        "create_relationship",
-        table_id=child,
-        parent_table_id=_text(data.get("parentTableId")),
-        derived=derived,
-    )
-
-
-def check_policy(policy: WritePolicy, request: WriteRequest) -> None:
-    """Refuse the write unless the policy returns `True`. Anything else, even truthy, refuses."""
-    try:
-        allowed = policy(request)
-    except WriteRefusedError:
-        raise
-    except Exception as exc:
-        raise WriteRefusedError(
-            f"The write policy raised {type(exc).__name__}, so this client won't send "
-            f"{request.method} {request.path}."
-        ) from exc
-    if allowed is not True:
-        raise WriteRefusedError(
-            f"The write policy refused this {request.action}, so this client won't send "
-            f"{request.method} {request.path}."
-        )
-
-
-def validate_write_policy(policy: WritePolicy | None, *, read_only: bool) -> WritePolicy | None:
-    if policy is None:
-        return None
-    if read_only:
-        raise ConfigurationError("Use read_only or write_policy, not both.")
-    if not callable(policy):
-        raise ConfigurationError("write_policy must be a function, or WriteRules.")
-    if inspect.iscoroutinefunction(policy):
-        raise ConfigurationError(
-            "write_policy can't be async, because it would never finish before the request is sent."
-        )
-    return policy
-
-
-def _access(name: str, value: Any) -> bool | frozenset[int]:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str | bytes) or not isinstance(value, Collection):
-        raise ConfigurationError(f"{name} takes True, False, or a list of field IDs.")
-    ids = frozenset(value)  # pyright: ignore[reportUnknownArgumentType, reportUnknownVariableType]
-    if not ids:
-        raise ConfigurationError(f"{name} has an empty list of fields. Use False to refuse it.")
-    for item in ids:  # pyright: ignore[reportUnknownVariableType]
-        if isinstance(item, bool) or not isinstance(item, int) or item < 1:
-            raise ConfigurationError(
-                f"{name} takes field IDs, not labels, because a label can be renamed. Use "
-                "table.resolve_field_ids() to look them up."
-            )
-    return ids  # pyright: ignore[reportUnknownVariableType]
-
-
-def _flag(name: str, value: Any) -> bool:
-    if not isinstance(value, bool):
-        raise ConfigurationError(f"{name} takes True or False.")
+    if type(value) is not int or value < 1:
+        raise ConfigurationError(f"{name} must be a positive whole number, or None for no limit.")
     return value
 
 
-@dataclass(frozen=True, slots=True, init=False)
-class SchemaAccess:
-    """What a client may change in one table's schema, for `WriteAccess`. Anything not granted is
-    refused.
+def _show(value: Any) -> Any:
+    """A rule's argument as it was given, for its text."""
+    if isinstance(value, list | tuple):
+        return list(value)  # pyright: ignore[reportUnknownArgumentType, reportUnknownVariableType]
+    return value
 
-    ```python
-    WriteAccess(insert=True, schema=SchemaAccess(create_fields=True, field_types=["text", "date"]))
-    ```
 
-    Formula, lookup, and summary fields each need their own grant, as they read other fields. On a
-    client with `ReadRules`, the SDK also checks that they only read what the client may read, so
-    only its own methods can make them, not `request()`. A formula can't make a link or rich text
-    (`url` or `rich-text`), as that acts as whoever clicks it.
+class _Allow:
+    """The rules that grant. Anything no rule allows is refused."""
 
-    Args:
-        update_table: Whether it may rename the table or change its descriptions.
-        delete_table: Whether it may delete the table and all its records.
-        create_fields: Whether it may add fields.
-        update_fields: Whether it may change fields' settings, and which, as `True` or a list of
-            field IDs.
-        delete_fields: Whether it may delete fields and their data, and which.
-        field_types: The types it may create, such as `["text", "numeric"]`, or None for any.
-            Formula fields count by their result type.
-        formulas: Whether it may create formula fields or change formulas. Needs `create_fields` or
-            `update_fields` too.
-        lookups: Whether it may add lookup fields to this table, as the child.
-        summaries: Whether it may add summary fields to this table, as the parent.
-        relationships: Whether it may link this table to another, as the child or the parent. Both
-            tables need it. Deleting a relationship deletes its lookups and summaries, so it needs
-            `delete_fields=True` on both tables too.
+    def __init__(self, effect: Literal["allow", "deny"]) -> None:
+        self._effect: Literal["allow", "deny"] = effect
 
-    Raises:
-        ConfigurationError: A setting has the wrong type, or a list is empty.
-    """
-
-    update_table: bool
-    delete_table: bool
-    create_fields: bool
-    update_fields: bool | frozenset[int]
-    delete_fields: bool | frozenset[int]
-    field_types: frozenset[str] | None
-    formulas: bool
-    lookups: bool
-    summaries: bool
-    relationships: bool
-
-    def __init__(
+    def _rule(
         self,
-        *,
-        update_table: bool = False,
-        delete_table: bool = False,
-        create_fields: bool = False,
-        update_fields: bool | Collection[int] = False,
-        delete_fields: bool | Collection[int] = False,
-        field_types: Collection[str] | None = None,
-        formulas: bool = False,
-        lookups: bool = False,
-        summaries: bool = False,
-        relationships: bool = False,
-    ) -> None:
-        flags = {
-            "update_table": update_table,
-            "delete_table": delete_table,
-            "create_fields": create_fields,
-            "formulas": formulas,
-            "lookups": lookups,
-            "summaries": summaries,
-            "relationships": relationships,
-        }
-        for name, value in flags.items():
-            object.__setattr__(self, name, _flag(name, value))
-        object.__setattr__(self, "update_fields", _access("update_fields", update_fields))
-        object.__setattr__(self, "delete_fields", _access("delete_fields", delete_fields))
+        name: str,
+        tables_arg: Any,
+        grants: tuple[Grant, ...],
+        shown: tuple[Any, ...],
+        options: Mapping[str, Any] | None = None,
+        written: Mapping[str, Any] | None = None,
+    ) -> PolicyRule:
+        return PolicyRule(
+            effect=self._effect,
+            tables=None if tables_arg is None else _table_selectors(tables_arg),
+            grants=grants,
+            options=dict(options or {}),
+            text=_text(
+                f"{self._effect}.{name}", *(_show(item) for item in shown), **(written or {})
+            ),
+        )
+
+    def _fields_rule(self, verb: str, tables_arg: TablesArg, fields_arg: FieldsArg) -> PolicyRule:
+        selectors = _field_selectors(fields_arg, "fields")
+        return self._rule(
+            verb, tables_arg, (Grant(frozenset({verb}), selectors),), (tables_arg, fields_arg)
+        )
+
+    def filter(self, tables: TablesArg, fields: FieldsArg) -> PolicyRule:
+        """Filtering on fields, which shows which records match, so it reveals something about
+        their values. `read` already grants it, unless it's given its own `filter`.
+
+        Args:
+            tables: The tables, by name or ID, or a `tables` selector.
+            fields: The fields, by label or ID, or a `fields` selector.
+        """
+        return self._fields_rule("filter", tables, fields)
+
+    def sort(self, tables: TablesArg, fields: FieldsArg) -> PolicyRule:
+        """Sorting by fields, which reveals their order. `read` already grants it, unless it's given
+        its own `sort`.
+
+        Args:
+            tables: The tables, by name or ID, or a `tables` selector.
+            fields: The fields, by label or ID, or a `fields` selector.
+        """
+        return self._fields_rule("sort", tables, fields)
+
+    def insert(self, tables: TablesArg, fields: FieldsArg) -> PolicyRule:
+        """Creating records that set these fields. An upsert needs `insert` and `update`.
+
+        Args:
+            tables: The tables, by name or ID, or a `tables` selector.
+            fields: The fields it may set, by label or ID, or a `fields` selector. Fields created
+                after binding are never writable.
+        """
+        return self._fields_rule("insert", tables, fields)
+
+    def update(self, tables: TablesArg, fields: FieldsArg) -> PolicyRule:
+        """Changing these fields in existing records. Writing a field doesn't need read access to
+        it.
+
+        Args:
+            tables: The tables, by name or ID, or a `tables` selector.
+            fields: The fields it may change, by label or ID, or a `fields` selector. Fields
+                created after binding are never writable.
+        """
+        return self._fields_rule("update", tables, fields)
+
+    def download(self, tables: TablesArg, fields: FieldsArg | None = None) -> PolicyRule:
+        """Downloading files from file fields. `read` only returns a file's details.
+
+        Args:
+            tables: The tables, by name or ID, or a `tables` selector.
+            fields: The file fields, by label or ID, or a `fields` selector. Defaults to all.
+        """
+        return self._fields_rule(
+            "download", tables, FieldSelector("all") if fields is None else fields
+        )
+
+    def delete_file(self, tables: TablesArg, fields: FieldsArg | None = None) -> PolicyRule:
+        """Deleting versions of files.
+
+        Args:
+            tables: The tables, by name or ID, or a `tables` selector.
+            fields: The file fields, by label or ID, or a `fields` selector. Defaults to all.
+        """
+        return self._fields_rule(
+            "delete_file", tables, FieldSelector("all") if fields is None else fields
+        )
+
+    def schema(
+        self,
+        tables: TablesArg,
+        *verbs: SchemaVerb,
+        fields: FieldsArg | None = None,
+        field_types: Sequence[str] | None = None,
+    ) -> PolicyRule:
+        """Changing tables' schema, granted on the table where the change lands.
+
+        `add_field`, `change_field`, and `delete_field` change fields, and `formula` makes or
+        changes a formula, which also needs `add_field` or `change_field`. `lookup` adds a lookup
+        to a child table, and also needs `read` on the parent's field. `summary` adds a summary to
+        a parent table, and also needs `read` on the child's field, and `filter` on every field its
+        `where` uses. `link` and `unlink` need a grant on both tables, as a relationship adds a
+        link field and an "Add" record formula to the parent, and `unlink` also needs
+        `delete_field` wherever its lookups and summaries are. `change_table` and `delete_table`
+        change or delete the table itself.
+
+        Args:
+            tables: The tables, by name or ID, or a `tables` selector.
+            *verbs: What it grants, from those above.
+            fields: Which fields `change_field` and `delete_field` may change. Defaults to all.
+            field_types: The types `add_field` may create, such as `["text", "date"]`, or None
+                for any. A formula counts by its result type.
+        """
+        if not verbs:
+            raise ConfigurationError("schema() needs at least one verb, such as 'add_field'.")
+        unknown = [item for item in verbs if item not in SCHEMA_VERBS]
+        if unknown:
+            raise ConfigurationError(
+                f"schema() doesn't know {', '.join(map(repr, unknown))}. It takes "
+                f"{', '.join(SCHEMA_VERBS)}."
+            )
         types: frozenset[str] | None = None
         if field_types is not None:
-            items: Collection[Any] = field_types
+            given: list[Any] = list(field_types)
             if isinstance(field_types, str) or not all(
-                isinstance(item, str) and item for item in items
+                isinstance(item, str) and item for item in given
             ):
                 raise ConfigurationError("field_types takes a list of field types, or None.")
             types = frozenset(field_types)
             if not types:
-                raise ConfigurationError("field_types is empty. Use create_fields=False instead.")
-        object.__setattr__(self, "field_types", types)
+                raise ConfigurationError("field_types is empty. Leave out add_field instead.")
+        selectors = _field_selectors(FieldSelector("all") if fields is None else fields, "fields")
+        field_verbs = frozenset(verbs) & {"change_field", "delete_field"}
+        table_verbs = frozenset(verbs) - field_verbs
+        grants: list[Grant] = []
+        if field_verbs:
+            grants.append(Grant(field_verbs, selectors))
+        if table_verbs:
+            grants.append(Grant(table_verbs))
+        written: dict[str, Any] = {}
+        if fields is not None:
+            written["fields"] = _show(fields)
+        if field_types is not None:
+            written["field_types"] = sorted(types or ())
+        return self._rule(
+            "schema",
+            tables,
+            tuple(grants),
+            (tables, *verbs),
+            {"field_types": types},
+            written,
+        )
+
+    def create_tables(self) -> PolicyRule:
+        """Creating tables in the bound app. A table this client creates is matched by
+        `tables.created()` and `tables.all()`."""
+        return self._rule("create_tables", None, (Grant(frozenset({"create_tables"})),), ())
 
 
-@dataclass(frozen=True, slots=True, init=False)
-class WriteAccess:
-    """What a client may do to one table, for `WriteRules`. Anything not granted is refused.
+class _AllowOnly(_Allow):
+    """The rules that grant. Anything no rule allows is refused, and a deny always wins."""
 
-    `insert` and `update` each take `True` for any field, or a list of the field IDs they may set.
-    An `upsert` needs both, and its fields need to be in both, including the one it merges on.
-
-    Args:
-        insert: Whether it may create records, and with which fields.
-        update: Whether it may change records, and which fields.
-        delete: Whether it may delete records. Field lists don't limit this, as deleting a record
-            removes all of its fields.
-        delete_files: Whether it may delete file versions.
-        schema: What it may change in the table's schema, or None for nothing.
-
-    Raises:
-        ConfigurationError: A list is empty, or holds anything but field IDs.
-    """
-
-    insert: bool | frozenset[int]
-    update: bool | frozenset[int]
-    delete: bool
-    delete_files: bool
-    schema: SchemaAccess | None
-
-    def __init__(
+    def read(
         self,
+        tables: TablesArg,
+        fields: FieldsArg | None = None,
         *,
-        insert: bool | Collection[int] = False,
-        update: bool | Collection[int] = False,
-        delete: bool = False,
-        delete_files: bool = False,
-        schema: SchemaAccess | None = None,
-    ) -> None:
-        for name, value in (("delete", delete), ("delete_files", delete_files)):
-            _flag(name, value)
-        if schema is not None and not isinstance(schema, SchemaAccess):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise ConfigurationError("schema takes a SchemaAccess(...), or None.")
-        object.__setattr__(self, "insert", _access("insert", insert))
-        object.__setattr__(self, "update", _access("update", update))
-        object.__setattr__(self, "delete", delete)
-        object.__setattr__(self, "delete_files", delete_files)
-        object.__setattr__(self, "schema", schema)
+        filter: FieldsArg | None = None,
+        sort: FieldsArg | None = None,
+        max_records: int | None = DEFAULT_MAX_RECORDS,
+        max_summary_records: int | None = DEFAULT_MAX_SUMMARY_RECORDS,
+        user_emails: bool = False,
+    ) -> PolicyRule:
+        """Reading fields' values and details, and filtering and sorting by them.
+
+        Args:
+            tables: The tables, by name or ID, or a `tables` selector.
+            fields: The fields it may return, by label or ID, or a `fields` selector. Defaults to
+                all.
+            filter: The fields it may filter on instead, or None for the same as `fields`. A
+                filter shows which records match, so it reveals something about a field's values.
+            sort: The fields it may sort by instead, or None for the same as `fields`.
+            max_records: The most records one query or report can reach, counting `skip`, or None
+                for no limit. It's how far paging can go, not the size of a page. Where several
+                rules read a table, the highest applies.
+            max_summary_records: The most records `summarize()` may read for one summary, or None
+                for no limit.
+            user_emails: Whether to keep email addresses in user values, and the uploader's
+                details in file values. Without this, a user is only their `id` and `name`.
+        """
+        if not isinstance(user_emails, bool):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise ConfigurationError("user_emails takes True or False.")
+        shown = FieldSelector("all") if fields is None else fields
+        main = _field_selectors(shown, "fields")
+        grants = [Grant(frozenset({"read"}), main)]
+        implied = {"filter": filter, "sort": sort}
+        same = frozenset(verb for verb, value in implied.items() if value is None)
+        if same:
+            grants.append(Grant(same, main))
+        for verb, value in implied.items():
+            if value is not None:
+                grants.append(Grant(frozenset({verb}), _field_selectors(value, verb)))
+        options = {
+            "max_records": _limit("max_records", max_records),
+            "max_summary_records": _limit("max_summary_records", max_summary_records),
+            "user_emails": user_emails,
+        }
+        written: dict[str, Any] = {}
+        for key, value, default in (
+            ("filter", filter, None),
+            ("sort", sort, None),
+            ("max_records", max_records, DEFAULT_MAX_RECORDS),
+            ("max_summary_records", max_summary_records, DEFAULT_MAX_SUMMARY_RECORDS),
+            ("user_emails", user_emails, False),
+        ):
+            if value != default:
+                written[key] = _show(value)
+        args = (tables,) if fields is None else (tables, fields)
+        return self._rule("read", tables, tuple(grants), args, options, written)
+
+    def delete(self, tables: TablesArg, *, max_records: int | None = None) -> PolicyRule:
+        """Deleting records, which removes all of their fields.
+
+        Args:
+            tables: The tables, by name or ID, or a `tables` selector.
+            max_records: The most records one delete may remove, or None for no limit. With a
+                limit, the client counts what matches before deleting, and refuses a delete
+                through `request()`, which it can't count.
+        """
+        written = {} if max_records is None else {"max_records": max_records}
+        return self._rule(
+            "delete",
+            tables,
+            (Grant(frozenset({"delete"})),),
+            (tables,),
+            {"max_records": _limit("max_records", max_records)},
+            written,
+        )
+
+    def report(self, table: TablesArg, reports: Sequence[str | int] | None = None) -> PolicyRule:
+        """Running reports. A table report's columns are trimmed to what's readable, but its own
+        filter and sort can use any field. A summary or chart report's columns can't be matched to
+        fields, so it shows all of them.
+
+        Args:
+            table: The table, by name or ID, or a `tables` selector when `reports` is None.
+            reports: The reports, by name or ID, or None for every report.
+        """
+        listed: tuple[str, ...] | None = None
+        if reports is not None:
+            if isinstance(reports, str) or not reports:
+                raise ConfigurationError("reports takes a list of report names or IDs, or None.")
+            items: list[Any] = list(reports)
+            if not all(
+                isinstance(item, str | int) and not isinstance(item, bool) for item in items
+            ):
+                raise ConfigurationError("reports takes a list of report names or IDs, or None.")
+            listed = tuple(str(item) for item in items)
+            selectors = _table_selectors(table, "table")
+            if len(selectors) != 1 or selectors[0].kind != "named":
+                raise ConfigurationError("report() lists reports for one table, by name or ID.")
+        args = (table,) if reports is None else (table, reports)
+        return self._rule(
+            "report", table, (Grant(frozenset({"report"})),), args, {"reports": listed}
+        )
 
 
-def _refused(request: WriteRequest, reason: str) -> WriteRefusedError:
-    return WriteRefusedError(
-        f"This client's write rules don't allow this {request.action}: {reason} It wasn't sent."
-    )
+class _Deny(_Allow):
+    """The rules that refuse. A deny always wins over an allow."""
+
+    def read(self, tables: TablesArg, fields: FieldsArg | None = None) -> PolicyRule:
+        """Refuse reading, filtering, and sorting by fields, which hides them unless something
+        else, such as a write, is allowed.
+
+        Args:
+            tables: The tables, by name or ID, or a `tables` selector.
+            fields: The fields, by label or ID, or a `fields` selector. Defaults to all.
+        """
+        shown = FieldSelector("all") if fields is None else fields
+        selectors = _field_selectors(shown, "fields")
+        args = (tables,) if fields is None else (tables, fields)
+        return self._rule(
+            "read", tables, (Grant(frozenset({"read", "filter", "sort"}), selectors),), args
+        )
+
+    def delete(self, tables: TablesArg) -> PolicyRule:
+        """Refuse deleting records.
+
+        Args:
+            tables: The tables, by name or ID, or a `tables` selector.
+        """
+        return self._rule("delete", tables, (Grant(frozenset({"delete"})),), (tables,))
+
+    def report(self, tables: TablesArg) -> PolicyRule:
+        """Refuse running reports.
+
+        Args:
+            tables: The tables, by name or ID, or a `tables` selector.
+        """
+        return self._rule("report", tables, (Grant(frozenset({"report"})),), (tables,))
+
+    def all(self, selector: FieldSelector | TablesArg) -> PolicyRule:
+        """Refuse everything on some fields, in every table, or on some tables.
+
+        ```python
+        deny.all(fields.classed("sensitive"))
+        deny.all("Payroll")
+        ```
+
+        Args:
+            selector: A `fields` selector, which hides those fields everywhere, or tables by name
+                or ID, or a `tables` selector.
+        """
+        everything = frozenset(VERBS) - {"create_tables"}
+        if isinstance(selector, FieldSelector):
+            if selector.kind == "named":
+                raise ConfigurationError(
+                    "deny.all() takes a fields.* selector, or tables. To deny named fields, put "
+                    "them in a class, or name their table in a deny rule."
+                )
+            return PolicyRule(
+                effect="deny",
+                tables=(TableSelector("all"),),
+                grants=(Grant(everything, (selector,)),),
+                text=_text("deny.all", selector),
+            )
+        return self._rule("all", selector, (Grant(everything),), (selector,))
 
 
-def _check_fields(request: WriteRequest, access: bool | frozenset[int], word: str) -> None:
-    if access is False:
-        raise _refused(request, f"{word} isn't allowed on table {request.table_id}.")
-    if access is True:
-        return
-    if request.field_ids is None:
-        raise _refused(request, "its fields can't be determined, and this table limits them.")
-    extra = request.field_ids - access
-    if extra:
-        raise _refused(request, f"table {request.table_id} doesn't allow fields {sorted(extra)}.")
+class _Limit:
+    """Limits on which records a client reaches."""
+
+    def rows(self, tables: TablesArg, where: Expression | str) -> PolicyRule:
+        """Only reach the records that match a condition. It's ANDed onto every query, summary,
+        and delete the client sends, and into a summary field's filter.
+
+        This is defense in depth: Quickbase's record rules for the token's role are still the real
+        boundary. Reports, file downloads, and formulas on the table are refused, as the limit
+        can't be added to them, and so is a lookup from it, which would show its records anywhere.
+        The fields the condition uses may be filtered on.
+
+        Args:
+            tables: The tables, by name or ID. A `tables` selector works only if the condition
+                names fields by ID.
+            where: The condition, built with `F`, or a query string, by label or ID.
+        """
+        if not isinstance(where, Expression | str) or (  # pyright: ignore[reportUnnecessaryIsInstance]
+            isinstance(where, str) and not where.strip()
+        ):
+            raise ConfigurationError("limit.rows() takes a condition built with F, or a string.")
+        return PolicyRule(
+            effect="limit",
+            tables=_table_selectors(tables),
+            grants=(),
+            options={"where": where},
+            text=_text("limit.rows", _show(tables), where),
+        )
 
 
-class WriteRules:
-    """A write policy that lists what a client may do to each table. Anything else is refused.
+allow = _AllowOnly("allow")
+"""The rules that grant: `allow.read()`, `allow.insert()`, `allow.schema()`, and the rest."""
+
+deny = _Deny("deny")
+"""The rules that refuse, which always win: `deny.all()`, `deny.update()`, and the rest."""
+
+limit = _Limit()
+"""Limits on which records a client reaches: `limit.rows()`."""
+
+
+class Policy:
+    """What a client may do, as rules over tables and fields. Bind it to an app, then give the
+    `BoundPolicy` to a client.
 
     ```python
-    rules = WriteRules({"bqtasks123": WriteAccess(insert=True, update=[7, 12])})
-    qb = Quickbase.from_env(write_policy=rules)
+    policy = Policy(
+        classes={"pay": ["Technicians.Hourly Rate"]},
+        rules=[
+            allow.read(tables.all()),
+            allow.update("Job Tasks", ["Status", "Notes"]),
+            deny.all(fields.classed("pay")),
+        ],
+    )
+    bound = await policy.bind(qb.app("bq1234567"))
     ```
 
-    Tables are named by ID and must match exactly, because a name can be renamed. Changes to a
-    table's schema need its `WriteAccess(schema=...)`. Any other write is refused, so to allow it,
-    write your own policy.
+    Anything no rule allows is refused, and a deny always wins. A formula, lookup, or summary is
+    in every class of the fields it reads, through any chain of them, so it's denied wherever they
+    are.
 
     Args:
-        tables: What's allowed, as `{table ID: WriteAccess(...)}`.
-        create_tables_in: The apps it may create tables in, by ID.
-        new_tables: What it may do to the tables this client creates, which are added to `tables`
-            as each is created. None allows nothing, not even adding fields.
+        app: The app's ID, which `bind()` checks, or None for any.
+        classes: Names for groups of fields, as `{name: [fields]}`, for `fields.classed()`. Each
+            field is `"Table.Field"`, `("Table", "Field")`, or a `fields` selector, such as
+            `fields.labeled_like("_*")`.
+        rules: What's allowed and refused, from `allow`, `deny`, and `limit`, and any `Rule`.
+        new_fields: What a field added after binding gets: `read`, to be read, filtered, and
+            sorted by where a rule allows it, `hidden`, or a class's name, which also leaves it
+            read-only. It's never writable until the policy is bound again.
 
     Raises:
-        ConfigurationError: A key isn't a table ID, a value isn't a `WriteAccess`, or an app ID
-            isn't text.
+        ConfigurationError: A rule or class can't be used.
     """
 
-    __slots__ = ("_create_tables_in", "_new_tables", "_tables")
+    __slots__ = ("app_id", "classes", "new_fields", "rules")
 
     def __init__(
         self,
-        tables: Mapping[str, WriteAccess],
         *,
-        create_tables_in: Collection[str] = (),
-        new_tables: WriteAccess | None = None,
+        app: str | None = None,
+        classes: Mapping[str, Sequence[ClassTarget]] | None = None,
+        rules: Sequence[RuleLike] = (),
+        new_fields: NewFields = "read",
     ) -> None:
-        if not isinstance(tables, Mapping):  # pyright: ignore[reportUnnecessaryIsInstance]
+        if app is not None and (not isinstance(app, str) or not app.isalnum()):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise ConfigurationError(
-                "WriteRules takes a dictionary of {table ID: WriteAccess(...)}."
+                "app takes the app's ID, which contains only letters and numbers."
             )
-        for table_id, access in tables.items():
-            if not isinstance(table_id, str) or not table_id:  # pyright: ignore[reportUnnecessaryIsInstance]
-                raise ConfigurationError("WriteRules needs a table ID for each table.")
-            if not isinstance(access, WriteAccess):  # pyright: ignore[reportUnnecessaryIsInstance]
-                raise ConfigurationError(f"Table {table_id} needs an WriteAccess(...).")
-        apps: Collection[Any] = create_tables_in
-        if isinstance(create_tables_in, str) or not all(
-            isinstance(item, str) and item for item in apps
-        ):
-            raise ConfigurationError("create_tables_in takes a list of app IDs.")
-        if new_tables is not None and not isinstance(new_tables, WriteAccess):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise ConfigurationError("new_tables takes a WriteAccess(...), or None.")
-        self._tables = dict(tables)
-        self._create_tables_in = frozenset(create_tables_in)
-        self._new_tables = new_tables
-
-    def __call__(self, request: WriteRequest) -> bool:
-        """Return `True` if the write is allowed, or raise `WriteRefusedError` saying why not."""
-        action = request.action
-        if action == "other":
-            raise _refused(request, "only record, file, and schema writes can be allowed.")
-        if action == "create_table":
-            if request.app_id not in self._create_tables_in:
-                raise _refused(request, f"creating tables isn't allowed in app {request.app_id}.")
-            return True
-        if request.table_id is None:
-            raise _refused(request, "its table can't be determined.")
-        access = self._tables.get(request.table_id)
-        if access is None:
-            raise _refused(request, f"table {request.table_id} isn't listed.")
-        if action in SCHEMA_ACTIONS:
-            self._check_schema(request, self._schema(request, request.table_id))
-            return True
-        if action in ("insert", "upsert"):
-            _check_fields(request, access.insert, "inserting")
-        if action in ("update", "upsert"):
-            _check_fields(request, access.update, "updating")
-        if action == "delete" and not access.delete:
-            raise _refused(request, f"deleting isn't allowed on table {request.table_id}.")
-        if action == "delete_file" and not access.delete_files:
-            raise _refused(request, f"deleting files isn't allowed on table {request.table_id}.")
-        return True
-
-    def _schema(self, request: WriteRequest, table_id: str | None) -> SchemaAccess:
-        if table_id is None:
-            raise _refused(request, "its parent table can't be determined.")
-        access = self._tables.get(table_id)
-        if access is None:
-            raise _refused(request, f"table {table_id} isn't listed.")
-        if access.schema is None:
-            raise _refused(request, f"table {table_id} doesn't allow schema changes.")
-        return access.schema
-
-    def _check_schema(self, request: WriteRequest, schema: SchemaAccess) -> None:
-        action, table = request.action, request.table_id
-
-        def need(granted: bool, what: str, on: str | None = table) -> None:
-            if not granted:
-                raise _refused(request, f"{what} isn't allowed on table {on}.")
-
-        if action == "update_table":
-            need(schema.update_table, "changing the table")
-        elif action == "delete_table":
-            need(schema.delete_table, "deleting the table")
-        elif action == "create_field":
-            need(schema.create_fields, "adding fields")
-            self._check_type(request, schema)
-        elif action == "update_field":
-            _check_fields(request, schema.update_fields, "changing fields")
-        elif action == "delete_field":
-            _check_fields(request, schema.delete_fields, "deleting fields")
-        else:
-            parent = self._schema(request, request.parent_table_id)
-            need(schema.relationships, "linking tables")
-            need(parent.relationships, "linking tables", request.parent_table_id)
-            if action == "delete_relationship":
-                need(schema.delete_fields is True, "deleting every lookup")
-                need(
-                    parent.delete_fields is True, "deleting every summary", request.parent_table_id
+        found: dict[str, tuple[ClassTarget, ...]] = {}
+        for name, targets in (classes or {}).items():
+            if not isinstance(name, str) or not name:  # pyright: ignore[reportUnnecessaryIsInstance]
+                raise ConfigurationError("Each class needs a name.")
+            items: list[Any] = [targets] if isinstance(targets, str | tuple) else list(targets)
+            if not items:
+                raise ConfigurationError(f"Class {name!r} has no fields.")
+            for item in items:
+                _check_class_target(name, item)
+            found[name] = tuple(items)
+        if isinstance(rules, PolicyRule) or not isinstance(rules, Sequence):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise ConfigurationError("rules takes a list of rules.")
+        for item in rules:
+            if not isinstance(item, PolicyRule) and not isinstance(item, Rule):  # pyright: ignore[reportUnnecessaryIsInstance]
+                raise ConfigurationError(
+                    f"{item!r} isn't a rule. Use allow, deny, or limit, or an object with "
+                    "decide(request)."
                 )
-        if "formula" in request.derived:
-            need(schema.formulas, "making formulas")
-        if "lookup" in request.derived:
-            need(schema.lookups, "adding lookups")
-        if "summary" in request.derived:
-            parent = self._schema(request, request.parent_table_id)
-            need(parent.summaries, "adding summaries", request.parent_table_id)
-
-    @staticmethod
-    def _check_type(request: WriteRequest, schema: SchemaAccess) -> None:
-        field_type = request.field_type
-        if field_type is None:
-            raise _refused(request, "its field type can't be determined.")
-        if schema.field_types is not None and field_type not in schema.field_types:
-            allowed = ", ".join(sorted(schema.field_types))
-            raise _refused(
-                request,
-                f"table {request.table_id} only allows fields of type {allowed}.",
+        if not isinstance(new_fields, str) or not new_fields:  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise ConfigurationError("new_fields takes 'read', 'hidden', or a class's name.")
+        if new_fields not in ("read", "hidden") and new_fields not in found:
+            raise ConfigurationError(
+                f"new_fields is {new_fields!r}, which isn't 'read', 'hidden', or a class."
             )
-        if "formula" in request.derived and field_type in UNSAFE_FORMULA_TYPES:
-            raise _refused(
-                request,
-                f"a {field_type} formula makes something people click, which acts as them.",
-            )
+        self.app_id: str | None = app
+        self.classes: Mapping[str, tuple[ClassTarget, ...]] = found
+        self.rules: tuple[RuleLike, ...] = tuple(rules)
+        self.new_fields: str = new_fields
 
-    def _adopt(self, table_id: str) -> None:
-        """Give a table this client created the `new_tables` access."""
-        if self._new_tables is not None:
-            self._tables.setdefault(table_id, self._new_tables)
+    @classmethod
+    def read_only(cls) -> "Policy":
+        """Read anything the token can, with no limit on records, and change nothing.
+
+        It needs no binding, so a client takes it as it is.
+        """
+        return cls(
+            rules=[
+                allow.read(
+                    tables.all(), max_records=None, max_summary_records=None, user_emails=True
+                ),
+                allow.download(tables.all()),
+                allow.report(tables.all()),
+                _RUN_FORMULAS,
+            ]
+        )
+
+    @property
+    def needs_app(self) -> bool:
+        """Whether anything in it names a table or field, so it needs `bind()` before use."""
+        if self.classes or self.new_fields not in ("read", "hidden"):
+            return True
+        for item in self.rules:
+            if not isinstance(item, PolicyRule):
+                continue
+            if item.effect == "limit":
+                return True
+            if item.options.get("reports"):
+                return True
+            for selector in item.tables or ():
+                if selector.kind == "named":
+                    return True
+            for grant in item.grants:
+                for selector in grant.fields or ():
+                    if selector.kind in ("named", "labeled_like", "classed"):
+                        return True
+        return False
+
+    @overload
+    def bind(self, app: "AsyncApp") -> "Any": ...
+    @overload
+    def bind(self, app: "App") -> "BoundPolicy": ...
+    def bind(self, app: Any) -> Any:
+        """Resolve every table, field, and class against an app, once.
+
+        Every problem is reported at once. With an `AsyncApp`, this returns an awaitable. It reads
+        the app's tables, each table's fields and relationships, and the reports of any table
+        `allow.report()` lists by name, so use a client that can see them all.
+
+        Args:
+            app: The app, from a client without a policy.
+
+        Returns:
+            A `BoundPolicy`, which is frozen and keyed by ID.
+
+        Raises:
+            ConfigurationError: A table, field, report, or class can't be found, or is ambiguous.
+                The message lists every one.
+        """
+        return app._bind_policy(self)  # pyright: ignore[reportPrivateUsage]
+
+    def bind_offline(self) -> "BoundPolicy":
+        """Bind a policy that names no table or field, without reading an app.
+
+        Every field then counts as existing, so `new_fields` doesn't apply.
+
+        Raises:
+            ConfigurationError: It names a table, field, class, report, or row limit.
+        """
+        from ._bound import bind_offline
+
+        return bind_offline(self)
 
     def __repr__(self) -> str:
-        return f"WriteRules(tables={sorted(self._tables)!r})"
+        return f"Policy(app={self.app_id!r}, rules={list(self.rules)!r})"
+
+
+_RUN_FORMULAS = PolicyRule(
+    effect="allow",
+    tables=(TableSelector("all"),),
+    grants=(Grant(frozenset({"run_formula"})),),
+    text="Policy.read_only()",
+)
+
+
+def _check_class_target(name: str, item: Any) -> None:
+    if isinstance(item, FieldSelector):
+        if item.kind not in ("all", "labeled_like"):
+            raise ConfigurationError(
+                f"Class {name!r} can use fields.all() and fields.labeled_like(), not {item!r}."
+            )
+        return
+    if isinstance(item, tuple):
+        pair: tuple[Any, ...] = item  # pyright: ignore[reportUnknownVariableType]
+        if (
+            len(pair) == 2
+            and isinstance(pair[0], str)
+            and isinstance(pair[1], str | int)
+            and not isinstance(pair[1], bool)
+        ):
+            return
+    elif isinstance(item, str) and "." in item.strip(".") and item.strip():
+        return
+    raise ConfigurationError(
+        f"Class {name!r} has {item!r}. Name a field as 'Table.Field', ('Table', 'Field'), or with "
+        "fields.labeled_like()."
+    )

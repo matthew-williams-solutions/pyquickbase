@@ -13,6 +13,7 @@ from pyquickbase import (
     F,
     InvalidResponseError,
     InvalidValueError,
+    Policy,
     QueryError,
     Quickbase,
     Record,
@@ -302,13 +303,13 @@ def test_an_old_cache_doesnt_cause_a_false_alarm() -> None:
 
 
 def test_a_read_only_client_reads_but_cant_write() -> None:
-    from pyquickbase import WriteRefusedError
+    from pyquickbase import PolicyRefusedError
 
     server = Server()
-    with client(server, read_only=True) as qb:
+    with client(server, policy=Policy.read_only()) as qb:
         tasks = qb.app(APP).typed(Tasks)
         assert len([t for t in tasks.query()]) == 3
-        with pytest.raises(WriteRefusedError):
+        with pytest.raises(PolicyRefusedError):
             tasks.insert([Tasks.new(title="x")])
 
 

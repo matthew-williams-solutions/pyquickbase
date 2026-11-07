@@ -3,21 +3,22 @@
 
 A plan works on its own copy of the app's schema, so a later change can refer to a table or field
 an earlier one makes. It reads only what the client may read, so it never mentions a field its
-read rules hide, and it checks each change against the client's limits without sending it.
+policy hides, other than by the policy's names-only view, and it checks each change against the
+policy without sending it.
 """
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from .._bound import BoundPolicy
 from .._derived import (
     Source,
     check_filterable,
     check_formula_against,
+    check_lookup_parent,
     check_readable,
-    emails_shown,
-    readable,
-    table_access,
+    limited_where,
 )
 from .._formula import field_id_reference, formula_parts
 from .._models import RECORD_ID_FIELD, Field, FieldIndex, Relationship, TableInfo
@@ -45,9 +46,9 @@ from .._schema_plan import (
 )
 from ..errors import (
     InvalidValueError,
+    PolicyRefusedError,
     QueryError,
     QuickbaseError,
-    RequestRefusedError,
     SchemaChangeError,
     SchemaMismatchError,
     UnknownFieldError,
@@ -159,6 +160,15 @@ class _Table:
         return next(
             (item for item in self.links if item.foreign_key.label.casefold() == wanted), None
         )
+
+
+_NEW_FIELD = 1 << 31
+"""A field ID no table has, which the policy treats as a field added after binding."""
+
+_HIDDEN_LABEL = (
+    "A field you can't see already uses this label, so Quickbase would refuse it. Choose another "
+    "label."
+)
 
 
 class _Blocked(Exception):
@@ -307,12 +317,13 @@ class Planner:
                 json=json,
                 parent_table_id=None if parent is None else parent.id,
             )
-        except RequestRefusedError as refused:
-            message = self._named(str(refused).replace(" It wasn't sent.", ""))
-            if parent is not None and parent.id is not None and parent.id in str(refused):
+        except PolicyRefusedError as refused:
+            message = self._named(str(refused).replace(" Nothing was sent.", ""))
+            table = refused.decision.table
+            if parent is not None and parent.id is not None and table and table.id == parent.id:
                 message = (
-                    f"This needs {parent.name} to allow linking and changing its fields too, and "
-                    f"this client's write rules don't. {message}"
+                    f"This needs {parent.name} to allow it too, as the change lands there as "
+                    f"well, and this client's policy doesn't. {message}"
                 )
             return [message]
         return []
@@ -328,35 +339,39 @@ class Planner:
         """Why a derived field would be refused for reading what the client can't, if it would."""
         try:
             check()
-        except RequestRefusedError as refused:
+        except PolicyRefusedError as refused:
             return [str(refused).replace(" Nothing was sent.", "")]
         return []
 
-    def _access(self, table: _Table) -> Any:
+    def _policy(self, table: _Table) -> BoundPolicy | None:
         if table.id is None:
-            return None  # Checked when applied, against the client's access for new tables.
-        return table_access(self._transport.read_rules, table.id)
+            return None  # Checked when applied, against what the policy gives created tables.
+        return self._transport.policy
 
     def _formula_blockers(self, table: _Table, formula: str, *, own: _Field | None) -> list[str]:
         """Why a formula would be refused for reading what the client can't, if it would. It may
-        use fields an earlier change makes, which are readable only if every field of the table
-        is, as a new field isn't on a list of fields."""
-        access = self._access(table)
-        if access is None:
+        use fields an earlier change makes, which get the policy's `new_fields`."""
+        policy = self._policy(table)
+        if policy is None or table.id is None:
             return []
-        every = all(item.fields is True for item in access)
+        table_id = table.id
         sources = [
             Source(
                 item.label,
                 item.type,
                 item.id,
-                every if item.id is None else readable(_as_field(item), access),
+                policy.readable(table_id, _NEW_FIELD if item.id is None else item.id),
             )
             for item in table.fields
             if item is not own
         ]
         return self._sources(
-            lambda: check_formula_against(formula, sources, emails_shown=emails_shown(access))
+            lambda: check_formula_against(
+                formula,
+                sources,
+                emails_shown=policy.emails_shown(table_id),
+                table=policy._named_table(table_id),  # pyright: ignore[reportPrivateUsage]
+            )
         )
 
     def _count(self, table: _Table, where: Any) -> int | None:
@@ -403,8 +418,8 @@ class Planner:
         warnings: list[str] = []
         if self._transport.limited:
             warnings.append(
-                f"Changes to {change.name} are checked against this client's limits for new "
-                "tables when they're applied."
+                f"Changes to {change.name} are checked against what this client's policy gives "
+                "the tables it creates, such as tables.created(), when they're applied."
             )
         return self._result(
             change,
@@ -518,11 +533,8 @@ class Planner:
             warnings.append(_FORMULA_TYPE_WARNING.format(type=change.type))
         if change.type in _CHOICE_TYPES and not change.choices:
             warnings.append("It has no choices yet, so add them before anyone fills it in.")
-        if self._hides_fields(table):
-            warnings.append(
-                f"This client can't see every field of {table.name}, so if one it can't see has "
-                "this label, Quickbase refuses the field when it's applied."
-            )
+        if self._hidden_label(table, change.label):
+            blockers.append(_HIDDEN_LABEL)
         if table.id is not None:
             body: dict[str, Any] = {"label": change.label, "fieldType": change.type}
             if change.formula is not None:
@@ -551,10 +563,13 @@ class Planner:
             settings=settings, blockers=blockers, warnings=warnings, link=self._link(table),
         )  # fmt: skip
 
-    def _hides_fields(self, table: _Table) -> bool:
-        """Whether the client's read rules may hide some of a table's fields."""
-        access = self._access(table)
-        return access is not None and not all(item.fields is True for item in access)
+    def _hidden_label(self, table: _Table, label: str) -> bool:
+        """Whether a field the client can't see already uses a label, from the policy's names-only
+        view, which holds every label in a table as it was bound."""
+        policy = self._transport.policy
+        if policy is None or table.id is None:
+            return False
+        return label.casefold() in policy.hidden_labels(table.id)
 
     def _update_field(self, change: UpdateField) -> PlannedChange:
         table = self._table(change.table)
@@ -827,11 +842,12 @@ class Planner:
         blockers: list[str] = []
         if parent.id is not None and target.id is not None and parent.handle is not None:
             parent_fields = parent.handle.fields()
-            access = table_access(self._transport.read_rules, parent.id)
+            policy = self._transport.policy
             found = FieldIndex(parent_fields)
 
             def readable() -> None:
-                check_readable(found.resolve(target.id or 0), access, parent.id or "", "A lookup")
+                check_lookup_parent(policy, parent.id or "", "A lookup")
+                check_readable(found.resolve(target.id or 0), policy, parent.id or "", "A lookup")
 
             blockers += self._sources(readable)
         if child.id is not None and link.id is not None:
@@ -868,10 +884,19 @@ class Planner:
                     clause = compile_where(clause, fields)
                 except (QueryError, UnknownFieldError) as error:
                     raise _Blocked(f"The summary's filter can't be used: {error}") from None
+        policy = self._transport.policy
+        if child.id is not None:
+            clause = limited_where(policy, child.id, clause)
         wanted = (link.foreign_key.id, 0 if target is None else target.id, change.function, clause)
         existing = parent.field(change.label)
         if existing is not None:
-            hidden_filter = bool(self._transport.read_rules)
+            # A policy shows a summary's filter only when the client can read its fields.
+            hidden_filter = (
+                policy is not None
+                and existing.summary is not None
+                and existing.summary[3] is None
+                and clause is not None
+            )
             same = existing.summary is not None and (
                 existing.summary[:3] == wanted[:3] if hidden_filter else existing.summary == wanted
             )
@@ -886,21 +911,20 @@ class Planner:
                 )  # fmt: skip
             raise _Blocked(f'{parent.name} already has a field labeled "{existing.label}".')
         if fields is not None:
-            access = table_access(self._transport.read_rules, child.id or "")
             shown = [link.foreign_key.id] + ([] if target is None else [target.id])
 
             def readable() -> None:
                 for field_id in shown:
                     if field_id is not None:
                         check_readable(
-                            fields.resolve(field_id), access, child.id or "", "A summary"
+                            fields.resolve(field_id), policy, child.id or "", "A summary", "summary"
                         )
 
             blockers += self._sources(readable)
             if clause is not None:
                 found = clause
                 blockers += self._sources(
-                    lambda: check_filterable(found, access, child.id or "", "The summary")
+                    lambda: check_filterable(found, policy, child.id or "", "The summary")
                 )
             if link.id is not None:
                 blockers += self._allowed(
@@ -1010,14 +1034,6 @@ def _check_choices(field_type: str, choices: Sequence[str] | None) -> None:
         raise _Blocked(
             f"Only a text-multiple-choice or multitext field has choices, not a {field_type} field."
         )
-
-
-def _as_field(item: _Field) -> Field:
-    """Enough of a `Field` to check what the client may read of it."""
-    return Field(
-        id=item.id or 0, label=item.label, type=item.type, mode=item.mode, required=False,
-        unique=False, appears_by_default=False, choices=(), allow_new_choices=False, raw={},
-    )  # fmt: skip
 
 
 def _formula_uses(item: _Field, target: _Field) -> bool:

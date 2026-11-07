@@ -1,0 +1,6 @@
+Refused: reading Hours (8) in Job Tasks (bqtasks123).
+Layer: policy. Rule: none.
+Reason: No rule allows it.
+To allow it: add "Hours" to an allow.read("Job Tasks", ...) rule.
+Rules that cover it: allow.read('Job Tasks', ['Title', 'Status']).
+True

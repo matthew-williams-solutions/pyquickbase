@@ -231,7 +231,7 @@ def test_file_contents_stay_out_of_reprs() -> None:
 DEFAULTS = [
     ("Quickbase", "__init__", "timeout", 30.0),
     ("Quickbase", "__init__", "schema_ttl", 300.0),
-    ("Quickbase", "__init__", "read_only", False),
+    ("Quickbase", "__init__", "policy", None),
     ("Quickbase", "__init__", "base_url", "https://api.quickbase.com/v1"),
     ("Table", "query", "page_size", 1000),
     ("Table", "query_page", "top", 100),
@@ -342,7 +342,8 @@ def test_codegen_uses_a_read_only_client(monkeypatch: pytest.MonkeyPatch, tmp_pa
     monkeypatch.setattr(cli.Quickbase, "from_env", staticmethod(from_env))
     code = cli.main(["codegen", "--app", "a", "--output", str(tmp_path / "t.py")])
     assert code == 1
-    assert seen["read_only"] is True
+    assert isinstance(seen["policy"], pyquickbase.Policy)
+    assert not seen["policy"].bind_offline().allows("insert", "bqtasks", field=6).allowed
 
 
 @pytest.mark.parametrize("wanted", ["Tasks", "bqtasks"])

@@ -3,18 +3,18 @@
 `describe_schema` shows the tables and fields the client can read, `plan_schema` says what a list
 of changes would do, and `apply_schema` makes them, but only with the confirmation `plan_schema`
 returned for exactly those changes, while the schema is as it was. Each schema offers only the
-kinds of change, tables, and field types the client's `WriteRules` could allow, and its
-descriptions say what each one does.
+kinds of change, tables, and field types the client's policy allows, and its descriptions say what
+each one does.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
-from functools import partial
 from typing import Any, Literal
 
+from ._bound import BoundPolicy
 from ._models import TableInfo
-from ._policy import UNSAFE_FORMULA_TYPES, SchemaAccess, WriteRules
 from ._schema_plan import CHANGE_TYPES, FIELD_TYPES, SUMMARY_FUNCTIONS
+from ._write_request import UNSAFE_FORMULA_TYPES
 from .errors import ConfigurationError
 
 SchemaOperationName = Literal["describe_schema", "plan_schema", "apply_schema"]
@@ -39,28 +39,25 @@ class SchemaAllowed:
     formulas: bool
 
 
-def _grants(rules: WriteRules) -> list[SchemaAccess]:
-    """Every `SchemaAccess` a `WriteRules` holds, including the one for new tables."""
-    accesses = [*rules._tables.values()]  # pyright: ignore[reportPrivateUsage]
-    if rules._new_tables is not None:  # pyright: ignore[reportPrivateUsage]
-        accesses.append(rules._new_tables)  # pyright: ignore[reportPrivateUsage]
-    return [access.schema for access in accesses if access.schema is not None]
+_KIND_VERBS = {
+    "update_table": "change_table",
+    "delete_table": "delete_table",
+    "create_field": "add_field",
+    "update_field": "change_field",
+    "delete_field": "delete_field",
+    "create_relationship": "link",
+    "create_lookup": "lookup",
+    "create_summary": "summary",
+    "delete_relationship": "unlink",
+}
 
 
 def schema_allowed(
-    tables: Sequence[TableInfo],
-    write_rules: Sequence[WriteRules],
-    *,
-    app_id: str,
-    read_only: bool,
+    tables: Sequence[TableInfo], policy: BoundPolicy | None, *, app_id: str
 ) -> SchemaAllowed:
-    """Work out what schema changes the client's limits could allow. Every `WriteRules` must allow
-    one. A custom write policy can't be asked, so it may refuse more than this offers."""
-    if read_only:
-        return SchemaAllowed(
-            kinds=frozenset(), tables=(), create_tables=False, field_types=(), formulas=False
-        )
-    if not write_rules:
+    """Work out what schema changes the client's policy allows, from `BoundPolicy.offers()`, so
+    what's offered is exactly what's allowed somewhere. A plan still checks each table and field."""
+    if policy is None:
         return SchemaAllowed(
             kinds=frozenset(CHANGE_TYPES),
             tables=tuple(item.name for item in tables),
@@ -68,50 +65,33 @@ def schema_allowed(
             field_types=FIELD_TYPES,
             formulas=True,
         )
-    per_rules = [_grants(rules) for rules in write_rules]
-
-    def granted(test: Callable[[SchemaAccess], bool]) -> bool:
-        return all(any(test(item) for item in grants) for grants in per_rules)
-
-    kinds = {
-        "update_table": granted(lambda item: item.update_table),
-        "delete_table": granted(lambda item: item.delete_table),
-        "create_field": granted(lambda item: item.create_fields),
-        "update_field": granted(lambda item: item.update_fields is not False),
-        "delete_field": granted(lambda item: item.delete_fields is not False),
-        "create_relationship": granted(lambda item: item.relationships),
-        "create_lookup": granted(lambda item: item.relationships and item.lookups),
-        "create_summary": granted(lambda item: item.relationships and item.summaries),
-        "delete_relationship": granted(
-            lambda item: item.relationships and item.delete_fields is True
-        ),
-    }
-    create_tables = all(
-        app_id in rules._create_tables_in  # pyright: ignore[reportPrivateUsage]
-        for rules in write_rules
-    )
-    kinds["create_table"] = create_tables
-    changeable = [
-        item.name
-        for item in tables
-        if all(
-            (access := rules._tables.get(item.id)) is not None  # pyright: ignore[reportPrivateUsage]
-            and access.schema is not None
-            for rules in write_rules
-        )
-    ]
-    types = [name for name in FIELD_TYPES if granted(partial(_creates, name))]
+    create_tables = policy.can_create_tables(app_id)
+    grants: list[tuple[frozenset[str], frozenset[str] | None]] = []
+    changeable: list[str] = []
+    for item in tables:
+        none: list[tuple[int, str]] = []
+        offered = policy.offers_for(item.id, none, lambda found: found)
+        if offered.schema:
+            changeable.append(item.name)
+            grants.append((offered.schema, offered.field_types))
+    if create_tables:
+        created = policy.with_created("\x00new", "new table")
+        grants.append((policy.created_offers, created.field_types("\x00new")))
+    verbs = frozenset(verb for found, _ in grants for verb in found)
+    kinds = {kind for kind, verb in _KIND_VERBS.items() if verb in verbs}
+    if create_tables:
+        kinds.add("create_table")
+    types: set[str] = set()
+    for found, allowed in grants:
+        if "add_field" in found:
+            types |= set(FIELD_TYPES) if allowed is None else set(allowed)
     return SchemaAllowed(
-        kinds=frozenset(kind for kind, offered in kinds.items() if offered),
+        kinds=frozenset(kinds),
         tables=tuple(changeable),
         create_tables=create_tables,
-        field_types=tuple(types),
-        formulas=granted(lambda item: item.formulas),
+        field_types=tuple(name for name in FIELD_TYPES if name in types),
+        formulas="formula" in verbs,
     )
-
-
-def _creates(field_type: str, access: SchemaAccess) -> bool:
-    return access.create_fields and (access.field_types is None or field_type in access.field_types)
 
 
 def _text(description: str) -> dict[str, Any]:

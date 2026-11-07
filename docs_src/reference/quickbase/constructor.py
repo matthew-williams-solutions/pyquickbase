@@ -1,8 +1,8 @@
-from pyquickbase import AsyncQuickbase
+from pyquickbase import AsyncQuickbase, Policy
 
 async with AsyncQuickbase(
     realm="acme",
     token="your_user_token",
-    read_only=True,
+    policy=Policy.read_only(),
 ) as qb:
     print(qb.realm)

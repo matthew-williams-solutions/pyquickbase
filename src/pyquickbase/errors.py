@@ -26,34 +26,28 @@ class InvalidResponseError(QuickbaseError):
     """Quickbase reported success, but the response body wasn't in the expected format."""
 
 
-class RequestRefusedError(QuickbaseError):
-    """The client's own limits refused this request, so it wasn't sent.
+class PolicyRefusedError(QuickbaseError):
+    """The client's `policy` doesn't allow this request, so it wasn't sent.
 
-    Catch this for either kind. `WriteRefusedError` and `ReadRefusedError` say which limit it was.
-    The message says what was refused and why, without repeating any values from the request.
+    The message says what was refused, by name, which rule refused it, and what would allow it,
+    without repeating any values from the request. Quickbase's own permissions still apply to
+    whatever the policy allows. A field the policy hides raises `UnknownFieldError` instead, as if
+    it didn't exist.
+
+    Attributes:
+        decision: The `Decision`, with the rule, the reason, and the tables and fields involved.
     """
 
-
-class WriteRefusedError(RequestRefusedError):
-    """The client's limits on writes don't allow this request, which could change data.
-
-    `read_only` and `write_policy` both raise this. Nothing was sent.
-    """
-
-
-class ReadRefusedError(RequestRefusedError):
-    """The client's `read_policy` doesn't allow this read, so it wasn't sent.
-
-    It's raised for a field, table, report, or number of records that the policy doesn't allow.
-    Quickbase's own permissions still apply to whatever it allows.
-    """
+    def __init__(self, decision: Any) -> None:
+        super().__init__(decision.message())
+        self.decision = decision
 
 
 class QueryError(QuickbaseError, ValueError):
     """A query can't be sent as written, so it wasn't sent to Quickbase."""
 
 
-class ConfirmationError(QueryError):
+class ConfirmationError(QuickbaseError):
     """A change needs the confirmation its preview or plan returned, and this one is missing,
     expired, or for something else. Nothing was changed. Preview or plan again, and show the
     person the result."""

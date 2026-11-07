@@ -37,10 +37,8 @@ HAS_PUBLIC_CONSTRUCTOR = {
     "F",
     "FileUpload",
     "Period",
-    "WriteRules",
-    "WriteAccess",
-    "SchemaAccess",
-    "ReadRules",
+    "Policy",
+    "Decision",
     "CreateTable",
     "UpdateTable",
     "DeleteTable",
@@ -51,11 +49,29 @@ HAS_PUBLIC_CONSTRUCTOR = {
     "CreateLookupField",
     "CreateSummaryField",
     "DeleteRelationship",
-    "ReadAccess",
     "RetryPolicy",
 }
 # Public so that the SDK can call them across modules, and of no use from outside it.
-INTERNAL_METHODS = {"Expression.compile"}
+INTERNAL_METHODS = {
+    "Expression.compile",
+    "BoundPolicy.readable",
+    "BoundPolicy.filterable",
+    "BoundPolicy.visible",
+    "BoundPolicy.table_visible",
+    "BoundPolicy.hidden_labels",
+    "BoundPolicy.max_summary_records",
+    "BoundPolicy.max_delete",
+    "BoundPolicy.user_emails",
+    "BoundPolicy.field_types",
+    "BoundPolicy.row_limit_rule",
+    "BoundPolicy.emails_shown",
+    "BoundPolicy.offers_for",
+    "BoundPolicy.schema_tables",
+    "BoundPolicy.can_create_tables",
+    "BoundPolicy.with_created",
+    "BoundPolicy.created_offers",
+    "BoundPolicy.trim",
+}
 # Type aliases have no docstrings of their own.
 ALIASES = {
     "FieldRef": "A field, by label (`str`) or ID (`int`).",
@@ -78,10 +94,9 @@ ALIASES = {
     "report method of the same name.",
     "ToolErrorCode": "The `code` in what `tool_error()` returns. Codes don't change within 1.x, so "
     "a tool can act on them.",
-    "ReadPolicy": "A function that decides on each read. Only a return value of `True` lets one "
-    "through. `ReadRules` is one, or you can write your own.",
-    "WritePolicy": "A function that decides on each write. Only a return value of `True` lets one "
-    "through. `WriteRules` is one, or you can write your own.",
+    "Verb": "What a policy grants or refuses, such as `read`, `update`, or `lookup`.",
+    "SchemaVerb": "What `allow.schema()` grants on a table, where the change lands.",
+    "Layer": "Which check made a `Decision`: `policy`, `rows`, `derived`, or `confirmation`.",
     "OrderBy": "What a generated class's methods take as `order_by`, which is fields rather than "
     "labels, so that renaming a label can't break it.",
     "Select": "What a generated class's methods take as `select`: fields of the class, alone or in "
@@ -200,7 +215,7 @@ RESOURCES = (
                 "Use a client",
                 "use-a-client",
                 _CLIENTS,
-                ("app", "realm", "clear_schema_cache", "request"),
+                ("app", "realm", "policy", "clear_schema_cache", "request"),
             ),
         ),
     ),
@@ -522,35 +537,40 @@ SYMBOL_PAGES = (
     SymbolPage(
         "Limits and retries",
         "limits",
-        "Pass these to `Quickbase()` to limit what a client can write and read, and to choose how "
-        "it retries. These limits protect against bugs in your code and mistakes by a model, so "
-        "give your token access to as little as possible as well.",
+        "A `Policy` says what a client may read and change, and `RetryPolicy` how it retries. "
+        "Bind a policy to an app, and pass it to `Quickbase()` as `policy`. It protects against "
+        "bugs in your code and mistakes by a model, so give your token access to as little as "
+        "possible as well, as Quickbase's own permissions are still the real boundary.",
         "Each example makes its own client from the environment, with `bqtasks123` standing for "
         f"the ID of the `Job Tasks` table. {_LIVE_TEST}",
         *_setup(_TABLE_LINE),
         (
             Group(
-                "Limit writes by table, action, and field",
-                "table-rules",
+                "Policies",
+                "policies",
                 _CLIENTS,
-                ("WriteRules", "WriteAccess", "SchemaAccess"),
+                ("Policy", "BoundPolicy", "Decision", "Named", "Offers"),
             ),
             Group(
-                "Limit reads by table, field, and number of records",
-                "read-rules",
+                "Rules",
+                "rules",
                 _CLIENTS,
-                ("ReadRules", "ReadAccess"),
+                ("allow", "deny", "limit", "PolicyRule", "Verb", "SchemaVerb", "Layer"),
             ),
             Group(
-                "Write your own policy",
-                "own-policy",
+                "Tables and fields",
+                "selectors",
+                _CLIENTS,
+                ("fields", "tables", "FieldSelector", "TableSelector"),
+            ),
+            Group(
+                "Rules of your own",
+                "own-rules",
                 _CLIENTS,
                 (
+                    "Rule",
                     "WriteRequest",
                     "ReadRequest",
-                    "all_of",
-                    "WritePolicy",
-                    "ReadPolicy",
                     "WriteAction",
                     "DerivedKind",
                     "ReadAction",
@@ -609,9 +629,7 @@ SYMBOL_PAGES = (
                     "QueryError",
                     "ConfirmationError",
                     "InvalidValueError",
-                    "RequestRefusedError",
-                    "WriteRefusedError",
-                    "ReadRefusedError",
+                    "PolicyRefusedError",
                 ),
             ),
             Group(
@@ -1097,6 +1115,36 @@ def _symbol_methods(item: type) -> list[Method]:
     return methods
 
 
+def _type_of(item: object) -> type:
+    return type(item)
+
+
+def _namespace_methods(name: str, cls: type) -> list[Method]:
+    """The methods of a namespace object, such as `allow.read()`, including inherited ones."""
+    members: dict[str, Any] = {}
+    for klass in reversed(cls.__mro__[:-1]):
+        for key, member in vars(klass).items():
+            if not key.startswith("_") and (
+                isinstance(member, staticmethod) or inspect.isfunction(member)
+            ):
+                members[key] = member
+    methods: list[Method] = []
+    for key, member in members.items():
+        function = getattr(member, "__func__", member)
+        owner = f"{name}.{key}"
+        doc = parse_docstring(inspect.getdoc(function), owner)
+        returns = _return_type(function, name)
+        parameters = _parameters(function, doc, owner)
+        missing = [parameter.name for parameter in parameters if not parameter.description]
+        if missing:
+            raise SystemExit(f"{owner} doesn't describe these arguments: {missing}")
+        methods.append(
+            Method(key, f"{name}-{key}", f"{name}.{key}()", False,
+                   _signature(key, function, returns), returns, doc, parameters, "", "", "")
+        )  # fmt: skip
+    return methods
+
+
 def _symbol_example(slug: str, name: str) -> tuple[str, str, str]:
     """Return an example's sync code, async code, and output, or nothing if it needn't have one."""
     if name in NO_EXAMPLE or name in ALIASES:
@@ -1115,6 +1163,12 @@ def read_symbol(page: SymbolPage, name: str) -> Symbol:
         definition = f"{name} = {build_llms.clean_types(repr(item))}"
         return Symbol(name, doc, definition, "", "", [], [], [], [], "", "", "")
     doc = parse_docstring(inspect.getdoc(item), name)
+    if not inspect.isclass(item) and not inspect.isfunction(item):
+        # A namespace of functions, such as `allow`, shown by its methods under its own name.
+        return Symbol(
+            name, doc, "", "", "", [], [], [], _namespace_methods(name, _type_of(item)),
+            sync_code, async_code, output,
+        )  # fmt: skip
     if inspect.isfunction(item):
         returns = _return_type(item, name)
         parameters = _parameters(item, doc, name)

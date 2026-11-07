@@ -1,4 +1,8 @@
-"""Tests for write policies, which do no network access."""
+"""The policy's rules, ported from the old ReadRules and WriteRules tests, so that nothing loosened
+by accident, plus what's new. No network access.
+
+Where a test here is stricter than the one it came from, its docstring says so.
+"""
 
 from typing import Any
 
@@ -7,19 +11,29 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from pyquickbase import (
+    BoundPolicy,
     ConfigurationError,
+    Decision,
+    F,
+    Policy,
+    PolicyRefusedError,
     Quickbase,
-    SchemaAccess,
-    WriteAccess,
-    WriteRefusedError,
+    ReadRequest,
+    UnknownFieldError,
     WriteRequest,
-    WriteRules,
-    all_of,
+    allow,
+    deny,
+    fields,
+    limit,
+    tables,
 )
-from pyquickbase._policy import check_policy, describe_write
+from pyquickbase._read_request import describe_read
+from pyquickbase._write_request import describe_write
+from pyquickbase.errors import InvalidResponseError
 
-TASKS = "bqtasks"
-NOTES = "bqnotes"
+from .policy_helpers import APP, NOTES, TASKS, bind
+
+# Writes
 
 
 def row(*field_ids: Any) -> dict[str, Any]:
@@ -31,588 +45,776 @@ def records(rows: list[Any], *, key_field_id: int | None = 3, **extra: Any) -> W
     return describe_write("POST", "/records", body, key_field_id=key_field_id)
 
 
-# Describing a write
-
-
-def test_a_row_without_a_record_id_is_an_insert() -> None:
-    request = records([row(6, 7), row(8)])
-    assert request.action == "insert"
-    assert request.table_id == TASKS
-    assert request.field_ids == {6, 7, 8}
-    assert request.row_count == 2
-    assert (request.method, request.path) == ("POST", "/records")
-
-
-@pytest.mark.parametrize("key_field_id", [6, None])
-def test_without_a_merge_field_an_insert_is_only_certain_with_record_id_as_key(
-    key_field_id: int | None,
-) -> None:
-    # Quickbase updates the record when a row has an existing value in a custom key field.
-    assert records([row(6, 7)], key_field_id=key_field_id).action == "upsert"
-    assert records([row(7)], key_field_id=key_field_id).action == "upsert"
-
-
-def test_a_merge_on_record_id_is_an_update_whatever_the_key_field() -> None:
-    assert records([row(3, 7)], key_field_id=6, mergeFieldId=3).action == "update"
-
-
-def test_merging_on_record_id_is_an_update() -> None:
-    request = records([row(3, 7)], mergeFieldId=3)
-    assert request.action == "update"
-    assert request.field_ids == {7}
-
-
-def test_rows_with_a_record_id_and_no_merge_field_are_an_update() -> None:
-    request = records([row(3, 7), row(3, 8)])
-    assert request.action == "update"
-    assert request.field_ids == {7, 8}
-
-
-def test_a_mix_of_rows_could_do_either() -> None:
-    assert records([row(3, 7), row(8)]).action == "upsert"
-    assert records([row(3, 7), row(8)]).field_ids == {3, 7, 8}
-
-
-@pytest.mark.parametrize("merge", [11, "3", 3.0, True, None, [3]])
-def test_merging_on_anything_else_could_create_a_record(merge: Any) -> None:
-    # Quickbase accepts "3" and 3.0 as field 3, but only a plain 3 is certain to be an update here.
-    request = records([row(3, 7)], mergeFieldId=merge)
-    assert request.action == "upsert"
-    assert 3 in (request.field_ids or ())
-
-
-@pytest.mark.parametrize("key", ["07", " 7", "7 ", "+7", "0", "\u0667", "7.0", "", "x"])
-def test_field_keys_in_any_other_form_are_unknown(key: str) -> None:
-    # Quickbase accepts "07" and " 7" as field 7, which could otherwise get around a field list.
-    for extra in ({}, {"mergeFieldId": 3}):
-        request = records([{"3": {"value": 1}, key: {"value": "x"}}], **extra)
-        assert request.field_ids is None
-        assert request.action == "upsert"
-
-
-@pytest.mark.parametrize("rows", [["x"], [None], [[]], [5]])
-def test_rows_that_arent_objects_are_unknown(rows: list[Any]) -> None:
-    assert records(rows).field_ids is None
-
-
-@pytest.mark.parametrize(
-    "body",
-    [
-        None,
-        [],
-        "x",
-        {},
-        {"to": TASKS},
-        {"to": TASKS, "data": "x"},
-        {"to": TASKS, "data": {"6": {"value": 1}}},
-    ],
-)
-def test_bodies_it_cant_read_are_other(body: Any) -> None:
-    assert describe_write("POST", "/records", body).action == "other"
-
-
-@pytest.mark.parametrize("to", [None, 5, ["bqtasks"], {"id": "bqtasks"}])
-def test_a_table_that_isnt_text_is_unknown(to: Any) -> None:
-    assert describe_write("POST", "/records", {"to": to, "data": [row(6)]}).table_id is None
-    assert describe_write("DELETE", "/records", {"from": to, "where": "x"}).table_id is None
-
-
-def test_the_wrong_key_for_the_table_leaves_it_unknown() -> None:
-    assert describe_write("POST", "/records", {"To": TASKS, "data": [row(6)]}).table_id is None
-    assert describe_write("DELETE", "/records", {"to": TASKS}).table_id is None
-
-
-def test_deletes() -> None:
-    request = describe_write("DELETE", "/records", {"from": TASKS, "where": "{3.GT.'0'}"})
-    assert request.action == "delete"
-    assert request.table_id == TASKS
-    assert request.field_ids is None
-    assert request.row_count is None
-
-
-def test_deleting_a_file_version() -> None:
-    request = describe_write("DELETE", "/files/bqtasks/5/13/2", None)
-    assert request.action == "delete_file"
-    assert request.table_id == TASKS
-    assert request.field_ids == {13}
-
-
-@pytest.mark.parametrize(
-    ("method", "path"),
-    [
-        ("POST", "/apps"),
-        ("PUT", "/fields"),
-        ("POST", "/fields/06"),
-        ("POST", "/tables/bqtasks/relationships"),
-        ("PATCH", "/tables/bqtasks"),
-        ("PUT", "/records"),
-        ("PATCH", "/records"),
-        ("POST", "/records/"),
-        ("POST", "/Records"),
-        ("POST", "/x/../records"),
-        ("POST", "/files/bqtasks/5/13/2"),
-        ("DELETE", "/files/bqtasks/5/13"),
-        ("DELETE", "/files/../bqtasks/5/13/2"),
-        ("DELETE", "/files/bqtasks/5/13/2/"),
-    ],
-)
-def test_everything_else_is_other(method: str, path: str) -> None:
-    request = describe_write(method, path, {"to": TASKS, "from": TASKS, "data": [row(6)]})
-    assert request.action == "other"
-    assert request.table_id is None
-
-
 def schema(
     method: str, path: str, body: Any = None, *, table: str = TASKS, **kwargs: Any
 ) -> WriteRequest:
-    params = {"tableId": table, "appId": "bqapp"}
+    params = {"tableId": table, "appId": APP}
     return describe_write(method, path, body, params=params, **kwargs)
 
 
+def allows(policy: BoundPolicy, request: WriteRequest | ReadRequest) -> bool:
+    return policy.decide(request).allowed
+
+
+def refusal(policy: BoundPolicy, request: WriteRequest | ReadRequest) -> str:
+    decision = policy.decide(request)
+    assert not decision.allowed
+    return decision.message()
+
+
+INSERT = records([row(6)])
+UPDATE = records([row(3, 6)], mergeFieldId=3)
+UPSERT = records([row(6)], mergeFieldId=6)
+DELETE = describe_write("DELETE", "/records", {"from": TASKS})
+DELETE_FILE = describe_write("DELETE", f"/files/{TASKS}/5/13/2", None)
+
+
+def test_a_table_no_rule_names_is_refused() -> None:
+    policy = bind(
+        allow.insert(NOTES, fields.all()),
+        allow.update(NOTES, fields.all()),
+        allow.delete(NOTES),
+        allow.delete_file(NOTES),
+    )
+    for request in (INSERT, UPDATE, DELETE, DELETE_FILE):
+        assert "No rule allows it" in refusal(policy, request)
+
+
+def test_tables_are_found_by_name_or_id_and_unknown_ones_fail_to_bind() -> None:
+    assert allows(bind(allow.insert("Tasks", fields.all())), INSERT)
+    assert allows(bind(allow.insert("tasks", fields.all())), INSERT)
+    assert allows(bind(allow.insert(TASKS, fields.all())), INSERT)
+    with pytest.raises(ConfigurationError, match="no table 'BQTASKS'"):
+        bind(allow.insert("BQTASKS", fields.all()))
+
+
+def test_nothing_is_granted_by_default() -> None:
+    policy = bind()
+    for request in (INSERT, UPDATE, UPSERT, DELETE, DELETE_FILE):
+        assert not allows(policy, request)
+
+
+def test_each_action_is_granted_separately() -> None:
+    cases: list[tuple[list[Any], set[str]]] = [
+        ([allow.insert(TASKS, fields.all())], {"insert"}),
+        ([allow.update(TASKS, fields.all())], {"update"}),
+        (
+            [allow.insert(TASKS, fields.all()), allow.update(TASKS, fields.all())],
+            {"insert", "update", "upsert"},
+        ),
+        ([allow.delete(TASKS)], {"delete"}),
+        ([allow.delete_file(TASKS)], {"delete_file"}),
+    ]
+    for rules, expected in cases:
+        policy = bind(*rules)
+        for request in (INSERT, UPDATE, UPSERT, DELETE, DELETE_FILE):
+            assert allows(policy, request) == (request.action in expected), (rules, request)
+
+
+def test_field_lists_limit_updates_by_label_or_id() -> None:
+    policy = bind(allow.update(TASKS, ["Status", 12]))
+    assert allows(policy, records([row(3, 7)], mergeFieldId=3))
+    assert allows(policy, records([row(3, 7, 12)]))
+    message = refusal(policy, records([row(3, 7, 8)], mergeFieldId=3))
+    assert "updating Hours (8) in Tasks (bqtasks)" in message
+    assert 'add "Hours" to an allow.update("Tasks", ...) rule' in message
+
+
+def test_field_lists_limit_inserts() -> None:
+    policy = bind(allow.insert(TASKS, ["Title"]))
+    assert allows(policy, records([row(6)]))
+    assert not allows(policy, records([row(6), row(7)]))
+
+
+def test_fields_that_cant_be_read_are_refused_even_for_every_field() -> None:
+    """Stricter than before: `WriteAccess(insert=True)` let a key such as "07" through."""
+    for rules in (
+        [allow.insert(TASKS, [7]), allow.update(TASKS, [7])],
+        [
+            allow.insert(TASKS, fields.all()),
+            allow.update(TASKS, fields.all()),
+        ],
+    ):
+        policy = bind(*rules)
+        for key in ("07", " 7", "+7", "8 "):
+            assert "can't be determined" in refusal(policy, records([{key: {"value": "x"}}]))
+
+
+def test_an_upsert_needs_both_and_its_fields_in_both() -> None:
+    both = bind(allow.insert(TASKS, [6, 7]), allow.update(TASKS, [6, 7]))
+    assert allows(both, records([row(6, 7)], mergeFieldId=6))
+    narrower = bind(allow.insert(TASKS, [6, 7]), allow.update(TASKS, [7]))
+    assert not allows(narrower, records([row(6, 7)], mergeFieldId=6))
+
+
+def test_an_insert_grant_refuses_a_table_with_another_key_field() -> None:
+    insert_only = bind(allow.insert(TASKS, fields.all()))
+    assert allows(insert_only, records([row(6)], key_field_id=3))
+    for key_field_id in (6, None):
+        assert "updating" in refusal(insert_only, records([row(6)], key_field_id=key_field_id))
+    both = bind(allow.insert(TASKS, fields.all()), allow.update(TASKS, fields.all()))
+    assert allows(both, records([row(6)], key_field_id=6))
+
+
+def test_a_merge_on_record_id_written_another_way_needs_both() -> None:
+    update_only = bind(allow.update(TASKS, fields.all()))
+    assert not allows(update_only, records([row(3, 6)], mergeFieldId="3"))
+
+
+def test_field_lists_dont_limit_deletes() -> None:
+    assert allows(bind(allow.update(TASKS, [7]), allow.delete(TASKS)), DELETE)
+    assert not allows(bind(allow.update(TASKS, [7])), DELETE)
+
+
+def test_other_writes_and_unknown_tables_are_refused() -> None:
+    policy = bind(
+        allow.insert(TASKS, fields.all()),
+        allow.update(TASKS, fields.all()),
+        allow.delete(TASKS),
+        allow.delete_file(TASKS),
+    )
+    assert "Only record, file, and schema" in refusal(policy, describe_write("POST", "/apps", {}))
+    assert "table can't be determined" in refusal(
+        policy, describe_write("POST", "/records", {"data": [row(6)]})
+    )
+    other = describe_write("POST", "/records", {"to": "bqother", "data": [row(6)]})
+    assert "isn't one of app bqapp's tables" in refusal(policy, other)
+
+
+def test_refusals_never_repeat_values() -> None:
+    policy = bind(allow.update(TASKS, [7]))
+    message = refusal(
+        policy, records([{"3": {"value": 1}, "8": {"value": "s3cret"}}], mergeFieldId=3)
+    )
+    assert "s3cret" not in message
+
+
+def test_writing_a_field_needs_no_read_access() -> None:
+    policy = bind(allow.update(TASKS, ["Hours"]))
+    assert allows(policy, records([row(3, 8)], mergeFieldId=3))
+    assert policy.visible(TASKS, 8)
+    assert not policy.readable(TASKS, 8)
+
+
+def test_a_deny_always_wins() -> None:
+    policy = bind(
+        allow.read(tables.all()),
+        allow.update(TASKS, fields.all()),
+        deny.update(TASKS, ["Hours"]),
+    )
+    assert allows(policy, records([row(3, 7)], mergeFieldId=3))
+    decision = policy.decide(records([row(3, 7, 8)], mergeFieldId=3))
+    assert not decision.allowed
+    assert decision.rule == "deny.update('bqtasks', ['Hours'])"
+    assert decision.hint is None
+
+
+# Schema
+
+
 @pytest.mark.parametrize(
-    ("method", "path", "body", "action", "table_id"),
+    ("rule", "request_args", "allowed"),
     [
-        ("POST", "/tables", {"name": "New"}, "create_table", None),
-        ("POST", f"/tables/{TASKS}", {"name": "New"}, "update_table", TASKS),
-        ("DELETE", f"/tables/{TASKS}", None, "delete_table", TASKS),
-        ("POST", "/fields", {"label": "x", "fieldType": "text"}, "create_field", TASKS),
-        ("POST", "/fields/6", {"label": "y"}, "update_field", TASKS),
-        ("DELETE", "/fields", {"fieldIds": [6, 7]}, "delete_field", TASKS),
-        ("POST", f"/tables/{TASKS}/relationship", {"parentTableId": NOTES}, "create_relationship",
-         TASKS),
-        ("POST", f"/tables/{TASKS}/relationship/7", {"lookupFieldIds": [6]},
-         "update_relationship", TASKS),
-        ("DELETE", f"/tables/{TASKS}/relationship/7", None, "delete_relationship", TASKS),
-    ],
-)  # fmt: skip
-def test_schema_changes_are_described(
-    method: str, path: str, body: Any, action: str, table_id: str | None
-) -> None:
-    request = schema(method, path, body)
-    assert (request.action, request.table_id) == (action, table_id)
-
-
-def test_a_schema_change_says_what_it_touches() -> None:
-    created = schema("POST", "/fields", {"fieldType": "date", "properties": {"formula": ""}})
-    assert (created.field_type, created.derived) == ("date", {"formula"})
-    assert schema("POST", "/fields/6", {"label": "y"}).field_ids == {6}
-    assert schema("DELETE", "/fields", {"fieldIds": [6, 7]}).field_ids == {6, 7}
-    assert schema("DELETE", "/fields", {"fieldIds": ["6"]}).field_ids is None
-    assert schema("POST", "/tables", {"name": "x"}).app_id == "bqapp"
-    link = schema("POST", f"/tables/{TASKS}/relationship", {"parentTableId": NOTES,
-                                                         "lookupFieldIds": [6]})  # fmt: skip
-    assert (link.parent_table_id, link.derived) == (NOTES, {"lookup"})
-    path = f"/tables/{TASKS}/relationship/7"
-    added = schema("POST", path, {"summaryFields": [{}]}, parent_table_id=NOTES)
-    assert (added.parent_table_id, added.derived) == (NOTES, {"summary"})
-    assert schema("POST", path, {"lookupFieldIds": [6]}).parent_table_id is None
-    assert schema("POST", path, {"lookupFieldIds": "6"}).action == "other"
-
-
-def full(**grant: Any) -> WriteAccess:
-    return WriteAccess(schema=SchemaAccess(**grant))
-
-
-def test_schema_changes_need_a_schema_grant() -> None:
-    rules = WriteRules({TASKS: WriteAccess(insert=True, update=True, delete=True)})
-    with pytest.raises(WriteRefusedError, match="doesn't allow schema changes"):
-        rules(schema("POST", "/fields", {"label": "x", "fieldType": "text"}))
-    with pytest.raises(WriteRefusedError, match="creating tables isn't allowed"):
-        rules(schema("POST", "/tables", {"name": "x"}))
-
-
-@pytest.mark.parametrize(
-    ("grant", "request_args", "allowed"),
-    [
-        ({"update_table": True}, ("POST", f"/tables/{TASKS}", {}), True),
-        ({}, ("POST", f"/tables/{TASKS}", {}), False),
-        ({"delete_table": True}, ("DELETE", f"/tables/{TASKS}", None), True),
-        ({"update_table": True}, ("DELETE", f"/tables/{TASKS}", None), False),
-        ({"create_fields": True}, ("POST", "/fields", {"fieldType": "text"}), True),
-        ({"create_fields": True, "field_types": ["date"]}, ("POST", "/fields",
-                                                            {"fieldType": "text"}), False),
-        ({"create_fields": True}, ("POST", "/fields", {}), False),
-        ({"update_fields": [6]}, ("POST", "/fields/6", {"label": "y"}), True),
-        ({"update_fields": [7]}, ("POST", "/fields/6", {"label": "y"}), False),
-        ({"delete_fields": True}, ("DELETE", "/fields", {"fieldIds": [6]}), True),
-        ({"delete_fields": [6]}, ("DELETE", "/fields", {"fieldIds": [6, 7]}), False),
-        ({"delete_fields": [6]}, ("DELETE", "/fields", {"fieldIds": "6"}), False),
+        (allow.schema(TASKS, "change_table"), ("POST", f"/tables/{TASKS}", {}), True),
+        (allow.schema(TASKS, "add_field"), ("POST", f"/tables/{TASKS}", {}), False),
+        (allow.schema(TASKS, "delete_table"), ("DELETE", f"/tables/{TASKS}", None), True),
+        (allow.schema(TASKS, "change_table"), ("DELETE", f"/tables/{TASKS}", None), False),
+        (allow.schema(TASKS, "add_field"), ("POST", "/fields", {"fieldType": "text"}), True),
+        (allow.schema(TASKS, "add_field", field_types=["date"]), ("POST", "/fields",
+                                                                  {"fieldType": "text"}), False),
+        (allow.schema(TASKS, "add_field"), ("POST", "/fields", {}), False),
+        (allow.schema(TASKS, "change_field", fields=[6]), ("POST", "/fields/6", {"label": "y"}),
+         True),
+        (allow.schema(TASKS, "change_field", fields=[7]), ("POST", "/fields/6", {"label": "y"}),
+         False),
+        (allow.schema(TASKS, "delete_field"), ("DELETE", "/fields", {"fieldIds": [6]}), True),
+        (allow.schema(TASKS, "delete_field", fields=[6]), ("DELETE", "/fields",
+                                                           {"fieldIds": [6, 7]}), False),
+        (allow.schema(TASKS, "delete_field", fields=[6]), ("DELETE", "/fields",
+                                                           {"fieldIds": "6"}), False),
     ],
 )  # fmt: skip
 def test_each_schema_change_is_granted_separately(
-    grant: dict[str, Any], request_args: tuple[str, str, Any], allowed: bool
+    rule: Any, request_args: tuple[str, str, Any], allowed: bool
 ) -> None:
-    rules = WriteRules({TASKS: full(**grant)})
-    assert allows(rules, schema(*request_args)) is allowed
+    assert allows(bind(rule), schema(*request_args)) is allowed
+
+
+def test_schema_changes_need_a_schema_grant() -> None:
+    policy = bind(allow.insert(TASKS, fields.all()), allow.delete(TASKS))
+    assert "adding a field to Tasks" in refusal(
+        policy, schema("POST", "/fields", {"label": "x", "fieldType": "text"})
+    )
+    assert "add allow.create_tables()" in refusal(policy, schema("POST", "/tables", {"name": "x"}))
 
 
 def test_formulas_need_their_own_grant_and_cant_make_links() -> None:
     formula = {"fieldType": "numeric", "properties": {"formula": "1"}}
-    assert not allows(WriteRules({TASKS: full(create_fields=True)}), schema("POST", "/fields",
-                                                                             formula))  # fmt: skip
-    rules = WriteRules({TASKS: full(create_fields=True, update_fields=True, formulas=True)})
-    assert allows(rules, schema("POST", "/fields", formula))
-    assert allows(rules, schema("POST", "/fields/6", {"properties": {"formula": "2"}}))
+    assert not allows(bind(allow.schema(TASKS, "add_field")), schema("POST", "/fields", formula))
+    policy = bind(allow.schema(TASKS, "add_field", "change_field", "formula"))
+    assert allows(policy, schema("POST", "/fields", formula))
+    assert allows(policy, schema("POST", "/fields/6", {"properties": {"formula": "2"}}))
     for unsafe in ("url", "rich-text"):
         body = {"fieldType": unsafe, "properties": {"formula": '"x"'}}
-        with pytest.raises(WriteRefusedError, match="acts as them"):
-            rules(schema("POST", "/fields", body))
-    assert allows(rules, schema("POST", "/fields", {"fieldType": "url"}))
+        assert "acts as them" in refusal(policy, schema("POST", "/fields", body))
+    assert allows(policy, schema("POST", "/fields", {"fieldType": "url"}))
 
 
-def test_relationships_need_both_tables_and_their_grants() -> None:
+def test_relationships_are_granted_on_both_tables_where_they_land() -> None:
     link = schema("POST", f"/tables/{TASKS}/relationship", {"parentTableId": NOTES})
     lookup = schema("POST", f"/tables/{TASKS}/relationship/7", {"lookupFieldIds": [6]},
                     parent_table_id=NOTES)  # fmt: skip
     summary = schema("POST", f"/tables/{TASKS}/relationship/7", {"summaryFields": [{}]},
                      parent_table_id=NOTES)  # fmt: skip
     unlink = schema("DELETE", f"/tables/{TASKS}/relationship/7", parent_table_id=NOTES)
-    only_child = WriteRules({TASKS: full(relationships=True)})
-    with pytest.raises(WriteRefusedError, match=f"table {NOTES} isn't listed"):
-        only_child(link)
-    both = WriteRules({TASKS: full(relationships=True), NOTES: full(relationships=True)})
+    only_child = bind(allow.schema(TASKS, "link"))
+    message = refusal(only_child, link)
+    assert "Notes (bqnotes)" in message
+    both = bind(allow.schema([TASKS, NOTES], "link"))
     assert allows(both, link)
     assert not allows(both, lookup)
     assert not allows(both, summary)
     assert not allows(both, unlink)
-    granted = WriteRules(
-        {
-            TASKS: full(relationships=True, lookups=True, delete_fields=True),
-            NOTES: full(relationships=True, summaries=True, delete_fields=True),
-        }
+    granted = bind(
+        allow.schema(TASKS, "link", "unlink", "lookup", "delete_field"),
+        allow.schema(NOTES, "link", "unlink", "summary", "delete_field"),
     )
     for request in (link, lookup, summary, unlink):
         assert allows(granted, request), request.action
+    # A lookup is granted on the child, and a summary on the parent.
+    assert allows(bind(allow.schema(TASKS, "lookup")), lookup)
+    assert not allows(bind(allow.schema(NOTES, "lookup")), lookup)
+    assert allows(bind(allow.schema(NOTES, "summary")), summary)
+    assert not allows(bind(allow.schema(TASKS, "summary")), summary)
     unknown_parent = schema("POST", f"/tables/{TASKS}/relationship/7", {"summaryFields": [{}]})
-    with pytest.raises(WriteRefusedError, match="parent table can't be determined"):
-        granted(unknown_parent)
+    assert "parent table can't be determined" in refusal(granted, unknown_parent)
 
 
-def test_new_tables_get_their_own_access() -> None:
-    rules = WriteRules({}, create_tables_in=["bqapp"], new_tables=full(create_fields=True))
-    assert allows(rules, schema("POST", "/tables", {"name": "x"}))
-    field = schema("POST", "/fields", {"fieldType": "text"}, table="bqnew")
-    assert not allows(rules, field)
-    rules._adopt("bqnew")  # pyright: ignore[reportPrivateUsage]
-    assert allows(rules, field)
-    assert not allows(WriteRules({}, create_tables_in=["other"]), schema("POST", "/tables", {}))
+def test_unlinking_needs_delete_field_where_its_lookups_and_summaries_are() -> None:
+    from .policy_helpers import link as relationship
+
+    links = [relationship(1, NOTES, TASKS, 9, lookups=[12], summaries=[7])]
+    unlink = schema("DELETE", f"/tables/{TASKS}/relationship/1", parent_table_id=NOTES)
+    narrow = bind(
+        allow.schema([TASKS, NOTES], "unlink"),
+        allow.schema(TASKS, "delete_field", fields=[12]),
+        relationships=links,
+    )
+    assert "deleting Kind (7) in Notes" in refusal(narrow, unlink)
+    granted = bind(
+        allow.schema([TASKS, NOTES], "unlink"),
+        allow.schema(TASKS, "delete_field", fields=[12]),
+        allow.schema(NOTES, "delete_field", fields=["Kind"]),
+        relationships=links,
+    )
+    assert allows(granted, unlink)
+
+
+def test_created_tables_get_their_own_rules_in_a_new_policy() -> None:
+    policy = bind(allow.create_tables(), allow.schema(tables.created(), "add_field"))
+    assert allows(policy, schema("POST", "/tables", {"name": "x"}))
+    assert not allows(policy, describe_write("POST", "/tables", {}, params={"appId": "other"}))
+    add = schema("POST", "/fields", {"fieldType": "text"}, table="bqnew")
+    assert not allows(policy, add)
+    created = policy.with_created("bqnew", "New")
+    assert allows(created, add)
+    assert not allows(policy, add), "the old policy is unchanged"
+    assert created.created == ("bqnew",)
+    assert created.hash != policy.hash
+    assert not allows(bind(allow.schema(tables.created(), "add_field")), add)
+
+
+# Reads
+
+
+def query(**body: Any) -> ReadRequest:
+    found = describe_read("POST", "/records/query", None, {"from": TASKS, "sortBy": [], **body})
+    assert found is not None
+    return found
+
+
+def paged(**body: Any) -> ReadRequest:
+    return query(options={"top": 10, "skip": 0}, **body)
+
+
+def report(report_type: str | None = "table", report_id: str = "7") -> ReadRequest:
+    found = describe_read(
+        "POST",
+        f"/reports/{report_id}/run",
+        {"tableId": TASKS, "top": 10, "skip": 0},
+        None,
+        report_type=report_type,
+    )
+    assert found is not None
+    return found
+
+
+def reads(**options: Any) -> BoundPolicy:
+    extra = options.pop("rules", ())
+    return bind(
+        allow.read(TASKS, options.pop("fields", [6, 7]), **options),
+        *extra,
+        reports={
+            TASKS: [
+                {"id": "7", "name": "Open", "type": "table"},
+                {"id": "8", "name": "Totals", "type": "summary"},
+            ]
+        },
+    )
+
+
+def test_allowed_queries_pass() -> None:
+    allowed = paged(select=[3, 6, 7], where="{7.EX.'x'}", sortBy=[{"fieldId": 6, "order": "ASC"}])
+    assert allows(reads(), allowed)
+
+
+def test_record_id_is_allowed_wherever_anything_is_readable() -> None:
+    request = paged(select=[3], where="{3.GT.'0'}", sortBy=[{"fieldId": 3, "order": "ASC"}])
+    assert allows(reads(fields=["Title"]), request)
+    assert not allows(bind(allow.insert(TASKS, fields.all())), request)
 
 
 @pytest.mark.parametrize(
-    "kwargs",
+    ("body", "match"),
     [
-        {"update_fields": []},
-        {"formulas": 1},
-        {"field_types": "text"},
-        {"field_types": []},
-        {"field_types": [""]},
+        ({"select": [3, 9]}, r"reading Notes \(9\)"),
+        ({"select": [3], "where": "{9.EX.'x'}"}, r"filtering on Notes \(9\)"),
+        ({"select": [3], "sortBy": [{"fieldId": 9, "order": "ASC"}]}, r"sorting by Notes \(9\)"),
+        ({"select": [3], "where": "{7.EX.'_FID_9'}"}, "filters on can't be determined"),
+        ({}, "returns can't be determined"),
     ],
 )
-def test_schema_access_checks_its_settings(kwargs: dict[str, Any]) -> None:
-    with pytest.raises(ConfigurationError):
-        SchemaAccess(**kwargs)
+def test_fields_outside_the_rules_are_refused(body: dict[str, Any], match: str) -> None:
+    with pytest.raises(PolicyRefusedError, match=match):
+        raise PolicyRefusedError(reads().decide(paged(**body)))
 
 
-def test_write_rules_check_their_new_settings() -> None:
-    with pytest.raises(ConfigurationError, match="schema takes"):
-        WriteAccess(schema=True)  # pyright: ignore[reportArgumentType]
-    with pytest.raises(ConfigurationError, match="create_tables_in"):
-        WriteRules({}, create_tables_in="bqapp")
-    with pytest.raises(ConfigurationError, match="new_tables"):
-        WriteRules({}, new_tables=SchemaAccess())  # pyright: ignore[reportArgumentType]
-
-
-def test_a_description_holds_no_values() -> None:
-    assert "s3cret" not in repr(records([{"6": {"value": "s3cret"}}]))
-
-
-# WriteRules
-
-
-def allows(rules: WriteRules, request: WriteRequest) -> bool:
-    try:
-        return rules(request)
-    except WriteRefusedError:
-        return False
-
-
-def test_a_table_that_isnt_listed_is_refused() -> None:
-    rules = WriteRules(
-        {NOTES: WriteAccess(insert=True, update=True, delete=True, delete_files=True)}
-    )
-    for request in (
-        records([row(6)]),
-        records([row(3, 6)], mergeFieldId=3),
-        describe_write("DELETE", "/records", {"from": TASKS}),
-        describe_write("DELETE", "/files/bqtasks/5/13/2", None),
-    ):
-        with pytest.raises(WriteRefusedError, match=f"table {TASKS} isn't listed"):
-            rules(request)
-
-
-def test_table_ids_must_match_exactly() -> None:
-    rules = WriteRules({"BQTASKS": WriteAccess(insert=True)})
-    assert not allows(rules, records([row(6)]))
-
-
-def test_nothing_is_granted_by_default() -> None:
-    rules = WriteRules({TASKS: WriteAccess()})
-    assert not allows(rules, records([row(6)]))
-    assert not allows(rules, records([row(3, 6)], mergeFieldId=3))
-    assert not allows(rules, records([row(6)], mergeFieldId=6))
-    assert not allows(rules, describe_write("DELETE", "/records", {"from": TASKS}))
-    assert not allows(rules, describe_write("DELETE", "/files/bqtasks/5/13/2", None))
-
-
-def test_each_action_is_granted_separately() -> None:
-    insert = records([row(6)])
-    update = records([row(3, 6)], mergeFieldId=3)
-    upsert = records([row(6)], mergeFieldId=6)
-    delete = describe_write("DELETE", "/records", {"from": TASKS})
-    delete_file = describe_write("DELETE", "/files/bqtasks/5/13/2", None)
-    cases: list[tuple[dict[str, Any], set[str]]] = [
-        ({"insert": True}, {"insert"}),
-        ({"update": True}, {"update"}),
-        ({"insert": True, "update": True}, {"insert", "update", "upsert"}),
-        ({"delete": True}, {"delete"}),
-        ({"delete_files": True}, {"delete_file"}),
-    ]
-    for grant, expected in cases:
-        rules = WriteRules({TASKS: WriteAccess(**grant)})
-        for request in (insert, update, upsert, delete, delete_file):
-            assert allows(rules, request) == (request.action in expected), (grant, request.action)
-
-
-def test_field_lists_limit_updates() -> None:
-    rules = WriteRules({TASKS: WriteAccess(update=[7, 12])})
-    assert rules(records([row(3, 7)], mergeFieldId=3))
-    assert rules(records([row(3, 7, 12)]))
-    with pytest.raises(WriteRefusedError, match=r"doesn't allow fields \[8\]"):
-        rules(records([row(3, 7, 8)], mergeFieldId=3))
-
-
-def test_field_lists_limit_inserts() -> None:
-    rules = WriteRules({TASKS: WriteAccess(insert=[6])})
-    assert rules(records([row(6)]))
-    assert not allows(rules, records([row(6), row(7)]))
-
-
-def test_a_field_list_refuses_fields_it_cant_read() -> None:
-    rules = WriteRules({TASKS: WriteAccess(insert=[7], update=[7])})
-    for key in ("07", " 7", "+7", "8 "):
-        request = records([{key: {"value": "x"}}])
-        with pytest.raises(WriteRefusedError, match="can't be determined"):
-            rules(request)
-
-
-def test_an_upsert_needs_both_and_its_fields_in_both() -> None:
-    both = WriteRules({TASKS: WriteAccess(insert=[6, 7], update=[6, 7])})
-    assert both(records([row(6, 7)], mergeFieldId=6))
-    narrower = WriteRules({TASKS: WriteAccess(insert=[6, 7], update=[7])})
-    assert not allows(narrower, records([row(6, 7)], mergeFieldId=6))
-
-
-def test_an_insert_grant_refuses_a_table_with_another_key_field() -> None:
-    insert_only = WriteRules({TASKS: WriteAccess(insert=True)})
-    assert insert_only(records([row(6)], key_field_id=3))
-    for key_field_id in (6, None):
-        with pytest.raises(WriteRefusedError, match="updating isn't allowed"):
-            insert_only(records([row(6)], key_field_id=key_field_id))
-    both = WriteRules({TASKS: WriteAccess(insert=True, update=True)})
-    assert both(records([row(6)], key_field_id=6))
-
-
-def test_a_merge_on_record_id_written_another_way_needs_both() -> None:
-    update_only = WriteRules({TASKS: WriteAccess(update=True)})
-    assert not allows(update_only, records([row(3, 6)], mergeFieldId="3"))
-
-
-def test_true_allows_any_field_even_one_it_cant_read() -> None:
-    rules = WriteRules({TASKS: WriteAccess(insert=True, update=True)})
-    assert rules(records([{"07": {"value": "x"}}]))
-
-
-def test_field_lists_dont_limit_deletes() -> None:
+def test_filter_and_sort_default_to_the_read_fields_and_can_differ() -> None:
+    narrow = reads(filter=[7], sort=["Title"])
+    assert allows(narrow, paged(select=[6], where="{7.EX.'x'}"))
+    assert "filtering" in refusal(narrow, paged(select=[6], where="{6.EX.'x'}"))
+    assert "sorting" in refusal(narrow, paged(select=[6], sortBy=[{"fieldId": 7, "order": "ASC"}]))
+    # A field may be filtered on without being returned.
+    assert allows(reads(fields=[6], filter=[9]), paged(select=[6], where="{9.EX.'x'}"))
     assert allows(
-        WriteRules({TASKS: WriteAccess(update=[7], delete=True)}),
-        describe_write("DELETE", "/records", {"from": TASKS}),
-    )
-    assert not allows(
-        WriteRules({TASKS: WriteAccess(update=[7])}),
-        describe_write("DELETE", "/records", {"from": TASKS}),
+        bind(allow.read(TASKS, [6]), allow.filter(TASKS, [9])),
+        paged(select=[6], where="{9.EX.'x'}"),
     )
 
 
-def test_other_writes_and_unknown_tables_are_refused() -> None:
-    rules = WriteRules(
-        {TASKS: WriteAccess(insert=True, update=True, delete=True, delete_files=True)}
+def test_every_field_includes_ones_added_after_binding() -> None:
+    assert allows(reads(fields=fields.all()), paged(select=[3, 99], where="{98.EX.'x'}"))
+
+
+def test_the_window_is_limited_counting_skip() -> None:
+    limited = reads(max_records=50)
+    assert allows(limited, query(select=[6], options={"top": 50, "skip": 0}))
+    assert "at most 50 records" in refusal(
+        limited, query(select=[6], options={"top": 51, "skip": 0})
     )
-    with pytest.raises(WriteRefusedError, match="only record, file, and schema"):
-        rules(describe_write("POST", "/apps", {}))
-    with pytest.raises(WriteRefusedError, match="table can't be determined"):
-        rules(describe_write("POST", "/records", {"data": [row(6)]}))
+    assert "at most 50 records" in refusal(
+        limited, query(select=[6], options={"top": 10, "skip": 45})
+    )
+    assert "get all of them" in refusal(limited, query(select=[6]))
+    assert allows(reads(max_records=None), query(select=[6]))
 
 
-def test_refusals_never_repeat_values() -> None:
-    rules = WriteRules({TASKS: WriteAccess(update=[7])})
-    with pytest.raises(WriteRefusedError) as caught:
-        rules(records([{"3": {"value": 1}, "8": {"value": "s3cret"}}], mergeFieldId=3))
-    assert "s3cret" not in str(caught.value)
+def test_the_highest_record_limit_of_the_rules_that_read_a_table_applies() -> None:
+    policy = bind(allow.read(tables.all()), allow.read(TASKS, max_records=500))
+    assert policy.max_records(TASKS) == 500
+    assert policy.max_records(NOTES) == 100
+
+
+def test_summary_pages_have_their_own_limit() -> None:
+    body = {"from": TASKS, "select": [6], "sortBy": [], "options": {"top": 1000, "skip": 0}}
+    page = describe_read("POST", "/records/query", None, body, summarizing=True)
+    assert page is not None
+    assert allows(reads(max_records=10), page)
+    assert "max_summary_records" in refusal(reads(max_summary_records=999), page)
+
+
+def test_tables_no_rule_reads_are_refused() -> None:
+    other = describe_read("GET", "/fields", {"tableId": NOTES}, None)
+    assert other is not None
+    assert "Nothing in the table is allowed" in refusal(reads(), other)
+
+
+def test_reports_must_be_listed_by_name_or_id() -> None:
+    by_id = [allow.report(TASKS, ["7"])]
+    assert allows(reads(rules=by_id), report())
+    assert allows(reads(rules=[allow.report(TASKS, [7])]), report())
+    assert allows(reads(rules=[allow.report(TASKS, ["Open"])]), report())
+    assert "isn't one an allow.report() rule lists" in refusal(
+        reads(rules=[allow.report(TASKS, ["Totals"])]), report()
+    )
+    assert "add allow.report" in refusal(reads(), report())
+    assert allows(reads(rules=[allow.report(TASKS, ["Totals"])]), report("summary", "8"))
+    assert "at most 5" in refusal(reads(rules=by_id, max_records=5), report())
+    with pytest.raises(ConfigurationError, match="no report 'Gone'"):
+        reads(rules=[allow.report(TASKS, ["Gone"])])
+
+
+def test_reports_through_request_are_refused() -> None:
+    assert "can't be run through request()" in refusal(
+        reads(rules=[allow.report(TASKS, ["7"])]), report(None)
+    )
+
+
+def test_files_need_download_even_when_the_field_is_read() -> None:
+    download = describe_read("GET", f"/files/{TASKS}/1/13/0", None, None)
+    assert download is not None
+    assert "downloading files from" in refusal(reads(fields=[13]), download)
+    assert allows(reads(rules=[allow.download(TASKS, ["Attachment"])]), download)
 
 
 @pytest.mark.parametrize(
-    "grant",
+    ("method", "path", "body", "match"),
     [
-        {"insert": "Status"},
-        {"update": ["Status"]},
-        {"update": [7, "Status"]},
-        {"update": []},
-        {"insert": ()},
-        {"update": [True]},
-        {"update": [0]},
-        {"update": [-7]},
-        {"update": 7},
-        {"insert": None},
-        {"delete": "yes"},
-        {"delete": [7]},
-        {"delete_files": 1},
+        ("POST", "/formula/run", {"formula": "1", "from": TASKS}, "running a formula on"),
+        ("GET", "/apps/bqapp", None, "not the app's details"),
+        ("GET", "/apps/bqapp/roles", None, "not the app's roles"),
+        ("GET", "/apps/bqapp/events", None, "Only records"),
     ],
 )
-def test_bad_grants_are_refused(grant: dict[str, Any]) -> None:
-    with pytest.raises(ConfigurationError):
-        WriteAccess(**grant)
+def test_formulas_and_app_metadata_are_refused(
+    method: str, path: str, body: Any, match: str
+) -> None:
+    found = describe_read(method, path, None, body)
+    assert found is not None
+    assert match in refusal(reads(fields=fields.all()), found)
+    # Policy.read_only() reads everything, as policy=Policy.read_only() did.
+    assert allows(Policy.read_only().bind_offline(), found)
 
 
-def test_a_grant_cant_change_afterward() -> None:
-    access = WriteAccess(update=[7])
-    assert access.update == {7}
-    with pytest.raises(AttributeError):
-        access.update = True  # type: ignore[misc]  # pyright: ignore[reportAttributeAccessIssue]
+def test_a_delete_is_held_to_the_filter_rules() -> None:
+    delete = describe_read("DELETE", "/records", None, {"from": TASKS, "where": "{9.EX.'x'}"})
+    assert delete is not None
+    assert "filtering on Notes (9)" in refusal(reads(), delete)
+    assert allows(reads(filter=[9]), delete)
 
 
-def test_rules_cant_change_when_the_dictionary_does() -> None:
-    tables = {TASKS: WriteAccess(insert=True)}
-    rules = WriteRules(tables)
-    tables[NOTES] = WriteAccess(insert=True)
-    assert not allows(rules, describe_write("POST", "/records", {"to": NOTES, "data": [row(6)]}))
+def test_read_refusals_never_repeat_values() -> None:
+    assert "s3cret" not in refusal(reads(), paged(select=[3], where="{9.EX.'s3cret'}"))
+
+
+# Rules of your own
+
+
+class Weekend:
+    def __init__(self) -> None:
+        self.seen: list[str] = []
+
+    def decide(self, request: ReadRequest | WriteRequest) -> Decision | None:
+        self.seen.append(request.action)
+        if isinstance(request, WriteRequest):
+            return Decision(allowed=False, verb="update", reason="Closed for the weekend")
+        return None
+
+    def __repr__(self) -> str:
+        return "Weekend()"
+
+
+def test_a_rule_of_your_own_can_only_refuse() -> None:
+    weekend = Weekend()
+    policy = bind(allow.read(TASKS), allow.update(TASKS, fields.all()), weekend)
+    assert "Closed for the weekend" in refusal(policy, UPDATE)
+    assert allows(policy, paged(select=[6]))
+    # It isn't asked about what the built-in rules already refuse.
+    weekend.seen.clear()
+    assert not allows(policy, INSERT)
+    assert weekend.seen == []
+
+    # And it can't grant.
+    class Yes:
+        def decide(self, request: Any) -> Decision:
+            return Decision(allowed=True, verb="insert")
+
+    assert not allows(bind(Yes()), INSERT)
+
+
+def test_a_rule_of_your_own_must_be_passed_again_to_load() -> None:
+    policy = bind(allow.read(TASKS), Weekend())
+    with pytest.raises(ConfigurationError, match="Pass the same ones"):
+        BoundPolicy.from_json(policy.to_json())
+    assert BoundPolicy.from_json(policy.to_json(), rules=[Weekend()]) == policy
+
+
+# Configuring
 
 
 @pytest.mark.parametrize(
-    "tables",
-    [None, [TASKS], TASKS, {TASKS: True}, {TASKS: None}, {"": WriteAccess()}, {5: WriteAccess()}],
+    "build",
+    [
+        lambda: allow.read(TASKS, []),
+        lambda: allow.read(TASKS, [0]),
+        lambda: allow.read(TASKS, [True]),
+        lambda: allow.read(TASKS, max_records=0),
+        lambda: allow.read(TASKS, max_records=1.5),
+        lambda: allow.read(TASKS, max_summary_records=True),
+        lambda: allow.read(TASKS, user_emails="yes"),
+        lambda: allow.read([]),
+        lambda: allow.report(TASKS, "Open"),
+        lambda: allow.report(TASKS, []),
+        lambda: allow.report(tables.all(), ["Open"]),
+        lambda: allow.schema(TASKS),
+        lambda: allow.schema(TASKS, "rename"),
+        lambda: allow.schema(TASKS, "add_field", field_types="text"),
+        lambda: allow.schema(TASKS, "add_field", field_types=[]),
+        lambda: allow.schema(TASKS, "add_field", field_types=[""]),
+        lambda: fields.classed(),
+        lambda: fields.labeled_like(""),
+        lambda: limit.rows(TASKS, ""),
+        lambda: Policy(rules=[lambda request: True]),
+        lambda: Policy(rules=allow.read(TASKS)),
+        lambda: Policy(new_fields="secret"),
+        lambda: Policy(classes={"pay": ["Hourly Rate"]}),
+        lambda: Policy(classes={"pay": []}),
+        lambda: Policy(classes={"pay": [fields.new()]}),
+        lambda: Policy(app="bq-app"),
+    ],
 )
-def test_bad_rules_are_refused(tables: Any) -> None:
+def test_bad_policies_are_a_configuration_error(build: Any) -> None:
     with pytest.raises(ConfigurationError):
-        WriteRules(tables)
+        build()
 
 
-# Checking a policy
+def test_binding_reports_every_problem_at_once() -> None:
+    with pytest.raises(ConfigurationError) as caught:
+        bind(
+            allow.read("Jobs"),
+            allow.update(TASKS, ["Labor Cost", "Status", 77]),
+            allow.update(tables.all(), ["Title"]),
+            deny.all(fields.classed("pay")),
+            classes={"internal": ["Tasks.Sync ID"]},
+        )
+    message = str(caught.value)
+    for problem in (
+        "no table 'Jobs'",
+        "no field 'Labor Cost'",
+        "no field 77",
+        "needs tables by name or ID",
+        "there's no class 'pay'",
+        "no table and field match 'Tasks.Sync ID'",
+    ):
+        assert problem in message
+    assert "no field 'Status'" not in message
 
 
-@pytest.mark.parametrize("answer", [False, None, 1, "yes", [1], object()])
-def test_only_true_lets_a_write_through(answer: Any) -> None:
-    with pytest.raises(WriteRefusedError, match="refused"):
-        check_policy(lambda _: answer, records([row(6)]))
+def test_a_policy_for_another_app_wont_bind() -> None:
+    from pyquickbase._bound import bind_snapshot
+
+    from .policy_helpers import snapshot
+
+    with pytest.raises(ConfigurationError, match="for app bqother"):
+        bind_snapshot(Policy(app="bqother"), snapshot())
 
 
-def test_a_policy_that_raises_refuses_the_write() -> None:
-    def broken(_: WriteRequest) -> bool:
-        raise KeyError("s3cret")
-
-    with pytest.raises(WriteRefusedError, match="raised KeyError") as caught:
-        check_policy(broken, records([row(6)]))
-    assert "s3cret" not in str(caught.value)
-    assert isinstance(caught.value.__cause__, KeyError)
-
-
-def test_a_policy_can_give_its_own_reason() -> None:
-    def closed(_: WriteRequest) -> bool:
-        raise WriteRefusedError("Closed for the weekend.")
-
-    with pytest.raises(WriteRefusedError, match="Closed for the weekend"):
-        check_policy(closed, records([row(6)]))
+def test_a_policy_that_names_tables_must_be_bound_before_a_client_takes_it() -> None:
+    with pytest.raises(ConfigurationError, match="bind"):
+        Quickbase(realm="acme", token="t", policy=Policy(rules=[allow.read(TASKS)]))
+    with pytest.raises(ConfigurationError, match="policy takes"):
+        Quickbase(realm="acme", token="t", policy="read_only")  # pyright: ignore[reportArgumentType]
+    with Quickbase(realm="acme", token="t", policy=Policy.read_only()) as qb:
+        assert qb.policy is not None
+        assert not qb.policy.decide(INSERT).allowed
 
 
-def test_interrupts_arent_swallowed() -> None:
-    def interrupted(_: WriteRequest) -> bool:
-        raise KeyboardInterrupt
-
-    with pytest.raises(KeyboardInterrupt):
-        check_policy(interrupted, records([row(6)]))
+# Trimming
 
 
-def test_all_of_needs_every_policy() -> None:
-    yes = lambda _: True  # noqa: E731
-    no = lambda _: False  # noqa: E731
-    assert all_of(yes, yes)(records([row(6)])) is True
-    with pytest.raises(WriteRefusedError):
-        all_of(yes, no)(records([row(6)]))
-    with pytest.raises(WriteRefusedError):
-        all_of(no, yes)(records([row(6)]))
+def trim(policy: BoundPolicy, request: ReadRequest | None, payload: Any, **kw: Any) -> Any:
+    method = kw.get("method", request.method if request else "POST")
+    path = kw.get("path", request.path if request else "/records")
+    return policy.trim(request, method, path, payload)
 
 
-def test_all_of_stops_at_the_first_refusal_and_keeps_its_reason() -> None:
-    calls: list[str] = []
-
-    def later(_: WriteRequest) -> bool:
-        calls.append("later")
-        return True
-
-    rules = WriteRules({NOTES: WriteAccess(insert=True)})
-    with pytest.raises(WriteRefusedError, match="isn't listed"):
-        all_of(rules, later)(records([row(6)]))
-    assert calls == []
+def test_tables_are_left_out_unless_something_in_them_is_allowed() -> None:
+    request = describe_read("GET", "/tables", {"appId": APP}, None)
+    payload = [
+        {"id": TASKS, "name": "Tasks", "keyFieldId": 3, "spaceUsed": "1 MB", "alias": "_DBID"},
+        {"id": NOTES, "name": "Notes"},
+        {"id": "bqsecret", "name": "Salaries"},
+    ]
+    assert trim(reads(), request, payload) == [{"id": TASKS, "name": "Tasks", "keyFieldId": 3}]
 
 
-async def _async_policy(_: WriteRequest) -> bool:
-    return True
+def test_fields_keep_visible_ones_without_formulas_or_permissions() -> None:
+    request = describe_read("GET", "/fields", {"tableId": TASKS}, None)
+    payload = [
+        {"id": 3, "label": "Record ID#", "fieldType": "recordid", "appearsByDefault": True},
+        {
+            "id": 6,
+            "label": "Title",
+            "fieldType": "text",
+            "appearsByDefault": True,
+            "fieldHelp": "The task's name",
+            "bold": True,
+            "properties": {"formula": "[Salary]", "choices": ["a"]},
+            "permissions": [{"role": "x"}],
+        },
+        {"id": 7, "label": "Status", "fieldType": "text", "appearsByDefault": True},
+        {"id": 8, "label": "Hours", "fieldType": "text", "appearsByDefault": True},
+        {"id": 9, "label": "Notes", "fieldType": "text"},
+        {"id": 13, "label": "Attachment", "fieldType": "file"},
+    ]
+    policy = reads(
+        fields=[6],
+        filter=[7],
+        rules=[allow.update(TASKS, ["Hours"]), allow.download(TASKS, ["Attachment"])],
+    )
+    found = trim(policy, request, payload)
+    assert [item["id"] for item in found] == [3, 6, 7, 8, 13]
+    assert found[1] == {
+        "id": 6,
+        "label": "Title",
+        "fieldType": "text",
+        "appearsByDefault": True,
+        "fieldHelp": "The task's name",
+        "properties": {"choices": ["a"]},
+    }
+    assert [item["appearsByDefault"] for item in found] == [True, True, False, False, False]
 
 
-@pytest.mark.parametrize("policies", [(), (None,), ("x",), (_async_policy,)])
-def test_all_of_refuses_what_it_cant_use(policies: tuple[Any, ...]) -> None:
-    with pytest.raises(ConfigurationError):
-        all_of(*policies)
+def test_reports_keep_listed_ones_without_their_filters() -> None:
+    request = describe_read("GET", "/reports", {"tableId": TASKS}, None)
+    payload = [
+        {"id": "7", "name": "Open", "type": "table", "query": {"filter": "{9.EX.'s3cret'}"}},
+        {"id": "8", "name": "Totals", "type": "summary"},
+        {"id": "9", "name": "Hidden", "type": "table"},
+    ]
+    found = trim(reads(rules=[allow.report(TASKS, ["Open", "Totals"])]), request, payload)
+    assert found == [
+        {"id": "7", "name": "Open", "type": "table"},
+        {"id": "8", "name": "Totals", "type": "summary"},
+    ]
 
 
-@pytest.mark.parametrize("policy", ["x", 5, {TASKS: WriteAccess()}, _async_policy])
-def test_clients_refuse_a_policy_they_cant_use(policy: Any) -> None:
-    with pytest.raises(ConfigurationError, match="write_policy"):
-        Quickbase(realm="acme", token="t", write_policy=policy)
+def test_relationships_keep_their_count_and_only_visible_fields() -> None:
+    request = describe_read("GET", f"/tables/{TASKS}/relationships", {"skip": 0}, None)
+    payload = {
+        "relationships": [
+            {
+                "id": 6,
+                "parentTableId": "bqsecret",
+                "childTableId": TASKS,
+                "foreignKeyField": {"id": 9, "label": "Salary", "type": "numeric"},
+                "lookupFields": [{"id": 6, "label": "Title"}, {"id": 10, "label": "Hidden"}],
+                "summaryFields": [{"id": 20, "label": "Total"}],
+                "isCrossApp": False,
+            }
+        ],
+        "metadata": {"totalRelationships": 1, "numRelationships": 1, "skip": 0},
+    }
+    found = trim(reads(), request, payload)
+    assert found["metadata"] == payload["metadata"]
+    assert found["relationships"] == [
+        {
+            "id": 6,
+            "parentTableId": "bqsecret",
+            "childTableId": TASKS,
+            "isCrossApp": False,
+            "lookupFields": [{"id": 6, "label": "Title"}],
+            "summaryFields": [],
+        }
+    ]
 
 
-def test_read_only_and_a_policy_contradict_each_other() -> None:
-    with pytest.raises(ConfigurationError, match="read_only or write_policy"):
-        Quickbase(realm="acme", token="t", read_only=True, write_policy=lambda _: True)
+USER = {"email": "a@example.com", "id": "1.ab", "name": "Ann", "userName": "ann"}
+FILE = {
+    "url": "/files/x",
+    "versions": [
+        {"versionNumber": 1, "fileName": "a.txt", "uploaded": "2026", "creator": USER},
+    ],
+}
+
+
+def page(columns: list[tuple[int, str]], values: dict[int, Any]) -> dict[str, Any]:
+    return {
+        "fields": [{"id": fid, "label": f"F{fid}", "type": kind} for fid, kind in columns],
+        "data": [{str(fid): {"value": value} for fid, value in values.items()}],
+        "metadata": {"totalRecords": 1, "numRecords": 1, "skip": 0},
+    }
+
+
+def test_records_lose_unreadable_columns_emails_and_uploaders() -> None:
+    payload = page(
+        [(3, "recordid"), (10, "user"), (12, "multiuser"), (9, "text"), (13, "file")],
+        {3: 1, 10: USER, 12: [USER, USER], 9: "s3cret", 13: FILE},
+    )
+    found = trim(reads(fields=[10, 12, 13]), report(), payload)
+    assert [item["id"] for item in found["fields"]] == [3, 10, 12, 13]
+    values = found["data"][0]
+    assert set(values) == {"3", "10", "12", "13"}
+    assert values["10"]["value"] == {"id": "1.ab", "name": "Ann"}
+    assert values["12"]["value"] == [{"id": "1.ab", "name": "Ann"}] * 2
+    assert values["13"]["value"] == {
+        "url": "/files/x",
+        "versions": [{"versionNumber": 1, "fileName": "a.txt", "uploaded": "2026"}],
+    }
+
+
+def test_user_emails_can_be_kept() -> None:
+    payload = page([(6, "user")], {6: USER})
+    assert (
+        trim(reads(user_emails=True), paged(select=[6]), payload)["data"][0]["6"]["value"] == USER
+    )
+
+
+def test_users_are_recognized_by_shape_whatever_the_type_says() -> None:
+    payload = page([(6, "text")], {6: USER})
+    assert trim(reads(), paged(select=[6]), payload)["data"][0]["6"]["value"] == {
+        "id": "1.ab",
+        "name": "Ann",
+    }
+
+
+def test_an_allowed_summary_report_keeps_its_columns() -> None:
+    # Column IDs here are positions, so 9 isn't field 9.
+    payload = page([(2, "text"), (9, "numeric")], {2: "Open", 9: 5})
+    policy = reads(rules=[allow.report(TASKS, ["Totals"])])
+    found = trim(policy, report("summary", "8"), payload)
+    assert [item["id"] for item in found["fields"]] == [2, 9]
+
+
+def test_a_deleted_file_versions_details_are_dropped() -> None:
+    found = trim(reads(), None, {"creator": USER}, method="DELETE", path=f"/files/{TASKS}/1/13/1")
+    assert found is None
+
+
+def test_a_response_of_the_wrong_shape_is_an_error_not_passed_through() -> None:
+    with pytest.raises(InvalidResponseError, match="couldn't check it"):
+        trim(reads(), paged(select=[6]), {"data": "s3cret"})
+
+
+def test_a_hidden_field_acts_as_if_it_didnt_exist() -> None:
+    policy = reads(fields=[6])
+    assert not policy.visible(TASKS, 9)
+    with pytest.raises(UnknownFieldError):
+        policy.allows("read", "Tasks", field="Salary")
 
 
 # Randomized checks
 
-JSON_VALUES = st.recursive(
-    st.none() | st.booleans() | st.integers() | st.floats() | st.text(max_size=6),
-    lambda inner: (
-        st.lists(inner, max_size=3) | st.dictionaries(st.text(max_size=4), inner, max_size=3)
-    ),
-    max_leaves=12,
-)
 FIELD_KEYS = st.one_of(
     st.sampled_from(["3", "6", "7", "8", "03", "07", " 7", "7 ", "+7", "\u0667", "0"]),
     st.text(max_size=4),
 )
 ROWS = st.lists(st.dictionaries(FIELD_KEYS, st.just({"value": "x"}), max_size=4), max_size=4)
-EXTRA = st.dictionaries(st.sampled_from(["mergeFieldId", "fieldsToReturn"]), JSON_VALUES)
-
-
-@given(st.sampled_from(["POST", "DELETE", "PUT"]), st.sampled_from(["/records", "/x"]), JSON_VALUES)
-def test_any_body_can_be_described(method: str, path: str, body: Any) -> None:
-    assert describe_write(method, path, body).method == method
+EXTRA = st.dictionaries(
+    st.sampled_from(["mergeFieldId", "fieldsToReturn"]),
+    st.one_of(st.none(), st.integers(), st.text(max_size=3), st.just([3])),
+)
+UPDATE_SEVEN = bind(allow.update(TASKS, [7]))
+UPDATE_ALL = bind(allow.update(TASKS, fields.all()))
+INSERT_ALL = bind(allow.insert(TASKS, fields.all()))
+READ_SOME = reads()
 
 
 @given(ROWS, EXTRA)
 def test_a_field_list_never_lets_another_field_through(
     rows: list[dict[str, Any]], extra: dict[str, Any]
 ) -> None:
-    rules = WriteRules({TASKS: WriteAccess(update=[7])})
-    if allows(rules, records(rows, **extra)):
+    if allows(UPDATE_SEVEN, records(rows, **extra)):
         assert {key for r in rows for key in r} <= {"3", "7"}
 
 
@@ -620,12 +822,10 @@ def test_a_field_list_never_lets_another_field_through(
 def test_an_update_grant_never_lets_a_create_through(
     rows: list[dict[str, Any]], extra: dict[str, Any]
 ) -> None:
-    rules = WriteRules({TASKS: WriteAccess(update=True)})
-    if allows(rules, records(rows, **extra)):
+    if allows(UPDATE_ALL, records(rows, **extra)):
         merge = extra.get("mergeFieldId", 3)
         assert type(merge) is int
         assert merge == 3
-        # Every row names a record in the usual form, or the merge on Record ID# refuses it.
         assert "mergeFieldId" in extra or all("3" in r for r in rows)
 
 
@@ -633,8 +833,24 @@ def test_an_update_grant_never_lets_a_create_through(
 def test_an_insert_grant_never_lets_a_change_through(
     rows: list[dict[str, Any]], extra: dict[str, Any], key_field_id: int | None
 ) -> None:
-    rules = WriteRules({TASKS: WriteAccess(insert=True)})
-    if allows(rules, records(rows, key_field_id=key_field_id, **extra)):
+    if allows(INSERT_ALL, records(rows, key_field_id=key_field_id, **extra)):
         assert key_field_id == 3
         assert "mergeFieldId" not in extra
         assert not any("3" in r for r in rows)
+
+
+@given(st.lists(st.integers(min_value=1, max_value=30), max_size=10))
+def test_trimmed_records_only_hold_readable_fields(ids: list[int]) -> None:
+    allowed = {3, 6, 7}
+    payload = page([(fid, "text") for fid in ids], dict.fromkeys(ids, "x"))
+    found = trim(READ_SOME, paged(select=[6]), payload)
+    assert {int(key) for key in found["data"][0]} <= allowed
+    assert {item["id"] for item in found["fields"]} <= allowed
+
+
+def test_row_limits_bind_by_label() -> None:
+    policy = bind(allow.read(TASKS), limit.rows(TASKS, F("Status") == "Open"))
+    assert policy.row_limit(TASKS) == "{7.EX.'Open'}"
+    assert policy.filterable(TASKS, 7)
+    with pytest.raises(ConfigurationError, match="Missing"):
+        bind(limit.rows(TASKS, F("Missing") == 1))

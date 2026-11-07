@@ -10,8 +10,9 @@ from pyquickbase import (
     BadRequestError,
     InvalidResponseError,
     InvalidValueError,
+    Policy,
+    PolicyRefusedError,
     Quickbase,
-    WriteRefusedError,
 )
 
 APP = "bq1234567"
@@ -114,9 +115,9 @@ def test_malformed_formula_response_is_reported() -> None:
 
 def test_read_only_client_can_run_formulas() -> None:
     server = FakeFormulas()
-    with client(server, read_only=True) as qb:
+    with client(server, policy=Policy.read_only()) as qb:
         assert (qb.app(APP).table("Tasks").run_formula("1 + 1")).value is True
-        with pytest.raises(WriteRefusedError):
+        with pytest.raises(PolicyRefusedError):
             qb.app(APP).table("Tasks").create_field("X", "numeric", formula="1 + 1")
 
 

@@ -1,4 +1,4 @@
-"""Schema changes on a client with limits: what's checked before anything is sent."""
+"""Schema changes on a client with a policy: what's checked before anything is sent."""
 
 import json
 from typing import Any
@@ -10,17 +10,19 @@ from pyquickbase import (
     AsyncQuickbase,
     ConfigurationError,
     InvalidValueError,
-    QueryError,
-    ReadAccess,
-    ReadRefusedError,
-    ReadRules,
-    SchemaAccess,
+    PolicyRefusedError,
+    SchemaMismatchError,
     UnknownFieldError,
-    WriteAccess,
-    WriteRefusedError,
-    WriteRules,
+    UnknownTableError,
+    allow,
+    fields,
+    tables,
     tool_error,
 )
+from pyquickbase._decision import SCHEMA_VERBS
+
+from ..policy_helpers import bind as bind_tables
+from ..policy_helpers import link
 
 pytestmark = pytest.mark.anyio
 
@@ -121,21 +123,37 @@ def client(fake: Fake, **kwargs: Any) -> AsyncQuickbase:
     return AsyncQuickbase(realm="acme", token="t", http_client=http, **kwargs)
 
 
-def reads(fields: Any = (3, 6, 8, 9, 10), projects: Any = (6,), **access: Any) -> ReadRules:
-    """Salary and Budget can be filtered on but not returned, so they can be named."""
-    filters = [6, 7] if projects is not True else True
-    task_filters = True if fields is True else [*fields, 7]
-    return ReadRules(
-        {
-            TASKS: ReadAccess(fields=fields, filter=task_filters, **access),
-            PROJECTS: ReadAccess(fields=projects, filter=filters),
-        }
+def bind(*rules: Any, extra: dict[int, Any] | None = None) -> Any:
+    """Bind against the fake's schema, with any fields only the policy should know about."""
+    fake = Fake()
+    projects = [*fake.fields[PROJECTS], *(extra or {}).values()]
+    return bind_tables(
+        *rules,
+        tables={TASKS: ("Tasks", fake.fields[TASKS]), PROJECTS: ("Projects", projects)},
+        relationships=[link(9, PROJECTS, TASKS, 9, summaries=list(extra or {}))],
+        app_id=APP,
     )
 
 
-def writes(**grant: Any) -> WriteRules:
-    schema = SchemaAccess(**grant)
-    return WriteRules({TASKS: WriteAccess(schema=schema), PROJECTS: WriteAccess(schema=schema)})
+def reads(task_fields: Any = (3, 6, 8, 9, 10), projects: Any = (6,), **access: Any) -> list[Any]:
+    """Salary and Budget can be filtered on but not returned, so they can be named."""
+    every = task_fields is True
+    task_reads = fields.all() if every else list(task_fields)
+    task_filters = fields.all() if every else [*task_fields, 7]
+    project_reads = fields.all() if projects is True else list(projects)
+    project_filters = fields.all() if projects is True else [6, 7]
+    return [
+        allow.read(TASKS, task_reads, filter=task_filters, sort=task_reads, **access),
+        allow.read(PROJECTS, project_reads, filter=project_filters, sort=project_reads),
+    ]
+
+
+def writes(*verbs: Any) -> Any:
+    return allow.schema([TASKS, PROJECTS], *verbs)
+
+
+ANY_SCHEMA = allow.schema(tables.all(), *SCHEMA_VERBS)
+"""What a client without write rules could do."""
 
 
 # Changing a table
@@ -168,16 +186,17 @@ async def test_delete_relationship_goes_to_the_child() -> None:
 
 async def test_deleting_a_relationship_needs_both_tables_to_allow_it() -> None:
     fake = Fake()
-    rules = WriteRules(
-        {
-            TASKS: WriteAccess(schema=SchemaAccess(relationships=True, delete_fields=True)),
-            PROJECTS: WriteAccess(schema=SchemaAccess(relationships=True)),
-        }
+    total = {"id": 20, "label": "Total Hours", "fieldType": "numeric", "mode": "summary"}
+    policy = bind(
+        allow.read(tables.all()),
+        allow.schema([TASKS, PROJECTS], "unlink"),
+        allow.schema(TASKS, "delete_field"),
+        extra={20: total},
     )
-    async with client(fake, write_policy=rules) as qb:
+    async with client(fake, policy=policy) as qb:
         tasks = qb.app(APP).table("Tasks")
         relationship = (await tasks.relationships())[0]
-        with pytest.raises(WriteRefusedError, match=f"summary isn't allowed on table {PROJECTS}"):
+        with pytest.raises(PolicyRefusedError, match=r"deleting Total Hours \(20\) in Projects"):
             await tasks.delete_relationship(relationship)
     assert not fake.writes()
 
@@ -187,24 +206,26 @@ async def test_deleting_a_relationship_needs_both_tables_to_allow_it() -> None:
 
 async def test_a_new_table_gets_the_access_for_new_tables() -> None:
     fake = Fake()
-    rules = WriteRules(
-        {},
-        create_tables_in=[APP],
-        new_tables=WriteAccess(schema=SchemaAccess(create_fields=True)),
+    policy = bind(
+        allow.create_tables(),
+        allow.schema(tables.created(), "add_field"),
+        allow.read(tables.created()),
     )
-    read = ReadRules({}, new_tables=ReadAccess(fields=True))
-    async with client(fake, write_policy=rules, read_policy=read) as qb:
+    async with client(fake, policy=policy) as qb:
         table = await qb.app(APP).create_table("Visits")
         await table.create_field("Notes", "text")
         assert [item.label for item in await table.fields()] == ["Record ID#", "Notes"]
+        assert qb.policy is not None
+        assert qb.policy.created == ("bqnew",)
+    assert policy.created == ()
 
 
 async def test_without_access_for_new_tables_a_new_one_is_off_limits() -> None:
     fake = Fake()
-    rules = WriteRules({}, create_tables_in=[APP])
-    async with client(fake, write_policy=rules) as qb:
+    async with client(fake, policy=bind(allow.create_tables())) as qb:
         table = await qb.app(APP).create_table("Visits")
-        with pytest.raises(WriteRefusedError, match="isn't listed"):
+        # Nothing allows anything in it, so it's hidden even from the client that made it.
+        with pytest.raises(UnknownTableError):
             await table.create_field("Notes", "text")
 
 
@@ -213,8 +234,8 @@ async def test_without_access_for_new_tables_a_new_one_is_off_limits() -> None:
 
 async def test_a_formula_may_use_readable_fields() -> None:
     fake = Fake()
-    rules = writes(create_fields=True, update_fields=True, formulas=True)
-    async with client(fake, read_policy=reads(), write_policy=rules) as qb:
+    rules = writes("add_field", "change_field", "formula")
+    async with client(fake, policy=bind(*reads(), rules)) as qb:
         tasks = qb.app(APP).table("Tasks")
         await tasks.create_field("Triple", "numeric", formula="[Hours] * 3")
         await tasks.update_field("Double", formula="Round([hours] * 2)")
@@ -233,21 +254,21 @@ async def test_a_formula_may_use_readable_fields() -> None:
 )
 async def test_a_formula_that_could_show_more_is_refused(formula: str, match: str) -> None:
     fake = Fake()
-    rules = writes(create_fields=True, formulas=True)
-    async with client(fake, read_policy=reads(), write_policy=rules) as qb:
-        with pytest.raises(ReadRefusedError, match=match):
+    rules = writes("add_field", "formula")
+    async with client(fake, policy=bind(*reads(), rules)) as qb:
+        with pytest.raises(PolicyRefusedError, match=match):
             await qb.app(APP).table("Tasks").create_field("New", "text", formula=formula)
     assert not fake.writes()
 
 
 async def test_a_user_field_is_fine_when_emails_are_shown() -> None:
     fake = Fake()
-    async with client(fake, read_policy=reads(user_emails=True)) as qb:
+    async with client(fake, policy=bind(*reads(user_emails=True), ANY_SCHEMA)) as qb:
         await qb.app(APP).table("Tasks").create_field("Who", "text", formula="ToText([Owner])")
     assert len(fake.writes()) == 1
 
 
-async def test_a_formula_without_read_rules_isnt_checked() -> None:
+async def test_a_formula_without_a_policy_isnt_checked() -> None:
     fake = Fake()
     async with client(fake) as qb:
         await qb.app(APP).table("Tasks").create_field("Pay", "numeric", formula="[Salary] / 12")
@@ -258,11 +279,10 @@ async def test_a_formula_without_read_rules_isnt_checked() -> None:
     assert len(fake.writes()) == 2
 
 
-async def test_with_write_rules_only_the_sdk_may_make_a_formula() -> None:
+async def test_with_a_policy_only_the_sdk_may_make_a_formula() -> None:
     fake = Fake()
-    rules = writes(create_fields=True, formulas=True)
-    async with client(fake, write_policy=rules) as qb:
-        with pytest.raises(WriteRefusedError, match="check what they read"):
+    async with client(fake, policy=bind(writes("add_field", "formula"))) as qb:
+        with pytest.raises(PolicyRefusedError, match="check what they read"):
             await qb.request(
                 "POST", "/fields", params={"tableId": TASKS},
                 json={"label": "Raw", "fieldType": "numeric", "properties": {"formula": "1"}},
@@ -270,18 +290,18 @@ async def test_with_write_rules_only_the_sdk_may_make_a_formula() -> None:
     assert not fake.writes()
 
 
-async def test_a_link_formula_cant_be_changed_under_write_rules() -> None:
+async def test_a_link_formula_cant_be_changed_under_a_policy() -> None:
     fake = Fake()
-    rules = writes(update_fields=True, formulas=True)
-    async with client(fake, write_policy=rules) as qb:
-        with pytest.raises(WriteRefusedError, match="acts as them"):
+    policy = bind(allow.read(tables.all()), writes("change_field", "formula"))
+    async with client(fake, policy=policy) as qb:
+        with pytest.raises(PolicyRefusedError, match="acts as them"):
             await qb.app(APP).table("Tasks").update_field("Link", formula='"https://x"')
     assert not fake.writes()
 
 
 async def test_a_formula_is_only_shown_when_it_reveals_nothing() -> None:
     fake = Fake()
-    async with client(fake, read_policy=reads(fields=(3, 6, 10, 11))) as qb:
+    async with client(fake, policy=bind(*reads(task_fields=(3, 6, 10, 11)))) as qb:
         fields = {item.label: item for item in await qb.app(APP).table("Tasks").fields()}
     assert fields["Double"].formula == "[Hours] * 2"
     assert fields["Pay"].formula is None
@@ -292,11 +312,11 @@ async def test_a_formula_is_only_shown_when_it_reveals_nothing() -> None:
 
 async def test_a_lookup_of_a_hidden_parent_field_is_refused() -> None:
     fake = Fake()
-    async with client(fake, read_policy=reads(fields=True)) as qb:
+    async with client(fake, policy=bind(*reads(task_fields=True), ANY_SCHEMA)) as qb:
         app = qb.app(APP)
         tasks = app.table("Tasks")
         relationship = (await tasks.relationships())[0]
-        with pytest.raises(ReadRefusedError, match=f"field 7 of table {PROJECTS}"):
+        with pytest.raises(PolicyRefusedError, match=rf"Budget \(7\) of Projects \({PROJECTS}\)"):
             await tasks.ensure_lookup_field(relationship, "Budget")
         await tasks.ensure_lookup_field(relationship, "Name")
     assert [path for method, path, _ in fake.writes()] == [f"/tables/{TASKS}/relationship/9"]
@@ -304,51 +324,62 @@ async def test_a_lookup_of_a_hidden_parent_field_is_refused() -> None:
 
 async def test_a_summary_of_a_hidden_child_field_is_refused() -> None:
     fake = Fake()
-    async with client(fake, read_policy=reads(projects=True)) as qb:
+    async with client(fake, policy=bind(*reads(projects=True), ANY_SCHEMA)) as qb:
         tasks = qb.app(APP).table("Tasks")
         relationship = (await tasks.relationships())[0]
-        with pytest.raises(ReadRefusedError, match=f"field 7 of table {TASKS}"):
+        with pytest.raises(PolicyRefusedError, match=rf"Salary \(7\) of Tasks \({TASKS}\)"):
             await tasks.ensure_summary_field(relationship, "Salary", "Total Salary")
         await tasks.ensure_summary_field(relationship, "Hours", "Total Hours")
-    async with client(fake, read_policy=reads(fields=(3, 6))) as limited:
+    async with client(fake, policy=bind(*reads(task_fields=(3, 6)), ANY_SCHEMA)) as limited:
         child = limited.app(APP).table("Tasks")
         hidden_key = (await child.relationships())[0]
-        # The foreign key is hidden, so even a count would show which tasks each project has.
-        with pytest.raises(ReadRefusedError, match="foreign key"):
+        # The foreign key can't be read, so even a count would show which tasks each project has.
+        with pytest.raises(PolicyRefusedError, match=r"Project \(9\) of Tasks"):
             await child.ensure_count_field(hidden_key, "Tasks")
     assert len(fake.writes()) == 1
 
 
 async def test_a_summary_filter_needs_fields_the_client_may_filter_on() -> None:
     fake = Fake()
-    rules = ReadRules(
-        {
-            TASKS: ReadAccess(fields=[3, 6, 8, 9, 10], filter=[3, 6, 7, 9]),
-            PROJECTS: ReadAccess(fields=True),
-        }
-    )
-    async with client(fake, read_policy=rules) as qb:
+    rules = [
+        allow.read(TASKS, [3, 6, 8, 9, 10], filter=[3, 6, 7, 9]),
+        allow.read(PROJECTS),
+        ANY_SCHEMA,
+    ]
+    async with client(fake, policy=bind(*rules)) as qb:
         tasks = qb.app(APP).table("Tasks")
         relationship = (await tasks.relationships())[0]
         # Owner is returned but not filterable, so a count of matching tasks would show more.
-        with pytest.raises(ReadRefusedError, match=f"filter uses field 8 of table {TASKS}"):
+        with pytest.raises(PolicyRefusedError, match=rf"filter uses field 8 of Tasks \({TASKS}\)"):
             await tasks.ensure_count_field(relationship, "Mine", where="{8.EX.'alex'}")
-        with pytest.raises(ReadRefusedError, match="field reference"):
+        with pytest.raises(PolicyRefusedError, match="field reference"):
             await tasks.ensure_count_field(relationship, "Same", where="{6.EX._FID_8}")
-        # Pay is hidden, so it's as if it didn't exist.
-        with pytest.raises(QueryError, match="field 11 doesn't exist"):
+        # Pay can be changed, so it can be named, but not filtered on.
+        with pytest.raises(PolicyRefusedError, match="field 11 of Tasks"):
             await tasks.ensure_count_field(relationship, "High Pay", where="{11.GT.5000}")
         # Salary can be filtered on, though not returned.
         await tasks.ensure_count_field(relationship, "Well Paid", where="{7.GT.5000}")
-        # The rules hide a summary's filter, so an existing one is matched without it.
+        # Salary can't be read, so the policy hides the filter, and it's matched without it.
         await tasks.ensure_count_field(relationship, "Well Paid", where="{7.GT.9000}")
     assert len(fake.writes()) == 1
     assert fake.writes()[0][2]["summaryFields"][0]["where"] == "{7.GT.5000}"
 
 
+async def test_a_summary_filter_the_client_can_read_is_compared_again() -> None:
+    fake = Fake()
+    async with client(fake, policy=bind(allow.read(tables.all()), ANY_SCHEMA)) as qb:
+        tasks = qb.app(APP).table("Tasks")
+        relationship = (await tasks.relationships())[0]
+        await tasks.ensure_count_field(relationship, "Long", where="{6.GT.8}")
+        await tasks.ensure_count_field(relationship, "Long", where="{6.GT.8}")
+        with pytest.raises(SchemaMismatchError, match="isn't this summary"):
+            await tasks.ensure_count_field(relationship, "Long", where="{6.GT.9}")
+    assert len(fake.writes()) == 1
+
+
 async def test_a_new_field_the_rules_hide_says_it_was_made() -> None:
     fake = Fake()
-    async with client(fake, read_policy=reads()) as qb:
+    async with client(fake, policy=bind(*reads(), ANY_SCHEMA)) as qb:
         tasks = qb.app(APP).table("Tasks")
         with pytest.raises(UnknownFieldError, match="was created") as caught:
             await tasks.ensure_lookup_field((await tasks.relationships())[0], "Name")
@@ -357,16 +388,15 @@ async def test_a_new_field_the_rules_hide_says_it_was_made() -> None:
 
 async def test_a_summary_needs_the_parents_grant() -> None:
     fake = Fake()
-    rules = WriteRules(
-        {
-            TASKS: WriteAccess(schema=SchemaAccess(relationships=True, summaries=True)),
-            PROJECTS: WriteAccess(schema=SchemaAccess(relationships=True)),
-        }
+    policy = bind(
+        allow.read(tables.all()),
+        allow.schema([TASKS, PROJECTS], "link"),
+        allow.schema(TASKS, "summary"),
     )
-    async with client(fake, write_policy=rules) as qb:
+    async with client(fake, policy=policy) as qb:
         tasks = qb.app(APP).table("Tasks")
         relationship = (await tasks.relationships())[0]
-        with pytest.raises(WriteRefusedError, match=f"summaries isn't allowed on table {PROJECTS}"):
+        with pytest.raises(PolicyRefusedError, match=f"adding a summary to Projects \\({PROJECTS}"):
             await tasks.ensure_summary_field(relationship, "Hours", "Total Hours")
 
 

@@ -9,8 +9,9 @@ import pytest
 from pyquickbase import (
     AsyncQuickbase,
     F,
+    Policy,
+    PolicyRefusedError,
     QueryError,
-    WriteRefusedError,
     where_from_dict,
     where_schema,
 )
@@ -61,7 +62,7 @@ async def test_a_tool_call_becomes_a_query() -> None:
             {"field": "Due", "op": "<", "value": "2026-12-01"}
         ]}}"""
     )
-    async with client(fake, read_only=True) as qb:
+    async with client(fake, policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         await tasks.query_page(where=where_from_dict(arguments["where"]))
     assert fake.bodies[0][1]["where"] == "{7.EX.'Open'}AND{8.BF.'2026-12-01'}"
@@ -96,9 +97,9 @@ async def test_delete_uses_the_same_checked_filter() -> None:
 
 async def test_a_read_only_client_still_refuses_a_delete() -> None:
     fake = Fake()
-    async with client(fake, read_only=True) as qb:
+    async with client(fake, policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        with pytest.raises(WriteRefusedError):
+        with pytest.raises(PolicyRefusedError):
             await tasks.delete(where_from_dict({"field": "Status", "op": "==", "value": "Done"}))
 
 

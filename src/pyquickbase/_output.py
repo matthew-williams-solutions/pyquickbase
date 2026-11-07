@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Any, Literal, cast
 
 from ._confirm import expires_at
+from ._decision import READ_VERBS
 from ._models import (
     DeletePreviewPage,
     Field,
@@ -53,11 +54,10 @@ from .errors import (
     NetworkError,
     NotFoundError,
     PermissionDeniedError,
+    PolicyRefusedError,
     QueryError,
     QuickbaseError,
     RateLimitError,
-    ReadRefusedError,
-    RequestRefusedError,
     RequestTimeoutError,
     SchemaMismatchError,
     ServerError,
@@ -67,7 +67,6 @@ from .errors import (
     UnsupportedReportError,
     WriteError,
     WritePermissionError,
-    WriteRefusedError,
 )
 
 ToolErrorCode = Literal[
@@ -77,7 +76,6 @@ ToolErrorCode = Literal[
     "invalid_value",
     "read_refused",
     "write_refused",
-    "refused",
     "unknown_table",
     "unknown_field",
     "unknown_report",
@@ -107,9 +105,6 @@ Changed = Literal["none", "some", "unknown"]
 _CODES: tuple[tuple[type[BaseException], ToolErrorCode], ...] = (
     (WritePermissionError, "write_permission"),
     (WriteError, "write_failed"),
-    (ReadRefusedError, "read_refused"),
-    (WriteRefusedError, "write_refused"),
-    (RequestRefusedError, "refused"),
     (ConfigurationError, "configuration"),
     (ConfirmationError, "needs_confirmation"),
     (QueryError, "invalid_query"),
@@ -140,7 +135,6 @@ _HINTS: dict[ToolErrorCode, str] = {
     "read_refused": "This tool may not read that. Ask for less, as the message says, or tell "
     "the user.",
     "write_refused": "This tool may not make that change. Don't try it another way. Tell the user.",
-    "refused": "This tool may not do that. Tell the user.",
     "unknown_table": "Use a table name this tool lists. It may also be hidden from this tool.",
     "unknown_field": "Use a field this tool lists. It may also be hidden from this tool.",
     "unknown_report": "Use a report this tool lists, by ID if several share a name.",
@@ -179,6 +173,9 @@ class _State:
 
 
 def _code(error: BaseException) -> ToolErrorCode:
+    if isinstance(error, PolicyRefusedError):
+        verb = getattr(error.decision, "verb", "")
+        return "read_refused" if verb in READ_VERBS else "write_refused"
     for cls, code in _CODES:
         if isinstance(error, cls):
             return code

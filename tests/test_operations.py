@@ -13,14 +13,13 @@ from pyquickbase import (
     InvalidValueError,
     OperationName,
     Period,
+    Policy,
     QueryError,
-    ReadAccess,
-    ReadRules,
     ReportInfo,
     UnknownFieldError,
     UnknownReportError,
-    WriteAccess,
-    WriteRules,
+    allow,
+    fields,
 )
 from pyquickbase._models import FieldIndex, field_from_api
 from pyquickbase._operations import (
@@ -30,6 +29,8 @@ from pyquickbase._operations import (
     make_spec,
     unavailable,
 )
+
+from .policy_helpers import bind
 
 TASKS = "bqtasks"
 FIELDS = [
@@ -64,14 +65,24 @@ def allowed(**kwargs: Any) -> Allowed:
     options: dict[str, Any] = {
         "table_id": TASKS,
         "key_field_id": 3,
-        "read_rules": (),
-        "write_rules": (),
-        "read_only": False,
+        "policy": None,
         "wanted": None,
         "wanted_reports": None,
     }
     options.update(kwargs)
+    if isinstance(options["policy"], Policy):
+        options["policy"] = options["policy"].bind_offline()
     return allowed_for(FIELDS, REPORTS, **options)
+
+
+def bound(*rules: Any) -> Any:
+    report_items = [dict(item.raw) or {"id": item.id, "name": item.name, "type": item.type}
+                    for item in REPORTS]  # fmt: skip
+    return bind(
+        *rules,
+        tables={TASKS: ("Tasks", [dict(item.raw) for item in FIELDS])},
+        reports={TASKS: report_items},
+    )
 
 
 def spec(name: OperationName, limits: Allowed | None = None, **kwargs: Any) -> Any:
@@ -127,14 +138,12 @@ def test_without_limits_every_visible_field_is_offered_where_it_can_be() -> None
 
 
 def test_read_rules_decide_what_is_read_filtered_and_sorted() -> None:
-    rules = ReadRules(
-        {
-            TASKS: ReadAccess(
-                fields=[6, 7], filter=[7], sort=False, files=[13], reports=["1"], max_records=30
-            )
-        }
+    rules = bound(
+        allow.read(TASKS, [6, 7], filter=[7], sort=[3], max_records=30),
+        allow.download(TASKS, [13]),
+        allow.report(TASKS, ["1"]),
     )
-    limits = allowed(read_rules=(rules,))
+    limits = allowed(policy=rules)
     assert labels(limits.readable) == ["Record ID#", "Title", "Status"]
     assert labels(limits.filterable) == ["Record ID#", "Status"]
     assert labels(limits.sortable) == ["Record ID#"]
@@ -145,13 +154,15 @@ def test_read_rules_decide_what_is_read_filtered_and_sorted() -> None:
 
 
 def test_write_rules_and_read_only_decide_what_is_written() -> None:
-    rules = WriteRules({TASKS: WriteAccess(insert=[6], update=True, delete_files=True)})
-    limits = allowed(write_rules=(rules,))
+    rules = bound(
+        allow.insert(TASKS, [6]), allow.update(TASKS, fields.all()), allow.delete_file(TASKS)
+    )
+    limits = allowed(policy=rules)
     assert labels(limits.insertable) == ["Title"]
     assert "Hours" in labels(limits.updatable)
     assert not limits.can_delete
     assert labels(limits.file_deletable) == ["Attachment"]
-    nothing = allowed(read_only=True)
+    nothing = allowed(policy=Policy.read_only())
     assert (nothing.insertable, nothing.updatable, nothing.can_delete) == ((), (), False)
 
 
@@ -177,7 +188,7 @@ def test_reports_can_be_chosen_by_id() -> None:
 
 
 def test_what_cant_run_says_why() -> None:
-    nothing = allowed(read_only=True)
+    nothing = allowed(policy=Policy.read_only())
     assert unavailable("insert", nothing, None) is not None
     assert unavailable("delete", nothing, None) is not None
     assert unavailable("query", nothing, None) is None
@@ -187,8 +198,8 @@ def test_what_cant_run_says_why() -> None:
 
 
 def test_the_limit_is_the_lower_of_the_tool_and_the_rules() -> None:
-    rules = ReadRules({TASKS: ReadAccess(fields=True, max_records=30)})
-    schema = spec("query", allowed(read_rules=(rules,)), max_records=50).schema
+    rules = bound(allow.read(TASKS, max_records=30))
+    schema = spec("query", allowed(policy=rules), max_records=50).schema
     assert schema["properties"]["limit"]["maximum"] == 30
     assert spec("query", max_records=10).schema["properties"]["limit"]["maximum"] == 10
     assert spec("summarize").context.limit == 10_000
@@ -275,8 +286,8 @@ def test_the_arguments_must_be_an_object() -> None:
 
 
 def test_a_filter_is_held_to_the_filterable_fields() -> None:
-    rules = ReadRules({TASKS: ReadAccess(fields=True, filter=[7])})
-    count = spec("count", allowed(read_rules=(rules,)))
+    rules = bound(allow.read(TASKS, filter=[7]))
+    count = spec("count", allowed(policy=rules))
     with pytest.raises(QueryError, match="may use"):
         count.plan({"where": {"field": "Title", "op": "==", "value": "x"}}, None)
 
@@ -345,9 +356,7 @@ def test_insert_writes_a_predecessor_as_text_and_never_offers_a_link() -> None:
     options: dict[str, Any] = {
         "table_id": TASKS,
         "key_field_id": 3,
-        "read_rules": (),
-        "write_rules": (),
-        "read_only": False,
+        "policy": None,
         "wanted": None,
         "wanted_reports": None,
     }
@@ -364,9 +373,7 @@ def test_insert_writes_a_duration_as_whole_milliseconds() -> None:
     options: dict[str, Any] = {
         "table_id": TASKS,
         "key_field_id": 3,
-        "read_rules": (),
-        "write_rules": (),
-        "read_only": False,
+        "policy": None,
         "wanted": None,
         "wanted_reports": None,
     }
@@ -420,8 +427,7 @@ def test_a_field_it_may_read_but_not_write_is_named() -> None:
         spec("insert").plan({"records": [{"Doubled": 1}]}, None)
     # A field it can't read, or one that doesn't exist, isn't named or confirmed.
     hidden = allowed(
-        read_rules=(ReadRules({TASKS: ReadAccess(fields=[3, 6])}),),
-        write_rules=(WriteRules({TASKS: WriteAccess(insert=[6])}),),
+        policy=bound(allow.read(TASKS, [3, 6]), allow.insert(TASKS, [6])),
     )
     for key in ("Doubled", "Secret"):
         with pytest.raises(InvalidValueError) as caught:
@@ -508,9 +514,7 @@ def test_a_name_shared_by_two_reports_needs_the_id() -> None:
             twins,
             table_id=TASKS,
             key_field_id=3,
-            read_rules=(),
-            write_rules=(),
-            read_only=False,
+            policy=None,
             wanted=None,
             wanted_reports=None,
         ),
@@ -552,8 +556,7 @@ def test_a_choice_in_another_case_is_refused_with_the_right_one() -> None:
 
 def test_a_hint_never_names_a_field_the_tool_doesnt_offer() -> None:
     hidden = allowed(
-        read_rules=(ReadRules({TASKS: ReadAccess(fields=[3, 6])}),),
-        write_rules=(WriteRules({TASKS: WriteAccess(insert=[6])}),),
+        policy=bound(allow.read(TASKS, [3, 6]), allow.insert(TASKS, [6])),
     )
     for name, arguments in (
         ("query", {"select": ["hours"]}),
@@ -571,9 +574,7 @@ def test_percent_values_are_described_as_fractions() -> None:
         REPORTS,
         table_id=TASKS,
         key_field_id=3,
-        read_rules=(),
-        write_rules=(),
-        read_only=False,
+        policy=None,
         wanted=None,
         wanted_reports=None,
     )

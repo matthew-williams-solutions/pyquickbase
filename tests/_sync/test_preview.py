@@ -13,11 +13,12 @@ from pyquickbase import (
     F,
     FileUpload,
     InvalidValueError,
+    Policy,
+    PolicyRefusedError,
     QueryError,
     Quickbase,
     TypedRecord,
     UnknownFieldError,
-    WriteRefusedError,
     where_from_dict,
 )
 
@@ -81,7 +82,7 @@ def client(fake: Fake, **kwargs: Any) -> Quickbase:
 
 def test_an_update_preview_compares_without_writing() -> None:
     fake = Fake({1: {6: "old"}, 2: {6: "same"}})
-    with client(fake, read_only=True) as qb:
+    with client(fake, policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         preview = tasks.preview_update(
             [
@@ -150,7 +151,7 @@ def test_no_rows_is_an_empty_preview() -> None:
 
 def test_a_delete_preview_counts_every_match_without_deleting() -> None:
     fake = Fake({1: {6: "a"}, 2: {6: "b"}, 3: {6: "c"}})
-    with client(fake, read_only=True) as qb:
+    with client(fake, policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         page = tasks.preview_delete(F("Status") == "Done", select=["Title"], top=2)
     assert page.total == 3
@@ -178,10 +179,10 @@ def test_a_delete_preview_checks_where_like_a_delete(where: Any) -> None:
 
 def test_previews_work_where_the_write_would_be_refused() -> None:
     fake = Fake({1: {6: "old"}})
-    with client(fake, read_only=True) as qb:
+    with client(fake, policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         assert (tasks.preview_update([{"Record ID#": 1, "Title": "new"}])).changes
-        with pytest.raises(WriteRefusedError):
+        with pytest.raises(PolicyRefusedError):
             tasks.update([{"Record ID#": 1, "Title": "new"}])
 
 

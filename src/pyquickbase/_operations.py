@@ -5,8 +5,8 @@ model's arguments into a table call. Both come from the same lists of fields, so
 offered something the check would refuse, or allowed something it wasn't offered. Adding an
 operation means adding an entry, without touching the others.
 
-The lists come from what the client's `ReadRules` and `WriteRules` allow, narrowed by the tool's
-own `fields`. Those limits are still checked on every request, so this only decides what's offered.
+The lists come from `BoundPolicy.offers()`, narrowed by the tool's own `fields`, so what's offered
+is exactly what the policy allows. It's still checked on every request.
 Error messages follow `_where_data.py`: they say where the mistake is and what's allowed, and don't
 repeat the values they were given.
 """
@@ -20,11 +20,12 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal, cast, get_args
 
+from ._bound import BoundPolicy
 from ._codegen import _WRITE_TYPES  # pyright: ignore[reportPrivateUsage]
+from ._decision import Decision, Named
 from ._models import RECORD_ID_FIELD, Field, FieldIndex, ReportInfo
-from ._policy import WriteRules
 from ._query import NO_VALUE, Condition, Expression, FieldRef, Group
-from ._read_policy import ReadRules, _allows  # pyright: ignore[reportPrivateUsage]
+from ._read_request import ReadRequest
 from ._summary import Period, PeriodUnit
 from ._typed import is_writable
 from ._where_data import case_hint, where_from_dict, where_schema
@@ -32,12 +33,11 @@ from ._writes import FileUpload
 from .errors import (
     ConfigurationError,
     InvalidValueError,
+    PolicyRefusedError,
     QueryError,
     QuickbaseError,
-    ReadRefusedError,
     UnknownFieldError,
     UnknownReportError,
-    WriteRefusedError,
 )
 
 OperationName = Literal[
@@ -104,6 +104,7 @@ class Allowed:
     reports: tuple[ReportInfo, ...] = ()
     summary_reports: tuple[ReportInfo, ...] = ()
     max_records: int | None = None
+    can_run_formula: bool = True
 
 
 def _labels(fields: Sequence[Field]) -> list[str]:
@@ -958,7 +959,11 @@ _KINDS: dict[OperationName, Kind] = {
         ),
         plan=_plan_formula,
         available=lambda allowed, formula: (
-            None if formula else "run_formula needs formula, the text your code chooses"
+            "the client's policy doesn't allow running formulas, as one can read any table"
+            if not allowed.can_run_formula
+            else None
+            if formula
+            else "run_formula needs formula, the text your code chooses"
         ),
     ),
     "download_file": Kind(
@@ -1028,26 +1033,20 @@ def resolve_descriptions(
     return found
 
 
-def _granted(access: bool | frozenset[int], item: Field) -> bool:
-    return access is True or (access is not False and item.id in access)
-
-
 def allowed_for(
     fields: Sequence[Field],
     reports: Sequence[ReportInfo],
     *,
     table_id: str,
     key_field_id: int | None,
-    read_rules: Sequence[ReadRules],
-    write_rules: Sequence[WriteRules],
-    read_only: bool,
+    policy: BoundPolicy | None,
     wanted: Sequence[FieldRef] | None,
     wanted_reports: Sequence[str] | None,
 ) -> Allowed:
-    """Work out what an operation may use, from the client's limits and the tool's own fields.
+    """Work out what an operation may use, from the client's policy and the tool's own fields.
 
-    Every `ReadRules` and `WriteRules` must allow a field. Custom policies aren't called, as they
-    can't be asked about a field without a request, so they may refuse more than this offers.
+    Every list comes from `BoundPolicy.offers()`, which asks the policy's one evaluator about each
+    field and verb, so a field is offered exactly when a request with it would be allowed.
     """
     if wanted is not None:
         if isinstance(wanted, str):
@@ -1057,72 +1056,63 @@ def allowed_for(
         if not ids:
             raise QueryError("fields can't be empty.")
         fields = [item for item in fields if item.id in ids]
-    reads = [rules._tables.get(table_id) for rules in read_rules]  # pyright: ignore[reportPrivateUsage]
-    writes = [rules._tables.get(table_id) for rules in write_rules]  # pyright: ignore[reportPrivateUsage]
-
-    def readable(name: str) -> tuple[Field, ...]:
-        return tuple(
-            item
-            for item in fields
-            if all(
-                access is not None and _allows(getattr(access, name), item.id) for access in reads
-            )
+    offered = _offered_reports(reports, wanted_reports)
+    runnable = [item for item in offered if not item.incomplete]
+    writable = {item.id for item in writable_fields(fields)}
+    if policy is None:
+        readable = tuple(fields)
+        result = Allowed(
+            readable=readable,
+            filterable=readable,
+            sortable=readable,
+            insertable=tuple(item for item in fields if item.id in writable),
+            updatable=tuple(item for item in fields if item.id in writable),
+            downloadable=tuple(item for item in fields if item.type == "file"),
+            file_deletable=tuple(item for item in fields if item.type == "file"),
+            can_delete=True,
+            reports=tuple(runnable),
         )
-
-    writable = [] if read_only else writable_fields(fields)
-
-    def write(name: str) -> tuple[Field, ...]:
-        return tuple(
-            item
-            for item in writable
-            if all(
-                access is not None and _granted(getattr(access, name), item) for access in writes
-            )
+    else:
+        found = policy.offers_for(
+            table_id,
+            [(item, item.type) for item in fields],
+            lambda item: item.id,
+            runnable,
+            lambda item: (item.id, "table" if item.type == "table" else "summary"),
         )
-
-    files = [item for item in fields if item.type == "file"]
-    downloadable = tuple(
-        item
-        for item in files
-        if all(access is not None and item.id in access.files for access in reads)
-    )
-    can_delete = not read_only and all(access is not None and access.delete for access in writes)
-    can_delete_files = not read_only and all(
-        access is not None and access.delete_files for access in writes
-    )
-    insertable = write("insert")
-    updatable = write("update")
-    shown = {item.id for item in readable("fields")}
+        result = Allowed(
+            readable=found.readable,
+            filterable=found.filterable,
+            sortable=found.sortable,
+            insertable=tuple(item for item in found.insertable if item.id in writable),
+            updatable=tuple(item for item in found.updatable if item.id in writable),
+            downloadable=found.downloadable,
+            file_deletable=found.file_deletable,
+            can_delete=found.can_delete,
+            reports=found.reports,
+            max_records=found.max_records,
+            can_run_formula=policy.decide(
+                ReadRequest(action="formula", table_id=table_id, method="POST", path="/formula/run")
+            ).allowed,
+        )
+    insertable = result.insertable
     if key_field_id not in (None, RECORD_ID_FIELD):
         insertable = ()  # insert() refuses a table whose key field isn't Record ID#.
-    offered = _offered_reports(reports, wanted_reports)
-    listed = [(access.reports, access.summary_reports) for access in reads if access is not None]
-    limits = [access.max_records for access in reads if access is not None]
+    shown = {item.id for item in result.readable}
     return Allowed(
-        readable=readable("fields"),
-        filterable=readable("filter"),
-        sortable=readable("sort"),
+        readable=result.readable,
+        filterable=result.filterable,
+        sortable=result.sortable,
         insertable=insertable,
-        updatable=updatable,
-        previewable=tuple(item for item in updatable if item.id in shown),
-        downloadable=downloadable,
-        file_deletable=tuple(files) if can_delete_files else (),
-        can_delete=can_delete,
-        reports=tuple(
-            item
-            for item in offered
-            if item.type == "table"
-            and not item.incomplete
-            and all(item.id in pair[0] for pair in listed)
-        ),
-        summary_reports=tuple(
-            item
-            for item in offered
-            if item.type in ("summary", "chart")
-            and not item.incomplete
-            and all(item.id in pair[1] for pair in listed)
-        ),
-        max_records=min(limits, default=None),
+        updatable=result.updatable,
+        previewable=tuple(item for item in result.updatable if item.id in shown),
+        downloadable=result.downloadable,
+        file_deletable=result.file_deletable,
+        can_delete=result.can_delete,
+        reports=tuple(item for item in result.reports if item.type == "table"),
+        summary_reports=tuple(item for item in result.reports if item.type in ("summary", "chart")),
+        max_records=result.max_records,
+        can_run_formula=result.can_run_formula,
     )
 
 
@@ -1276,8 +1266,8 @@ def check_scope(
         missing = sorted(labels - {item.label for item in allowed.insertable})
         if missing:
             raise ConfigurationError(
-                f"An insert fills in {', '.join(missing)} from the scope, but the client's write "
-                "rules don't let it set them. Allow them in WriteRules insert."
+                f"An insert fills in {', '.join(missing)} from the scope, but the client's policy "
+                "doesn't let it set them. Allow them with allow.insert()."
             )
     return labels
 
@@ -1299,15 +1289,30 @@ _WRITE_OPERATIONS = frozenset({"insert", "update", "delete", "delete_file_versio
 
 
 def refused_operation(
-    name: OperationName, reason: str, *, read_limited: bool, write_limited: bool
+    name: OperationName, reason: str, *, limited: bool, table: Named | None = None
 ) -> QuickbaseError:
-    """The error for an operation that can't run at all, which names the limit that stops it."""
-    message = f"This client can't offer {name}: {reason}."
-    if name in _WRITE_OPERATIONS or name == "preview_update":
-        return WriteRefusedError(message) if write_limited else ConfigurationError(message)
-    if name == "run_formula":
-        return ConfigurationError(message)
-    return ReadRefusedError(message) if read_limited else ConfigurationError(message)
+    """The error for an operation that can't run at all: the policy's refusal when there is one."""
+    if not limited or (name == "run_formula" and "policy" not in reason):
+        return ConfigurationError(f"This client can't offer {name}: {reason}.")
+    verb = {
+        "insert": "insert",
+        "update": "update",
+        "preview_update": "update",
+        "delete": "delete",
+        "delete_file_version": "delete_file",
+        "download_file": "download",
+        "run_report": "report",
+        "summary_report": "report",
+        "run_formula": "run_formula",
+    }.get(name, "read")
+    return PolicyRefusedError(
+        Decision(
+            allowed=False,
+            verb=verb,  # pyright: ignore[reportArgumentType]
+            reason=f"This client can't offer {name}: {reason}",
+            table=table,
+        )
+    )
 
 
 _SCOPED_WRITES = frozenset({"insert", "update", "preview_update"})

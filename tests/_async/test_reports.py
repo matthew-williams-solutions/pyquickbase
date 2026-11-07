@@ -4,11 +4,12 @@ import pytest
 from pyquickbase import (
     AsyncQuickbase,
     InvalidResponseError,
+    Policy,
+    PolicyRefusedError,
     QueryError,
     ReportInfo,
     UnknownReportError,
     UnsupportedReportError,
-    WriteRefusedError,
 )
 
 pytestmark = pytest.mark.anyio
@@ -277,10 +278,10 @@ async def test_malformed_run_response_is_reported() -> None:
 
 async def test_read_only_client_can_run_reports_but_not_write() -> None:
     server = FakeReports()
-    async with client(server, read_only=True) as qb:
+    async with client(server, policy=Policy.read_only()) as qb:
         page = await qb.app(APP).table("Tasks").report("1").run_page()
         assert len(page.records) == 5
-        with pytest.raises(WriteRefusedError):
+        with pytest.raises(PolicyRefusedError):
             await qb.request("POST", "/records", json={})
 
 

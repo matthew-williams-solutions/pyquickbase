@@ -7,11 +7,19 @@ from dataclasses import replace
 from functools import partial
 from typing import Any, Generic, Self, TypeVar, cast, get_args
 
+from .._bound import BoundPolicy, Snapshot, bind_snapshot
 from .._confirm import ConfirmationKind, schema_binding
 from .._confirm import binding as confirmation_binding
 from .._confirm import check as check_confirmation
 from .._confirm import issue as issue_confirmation
-from .._derived import check_filterable, check_formula_sources, check_readable, table_access
+from .._decision import Decision
+from .._derived import (
+    check_filterable,
+    check_formula_sources,
+    check_lookup_parent,
+    check_readable,
+    limited_where,
+)
 from .._links import (
     app_url,
     field_url,
@@ -66,7 +74,7 @@ from .._operations import (
     scope_rows,
     unavailable,
 )
-from .._policy import UNSAFE_FORMULA_TYPES
+from .._policy import Policy, PolicyRule
 from .._preview import (
     ConfirmedUpdatePreview,
     UpdatePreview,
@@ -105,6 +113,7 @@ from .._typed import (
     schema_problems,
     select_ids,
 )
+from .._write_request import UNSAFE_FORMULA_TYPES
 from .._writes import (
     FIELD_SETTINGS,
     RowInput,
@@ -129,15 +138,14 @@ from ..errors import (
     InvalidResponseError,
     InvalidValueError,
     PermissionDeniedError,
+    PolicyRefusedError,
     QueryError,
     QuickbaseError,
-    ReadRefusedError,
     SchemaMismatchError,
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
     WriteError,
-    WriteRefusedError,
 )
 from ._planner import Planner, apply_checked, apply_plan
 from ._transport import Transport
@@ -283,8 +291,8 @@ class App:
             AuthenticationError: Quickbase doesn't recognize the app ID, or the token can't reach
                 it.
             BadRequestError: Quickbase refused to create the table.
-            WriteRefusedError: The client's limits on writes don't allow creating a table. Nothing
-                was created.
+            PolicyRefusedError: The client's policy doesn't allow creating a table. Nothing was
+                created.
         """
         tables = self.tables(refresh=True)
         for item in tables:
@@ -328,7 +336,7 @@ class App:
         payload = self._transport.request("POST", "/tables", params={"appId": self._id}, json=body)
         self._cache.delete(f"tables:{self._id}")
         table_id = parse(lambda data: table_info_from_api(data).id, payload, "table")
-        self._transport.table_created(table_id)
+        self._transport.table_created(table_id, name)
         return self.table(table_id)
 
     def plan_schema(self, changes: Sequence[SchemaChange]) -> SchemaPlan:
@@ -387,10 +395,10 @@ class App:
         minutes, while the schema is as it was then. Show the person each plan before they approve
         it.
 
-        The schema offers only the kinds of change, tables, and field types the client's
-        `WriteRules` could allow, and a plan reports anything they'd refuse. Give the model a
-        client with `WriteRules` and `ReadRules`, so that what it can change and see is limited,
-        and a formula, lookup, or summary it adds can only show what it could already read.
+        The schema offers only the kinds of change, tables, and field types the client's policy
+        allows, and a plan reports anything it would refuse. Give the model a client with a
+        policy, so that what it can change and see is limited, and a formula, lookup, or summary
+        it adds can only show what it could already read.
 
         ```python
         plan = app.operation("plan_schema")
@@ -418,13 +426,41 @@ class App:
             raise ConfigurationError("max_changes must be a positive whole number.")
         transport = self._transport
         tables = self.tables(refresh=True)
-        allowed = schema_allowed(
-            tables, transport.write_rules, app_id=self._id, read_only=transport.read_only
-        )
+        allowed = schema_allowed(tables, transport.policy, app_id=self._id)
         schema = schema_operation_schema(
             name, allowed, max_changes=max_changes, tables=[item.name for item in tables]
         )
         return SchemaOperation(self, name, schema, max_changes)
+
+    def _bind_policy(self, policy: Policy) -> BoundPolicy:
+        """Read this app's schema, and bind a policy to it. See `Policy.bind()`."""
+        tables = self.tables(refresh=True)
+        fields: dict[str, tuple[Field, ...]] = {}
+        relationships: dict[tuple[str, str, int], Relationship] = {}
+        for info in tables:
+            table = self.table(info.id)
+            fields[info.id] = tuple(table.fields(refresh=True))
+            for item in table.relationships(refresh=True):
+                relationships[(item.parent_table_id, item.child_table_id, item.id)] = item
+        wanted: set[str] = set()
+        for rule in policy.rules:
+            if isinstance(rule, PolicyRule) and rule.options.get("reports"):
+                for selector in rule.tables or ():
+                    found = _find_table(tables, str(selector.values[0]))
+                    if found is not None:
+                        wanted.add(found.id)
+        reports = {
+            table_id: tuple(self.table(table_id).reports(refresh=True))
+            for table_id in sorted(wanted)
+        }
+        snapshot = Snapshot(
+            app_id=self._id,
+            tables=tuple(tables),
+            fields=fields,
+            relationships=tuple(relationships.values()),
+            reports=reports,
+        )
+        return bind_snapshot(policy, snapshot)
 
     def table(self, name_or_id: str) -> "Table":
         """Get a table in this app by name or ID. It's checked when first used.
@@ -456,6 +492,14 @@ class App:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._id!r})"
+
+
+def _same_filter(found: Field, clause: str | None, policy: BoundPolicy | None) -> bool:
+    """Whether an existing summary has this filter. A policy hides a filter that uses a field the
+    client can't read, so then it can't be compared, and only the rest of the summary is."""
+    if policy is not None and found.summary_query is None and clause is not None:
+        return True
+    return (found.summary_query or None) == (clause or None)
 
 
 def _same_property(key: str, current: Any, wanted: Any) -> bool:
@@ -1170,11 +1214,27 @@ class Table:
         Raises:
             QueryError: `where` can't be sent as written. Nothing was deleted.
             UnknownFieldError: `where` names a field the table doesn't have. Nothing was deleted.
+            PolicyRefusedError: The client's policy doesn't allow deleting here, or more records
+                match than its `max_records` for deletes. Nothing was deleted.
         """
         table_id = (self.info()).id
         clause = self._with_fields(lambda fields: compile_where(where, FieldIndex(fields)))
+        most = self._transport.delete_limit(table_id)
+        if most is not None:
+            found = self.count(clause)
+            if found > most:
+                raise PolicyRefusedError(
+                    Decision(
+                        allowed=False,
+                        verb="delete",
+                        reason=f"{found} records match, and the policy allows deleting at most "
+                        f"{most} at once. Narrow the filter",
+                        hint="raise allow.delete(..., max_records=...)",
+                        table=self._transport.policy._named_table(table_id),  # pyright: ignore[reportOptionalMemberAccess, reportPrivateUsage]
+                    )
+                )
         payload = self._transport.request(
-            "DELETE", "/records", json={"from": table_id, "where": clause}
+            "DELETE", "/records", json={"from": table_id, "where": clause}, counted=True
         )
         return parse(lambda data: int(data["numberDeleted"]), payload, "delete")
 
@@ -1206,7 +1266,7 @@ class Table:
             maximum: Numeric, date, timestamp, or time of day fields to find the highest of.
             max_records: Raise `QueryError` if more records match than this, without reading them.
                 It never returns a partial result. An agent's tool should always set this. A
-                client's `ReadRules` can set a limit of their own, `max_summary_records`.
+                client's policy can set a limit of its own, `max_summary_records`.
             page_size: Records to request per call to Quickbase.
 
         Returns:
@@ -1218,7 +1278,7 @@ class Table:
             QueryError: An argument can't be used, such as a text field in `total`, or more records
                 match than `max_records`. No records were read.
             UnknownFieldError: The table has no such field. No records were read.
-            ReadRefusedError: More records match than the client's `ReadRules` allow summarizing,
+            PolicyRefusedError: More records match than the client's policy allows summarizing,
                 or it doesn't allow a field. No records were read.
             InvalidResponseError: A value isn't what its field's type says it should be.
         """
@@ -1244,9 +1304,9 @@ class Table:
                     "Narrow the filter, or raise the limit."
                 )
             if allowed is not None and found > allowed:
-                raise ReadRefusedError(
-                    f"{found} records match, and this client's read rules allow summarizing at "
-                    f"most {allowed}. Narrow the filter. Nothing was summarized."
+                raise self._summary_refusal(
+                    f"{found} records match, and this client's policy allows summarizing at most "
+                    f"{allowed}. Narrow the filter"
                 )
         records = RecordIterator(
             lambda: self._query_body(where, summary.select, None),
@@ -1257,11 +1317,21 @@ class Table:
         for record in records:
             summary.add(record)
         if not records._done:  # pyright: ignore[reportPrivateUsage]
-            raise ReadRefusedError(
-                f"More records matched while summarizing than this client's read rules allow, "
-                f"{allowed}, so no partial result was returned. Narrow the filter."
+            raise self._summary_refusal(
+                f"More records matched while summarizing than this client's policy allows, "
+                f"{allowed}, so no partial result was returned. Narrow the filter"
             )
         return summary.rows()
+
+    def _summary_refusal(self, reason: str) -> PolicyRefusedError:
+        return PolicyRefusedError(
+            Decision(
+                allowed=False,
+                verb="read",
+                reason=reason,
+                hint="raise allow.read(..., max_summary_records=...)",
+            )
+        )
 
     def preview_delete(
         self,
@@ -1576,11 +1646,15 @@ class Table:
         target = self._with_fields(lambda fields: FieldIndex(fields).resolve(field))
         field_id = target.id
         if "formula" in merged:
-            if self._transport.write_rules and target.type in UNSAFE_FORMULA_TYPES:
-                raise WriteRefusedError(
-                    f"This client's write rules don't allow changing field {field_id}'s formula: "
-                    f"a {target.type} formula makes something people click, which acts as them. "
-                    "It wasn't sent."
+            if self._transport.policy is not None and target.type in UNSAFE_FORMULA_TYPES:
+                raise PolicyRefusedError(
+                    Decision(
+                        allowed=False,
+                        verb="formula",
+                        reason=f"A {target.type} formula makes something people click, which acts "
+                        "as them",
+                        table=self._transport.policy._named_table(table_id),  # pyright: ignore[reportPrivateUsage]
+                    )
                 )
             self._check_formula(table_id, merged["formula"])
         optional = {
@@ -1604,33 +1678,42 @@ class Table:
         return parse(field_from_api, payload, "field")
 
     def _check_formula(self, table_id: str, formula: Any) -> None:
-        """Refuse a formula that reads what this client can't, when it has read rules."""
-        access = table_access(self._transport.read_rules, table_id)
-        if access is not None and isinstance(formula, str):
-            check_formula_sources(formula, self.fields(), access)
+        """Refuse a formula that reads what this client can't, when it has a policy."""
+        policy = self._transport.policy
+        if policy is not None and isinstance(formula, str):
+            check_formula_sources(formula, self.fields(), policy, table_id)
 
     def _check_parent_field(self, parent: "Table", field_id: int, what: str) -> None:
-        """Refuse a lookup of a parent's field that this client can't read."""
-        parent_id = (parent.info()).id
-        access = table_access(self._transport.read_rules, parent_id)
-        if access is not None:
+        """Refuse a lookup of a parent's field that this client can't read, or from a parent
+        with a row limit."""
+        policy = self._transport.policy
+        if policy is not None:
+            parent_id = (parent.info()).id
+            check_lookup_parent(policy, parent_id, what)
             found = parent._with_fields(lambda fields: FieldIndex(fields).resolve(field_id))  # pyright: ignore[reportPrivateUsage]
-            check_readable(found, access, parent_id, what)
+            check_readable(found, policy, parent_id, what)
 
-    def _check_own_fields(self, field_ids: Sequence[int | None], what: str) -> None:
+    def _check_own_fields(
+        self, field_ids: Sequence[int | None], what: str, verb: Any = "lookup"
+    ) -> None:
         """Refuse a summary or lookup that shows this table's fields, unless they're readable."""
-        table_id = (self.info()).id
-        access = table_access(self._transport.read_rules, table_id)
-        if access is None:
+        policy = self._transport.policy
+        if policy is None:
             return
+        table_id = (self.info()).id
         index = self._with_fields(FieldIndex)
         for field_id in field_ids:
             if field_id is None:
-                raise ReadRefusedError(
-                    f"{what} needs the relationship's foreign key, which this client can't see. "
-                    "Nothing was sent."
+                raise PolicyRefusedError(
+                    Decision(
+                        allowed=False,
+                        verb=verb,
+                        layer="derived",
+                        reason=f"{what} needs the relationship's foreign key, which this client "
+                        "can't see",
+                    )
                 )
-            check_readable(index.resolve(field_id), access, table_id, what)
+            check_readable(index.resolve(field_id), policy, table_id, what, verb)
 
     def delete_fields(self, fields: FieldRef | Sequence[FieldRef]) -> None:
         """Delete fields and all their data.
@@ -1828,7 +1911,7 @@ class Table:
         Raises:
             UnknownTableError: This app has no such table, or no such parent.
             BadRequestError: Quickbase refused to create the relationship.
-            WriteRefusedError: The client's limits on writes don't allow it. Nothing was created.
+            PolicyRefusedError: The client's policy doesn't allow it. Nothing was created.
         """
         parent_id = (parent.info()).id
         labels = {item.id: item.label.casefold() for item in self.fields(refresh=True)}
@@ -1970,13 +2053,15 @@ class Table:
         where: Expression | str | None,
     ) -> Field:
         """Find or create a summary on the parent. A count has no target, which Quickbase records
-        as field 0. With `ReadRules` a summary's filter can't be read, so an existing one is
-        matched without it."""
+        as field 0. Under a policy, the child's row limit is ANDed into the filter, and an existing
+        summary's filter is compared when the policy shows it, which it does when every field it
+        uses is readable here."""
         table_id = (self.info()).id
+        policy = self._transport.policy
         clause = None if where is None else self.compile_where(where)
         if clause is not None:
-            access = table_access(self._transport.read_rules, table_id)
-            check_filterable(clause, access, table_id, "A summary")
+            check_filterable(clause, policy, table_id, "A summary")
+        clause = limited_where(policy, table_id, clause)
         parent = self._app.table(relationship.parent_table_id)
         fields = parent.fields(refresh=True)
         found = next((item for item in fields if item.label.casefold() == label.casefold()), None)
@@ -1986,7 +2071,7 @@ class Table:
                 or (found.summary_target_field_id or 0) != (target_id or 0)
                 or found.summary_reference_field_id != relationship.foreign_key_field_id
                 or found.summary_function != function
-                or (not self._transport.read_rules and found.summary_query != clause)
+                or not _same_filter(found, clause, policy)
             ):
                 raise SchemaMismatchError(
                     f"Field {found.label!r} on the parent isn't this summary, so it wasn't changed."
@@ -1998,7 +2083,9 @@ class Table:
         if clause is not None:
             summary["where"] = clause
         shown = [relationship.foreign_key_field_id]
-        self._check_own_fields([*shown, target_id] if target_id is not None else shown, "A summary")
+        self._check_own_fields(
+            [*shown, target_id] if target_id is not None else shown, "A summary", "summary"
+        )
         self._transport.request(
             "POST",
             f"/tables/{table_id}/relationship/{relationship.id}",
@@ -2016,10 +2103,10 @@ class Table:
 
     def _created_but_unseen(self, what: str) -> QuickbaseError:
         """The error for a field Quickbase made that this client can't find afterward."""
-        if self._transport.read_rules:
+        if self._transport.policy is not None:
             error: QuickbaseError = UnknownFieldError(
-                f"{what} was created, but this client's read rules hide new fields, so it can't "
-                "be returned. Allow it in ReadAccess, or use fields=True."
+                f"{what} was created, but this client's policy hides new fields, so it can't be "
+                "returned. Use new_fields='read', or bind the policy again."
             )
         else:
             error = InvalidResponseError(
@@ -2061,7 +2148,7 @@ class Table:
 
         The schema describes the arguments a model may send, and `run()` checks them against the
         same lists before calling the table, so a model can't use anything it wasn't offered. The
-        lists hold only what the client's `ReadRules` and `WriteRules` allow, narrowed by `fields`.
+        lists hold only what the client's policy allows, narrowed by `fields`.
 
         ```python
         search = tasks.operation("query", fields=["Title", "Status"])
@@ -2086,8 +2173,8 @@ class Table:
             max_records: The most records one call may return, or for `delete`, may match. A
                 delete that matches more is refused. Give `preview_delete` the same number, and
                 its result says when a delete would be refused. Defaults to 100, or for
-                `summarize`, 10,000 records read. The client's `ReadRules` can lower it, and
-                their own `max_records` also limits how far `skip` can page.
+                `summarize`, 10,000 records read. The client's policy can lower it, and its own
+                `max_records` also limits how far `skip` can page.
             max_rows: The most records one `insert` or `update` may send.
             scope: A condition your code fixes, such as the user's project, that every record the
                 operation reaches must match, as `run()`'s `scope` does. Given here, the schema
@@ -2105,8 +2192,7 @@ class Table:
             An `Operation`, with its `schema` and `run()`.
 
         Raises:
-            WriteRefusedError: The client's limits on writes don't allow this operation at all.
-            ReadRefusedError: The client's `ReadRules` don't allow it at all, such as a formula.
+            PolicyRefusedError: The client's policy doesn't allow this operation at all.
             ConfigurationError: The table has nothing for it, such as no file fields, or
                 `formula` is missing or given for another operation.
             UnknownFieldError: `fields` or `descriptions` names a field the client can't see, or
@@ -2116,11 +2202,6 @@ class Table:
         if name not in operation_names():
             raise ConfigurationError(f"name must be one of: {', '.join(operation_names())}.")
         transport = self._transport
-        if name == "run_formula" and transport.read_rules:
-            raise ReadRefusedError(
-                "This client's read rules refuse formulas, as a formula can read other tables "
-                "and fields."
-            )
         info = self.info()
         report_ids: Sequence[str] | None = None
         report_notes: dict[str, str] = {}
@@ -2135,9 +2216,7 @@ class Table:
             self.reports() if needs_reports else (),
             table_id=info.id,
             key_field_id=info.key_field_id,
-            read_rules=transport.read_rules,
-            write_rules=transport.write_rules,
-            read_only=transport.read_only,
+            policy=transport.policy,
             wanted=fields,
             wanted_reports=report_ids if needs_reports else None,
         )
@@ -2148,11 +2227,12 @@ class Table:
             scope_text = describe_scope(scope, index)
         reason = unavailable(name, allowed, formula)
         if reason is not None:
+            policy = transport.policy
             raise refused_operation(
                 name,
                 reason,
-                read_limited=bool(transport.read_rules),
-                write_limited=transport.read_only or bool(transport.write_rules),
+                limited=policy is not None,
+                table=None if policy is None else policy._named_table(info.id),  # pyright: ignore[reportPrivateUsage]
             )
         spec = make_spec(
             name,

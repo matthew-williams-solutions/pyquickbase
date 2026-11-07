@@ -50,6 +50,16 @@ class FakeApp:
         self.fail: str | None = None
         self.next_id = 100
 
+    def bind(self, *rules: Any, **options: Any) -> Any:
+        """A policy bound to this app as it is now."""
+        from .policy_helpers import bind
+
+        tables = {
+            table_id: (info["name"], self.fields[table_id])
+            for table_id, info in self.tables.items()
+        }
+        return bind(*rules, tables=tables, relationships=self.relationships, app_id=APP, **options)
+
     @staticmethod
     def built_in() -> list[dict[str, Any]]:
         names = ["Date Created", "Date Modified", "Record ID#", "Record Owner", "Last Modified By"]

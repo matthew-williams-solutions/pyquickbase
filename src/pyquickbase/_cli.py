@@ -11,6 +11,7 @@ import httpx
 
 from ._codegen import HEADER, render
 from ._config import ENV_TOKEN
+from ._policy import Policy
 from ._sync._client import Quickbase
 from ._sync._resources import App
 from .errors import QuickbaseError
@@ -51,7 +52,7 @@ def _write(path: Path, source: str) -> None:
 
 def _codegen(arguments: argparse.Namespace, http_client: httpx.Client | None) -> int:
     with Quickbase.from_env(
-        read_only=True, http_client=http_client, token_env=arguments.token_env
+        policy=Policy.read_only(), http_client=http_client, token_env=arguments.token_env
     ) as qb:
         source = _tables(
             qb.app(arguments.app), arguments.table, include_links=arguments.include_links

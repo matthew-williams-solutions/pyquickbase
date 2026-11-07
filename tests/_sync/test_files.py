@@ -11,12 +11,13 @@ from pyquickbase import (
     InvalidResponseError,
     InvalidValueError,
     NotFoundError,
+    Policy,
+    PolicyRefusedError,
     Quickbase,
     RateLimitError,
     RetryPolicy,
     UnknownFieldError,
     WriteError,
-    WriteRefusedError,
     _writes,
 )
 
@@ -242,12 +243,12 @@ def test_other_fields_are_refused_before_sending() -> None:
 
 def test_read_only_client_downloads_but_cant_change_files() -> None:
     server = FakeFiles()
-    with client(server, read_only=True) as qb:
+    with client(server, policy=Policy.read_only()) as qb:
         table = qb.app(APP).table("Tasks")
         assert (table.download_file(7, "Attachment")).data == b"contents"
-        with pytest.raises(WriteRefusedError):
+        with pytest.raises(PolicyRefusedError):
             table.delete_file_version(7, "Attachment", version=2)
-        with pytest.raises(WriteRefusedError):
+        with pytest.raises(PolicyRefusedError):
             table.insert([{"Attachment": FileUpload("a.txt", b"x")}])
     assert [r.method for r in server.sent("/files")] == ["GET"]
 

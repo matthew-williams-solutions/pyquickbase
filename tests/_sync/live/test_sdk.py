@@ -23,6 +23,8 @@ from pyquickbase import (
     NotFoundError,
     Page,
     Period,
+    Policy,
+    PolicyRefusedError,
     QueryError,
     Quickbase,
     Record,
@@ -35,7 +37,6 @@ from pyquickbase import (
     UnsupportedReportError,
     WriteAccess,
     WriteError,
-    WriteRefusedError,
     WriteRequest,
     WriteRules,
     all_of,
@@ -497,7 +498,7 @@ def test_drop_needs_the_exact_name(qb: Quickbase, scratch: Any) -> None:
 
 
 def test_read_only_and_a_policy_of_exact_requests(scratch: Any, seeded: str) -> None:
-    with Quickbase(realm=scratch.realm, token=scratch.token, read_only=True) as qb:
+    with Quickbase(realm=scratch.realm, token=scratch.token, policy=Policy.read_only()) as qb:
         table = get(qb, scratch, seeded)
         assert table.count() == 5
         assert (table.run_formula("1 + 1")).value == 2
@@ -510,7 +511,7 @@ def test_read_only_and_a_policy_of_exact_requests(scratch: Any, seeded: str) -> 
         ):
             try:
                 attempt()
-            except WriteRefusedError:
+            except PolicyRefusedError:
                 pass
             except pyquickbase.InvalidValueError:
                 pass  # drop() checks the name first
@@ -524,7 +525,7 @@ def test_read_only_and_a_policy_of_exact_requests(scratch: Any, seeded: str) -> 
     with Quickbase(realm=scratch.realm, token=scratch.token, write_policy=records_only) as qb:
         table = get(qb, scratch, seeded)
         table.insert([{"Title": "Allowed", "Code": "A1"}])
-        with pytest.raises(WriteRefusedError):
+        with pytest.raises(PolicyRefusedError):
             table.delete(F("Code") == "A1")
 
 
@@ -824,13 +825,13 @@ def test_write_rules_limit_tables_actions_and_fields(
         table.update([{"Record ID#": record, "Title": "Changed"}])
         assert (one(table, "C1", "Title"))["Title"] == "Changed"
 
-        with pytest.raises(WriteRefusedError, match="doesn't allow fields"):
+        with pytest.raises(PolicyRefusedError, match="doesn't allow fields"):
             table.update([{"Record ID#": record, "Code": "Nope"}])
-        with pytest.raises(WriteRefusedError, match="deleting isn't allowed"):
+        with pytest.raises(PolicyRefusedError, match="deleting isn't allowed"):
             table.delete(F("Code") == "C2")
-        with pytest.raises(WriteRefusedError, match="only record and file"):
+        with pytest.raises(PolicyRefusedError, match="only record and file"):
             table.create_field("Nope", "text")
-        with pytest.raises(WriteRefusedError, match="isn't listed"):
+        with pytest.raises(PolicyRefusedError, match="isn't listed"):
             limited.app(scratch.app_id).table(other_id).insert([{"Title": "Nope"}])
         limited.request(
             "POST", "/records/query", json={"from": other_id, "select": [3]}

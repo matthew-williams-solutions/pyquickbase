@@ -12,17 +12,19 @@ from pyquickbase import (
     Column,
     F,
     InvalidResponseError,
+    Policy,
+    PolicyRefusedError,
     QueryError,
     Quickbase,
-    ReadAccess,
-    ReadRefusedError,
-    ReadRules,
     TypedRecord,
     UnknownFieldError,
     UnknownReportError,
     UnsupportedReportError,
+    allow,
     where_from_dict,
 )
+
+from ..policy_helpers import bind
 
 TASKS = "bqtasks"
 FIELDS = [
@@ -121,7 +123,7 @@ def client(fake: Fake, **kwargs: Any) -> Quickbase:
 
 def test_it_reads_every_page_and_only_the_fields_it_needs() -> None:
     fake = Fake(total=25)
-    with client(fake, read_only=True) as qb:
+    with client(fake, policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         rows = tasks.summarize("Status", total="Hours", page_size=10)
     assert [query["options"]["skip"] for query in fake.queries] == [0, 10, 20]
@@ -174,9 +176,9 @@ class Growing(Fake):
 
 def test_records_added_past_the_read_rules_limit_refuse_rather_than_cut_short() -> None:
     fake = Growing(total=10)
-    rules = ReadRules({TASKS: ReadAccess(fields=True, max_summary_records=10)})
-    with client(fake, read_policy=rules) as qb:
-        with pytest.raises(ReadRefusedError, match="no partial result"):
+    rules = bind(allow.read(TASKS, max_summary_records=10), tables={TASKS: ("Tasks", FIELDS)})
+    with client(fake, policy=rules) as qb:
+        with pytest.raises(PolicyRefusedError, match="no partial result"):
             qb.app("bq1234567").table("Tasks").summarize("Status", page_size=5)
     assert [query["options"]["top"] for query in fake.queries] == [1, 5, 5]
 
@@ -227,7 +229,7 @@ def test_typed_tables_can_summarize_by_label_or_id() -> None:
 @pytest.mark.parametrize("report", ["By Status", "Chart", "5", "6"])
 def test_rows_are_keyed_by_column_label(report: str) -> None:
     fake = Fake(total=2)
-    with client(fake, read_only=True) as qb:
+    with client(fake, policy=Policy.read_only()) as qb:
         rows = qb.app("bq1234567").table("Tasks").report(report).summary_rows()
     assert rows == [{"Status": "s0", "Hours (tot)": 0}, {"Status": "s1", "Hours (tot)": 1}]
     assert fake.writes == []

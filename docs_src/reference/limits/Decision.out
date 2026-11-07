@@ -1,0 +1,2 @@
+True allow.update('Job Tasks', ['Status'])
+Refused by policy: updating Hours (8) in Job Tasks (bqtasks123). No rule allows it. (rule: none) Nothing was sent. To allow it: add "Hours" to an allow.update("Job Tasks", ...) rule.

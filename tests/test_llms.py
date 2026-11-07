@@ -130,7 +130,7 @@ def test_the_reference_holds_real_signatures_and_docstrings() -> None:
     assert "## API reference: Table" in FULL
     assert "query(\n    *,\n    where: Expression | str | None = None" in FULL
     assert "Stop after this many records." in FULL
-    assert "Refuse any request that could change data" in FULL
+    assert "What the client may do, as a [`BoundPolicy`]" in FULL
     assert "`Quickbase.realm`" in FULL
     assert "`WriteResult`" in FULL
 

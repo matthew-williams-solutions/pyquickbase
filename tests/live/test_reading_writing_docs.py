@@ -7,16 +7,16 @@ from typing import Any
 
 import pytest
 
-from pyquickbase import F, Quickbase, TypedRecord
+from pyquickbase import F, Policy, Quickbase, TypedRecord
 from pyquickbase._codegen import render
 from pyquickbase.errors import (
     BadRequestError,
     InvalidValueError,
+    PolicyRefusedError,
     QueryError,
     UnknownFieldError,
     UnknownTableError,
     WriteError,
-    WriteRefusedError,
 )
 
 CHOICES = {"choices": ["Open", "Done"], "properties": {"allowNewChoices": False}}
@@ -217,12 +217,12 @@ def test_new_choices_are_allowed_unless_turned_off(scratch: Any) -> None:
 
 def test_a_read_only_client_refuses_writes(scratch: Any) -> None:
     make_table(scratch)
-    with Quickbase(realm=scratch.realm, token=scratch.token, read_only=True) as qb:
+    with Quickbase(realm=scratch.realm, token=scratch.token, policy=Policy.read_only()) as qb:
         table = qb.app(scratch.app_id).table(scratch.created[-1].info().id)
         assert table.count() == 0
-        with pytest.raises(WriteRefusedError):
+        with pytest.raises(PolicyRefusedError):
             table.insert([{"Title": "x"}])
-        with pytest.raises(WriteRefusedError):
+        with pytest.raises(PolicyRefusedError):
             table.delete(F("Title") == "x")
 
 

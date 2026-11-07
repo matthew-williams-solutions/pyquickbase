@@ -4,12 +4,13 @@ import pytest
 
 from pyquickbase import (
     InvalidResponseError,
+    Policy,
+    PolicyRefusedError,
     QueryError,
     Quickbase,
     ReportInfo,
     UnknownReportError,
     UnsupportedReportError,
-    WriteRefusedError,
 )
 
 APP = "bq1234567"
@@ -272,10 +273,10 @@ def test_malformed_run_response_is_reported() -> None:
 
 def test_read_only_client_can_run_reports_but_not_write() -> None:
     server = FakeReports()
-    with client(server, read_only=True) as qb:
+    with client(server, policy=Policy.read_only()) as qb:
         page = qb.app(APP).table("Tasks").report("1").run_page()
         assert len(page.records) == 5
-        with pytest.raises(WriteRefusedError):
+        with pytest.raises(PolicyRefusedError):
             qb.request("POST", "/records", json={})
 
 

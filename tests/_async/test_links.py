@@ -7,16 +7,18 @@ import pytest
 
 from pyquickbase import (
     AsyncQuickbase,
+    BoundPolicy,
     F,
     InvalidValueError,
     QueryError,
-    ReadAccess,
-    ReadRules,
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
+    allow,
     where_from_dict,
 )
+
+from ..policy_helpers import bind
 
 pytestmark = pytest.mark.anyio
 
@@ -63,8 +65,14 @@ def client(server: Any, **kwargs: Any) -> AsyncQuickbase:
     return AsyncQuickbase(realm="acme", token="fake-user-token", http_client=http_client, **kwargs)
 
 
-def rules() -> ReadRules:
-    return ReadRules({TASKS: ReadAccess(fields=[6, 7], reports=["1"])})
+def rules() -> BoundPolicy:
+    return bind(
+        allow.read(TASKS, [6, 7]),
+        allow.report(TASKS, ["1"]),
+        tables={TASKS: ("Tasks", FIELDS)},
+        reports={TASKS: REPORTS},
+        app_id=APP,
+    )
 
 
 async def test_app_url_makes_no_request() -> None:
@@ -169,7 +177,7 @@ async def test_unknown_table_and_report_are_refused() -> None:
 
 
 async def test_read_rules_hide_tables_fields_and_reports() -> None:
-    async with client(FakeSchema(), read_policy=rules(), read_only=True) as qb:
+    async with client(FakeSchema(), policy=rules()) as qb:
         app = qb.app(APP)
         tasks = app.table(TASKS)
         assert await tasks.url() == f"{BASE}/td"
@@ -209,7 +217,7 @@ async def test_compile_where() -> None:
 
 
 async def test_compile_where_refuses_what_a_query_would() -> None:
-    async with client(FakeSchema(), read_policy=rules(), read_only=True) as qb:
+    async with client(FakeSchema(), policy=rules()) as qb:
         tasks = qb.app(APP).table("Tasks")
         with pytest.raises(UnknownFieldError):
             await tasks.compile_where(F("Salary") > 1)
@@ -257,7 +265,7 @@ async def test_report_edit_url() -> None:
 
 
 async def test_read_rules_hide_table_pages() -> None:
-    async with client(FakeSchema(), read_policy=rules(), read_only=True) as qb:
+    async with client(FakeSchema(), policy=rules()) as qb:
         app = qb.app(APP)
         assert await app.table(TASKS).settings_url() == f"{BASE}/KeyProps"
         secret = app.table(SECRET)

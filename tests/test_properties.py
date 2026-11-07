@@ -21,15 +21,15 @@ from pyquickbase import (
     FormulaResult,
     InvalidResponseError,
     InvalidValueError,
+    Policy,
     QueryError,
     RetryPolicy,
-    WriteRefusedError,
     parse_where,
 )
 from pyquickbase._codegen import _attribute_names, render
 from pyquickbase._config import (
     build_url,
-    check_read_only,
+    is_read,
     normalize_realm,
     validate_base_url,
     validate_token,
@@ -47,6 +47,7 @@ from pyquickbase._models import (
 )
 from pyquickbase._query import compile_where, format_value
 from pyquickbase._retry import parse_retry_after
+from pyquickbase._write_request import describe_write
 from pyquickbase._writes import (
     FileUpload,
     WriteResult,
@@ -167,6 +168,9 @@ METHODS = st.sampled_from(
 SAFE_POSTS = {"/records/query", "/formula/run"}
 
 
+READ_ONLY = Policy.read_only().bind_offline()
+
+
 @given(METHODS, PATHS)
 @example("POST", "/reports/1/run\n")
 @example("POST", "/reports/١/run")
@@ -179,11 +183,10 @@ def test_read_only_allows_only_known_reads(method: str, path: str) -> None:
     allowed = method == "POST" and (
         path in SAFE_POSTS or re.fullmatch(r"/reports/[0-9]+/run", path, re.ASCII) is not None
     )
-    if allowed:
-        check_read_only(method, path)
-    else:
-        with pytest.raises(WriteRefusedError):
-            check_read_only(method, path)
+    # The transport sends a known read as it is, and asks the policy about anything else.
+    assert is_read(method, path) == allowed
+    if not allowed:
+        assert not READ_ONLY.decide(describe_write(method, path, None)).allowed
 
 
 @given(PATHS)

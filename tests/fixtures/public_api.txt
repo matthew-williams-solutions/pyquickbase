@@ -45,11 +45,12 @@ class AsyncOperation(object)
 class AsyncQuickbase(object)
     async def __aenter__(self) -> Self
     async def __aexit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: traceback | None) -> None
-    def __init__(self, *, realm: str, token: str, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.AsyncClient | None = None, schema_ttl: float = 300.0, read_only: bool = False, write_policy: Callable[[WriteRequest], bool] | None = None, read_policy: Callable[[ReadRequest], bool] | None = None, confirmation_key: bytes | None = None) -> None
+    def __init__(self, *, realm: str, token: str, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.AsyncClient | None = None, schema_ttl: float = 300.0, policy: Policy | BoundPolicy | None = None, confirmation_key: bytes | None = None) -> None
     async def aclose(self) -> None
     def app(self, app_id: str) -> AsyncApp
     def clear_schema_cache(self) -> None
-    classmethod def from_env(cls, *, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.AsyncClient | None = None, schema_ttl: float = 300.0, read_only: bool = False, write_policy: Callable[[WriteRequest], bool] | None = None, read_policy: Callable[[ReadRequest], bool] | None = None, confirmation_key: bytes | None = None, token_env: str = 'QB_USER_TOKEN') -> Self
+    classmethod def from_env(cls, *, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.AsyncClient | None = None, schema_ttl: float = 300.0, policy: Policy | BoundPolicy | None = None, confirmation_key: bytes | None = None, token_env: str = 'QB_USER_TOKEN') -> Self
+    property policy -> BoundPolicy | None
     property realm -> str
     async def request(self, method: str, path: str, *, params: Mapping[str, Any] | None = None, json: Any = None) -> Any
 class AsyncRecordIterator(object)
@@ -133,6 +134,37 @@ class AuthenticationError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
 class BadRequestError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
+class BoundPolicy(object)
+    def __eq__(self, other: object) -> bool
+    def __init__(self, *, app_id: str | None, offline: bool, tables: Mapping[str, str], fields: Mapping[str, Mapping[int, str]], field_types: Mapping[str, Mapping[int, str]], classes: Mapping[str, Mapping[int, frozenset[str]]], rules: Sequence[pyquickbase._bound._Rule], custom: Sequence[Rule], rows: Mapping[str, tuple[str, str]], row_fields: Mapping[str, frozenset[int]], links: Sequence[pyquickbase._bound._Link], reports: Mapping[str, Mapping[str, tuple[str, str]]], new_fields: str, created: Sequence[tuple[str, str]] = ()) -> None
+    def allows(self, verb: Literal['read', 'filter', 'sort', 'insert', 'update', 'delete', 'download', 'delete_file', 'report', 'run_formula', 'add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table', 'create_tables'], table: str, *, field: str | int | None = None, fields: Sequence[str | int] = (), source: tuple[str, str | int] | None = None) -> Decision
+    def can_create_tables(self, app_id: str) -> bool
+    def classes_of(self, table_id: str, field_id: int) -> frozenset[str]
+    property created -> tuple[str, ...]
+    property created_offers -> frozenset[str]
+    def decide(self, request: ReadRequest | WriteRequest) -> Decision
+    def emails_shown(self, table_id: str) -> bool
+    def explain(self, verb: Literal['read', 'filter', 'sort', 'insert', 'update', 'delete', 'download', 'delete_file', 'report', 'run_formula', 'add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table', 'create_tables'], table: str, *, field: str | int | None = None, fields: Sequence[str | int] = (), source: tuple[str, str | int] | None = None) -> str
+    def field_types(self, table_id: str) -> frozenset[str] | None
+    def filterable(self, table_id: str, field_id: int) -> bool
+    classmethod def from_json(cls, text: str, *, rules: Sequence[Rule] = ()) -> 'BoundPolicy'
+    property hash -> str
+    def hidden_labels(self, table_id: str) -> frozenset[str]
+    def max_delete(self, table_id: str) -> int | None
+    def max_records(self, table_id: str) -> int | None
+    def max_summary_records(self, table_id: str) -> int | None
+    def offers(self, table: str) -> Offers[Named]
+    def offers_for(self, table_id: str, items: Sequence[tuple[~T, str]], field_id: Callable[[~T], int], reports: Sequence[Any] = (), report_key: Callable[[Any], tuple[str, str]] | None = None) -> Offers[~T]
+    def readable(self, table_id: str, field_id: int) -> bool
+    def row_limit(self, table_id: str) -> str | None
+    def row_limit_rule(self, table_id: str) -> str | None
+    def schema_tables(self) -> list[Named]
+    def table_visible(self, table_id: str) -> bool
+    def to_json(self) -> str
+    def trim(self, request: ReadRequest | None, method: str, path: str, payload: Any) -> Any
+    def user_emails(self, table_id: str) -> bool
+    def visible(self, table_id: str, field_id: int) -> bool
+    def with_created(self, table_id: str, name: str) -> 'BoundPolicy'
 value ChangeKind = Literal['create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'create_lookup', 'create_summary', 'delete_relationship']
 class Column(object)
     def __eq__(self, other)
@@ -144,7 +176,7 @@ class Column(object)
     field read_as: str
     field writable: bool
 class ConfigurationError(QuickbaseError, ValueError)
-class ConfirmationError(QueryError)
+class ConfirmationError(QuickbaseError)
 class CreateField(object)
     def __eq__(self, other)
     def __init__(self, *, table: str, label: str, type: str, choices: tuple[str, ...] | None = None, required: bool | None = None, unique: bool | None = None, help_text: str | None = None, formula: str | None = None) -> None
@@ -185,6 +217,19 @@ class CreateTable(object)
     field name: str
     field plural_record_name: str | None
     field single_record_name: str | None
+class Decision(object)
+    def __eq__(self, other)
+    def __init__(self, *, allowed: bool, verb: Literal['read', 'filter', 'sort', 'insert', 'update', 'delete', 'download', 'delete_file', 'report', 'run_formula', 'add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table', 'create_tables'], layer: Literal['policy', 'rows', 'derived', 'confirmation'] = 'policy', rule: str | None = None, reason: str = '', hint: str | None = None, table: Named | None = None, fields: tuple[Named, ...] = ()) -> None
+    field allowed: bool
+    field fields: tuple[Named, ...]
+    field hint: str | None
+    field layer: Literal['policy', 'rows', 'derived', 'confirmation']
+    def message(self) -> str
+    field reason: str
+    field rule: str | None
+    field table: Named | None
+    field verb: Literal['read', 'filter', 'sort', 'insert', 'update', 'delete', 'download', 'delete_file', 'report', 'run_formula', 'add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table', 'create_tables']
+    property what -> str
 class DeleteField(object)
     def __eq__(self, other)
     def __init__(self, *, table: str, field: str | int) -> None
@@ -249,6 +294,11 @@ class FieldChange(object)
     field before: Any
 value FieldRef = str | int
 value FieldRefs = str | int | F | Sequence[str | int | F]
+class FieldSelector(object)
+    def __eq__(self, other)
+    def __init__(self, kind: Literal['all', 'new', 'classed', 'labeled_like', 'named'], values: tuple[str | int, ...] = ()) -> None
+    field kind: Literal['all', 'new', 'classed', 'labeled_like', 'named']
+    field values: tuple[str | int, ...]
 class FileAttachment(object)
     def __eq__(self, other)
     def __init__(self, *, url: str, versions: tuple[FileVersion, ...]) -> None
@@ -281,9 +331,35 @@ class FormulaResult(object)
     property value -> Any
 class InvalidResponseError(QuickbaseError)
 class InvalidValueError(QuickbaseError, ValueError)
+value Layer = Literal['policy', 'rows', 'derived', 'confirmation']
+class Named(object)
+    def __eq__(self, other)
+    def __init__(self, id: str | int, name: str) -> None
+    field id: str | int
+    field name: str
 class NetworkError(QuickbaseError)
 class NotFoundError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
+class Offers(Generic)
+    def __eq__(self, other)
+    def __init__(self, *, table: Named, readable: tuple[~T, ...] = (), filterable: tuple[~T, ...] = (), sortable: tuple[~T, ...] = (), insertable: tuple[~T, ...] = (), updatable: tuple[~T, ...] = (), downloadable: tuple[~T, ...] = (), file_deletable: tuple[~T, ...] = (), can_delete: bool = False, reports: tuple[Any, ...] = (), schema: frozenset[str] = frozenset(), field_types: frozenset[str] | None = None, max_records: int | None = None, max_summary_records: int | None = None, max_delete: int | None = None, user_emails: bool = False, row_limit: str | None = None) -> None
+    field can_delete: bool
+    field downloadable: tuple[~T, ...]
+    field field_types: frozenset[str] | None
+    field file_deletable: tuple[~T, ...]
+    field filterable: tuple[~T, ...]
+    field insertable: tuple[~T, ...]
+    field max_delete: int | None
+    field max_records: int | None
+    field max_summary_records: int | None
+    field readable: tuple[~T, ...]
+    field reports: tuple[Any, ...]
+    field row_limit: str | None
+    field schema: frozenset[str]
+    field sortable: tuple[~T, ...]
+    field table: Named
+    field updatable: tuple[~T, ...]
+    field user_emails: bool
 class Operation(object)
     def __init__(self, table: Table, spec: OperationSpec) -> None
     property name -> Literal['query', 'count', 'summarize', 'insert', 'update', 'delete', 'preview_update', 'preview_delete', 'run_report', 'summary_report', 'run_formula', 'download_file', 'delete_file_version']
@@ -320,36 +396,38 @@ class PlannedChange(object)
     field status: Literal['change', 'no_change', 'blocked']
     field summary: str
     field warnings: tuple[str, ...]
+class Policy(object)
+    def __init__(self, *, app: str | None = None, classes: Mapping[str, Sequence[str | tuple[str, str | int] | FieldSelector]] | None = None, rules: Sequence[PolicyRule | Rule] = (), new_fields: Union[Literal['read', 'hidden'], str] = 'read') -> None
+    def bind(self, app: Any) -> Any
+    def bind_offline(self) -> 'BoundPolicy'
+    property needs_app -> bool
+    classmethod def read_only(cls) -> 'Policy'
+class PolicyRefusedError(QuickbaseError)
+    def __init__(self, decision: Any) -> None
+class PolicyRule(object)
+    def __eq__(self, other)
+    def __init__(self, *, effect: Literal['allow', 'deny', 'limit'], tables: tuple[TableSelector, ...] | None, grants: tuple[Grant, ...], options: Mapping[str, Any] = <factory>, text: str) -> None
+    field effect: Literal['allow', 'deny', 'limit']
+    field grants: tuple[Grant, ...]
+    field options: Mapping[str, Any]
+    field tables: tuple[TableSelector, ...] | None
+    field text: str
 class QueryError(QuickbaseError, ValueError)
 class Quickbase(object)
     def __enter__(self) -> Self
     def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: traceback | None) -> None
-    def __init__(self, *, realm: str, token: str, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.Client | None = None, schema_ttl: float = 300.0, read_only: bool = False, write_policy: Callable[[WriteRequest], bool] | None = None, read_policy: Callable[[ReadRequest], bool] | None = None, confirmation_key: bytes | None = None) -> None
+    def __init__(self, *, realm: str, token: str, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.Client | None = None, schema_ttl: float = 300.0, policy: Policy | BoundPolicy | None = None, confirmation_key: bytes | None = None) -> None
     def app(self, app_id: str) -> App
     def clear_schema_cache(self) -> None
     def close(self) -> None
-    classmethod def from_env(cls, *, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.Client | None = None, schema_ttl: float = 300.0, read_only: bool = False, write_policy: Callable[[WriteRequest], bool] | None = None, read_policy: Callable[[ReadRequest], bool] | None = None, confirmation_key: bytes | None = None, token_env: str = 'QB_USER_TOKEN') -> Self
+    classmethod def from_env(cls, *, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.Client | None = None, schema_ttl: float = 300.0, policy: Policy | BoundPolicy | None = None, confirmation_key: bytes | None = None, token_env: str = 'QB_USER_TOKEN') -> Self
+    property policy -> BoundPolicy | None
     property realm -> str
     def request(self, method: str, path: str, *, params: Mapping[str, Any] | None = None, json: Any = None) -> Any
 class QuickbaseError(Exception)
 class RateLimitError(APIError)
     def __init__(self, summary: str, *, retry_after: float | None = None, **kwargs: object) -> None
-class ReadAccess(object)
-    def __eq__(self, other)
-    def __init__(self, *, fields: bool | Collection[int], filter: bool | Collection[int] | None = None, sort: bool | Collection[int] | None = None, write_only: Collection[int] = (), files: Collection[int] = (), reports: Collection[str | int] = (), summary_reports: Collection[str | int] = (), max_records: int = 100, max_summary_records: int = 10000, user_emails: bool = False) -> None
-    field fields: bool | frozenset[int]
-    field files: frozenset[int]
-    field filter: bool | frozenset[int]
-    field max_records: int
-    field max_summary_records: int
-    field reports: frozenset[str]
-    field sort: bool | frozenset[int]
-    field summary_reports: frozenset[str]
-    field user_emails: bool
-    field write_only: frozenset[int]
 value ReadAction = Literal['query', 'summarize', 'delete', 'report', 'summary_report', 'file', 'formula', 'tables', 'fields', 'relationships', 'reports', 'app', 'roles', 'other']
-value ReadPolicy = Callable[[ReadRequest], bool]
-class ReadRefusedError(RequestRefusedError)
 class ReadRequest(object)
     def __eq__(self, other)
     def __init__(self, *, action: Literal['query', 'summarize', 'delete', 'report', 'summary_report', 'file', 'formula', 'tables', 'fields', 'relationships', 'reports', 'app', 'roles', 'other'], table_id: str | None = None, field_ids: frozenset[int] | None = None, filter_field_ids: frozenset[int] | None = None, sort_field_ids: frozenset[int] | None = None, top: int | None = None, skip: int | None = None, report_id: str | None = None, method: str, path: str) -> None
@@ -363,9 +441,6 @@ class ReadRequest(object)
     field sort_field_ids: frozenset[int] | None
     field table_id: str | None
     field top: int | None
-class ReadRules(object)
-    def __call__(self, request: ReadRequest) -> bool
-    def __init__(self, tables: Mapping[str, ReadAccess], *, new_tables: ReadAccess | None = None) -> None
 class Record(Mapping)
     def __getitem__(self, key: str | int) -> Any
     def __init__(self, values: Mapping[int, Any], labels: Mapping[str, int]) -> None
@@ -406,7 +481,6 @@ class ReportInfo(object)
     field name: str
     field raw: Mapping[str, Any]
     field type: str
-class RequestRefusedError(QuickbaseError)
 class RequestTimeoutError(NetworkError)
 class RetryPolicy(object)
     def __eq__(self, other)
@@ -434,19 +508,9 @@ class RowError(object)
     field index: int
     field kind: Literal['duplicate', 'permission', 'invalid_choice', 'rule', 'other']
     field messages: tuple[str, ...]
-class SchemaAccess(object)
-    def __eq__(self, other)
-    def __init__(self, *, update_table: bool = False, delete_table: bool = False, create_fields: bool = False, update_fields: bool | Collection[int] = False, delete_fields: bool | Collection[int] = False, field_types: Collection[str] | None = None, formulas: bool = False, lookups: bool = False, summaries: bool = False, relationships: bool = False) -> None
-    field create_fields: bool
-    field delete_fields: bool | frozenset[int]
-    field delete_table: bool
-    field field_types: frozenset[str] | None
-    field formulas: bool
-    field lookups: bool
-    field relationships: bool
-    field summaries: bool
-    field update_fields: bool | frozenset[int]
-    field update_table: bool
+class Rule(Protocol)
+    def __init__(self, *args, **kwargs)
+    def decide(self, request: 'ReadRequest | WriteRequest') -> Decision | None
 value SchemaChange = CreateTable | UpdateTable | DeleteTable | CreateField | UpdateField | DeleteField | CreateRelationship | CreateLookupField | CreateSummaryField | DeleteRelationship
 class SchemaChangeError(WriteError)
     def __init__(self, summary: str, *, result: Any = None) -> None
@@ -475,6 +539,7 @@ class SchemaPlan(object)
     field fingerprint: str
     property has_changes -> bool
     property warnings -> tuple[str, ...]
+value SchemaVerb = Literal['add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table']
 value Select = TypedField | Sequence[TypedField] | None
 class ServerError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
@@ -553,7 +618,12 @@ class TableSchema(object)
     field fields: tuple[Field, ...]
     field info: TableInfo
     field relationships: tuple[Relationship, ...]
-value ToolErrorCode = Literal['configuration', 'needs_confirmation', 'invalid_query', 'invalid_value', 'read_refused', 'write_refused', 'refused', 'unknown_table', 'unknown_field', 'unknown_report', 'unsupported_report', 'schema_mismatch', 'partial_write', 'write_failed', 'write_permission', 'authentication', 'permission_denied', 'not_found', 'bad_request', 'rate_limited', 'server_error', 'api_error', 'timeout', 'network', 'invalid_response', 'error', 'internal']
+class TableSelector(object)
+    def __eq__(self, other)
+    def __init__(self, kind: Literal['all', 'created', 'named'], values: tuple[str, ...] = ()) -> None
+    field kind: Literal['all', 'created', 'named']
+    field values: tuple[str, ...]
+value ToolErrorCode = Literal['configuration', 'needs_confirmation', 'invalid_query', 'invalid_value', 'read_refused', 'write_refused', 'unknown_table', 'unknown_field', 'unknown_report', 'unsupported_report', 'schema_mismatch', 'partial_write', 'write_failed', 'write_permission', 'authentication', 'permission_denied', 'not_found', 'bad_request', 'rate_limited', 'server_error', 'api_error', 'timeout', 'network', 'invalid_response', 'error', 'internal']
 class TypedField(F)
     def __eq__(self, value: object) -> Condition
     def __ge__(self, value: Any) -> Condition
@@ -636,27 +706,18 @@ class User(object)
     field id: str
     field name: str
     field user_name: str | None
+value Verb = Literal['read', 'filter', 'sort', 'insert', 'update', 'delete', 'download', 'delete_file', 'report', 'run_formula', 'add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table', 'create_tables']
 class WhereCondition(object)
     def __eq__(self, other)
     def __init__(self, field_id: int, operator: str, value: str) -> None
     field field_id: int
     field operator: str
     field value: str
-class WriteAccess(object)
-    def __eq__(self, other)
-    def __init__(self, *, insert: bool | Collection[int] = False, update: bool | Collection[int] = False, delete: bool = False, delete_files: bool = False, schema: SchemaAccess | None = None) -> None
-    field delete: bool
-    field delete_files: bool
-    field insert: bool | frozenset[int]
-    field schema: SchemaAccess | None
-    field update: bool | frozenset[int]
 value WriteAction = Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'update_relationship', 'delete_relationship', 'other']
 class WriteError(QuickbaseError)
     def __init__(self, summary: str, *, result: Any = None) -> None
 class WritePermissionError(WriteError, PermissionDeniedError)
     def __init__(self, summary: str, *, result: Any = None, status_code: int = 403, **kwargs: Any) -> None
-value WritePolicy = Callable[[WriteRequest], bool]
-class WriteRefusedError(RequestRefusedError)
 class WriteRequest(object)
     def __eq__(self, other)
     def __init__(self, *, action: Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'update_relationship', 'delete_relationship', 'other'], table_id: str | None, field_ids: frozenset[int] | None, row_count: int | None, method: str, path: str, app_id: str | None = None, parent_table_id: str | None = None, field_type: str | None = None, derived: frozenset[Literal['formula', 'lookup', 'summary']] = frozenset()) -> None
@@ -678,11 +739,12 @@ class WriteResult(object)
     field row_ids: tuple[int | None, ...]
     field unchanged_ids: tuple[int, ...]
     field updated_ids: tuple[int, ...]
-class WriteRules(object)
-    def __call__(self, request: WriteRequest) -> bool
-    def __init__(self, tables: Mapping[str, WriteAccess], *, create_tables_in: Collection[str] = (), new_tables: WriteAccess | None = None) -> None
-def all_of(*policies: Any) -> Any
+value allow = <pyquickbase._policy._AllowOnly object>
+value deny = <pyquickbase._policy._Deny object>
+value fields = <pyquickbase._policy._Fields object>
+value limit = <pyquickbase._policy._Limit object>
 def parse_where(where: str, fields: Iterable[Field]) -> list[WhereCondition]
+value tables = <pyquickbase._policy._Tables object>
 def tool_error(error: BaseException) -> dict[str, Any]
 def tool_result(value: Any, *, compact: bool = False, max_records: int | None = None, max_text: int | None = None) -> dict[str, Any]
 def where_from_dict(data: Mapping[str, Any], *, fields: Iterable[str | int] | Iterable[Field] | None = None) -> Expression

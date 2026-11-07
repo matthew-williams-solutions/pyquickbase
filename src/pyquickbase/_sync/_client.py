@@ -9,7 +9,7 @@ from typing import Any, Self
 import httpx
 
 from .._auth import UserTokenAuth
-from .._combine import check_read_policy, check_write_policy
+from .._bound import BoundPolicy
 from .._config import (
     DEFAULT_BASE_URL,
     DEFAULT_TIMEOUT,
@@ -20,8 +20,7 @@ from .._config import (
     validate_base_url,
     validate_token,
 )
-from .._policy import WritePolicy
-from .._read_policy import ReadPolicy
+from .._policy import Policy
 from .._retry import RetryPolicy
 from .._schema import SchemaCache
 from ..errors import ConfigurationError
@@ -48,27 +47,19 @@ class Quickbase:
         http_client: Your own configured httpx client, for proxies, custom TLS, event hooks,
             or custom transports. You remain responsible for closing it.
         schema_ttl: Seconds to cache app, table, and field metadata. Use 0 to disable caching.
-        read_only: Refuse any request that could change data, raising `WriteRefusedError`. Only GET
-            requests, record queries, report runs, and formula runs are sent, including through
-            `request()`. Running a report adds to its usage count in Quickbase, but changes no
-            records.
-        write_policy: A function that decides on each write, usually `WriteRules`, for limits by
-            table, action, and field. It takes a `WriteRequest`, and only a return value of `True`
-            lets the write through. Otherwise, it raises `WriteRefusedError` and isn't sent.
-        read_policy: A function that decides on each read, usually `ReadRules`, for limits by
-            table, field, report, and number of records. It takes a `ReadRequest`, and only a
-            return value of `True` lets the read through. Otherwise, it raises `ReadRefusedError`
-            and isn't sent. `ReadRules` also leaves out of each response, and of metadata, what it
-            doesn't allow. It works with any of the limits on writes.
+        policy: What the client may do, as a `BoundPolicy` from `Policy.bind()`, or a `Policy`
+            that names no table or field, such as `Policy.read_only()`. Every request is checked
+            before it's sent, including through `request()`, and a refused one raises
+            `PolicyRefusedError`. What the policy hides is left out of every response, so a hidden
+            field acts as if it didn't exist. Without one, the client does whatever the token can.
         confirmation_key: The secret that signs the confirmations an operation's preview returns,
             at least 32 random bytes, such as from `secrets.token_bytes(32)`. Give several clients,
             or processes, the same key so that any of them accepts a preview another made. Without
             it, each client makes its own.
 
     Raises:
-        ConfigurationError: `realm`, `token`, or `base_url` can't be used, or the limits on writes
-            conflict, such as `read_only` with `write_policy`, or a policy is passed as the wrong
-            kind.
+        ConfigurationError: `realm`, `token`, or `base_url` can't be used, or `policy` names
+            tables or fields but isn't bound.
     """
 
     def __init__(
@@ -82,9 +73,7 @@ class Quickbase:
         user_agent: str | None = None,
         http_client: httpx.Client | None = None,
         schema_ttl: float = DEFAULT_SCHEMA_TTL,
-        read_only: bool = False,
-        write_policy: WritePolicy | None = None,
-        read_policy: ReadPolicy | None = None,
+        policy: Policy | BoundPolicy | None = None,
         confirmation_key: bytes | None = None,
     ) -> None:
         self._realm = normalize_realm(realm)
@@ -96,9 +85,7 @@ class Quickbase:
             timeout=timeout,
             user_agent=build_user_agent(user_agent),
             http_client=http_client,
-            read_only=read_only,
-            write_policy=check_write_policy(write_policy, read_only=read_only),
-            read_policy=check_read_policy(read_policy),
+            policy=_check_policy(policy),
             confirmation_key=_check_key(confirmation_key),
         )
         self._schema = SchemaCache(schema_ttl)
@@ -113,9 +100,7 @@ class Quickbase:
         user_agent: str | None = None,
         http_client: httpx.Client | None = None,
         schema_ttl: float = DEFAULT_SCHEMA_TTL,
-        read_only: bool = False,
-        write_policy: WritePolicy | None = None,
-        read_policy: ReadPolicy | None = None,
+        policy: Policy | BoundPolicy | None = None,
         confirmation_key: bytes | None = None,
         token_env: str = ENV_TOKEN,
     ) -> Self:
@@ -143,11 +128,15 @@ class Quickbase:
             user_agent=user_agent,
             http_client=http_client,
             schema_ttl=schema_ttl,
-            read_only=read_only,
-            write_policy=write_policy,
-            read_policy=read_policy,
+            policy=policy,
             confirmation_key=confirmation_key,
         )
+
+    @property
+    def policy(self) -> BoundPolicy | None:
+        """The client's current policy. Creating a table replaces it with one that knows the
+        table, so save this one with `to_json()` to use it elsewhere."""
+        return self._transport.policy
 
     @property
     def realm(self) -> str:
@@ -189,7 +178,7 @@ class Quickbase:
         """Call any Quickbase endpoint directly and return its decoded JSON body.
 
         This is the escape hatch for endpoints without a dedicated method. The client's retries
-        and its limits on writes and reads still apply.
+        and its policy still apply.
 
         Args:
             method: The HTTP method, such as `GET`.
@@ -201,10 +190,7 @@ class Quickbase:
             The decoded JSON body, or None if the response is empty.
 
         Raises:
-            WriteRefusedError: The client's limits on writes don't allow this request. It wasn't
-                sent.
-            ReadRefusedError: The client's `read_policy` doesn't allow this request. It wasn't
-                sent.
+            PolicyRefusedError: The client's policy doesn't allow this request. It wasn't sent.
             APIError: Quickbase returned an error. This is a subclass such as `NotFoundError` or
                 `PermissionDeniedError`, for the status it returned.
         """
@@ -227,6 +213,14 @@ class Quickbase:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(realm={self._realm!r})"
+
+
+def _check_policy(policy: Any) -> BoundPolicy | None:
+    if policy is None or isinstance(policy, BoundPolicy):
+        return policy
+    if isinstance(policy, Policy):
+        return policy.bind_offline()
+    raise ConfigurationError("policy takes a Policy or a BoundPolicy.")
 
 
 def _check_key(key: bytes | None) -> bytes | None:

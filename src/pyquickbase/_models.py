@@ -146,8 +146,8 @@ class Field:
         summary_target_field_id: For a summary, the field it reads on the child.
         summary_function: For a summary, Quickbase's name for its calculation, such as `SUM`.
         summary_query: For a summary, the filter on which child records it combines, such as
-            `{7.EX.true}`, or None for all of them. On a client with `ReadRules` it's always None,
-            as a field's details don't say which table the filter reads.
+            `{7.EX.true}`, or None for all of them. On a client with a policy it's None unless the
+            client can read every field the filter uses on the child table.
         raw: Everything Quickbase returned, for anything not listed here.
     """
 
@@ -375,7 +375,7 @@ class User:
     Attributes:
         id: The user's ID.
         name: The user's name, as Quickbase shows it.
-        email: The user's email address, or None if the client's `ReadRules` leave it out.
+        email: The user's email address, or None if the client's policy leaves it out.
         user_name: The user's Quickbase user name, if Quickbase sent one.
     """
 
@@ -397,7 +397,7 @@ class FileVersion:
         file_name: The file's name. Quickbase stores names as sent, such as `../../x`, so don't use
             this as a path without cleaning it.
         uploaded: When it was uploaded, or None if Quickbase didn't say.
-        creator: Who uploaded it, or None if the client's `ReadRules` leave it out.
+        creator: Who uploaded it, or None if the client's policy leaves it out.
     """
 
     number: int
