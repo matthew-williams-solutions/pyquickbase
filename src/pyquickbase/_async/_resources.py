@@ -924,7 +924,7 @@ class AsyncTable:
         where: Expression | str | None = None,
         select: FieldRefs | None = None,
         order_by: FieldRefs | None = None,
-        top: int = 100,
+        limit: int = 100,
         skip: int = 0,
     ) -> Page:
         """Fetch one page of records, for controlling paging yourself.
@@ -936,7 +936,7 @@ class AsyncTable:
             order_by: The fields to sort by, by label, ID, or field object. Prefix a label with `-`,
                 or negate an ID, to sort descending. Without this, records come back in Record ID#
                 order.
-            top: The most records to return.
+            limit: The most records to return.
             skip: How many matching records to pass over first. Use the previous page's `next_skip`.
 
         Returns:
@@ -947,11 +947,11 @@ class AsyncTable:
             UnknownFieldError: The table has no such field. Nothing was queried.
             QueryError: An argument can't be sent as written. Nothing was queried.
         """
-        _require_positive("top", top)
+        _require_positive("limit", limit)
         if skip < 0:
             raise QueryError("skip can't be negative.")
         body = await self._query_body(where, select, order_by)
-        return await self._fetch_page(body, top, skip)
+        return await self._fetch_page(body, limit, skip)
 
     def query(
         self,
@@ -960,7 +960,7 @@ class AsyncTable:
         select: FieldRefs | None = None,
         order_by: FieldRefs | None = None,
         page_size: int = 1000,
-        limit: int | None = None,
+        max_total: int | None = None,
     ) -> AsyncRecordIterator:
         """Iterate over matching records, fetching further pages as needed.
 
@@ -972,7 +972,7 @@ class AsyncTable:
                 or negate an ID, to sort descending. Without this, records come back in Record ID#
                 order.
             page_size: Records to request per call to Quickbase.
-            limit: Stop after this many records.
+            max_total: Stop after this many records in all, across pages.
 
         Returns:
             An iterator of `Record`, which only contacts Quickbase once you start iterating.
@@ -980,13 +980,16 @@ class AsyncTable:
         Raises:
             UnknownFieldError: The table has no such field. Nothing was queried.
             QueryError: An argument can't be sent as written. Nothing was queried. `page_size` and
-                `limit` raise this right away, and the others on first use.
+                `max_total` raise this right away, and the others on first use.
         """
         _require_positive("page_size", page_size)
-        if limit is not None:
-            _require_positive("limit", limit)
+        if max_total is not None:
+            _require_positive("max_total", max_total)
         return AsyncRecordIterator(
-            lambda: self._query_body(where, select, order_by), self._fetch_page, page_size, limit
+            lambda: self._query_body(where, select, order_by),
+            self._fetch_page,
+            page_size,
+            max_total,
         )
 
     async def first(
@@ -1011,7 +1014,7 @@ class AsyncTable:
             UnknownFieldError: The table has no such field. Nothing was queried.
             QueryError: An argument can't be sent as written. Nothing was queried.
         """
-        page = await self.query_page(where=where, select=select, order_by=order_by, top=1)
+        page = await self.query_page(where=where, select=select, order_by=order_by, limit=1)
         return page.records[0] if page.records else None
 
     async def get(self, record_id: int, *, select: FieldRefs | None = None) -> Record | None:
@@ -1088,21 +1091,21 @@ class AsyncTable:
 
     async def insert(
         self,
-        rows: Iterable[RowInput],
+        records: Iterable[RowInput],
         *,
         batch_size: int = DEFAULT_BATCH_SIZE,
         timeout: float | None = None,
     ) -> WriteResult:
-        """Create records from `{label or ID: value}` rows. This never changes existing records.
+        """Create records from `{label or ID: value}` dictionaries. It never changes existing ones.
 
         So it refuses a table whose key field isn't `Record ID#`, where Quickbase would change the
         record when a row has an existing value in that field. Use `upsert()` on those tables.
 
         Args:
-            rows: The records to create, as `{label or ID: value}` dictionaries. A value of `None`
-                leaves the field empty, but a row needs at least one real value, because Quickbase
-                can silently skip a row without one.
-            batch_size: The most rows to send in one request.
+            records: The records to create, as `{label or ID: value}` dictionaries. A value of
+                `None` leaves the field empty, but a row needs at least one real value, because
+                Quickbase can silently skip a row without one.
+            batch_size: The most records to send in one request.
             timeout: Seconds to allow for each step of each request, instead of the client's
                 `timeout`, such as for a large file. It applies with your own `http_client` too.
 
@@ -1113,12 +1116,12 @@ class AsyncTable:
             InvalidValueError: A row can't be sent, such as one that sets `Record ID#` or has no
                 real values, or the table's key field isn't `Record ID#`. Nothing was written.
             UnknownFieldError: A row names a field the table doesn't have. Nothing was written.
-            WriteError: A row failed. Other rows are still written, and are listed in the error's
+            WriteError: A row failed. Other records are still written, and are listed in the error's
                 `result`.
         """
         _require_positive("batch_size", batch_size)
         _require_timeout(timeout)
-        given = list(rows)
+        given = list(records)
         built = await self._with_fields(lambda fields: build_rows(given, FieldIndex(fields)))
         key_field_id = (await self.info()).key_field_id
         if key_field_id not in (None, RECORD_ID_FIELD):
@@ -1129,7 +1132,7 @@ class AsyncTable:
 
     async def update(
         self,
-        rows: Iterable[RowInput],
+        records: Iterable[RowInput],
         *,
         batch_size: int = DEFAULT_BATCH_SIZE,
         timeout: float | None = None,
@@ -1139,9 +1142,9 @@ class AsyncTable:
         A record that doesn't exist is an error rather than being created.
 
         Args:
-            rows: The changes, as `{label or ID: value}` dictionaries that each set `Record ID#`.
+            records: The changes, as `{label or ID: value}` dictionaries that each set `Record ID#`.
                 Fields left out of a row keep their values, and a value of `None` clears the field.
-            batch_size: The most rows to send in one request.
+            batch_size: The most records to send in one request.
             timeout: Seconds to allow for each step of each request, instead of the client's
                 `timeout`, such as for a large file. It applies with your own `http_client` too.
 
@@ -1153,19 +1156,19 @@ class AsyncTable:
             InvalidValueError: A row can't be sent, such as one without `Record ID#`. Nothing was
                 written.
             UnknownFieldError: A row names a field the table doesn't have. Nothing was written.
-            WriteError: A row failed. Other rows are still written, and are listed in the error's
+            WriteError: A row failed. Other records are still written, and are listed in the error's
                 `result`.
         """
         _require_positive("batch_size", batch_size)
         _require_timeout(timeout)
-        given = list(rows)
+        given = list(records)
         built = await self._with_fields(lambda fields: build_rows(given, FieldIndex(fields)))
         require_field(built, RECORD_ID_FIELD, "so update() can't tell which record to change")
         return await self._write(built, RECORD_ID_FIELD, batch_size, timeout)
 
     async def upsert(
         self,
-        rows: Iterable[RowInput],
+        records: Iterable[RowInput],
         *,
         merge_on: FieldRef,
         batch_size: int = DEFAULT_BATCH_SIZE,
@@ -1174,11 +1177,11 @@ class AsyncTable:
         """Update the record whose unique `merge_on` field matches, or create one if none does.
 
         Args:
-            rows: The records, as `{label or ID: value}` dictionaries that each set `merge_on`.
+            records: The records, as `{label or ID: value}` dictionaries that each set `merge_on`.
                 Fields left out of a row keep their values on a record that already exists.
             merge_on: The field that identifies a record, by label or ID. Quickbase requires it to
                 be marked as unique.
-            batch_size: The most rows to send in one request.
+            batch_size: The most records to send in one request.
             timeout: Seconds to allow for each step of each request, instead of the client's
                 `timeout`, such as for a large file. It applies with your own `http_client` too.
 
@@ -1192,12 +1195,12 @@ class AsyncTable:
             UnknownFieldError: `merge_on` or a row names a field the table doesn't have. Nothing was
                 written.
             BadRequestError: `merge_on` isn't a unique field. Nothing was written.
-            WriteError: A row failed. Other rows are still written, and are listed in the error's
+            WriteError: A row failed. Other records are still written, and are listed in the error's
                 `result`.
         """
         _require_positive("batch_size", batch_size)
         _require_timeout(timeout)
-        given = list(rows)
+        given = list(records)
 
         def build(fields: list[Field]) -> tuple[list[dict[str, Any]], int]:
             index = FieldIndex(fields)
@@ -1251,10 +1254,10 @@ class AsyncTable:
         group_by: SummaryGroups | None = None,
         *,
         where: Expression | str | None = None,
-        total: FieldRefs | None = None,
-        average: FieldRefs | None = None,
-        minimum: FieldRefs | None = None,
-        maximum: FieldRefs | None = None,
+        sum: FieldRefs | None = None,
+        avg: FieldRefs | None = None,
+        min: FieldRefs | None = None,
+        max: FieldRefs | None = None,
         max_records: int | None = None,
         page_size: int = 1000,
     ) -> list[SummaryRow]:
@@ -1268,10 +1271,10 @@ class AsyncTable:
             group_by: The fields to group by, and `Period` for dates. Without this, the result is
                 one row for all the matching records.
             where: A condition built with `F` or `where_from_dict()`, or a hand-written string.
-            total: Numeric fields to add up. Empty values are skipped.
-            average: Numeric fields to average. Empty values are skipped.
-            minimum: Numeric, date, timestamp, or time of day fields to find the lowest of.
-            maximum: Numeric, date, timestamp, or time of day fields to find the highest of.
+            sum: Numeric fields to add up. Empty values are skipped.
+            avg: Numeric fields to average. Empty values are skipped.
+            min: Numeric, date, timestamp, or time of day fields to find the lowest of.
+            max: Numeric, date, timestamp, or time of day fields to find the highest of.
             max_records: Raise `QueryError` if more records match than this, without reading them.
                 It never returns a partial result. An agent's tool should always set this. A
                 client's policy can set a limit of its own, `max_summary_records`.
@@ -1283,7 +1286,7 @@ class AsyncTable:
             0.
 
         Raises:
-            QueryError: An argument can't be used, such as a text field in `total`, or more records
+            QueryError: An argument can't be used, such as a text field in `sum`, or more records
                 match than `max_records`. No records were read.
             UnknownFieldError: The table has no such field. No records were read.
             PolicyRefusedError: More records match than the client's policy allows summarizing,
@@ -1297,10 +1300,10 @@ class AsyncTable:
             lambda fields: Summary(
                 fields,
                 group_by=group_by,
-                total=total,
-                average=average,
-                minimum=minimum,
-                maximum=maximum,
+                sum=sum,
+                avg=avg,
+                min=min,
+                max=max,
             )
         )
         allowed = self._transport.summary_limit((await self.info()).id)
@@ -1347,7 +1350,7 @@ class AsyncTable:
         *,
         select: FieldRefs | None = None,
         order_by: FieldRefs | None = None,
-        top: int = 100,
+        limit: int = 100,
     ) -> Page:
         """Show what `delete()` would delete with the same `where`, without deleting anything.
 
@@ -1359,7 +1362,7 @@ class AsyncTable:
                 checks it. It's required, so that leaving it out can't look like a safe preview.
             select: The fields to return. Defaults to the table's default fields.
             order_by: Which matching records come first. See `query`.
-            top: The most records to return. `total` still counts every match.
+            limit: The most records to return. `total` still counts every match.
 
         Returns:
             A `Page`, whose `total` is how many records would be deleted.
@@ -1370,19 +1373,19 @@ class AsyncTable:
         """
         if where is None:  # pyright: ignore[reportUnnecessaryComparison]
             raise QueryError("preview_delete() needs where, as delete() does.")
-        return await self.query_page(where=where, select=select, order_by=order_by, top=top)
+        return await self.query_page(where=where, select=select, order_by=order_by, limit=limit)
 
-    async def preview_update(self, rows: Iterable[RowInput]) -> UpdatePreview:
-        """Show what `update()` would change with the same rows, without changing anything.
+    async def preview_update(self, records: Iterable[RowInput]) -> UpdatePreview:
+        """Show what `update()` would change with the same records, without changing anything.
 
         This only reads, so it works on a read-only client. Records can change before an update, so
         it can't promise what the update will do. It also can't tell whether Quickbase will accept
         a value, such as a role that can't edit a field, or one of the table's data rules.
 
         Args:
-            rows: The rows you'd pass to `update()`. If a record is in several rows, a later row
-                wins. `Record ID#` must be a positive integer here, even as a string works in
-                `update()`.
+            records: The records you'd pass to `update()`. If a record is in several of them, a
+                later one wins. `Record ID#` must be a positive integer here, even as a string
+                works in `update()`.
 
         Returns:
             An `UpdatePreview`, with `changes`, `unchanged_ids`, and `missing_ids`. A value counts
@@ -1394,7 +1397,7 @@ class AsyncTable:
                 read.
             UnknownFieldError: A row names a field the table doesn't have. Nothing was read.
         """
-        given = list(rows)
+        given = list(records)
         built = await self._with_fields(lambda fields: build_rows(given, FieldIndex(fields)))
         require_field(built, RECORD_ID_FIELD, "so preview_update() can't tell which record")
         merged = merge_rows(built)
@@ -1403,7 +1406,7 @@ class AsyncTable:
         for ids in id_batches(list(merged), limit):
             select = sorted({field_id for record_id in ids for field_id in merged[record_id]})
             page = await self.query_page(
-                where=F(RECORD_ID_FIELD).is_in(ids), select=select, top=len(ids)
+                where=F(RECORD_ID_FIELD).is_in(ids), select=select, limit=len(ids)
             )
             current.update({record.id: record for record in page.records})
         return build_update_preview(merged, current, FieldIndex(await self.fields()))
@@ -2427,14 +2430,14 @@ class AsyncReport:
         )
         return parse(page_from_api, payload, "report")
 
-    async def run_page(self, *, top: int = 100, skip: int = 0) -> Page:
+    async def run_page(self, *, limit: int = 100, skip: int = 0) -> Page:
         """Fetch one page of the report's records, for controlling paging yourself.
 
         Records hold only the report's columns, and each run adds to the report's usage count in
         Quickbase.
 
         Args:
-            top: The most records to return.
+            limit: The most records to return.
             skip: How many records to pass over first. Use the previous page's `next_skip`.
 
         Returns:
@@ -2445,12 +2448,12 @@ class AsyncReport:
             UnsupportedReportError: It isn't a complete table report, such as a summary, chart, or
                 ask-the-user report.
         """
-        _require_positive("top", top)
+        _require_positive("limit", limit)
         if skip < 0:
             raise QueryError("skip can't be negative.")
-        return await self._fetch_page(await self._load_target(), top, skip)
+        return await self._fetch_page(await self._load_target(), limit, skip)
 
-    def run(self, *, page_size: int = 1000, limit: int | None = None) -> AsyncRecordIterator:
+    def run(self, *, page_size: int = 1000, max_total: int | None = None) -> AsyncRecordIterator:
         """Iterate over the report's records, fetching further pages as needed.
 
         Records hold only the report's columns, so `record.id` raises `KeyError` if Record ID#
@@ -2458,7 +2461,7 @@ class AsyncReport:
 
         Args:
             page_size: Records to request per call to Quickbase.
-            limit: Stop after this many records.
+            max_total: Stop after this many records in all, across pages.
 
         Returns:
             An iterator of `Record`, which only contacts Quickbase once you start iterating.
@@ -2469,12 +2472,12 @@ class AsyncReport:
                 ask-the-user report. Their raw results are available through `qb.request()`.
         """
         _require_positive("page_size", page_size)
-        if limit is not None:
-            _require_positive("limit", limit)
-        return AsyncRecordIterator(self._load_target, self._fetch_page, page_size, limit)
+        if max_total is not None:
+            _require_positive("max_total", max_total)
+        return AsyncRecordIterator(self._load_target, self._fetch_page, page_size, max_total)
 
     async def summary_rows(
-        self, *, page_size: int = 1000, limit: int | None = None
+        self, *, page_size: int = 1000, max_total: int | None = None
     ) -> list[dict[str, Any]]:
         """Get a summary or chart report's rows, as `{column label: value}`.
 
@@ -2484,7 +2487,7 @@ class AsyncReport:
 
         Args:
             page_size: Rows to request per call to Quickbase.
-            limit: Stop after this many rows.
+            max_total: Stop after this many rows in all, across pages.
 
         Returns:
             The rows. A summary report's total column is labeled like `Hours (tot)`.
@@ -2497,14 +2500,14 @@ class AsyncReport:
             InvalidResponseError: Quickbase stopped returning rows before the end.
         """
         _require_positive("page_size", page_size)
-        if limit is not None:
-            _require_positive("limit", limit)
+        if max_total is not None:
+            _require_positive("max_total", max_total)
         info = await self.info()
         require_summary_report(info)
         table_id = (await self._table.info()).id
         rows: list[dict[str, Any]] = []
         while True:
-            top = page_size if limit is None else min(page_size, limit - len(rows))
+            top = page_size if max_total is None else min(page_size, max_total - len(rows))
             # Quickbase silently ignores top and skip in the body and returns every row.
             payload = await self._transport.request(
                 "POST",
@@ -2514,7 +2517,7 @@ class AsyncReport:
             )
             page, total = parse(summary_rows_from_api, payload, "report")
             rows.extend(page)
-            if len(rows) >= total or len(rows) == limit:
+            if len(rows) >= total or len(rows) == max_total:
                 return rows
             if not page:
                 raise InvalidResponseError(
@@ -2811,7 +2814,7 @@ class AsyncTypedTable(Generic[R]):
         select: Select = None,
         order_by: OrderBy = None,
         page_size: int = 1000,
-        limit: int | None = None,
+        max_total: int | None = None,
     ) -> "AsyncTypedIterator[R]":
         """Iterate over matching records as instances of the class. See `Table.query`.
 
@@ -2824,14 +2827,14 @@ class AsyncTypedTable(Generic[R]):
                 `Tasks.fields.title.desc` for descending. Without this, records come back in
                 Record ID# order.
             page_size: Records to request per call to Quickbase.
-            limit: Stop after this many records.
+            max_total: Stop after this many records in all, across pages.
 
         Returns:
             A `TypedIterator`, which only contacts Quickbase once you start iterating.
 
         Raises:
             SchemaMismatchError: The class no longer matches the table.
-            QueryError: `where`, `select`, `page_size`, or `limit` can't be sent as written.
+            QueryError: `where`, `select`, `page_size`, or `max_total` can't be sent as written.
                 Nothing was sent.
             InvalidResponseError: A record has a fraction in a whole number field.
         """
@@ -2841,7 +2844,7 @@ class AsyncTypedTable(Generic[R]):
             select=column_ids(self._model) if only is None else only,
             order_by=order_refs(order_by),
             page_size=page_size,
-            limit=limit,
+            max_total=max_total,
         )
         return AsyncTypedIterator(self._check_once, self._model, records, only)
 
@@ -2851,7 +2854,7 @@ class AsyncTypedTable(Generic[R]):
         where: Expression | str | None = None,
         select: Select = None,
         order_by: OrderBy = None,
-        top: int = 100,
+        limit: int = 100,
         skip: int = 0,
     ) -> TypedPage[R]:
         """Fetch one page of records as instances of the class, for controlling paging yourself.
@@ -2864,7 +2867,7 @@ class AsyncTypedTable(Generic[R]):
             order_by: A field or list of fields, such as `Tasks.fields.title`, or
                 `Tasks.fields.title.desc` for descending. Without this, records come back in
                 Record ID# order.
-            top: The most records to return.
+            limit: The most records to return.
             skip: How many matching records to pass over first. Use the previous page's `next_skip`.
 
         Returns:
@@ -2872,7 +2875,7 @@ class AsyncTypedTable(Generic[R]):
 
         Raises:
             SchemaMismatchError: The class no longer matches the table.
-            QueryError: `where`, `select`, `top`, or `skip` can't be sent as written. Nothing was
+            QueryError: `where`, `select`, `limit`, or `skip` can't be sent as written. Nothing was
                 sent.
             InvalidResponseError: A record has a fraction in a whole number field.
         """
@@ -2882,7 +2885,7 @@ class AsyncTypedTable(Generic[R]):
             where=where,
             select=column_ids(self._model) if only is None else only,
             order_by=order_refs(order_by),
-            top=top,
+            limit=limit,
             skip=skip,
         )
         records = tuple(self._model.from_record(record, only=only) for record in page.records)
@@ -2964,16 +2967,16 @@ class AsyncTypedTable(Generic[R]):
 
     async def insert(
         self,
-        rows: Iterable[Row[R]],
+        records: Iterable[Row[R]],
         *,
         batch_size: int = DEFAULT_BATCH_SIZE,
         timeout: float | None = None,
     ) -> WriteResult:
-        """Create records from rows made with `Tasks.new()`. See `Table.insert`.
+        """Create records from ones made with `Tasks.new()`. See `Table.insert`.
 
         Args:
-            rows: The rows, from `Tasks.new()`.
-            batch_size: The most rows to send in one request.
+            records: The records, from `Tasks.new()`.
+            batch_size: The most records to send in one request.
             timeout: Seconds to allow for each step of each request, instead of the client's
                 `timeout`, such as for a large file. It applies with your own `http_client` too.
 
@@ -2983,10 +2986,10 @@ class AsyncTypedTable(Generic[R]):
         Raises:
             SchemaMismatchError: The class no longer matches the table.
             InvalidValueError: A row was made by a class for another table. Nothing was written.
-            WriteError: A row failed. Other rows are still written, and are listed in the error's
+            WriteError: A row failed. Other records are still written, and are listed in the error's
                 `result`.
         """
-        given = rows_for(self._model, rows)
+        given = rows_for(self._model, records)
         await self._check_once()
         return await self._table.insert(
             cast(Iterable[RowInput], given), batch_size=batch_size, timeout=timeout
@@ -2994,16 +2997,16 @@ class AsyncTypedTable(Generic[R]):
 
     async def update(
         self,
-        rows: Iterable[Row[R]],
+        records: Iterable[Row[R]],
         *,
         batch_size: int = DEFAULT_BATCH_SIZE,
         timeout: float | None = None,
     ) -> WriteResult:
-        """Change records from rows made with `Tasks.change()`. See `Table.update`.
+        """Change records from ones made with `Tasks.change()`. See `Table.update`.
 
         Args:
-            rows: The rows, from `Tasks.change()`. Fields you leave out keep their values.
-            batch_size: The most rows to send in one request.
+            records: The records, from `Tasks.change()`. Fields you leave out keep their values.
+            batch_size: The most records to send in one request.
             timeout: Seconds to allow for each step of each request, instead of the client's
                 `timeout`, such as for a large file. It applies with your own `http_client` too.
 
@@ -3014,10 +3017,10 @@ class AsyncTypedTable(Generic[R]):
         Raises:
             SchemaMismatchError: The class no longer matches the table.
             InvalidValueError: A row was made by a class for another table. Nothing was written.
-            WriteError: A row failed. Other rows are still written, and are listed in the error's
+            WriteError: A row failed. Other records are still written, and are listed in the error's
                 `result`.
         """
-        given = rows_for(self._model, rows)
+        given = rows_for(self._model, records)
         await self._check_once()
         return await self._table.update(
             cast(Iterable[RowInput], given), batch_size=batch_size, timeout=timeout
@@ -3025,7 +3028,7 @@ class AsyncTypedTable(Generic[R]):
 
     async def upsert(
         self,
-        rows: Iterable[Row[R]],
+        records: Iterable[Row[R]],
         *,
         merge_on: TypedField,
         batch_size: int = DEFAULT_BATCH_SIZE,
@@ -3034,9 +3037,9 @@ class AsyncTypedTable(Generic[R]):
         """Update the record whose unique `merge_on` field matches. See `Table.upsert`.
 
         Args:
-            rows: The rows, from `Tasks.new()`, which must each set `merge_on`.
+            records: The records, from `Tasks.new()`, which must each set `merge_on`.
             merge_on: A field marked as unique, such as `Tasks.fields.code`.
-            batch_size: The most rows to send in one request.
+            batch_size: The most records to send in one request.
             timeout: Seconds to allow for each step of each request, instead of the client's
                 `timeout`, such as for a large file. It applies with your own `http_client` too.
 
@@ -3047,10 +3050,10 @@ class AsyncTypedTable(Generic[R]):
         Raises:
             SchemaMismatchError: The class no longer matches the table.
             InvalidValueError: A row was made by a class for another table. Nothing was written.
-            WriteError: A row failed. Other rows are still written, and are listed in the error's
+            WriteError: A row failed. Other records are still written, and are listed in the error's
                 `result`.
         """
-        given = rows_for(self._model, rows)
+        given = rows_for(self._model, records)
         await self._check_once()
         return await self._table.upsert(
             cast(Iterable[RowInput], given),
@@ -3081,10 +3084,10 @@ class AsyncTypedTable(Generic[R]):
         group_by: SummaryGroups | None = None,
         *,
         where: Expression | str | None = None,
-        total: FieldRefs | None = None,
-        average: FieldRefs | None = None,
-        minimum: FieldRefs | None = None,
-        maximum: FieldRefs | None = None,
+        sum: FieldRefs | None = None,
+        avg: FieldRefs | None = None,
+        min: FieldRefs | None = None,
+        max: FieldRefs | None = None,
         max_records: int | None = None,
         page_size: int = 1000,
     ) -> list[SummaryRow]:
@@ -3097,10 +3100,10 @@ class AsyncTypedTable(Generic[R]):
             group_by: The fields to group by, such as `Tasks.fields.status`, and `Period` for dates.
                 Without this, the result is one row for all the matching records.
             where: A condition built with `Tasks.fields` or `F`, or a hand-written string.
-            total: Numeric fields to add up, such as `Tasks.fields.hours`.
-            average: Numeric fields to average.
-            minimum: Numeric, date, timestamp, or time of day fields to find the lowest of.
-            maximum: Numeric, date, timestamp, or time of day fields to find the highest of.
+            sum: Numeric fields to add up, such as `Tasks.fields.hours`.
+            avg: Numeric fields to average.
+            min: Numeric, date, timestamp, or time of day fields to find the lowest of.
+            max: Numeric, date, timestamp, or time of day fields to find the highest of.
             max_records: Raise `QueryError` if more records match than this, without reading them.
             page_size: Records to request per call to Quickbase.
 
@@ -3115,23 +3118,23 @@ class AsyncTypedTable(Generic[R]):
         return await self._table.summarize(
             group_by,
             where=where,
-            total=total,
-            average=average,
-            minimum=minimum,
-            maximum=maximum,
+            sum=sum,
+            avg=avg,
+            min=min,
+            max=max,
             max_records=max_records,
             page_size=page_size,
         )
 
     async def preview_delete(
-        self, where: Expression | str, *, order_by: OrderBy = None, top: int = 100
+        self, where: Expression | str, *, order_by: OrderBy = None, limit: int = 100
     ) -> TypedPage[R]:
         """Show what `delete()` would delete, as instances of the class. See `Table.preview_delete`.
 
         Args:
             where: A condition built with `Tasks.fields` or `F`, or a hand-written string.
             order_by: Which matching records come first, as for `query()`.
-            top: The most records to return. `total` still counts every match.
+            limit: The most records to return. `total` still counts every match.
 
         Returns:
             A `TypedPage`, whose `total` is how many records would be deleted.
@@ -3142,16 +3145,16 @@ class AsyncTypedTable(Generic[R]):
         """
         await self._check_once()
         page = await self._table.preview_delete(
-            where, select=column_ids(self._model), order_by=order_refs(order_by), top=top
+            where, select=column_ids(self._model), order_by=order_refs(order_by), limit=limit
         )
         records = tuple(self._model.from_record(record) for record in page.records)
         return TypedPage(records=records, total=page.total, skip=page.skip)
 
-    async def preview_update(self, rows: Iterable[Row[R]]) -> UpdatePreview:
+    async def preview_update(self, records: Iterable[Row[R]]) -> UpdatePreview:
         """Show what `update()` would change. See `Table.preview_update`.
 
         Args:
-            rows: The rows you'd pass to `update()`, from `Tasks.change()`.
+            records: The records you'd pass to `update()`, from `Tasks.change()`.
 
         Returns:
             An `UpdatePreview`, with `changes`, `unchanged_ids`, and `missing_ids`.
@@ -3160,7 +3163,7 @@ class AsyncTypedTable(Generic[R]):
             SchemaMismatchError: The class no longer matches the table.
             InvalidValueError: A row was made by a class for another table. Nothing was read.
         """
-        given = rows_for(self._model, rows)
+        given = rows_for(self._model, records)
         await self._check_once()
         return await self._table.preview_update(cast(Iterable[RowInput], given))
 

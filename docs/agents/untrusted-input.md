@@ -70,7 +70,7 @@ def search_tasks(project: str, where: dict) -> list[dict]:
     with Quickbase.from_env(policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         condition = (F("Project") == project) & where_from_dict(where, fields=FILTERABLE)
-        return [dict(task) for task in tasks.query(where=condition, select=["Title"], limit=50)]
+        return [dict(task) for task in tasks.query(where=condition, select=["Title"], max_total=50)]
 ```
 
 Return a `QueryError` or `UnknownFieldError` to the model as the tool's result, with

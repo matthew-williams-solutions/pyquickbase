@@ -46,7 +46,7 @@ A `ReadRequest` says what a read would do:
 | `action` | `query`, `summarize`, `delete`, `report`, `summary_report`, `file`, `formula`, `tables`, `fields`, `relationships`, `reports`, `app`, `roles`, or `other` |
 | `table_id` | The table's ID |
 | `field_ids`, `filter_field_ids`, `sort_field_ids` | The fields it returns, filters on, and sorts by |
-| `top`, `skip` | How many records it asks for, and how many it passes over |
+| `limit`, `skip` | How many records it asks for, which Quickbase calls `top`, and how many it passes over |
 | `report_id` | The report it runs |
 | `method`, `path` | The HTTP request, for anything `action` doesn't cover |
 

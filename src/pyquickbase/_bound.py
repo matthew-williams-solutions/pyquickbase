@@ -169,7 +169,7 @@ def _query(table_id: str, **kwargs: Any) -> ReadRequest:
         "field_ids": frozenset(),
         "filter_field_ids": frozenset(),
         "sort_field_ids": frozenset(),
-        "top": 1,
+        "limit": 1,
         "skip": 0,
     }
     return ReadRequest(
@@ -529,13 +529,13 @@ class BoundPolicy:
         if limit is None:
             return None
         table = request.table_id
-        if request.top is None or request.skip is None:
+        if request.limit is None or request.skip is None:
             reason = "It doesn't say how many records to return, so it would get all of them"
-        elif request.top + request.skip > limit:
+        elif request.limit + request.skip > limit:
             reason = (
                 f"The policy allows reaching at most {limit} records, counting skip, set by "
                 f"{name}, which is how far paging can go, not only the size of a page. Ask for "
-                "fewer with limit or top, or narrow the filter"
+                "fewer records with limit, or narrow the filter"
             )
         else:
             return None
@@ -1171,7 +1171,7 @@ class BoundPolicy:
             request = ReadRequest(
                 action=action,
                 table_id=table_id,
-                top=1,
+                limit=1,
                 skip=0,
                 report_id=report_id,
                 method="POST",

@@ -49,13 +49,13 @@ def test_reading_mistakes_are_refused_before_querying(scratch: Any) -> None:
     with pytest.raises(QueryError):
         table.query_page(where="{6.ex.'x'}")
     with pytest.raises(QueryError):
-        table.query_page(top=0)
+        table.query_page(limit=0)
     with pytest.raises(QueryError):
         table.query_page(skip=-1)
     with pytest.raises(QueryError):
         table.query(page_size=0)
     with pytest.raises(QueryError):
-        table.query(limit=0)
+        table.query(max_total=0)
     with pytest.raises(QueryError):
         table.query_page(order_by=1.5)
     with pytest.raises(InvalidValueError):
@@ -86,7 +86,7 @@ def test_reading_values_and_pages(scratch: Any) -> None:
     seen: list[str] = []
     skip = 0
     while True:
-        page = table.query_page(select=["Title"], top=2, skip=skip)
+        page = table.query_page(select=["Title"], limit=2, skip=skip)
         assert page.total == 5
         seen += [item["Title"] for item in page.records]
         if not page.has_more:
@@ -96,10 +96,10 @@ def test_reading_values_and_pages(scratch: Any) -> None:
     assert page.next_skip == 5
 
     # Running past the end isn't an error.
-    beyond = table.query_page(top=2, skip=50)
+    beyond = table.query_page(limit=2, skip=50)
     assert (len(beyond.records), beyond.total, beyond.has_more) == (0, 5, False)
 
-    newest = list(table.query(select=["Title"], order_by="-Title", limit=2))
+    newest = list(table.query(select=["Title"], order_by="-Title", max_total=2))
     assert [item["Title"] for item in newest] == ["Row 5", "Row 4"]
     assert table.count(F("Title") == "Row 1") == 1
 

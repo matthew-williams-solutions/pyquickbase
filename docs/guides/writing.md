@@ -16,9 +16,9 @@ client, use `await` on each call.
 
 | Method | What it does |
 |---|---|
-| `table.insert(rows)` | Creates records, and never changes existing ones |
-| `table.update(rows)` | Changes records. Each row needs a `Record ID#` |
-| `table.upsert(rows, merge_on="Code")` | Updates the record whose unique field matches, or creates one |
+| `table.insert(records)` | Creates records, and never changes existing ones |
+| `table.update(records)` | Changes records. Each one needs a `Record ID#` |
+| `table.upsert(records, merge_on="Code")` | Updates the record whose unique field matches, or creates one |
 | `table.delete(where)` | Deletes matching records and returns the count |
 
 ## Writing values
@@ -143,7 +143,7 @@ report a listed record as unchanged, but a preview doesn't leave out a change it
 ```python
 from pyquickbase import F
 
-page = tasks.preview_delete(F("Status") == "Cancelled", select=["Title"], top=25)
+page = tasks.preview_delete(F("Status") == "Cancelled", select=["Title"], limit=25)
 print(page.total, [task["Title"] for task in page.records])
 ```
 

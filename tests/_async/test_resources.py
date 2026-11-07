@@ -199,7 +199,7 @@ async def test_query_limit() -> None:
     server = FakeQuickbase(total=5)
     async with client(server) as qb:
         table = qb.app(APP).table("Tasks")
-        assert [r.id async for r in table.query(limit=3, page_size=2)] == [1, 2, 3]
+        assert [r.id async for r in table.query(max_total=3, page_size=2)] == [1, 2, 3]
     assert [body["options"]["top"] for body in server.bodies()] == [2, 1]
 
 
@@ -230,7 +230,7 @@ async def test_query_refuses_a_stuck_response_instead_of_truncating() -> None:
 async def test_query_page() -> None:
     server = FakeQuickbase(total=5)
     async with client(server) as qb:
-        page = await qb.app(APP).table("Tasks").query_page(top=2, skip=2)
+        page = await qb.app(APP).table("Tasks").query_page(limit=2, skip=2)
     assert [record.id for record in page.records] == [3, 4]
     assert (page.total, page.has_more, page.next_skip) == (5, True, 4)
 
@@ -247,7 +247,7 @@ async def test_count_fetches_only_one_record() -> None:
 
 @pytest.mark.parametrize(
     "arguments",
-    [{"top": 0}, {"top": -1}, {"skip": -1}],
+    [{"limit": 0}, {"limit": -1}, {"skip": -1}],
 )
 async def test_query_page_rejects_bad_paging_without_sending(arguments: dict[str, int]) -> None:
     server = FakeQuickbase(total=5)
@@ -257,7 +257,7 @@ async def test_query_page_rejects_bad_paging_without_sending(arguments: dict[str
     assert server.requests == []
 
 
-@pytest.mark.parametrize("arguments", [{"page_size": 0}, {"limit": 0}])
+@pytest.mark.parametrize("arguments", [{"page_size": 0}, {"max_total": 0}])
 async def test_query_rejects_bad_paging_when_called(arguments: dict[str, int]) -> None:
     server = FakeQuickbase(total=5)
     async with client(server) as qb:

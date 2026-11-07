@@ -257,12 +257,12 @@ def test_write_results() -> None:
 
 def test_summaries() -> None:
     rows = [
-        SummaryRow(group={"Status": "Open"}, count=2, total={"Hours": 20.0}),
-        SummaryRow(group={"Status": None}, count=1, minimum={"Due": date(2027, 1, 1)}),
+        SummaryRow(group={"Status": "Open"}, count=2, sum={"Hours": 20.0}),
+        SummaryRow(group={"Status": None}, count=1, min={"Due": date(2027, 1, 1)}),
     ]
     assert tool_result(rows)["groups"] == [
-        {"group": {"Status": "Open"}, "count": 2, "total": {"Hours": 20.0}},
-        {"group": {"Status": None}, "count": 1, "minimum": {"Due": "2027-01-01"}},
+        {"group": {"Status": "Open"}, "count": 2, "sum": {"Hours": 20.0}},
+        {"group": {"Status": None}, "count": 1, "min": {"Due": "2027-01-01"}},
     ]
     assert tool_result([SummaryRow(count=3)])["groups"] == [{"group": {}, "count": 3}]
 

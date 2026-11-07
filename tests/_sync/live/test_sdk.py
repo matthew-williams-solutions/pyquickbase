@@ -368,14 +368,14 @@ def test_paging_and_sorting(qb: Quickbase, scratch: Any, seeded: str) -> None:
     table = get(qb, scratch, seeded)
     descending = [r["Code"] for r in table.query(select=["Code"], order_by="-Amount", page_size=2)]
     assert descending == ["C5", "C4", "C3", "C2", "C1"]
-    assert len([r for r in table.query(limit=3, page_size=2)]) == 3
-    page = table.query_page(select=["Code"], order_by="Code", top=2, skip=2)
+    assert len([r for r in table.query(max_total=3, page_size=2)]) == 3
+    page = table.query_page(select=["Code"], order_by="Code", limit=2, skip=2)
     assert isinstance(page, Page)
     assert (page.total, page.skip, page.next_skip, page.has_more) == (5, 2, 4, True)
     assert [r["Code"] for r in page.records] == ["C3", "C4"]
-    last = table.query_page(top=2, skip=4)
+    last = table.query_page(limit=2, skip=4)
     assert not last.has_more
-    assert (table.query_page(top=2, skip=100)).records == ()
+    assert (table.query_page(limit=2, skip=100)).records == ()
 
 
 def test_writes_report_what_they_did(qb: Quickbase, scratch: Any, seeded: str) -> None:
@@ -452,8 +452,8 @@ def test_reports(qb: Quickbase, scratch: Any, seeded: str) -> None:
     assert (table.report("1").info()).name == "List All"
     records = [r for r in report.run(page_size=2)]
     assert len(records) == 5
-    assert (report.run_page(top=2, skip=1)).total == 5
-    assert len([r for r in report.run(limit=1)]) == 1
+    assert (report.run_page(limit=2, skip=1)).total == 5
+    assert len([r for r in report.run(max_total=1)]) == 1
     with pytest.raises(UnknownReportError):
         table.report("No Such Report").info()
 
@@ -640,20 +640,20 @@ def test_generated_classes_read_a_page_at_a_time(
     tasks = qb.app(scratch.app_id).typed(Tasks)
     where = Tasks.fields.amount > 1
 
-    first = tasks.query_page(where=where, order_by=Tasks.fields.amount.desc, top=2)
+    first = tasks.query_page(where=where, order_by=Tasks.fields.amount.desc, limit=2)
     assert all(isinstance(task, Tasks) for task in first.records)
     assert [task.code for task in first.records] == ["C5", "C4"]
     assert first.records[0].due_date == date(2027, 1, 5)
-    assert (first.total, first.skip, first.has_more, first.next_skip) == (4, 0, True, 2)
+    assert (first.sum, first.skip, first.has_more, first.next_skip) == (4, 0, True, 2)
 
     last = tasks.query_page(
-        where=where, order_by=Tasks.fields.amount.desc, top=2, skip=first.next_skip
+        where=where, order_by=Tasks.fields.amount.desc, limit=2, skip=first.next_skip
     )
     assert [task.code for task in last.records] == ["C3", "C2"]
     assert (last.skip, last.has_more, last.next_skip) == (2, False, 4)
 
     # The untyped table takes the same fields, and sorts the same way.
-    untyped = tasks.table.query_page(where=where, order_by=Tasks.fields.amount, top=1)
+    untyped = tasks.table.query_page(where=where, order_by=Tasks.fields.amount, limit=1)
     assert untyped.records[0]["Code"] == "C2"
     assert (tasks.table.first(order_by=Tasks.fields.amount.desc))["Code"] == "C5"
 
@@ -933,7 +933,7 @@ def test_previews_match_what_the_write_then_does(qb: Quickbase, scratch: Any, se
 def test_a_delete_preview_matches_the_delete(qb: Quickbase, scratch: Any, seeded: str) -> None:
     table = get(qb, scratch, seeded)
     where = where_from_dict({"field": "Amount", "op": ">=", "value": 4})
-    page = table.preview_delete(where, select=["Code"], top=1)
+    page = table.preview_delete(where, select=["Code"], limit=1)
     assert page.total == 2
     assert len(page.records) == 1
     assert table.count() == 5
@@ -961,18 +961,16 @@ def test_summarize_matches_the_records(qb: Quickbase, scratch: Any, seeded: str)
             for r in table.query(where=F("Code").is_in(["C1", "C2"]), select=["Code"])
         ]
     )
-    overall = table.summarize(
-        total="Amount", average="Amount", minimum=["Amount", "Due Date"], maximum="Started"
-    )
+    overall = table.summarize(sum="Amount", avg="Amount", min=["Amount", "Due Date"], max="Started")
     assert len(overall) == 1
     assert overall[0].count == 7
-    assert overall[0].total == {"Amount": 25}
-    assert overall[0].average == {"Amount": 25 / 6}
-    assert overall[0].minimum == {"Amount": 1, "Due Date": date(2027, 1, 1)}
-    assert overall[0].maximum == {"Started": datetime(2027, 3, 4, 2, tzinfo=UTC)}
+    assert overall[0].sum == {"Amount": 25}
+    assert overall[0].avg == {"Amount": 25 / 6}
+    assert overall[0].min == {"Amount": 1, "Due Date": date(2027, 1, 1)}
+    assert overall[0].max == {"Started": datetime(2027, 3, 4, 2, tzinfo=UTC)}
 
-    by_done = table.summarize("Done", total="Amount")
-    assert [(row.group["Done"], row.count, row.total["Amount"]) for row in by_done] == [
+    by_done = table.summarize("Done", sum="Amount")
+    assert [(row.group["Done"], row.count, row.sum["Amount"]) for row in by_done] == [
         (False, 5, 22),
         (True, 2, 3),
     ]
@@ -985,9 +983,9 @@ def test_summarize_matches_the_records(qb: Quickbase, scratch: Any, seeded: str)
     assert [row.group["Started"] for row in by_day] == ["2027-03-03"]
 
     filtered = table.summarize(
-        where=where_from_dict({"field": "Amount", "op": ">", "value": 3}), total="Amount"
+        where=where_from_dict({"field": "Amount", "op": ">", "value": 3}), sum="Amount"
     )
-    assert (filtered[0].count, filtered[0].total) == (3, {"Amount": 19})
+    assert (filtered[0].count, filtered[0].sum) == (3, {"Amount": 19})
 
     with pytest.raises(QueryError, match="max_records"):
         table.summarize(max_records=6)
@@ -1014,7 +1012,7 @@ def test_summary_and_chart_reports_read_as_rows(qb: Quickbase, scratch: Any) -> 
         {"Task Name": "Book room", "Field Type Sample (tot)": 1},
         {"Task Name": "Prepare agenda", "Field Type Sample (tot)": 1},
     ]
-    assert table.report("API Summary Test").summary_rows(page_size=1, limit=1) == summary[:1]
+    assert table.report("API Summary Test").summary_rows(page_size=1, max_total=1) == summary[:1]
     assert table.report("API Chart Test").summary_rows(page_size=1) == chart
     with pytest.raises(UnsupportedReportError, match="summary_rows"):
         table.report("API Summary Test").run_page()

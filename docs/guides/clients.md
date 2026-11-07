@@ -18,7 +18,7 @@ with Quickbase(realm="acme", token="your_user_token") as qb:
 async def main() -> None:
     async with AsyncQuickbase(realm="acme", token="your_user_token") as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        async for task in tasks.query(where=F("Status") == "Open", limit=5):
+        async for task in tasks.query(where=F("Status") == "Open", max_total=5):
             print(task["Title"])
 
 

@@ -151,7 +151,7 @@ def settings_for(code: str, world: Any, tasks: Any, monkeypatch: Any) -> dict[st
         qb=world.qb,
         app=world.app,
         tasks=tasks,
-        rows=ROWS,
+        records=ROWS,
         status="Open",
         Tasks=module.Tasks,
     )

@@ -16,7 +16,7 @@ from pyquickbase import Policy, Quickbase
 
 with Quickbase.from_env(policy=Policy.read_only()) as qb:
     tasks = qb.app("bq1234567").table("Tasks")
-    for task in tasks.query(select=["Title"], limit=3):
+    for task in tasks.query(select=["Title"], max_total=3):
         print(task["Title"])
 ```
 

@@ -135,7 +135,7 @@ async def test_default_queries_return_only_allowed_fields(
 ) -> None:
     async with await limited(scratch, policy(scratch, table, ids)) as qb:
         tasks = qb.app(scratch.app_id).table(table.info().id)
-        records = [record async for record in tasks.query(limit=10)]
+        records = [record async for record in tasks.query(max_total=10)]
     assert len(records) == 2
     allowed = {"Record ID#", "Title", "Status", "Attachment", "Record Owner"}
     assert all(set(record) <= allowed for record in records)
@@ -153,8 +153,8 @@ async def test_filters_sorts_and_windows_are_held_to_the_rules(
         with pytest.raises(PolicyRefusedError, match="sorting"):
             await tasks.first(order_by="Title")
         with pytest.raises(PolicyRefusedError, match="at most 1"):
-            [record async for record in tasks.query(limit=2)]
-        page = await tasks.query_page(top=1)
+            [record async for record in tasks.query(max_total=2)]
+        page = await tasks.query_page(limit=1)
         assert (len(page.records), page.total, page.has_more) == (1, 2, True)
 
 
@@ -179,12 +179,12 @@ async def test_a_listed_report_loses_hidden_columns(
         tasks = qb.app(scratch.app_id).table(table.info().id)
         # An unlisted report looks as if it doesn't exist.
         with pytest.raises(UnknownReportError):
-            await tasks.report(LIST_ALL).run_page(top=5)
+            await tasks.report(LIST_ALL).run_page(limit=5)
     async with await limited(scratch, policy(scratch, table, ids, reports=[LIST_ALL])) as qb:
         tasks = qb.app(scratch.app_id).table(table.info().id)
         assert [item.id for item in await tasks.reports()] == [LIST_ALL]
         assert all("query" not in item.raw for item in await tasks.reports())
-        page = await tasks.report(LIST_ALL).run_page(top=5)
+        page = await tasks.report(LIST_ALL).run_page(limit=5)
     assert page.records
     hidden = {"Notes", "Echo"}
     assert all(not hidden & set(record) for record in page.records)

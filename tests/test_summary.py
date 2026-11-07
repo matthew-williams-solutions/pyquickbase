@@ -48,7 +48,7 @@ def rec(**values: Any) -> Record:
 
 
 def summarize(records: list[Record], group_by: Any = None, **options: Any) -> list[SummaryRow]:
-    plan = dict.fromkeys(("total", "average", "minimum", "maximum"))
+    plan = dict.fromkeys(("sum", "avg", "min", "max"))
     plan.update(options)
     summary = Summary(FIELDS, group_by=group_by, **plan)
     for record in records:
@@ -62,12 +62,12 @@ def test_counting_everything() -> None:
 
 
 def test_no_records_is_one_empty_row_without_groups() -> None:
-    row = summarize([], total="Hours", average="Hours", minimum="Hours", maximum="Hours")[0]
+    row = summarize([], sum="Hours", avg="Hours", min="Hours", max="Hours")[0]
     assert row.count == 0
-    assert row.total == {"Hours": 0}
-    assert row.average == {"Hours": None}
-    assert row.minimum == {"Hours": None}
-    assert row.maximum == {"Hours": None}
+    assert row.sum == {"Hours": 0}
+    assert row.avg == {"Hours": None}
+    assert row.min == {"Hours": None}
+    assert row.max == {"Hours": None}
 
 
 def test_no_records_is_an_empty_list_with_groups() -> None:
@@ -83,36 +83,36 @@ def test_grouping_and_every_calculation() -> None:
             rec(Status="a", Hours=None),
         ],
         group_by="Status",
-        total="Hours",
-        average="Hours",
-        minimum="Hours",
-        maximum="Hours",
+        sum="Hours",
+        avg="Hours",
+        min="Hours",
+        max="Hours",
     )
     assert [row.group for row in rows] == [{"Status": "a"}, {"Status": "b"}]
     first, second = rows
     assert first.count == 2  # The empty value still counts as a record.
-    assert first.total == {"Hours": 2}
-    assert first.average == {"Hours": 2}  # And doesn't count toward the average.
+    assert first.sum == {"Hours": 2}
+    assert first.avg == {"Hours": 2}  # And doesn't count toward the average.
     assert second.count == 2
-    assert second.total == {"Hours": 5}
-    assert second.average == {"Hours": 2.5}
-    assert second.minimum == {"Hours": 1}
-    assert second.maximum == {"Hours": 4}
+    assert second.sum == {"Hours": 5}
+    assert second.avg == {"Hours": 2.5}
+    assert second.min == {"Hours": 1}
+    assert second.max == {"Hours": 4}
 
 
 def test_totals_are_exact() -> None:
-    rows = summarize([rec(Price=0.1) for _ in range(3)], total="Price", average="Price")
-    assert rows[0].total == {"Price": 0.3}  # 0.1 + 0.1 + 0.1 is 0.30000000000000004 as floats.
-    assert rows[0].average == {"Price": 0.1}
+    rows = summarize([rec(Price=0.1) for _ in range(3)], sum="Price", avg="Price")
+    assert rows[0].sum == {"Price": 0.3}  # 0.1 + 0.1 + 0.1 is 0.30000000000000004 as floats.
+    assert rows[0].avg == {"Price": 0.1}
 
 
 def test_a_field_can_be_used_several_ways_and_by_id_or_f() -> None:
     row = summarize(
-        [rec(Hours=2, Price=3)], total=[7, F("Price")], average="Hours", maximum=["Hours", "Price"]
+        [rec(Hours=2, Price=3)], sum=[7, F("Price")], avg="Hours", max=["Hours", "Price"]
     )[0]
-    assert row.total == {"Hours": 2, "Price": 3}
-    assert row.average == {"Hours": 2}
-    assert row.maximum == {"Hours": 2, "Price": 3}
+    assert row.sum == {"Hours": 2, "Price": 3}
+    assert row.avg == {"Hours": 2}
+    assert row.max == {"Hours": 2, "Price": 3}
 
 
 def test_several_groups_and_empty_ones_sort_last() -> None:
@@ -218,31 +218,31 @@ def test_minimums_and_maximums_of_dates_and_times() -> None:
             rec(Due=date(2026, 1, 1), Started=datetime(2026, 1, 1, tzinfo=UTC), At="09:00:00"),
             rec(Due=None, Started=None, At=""),
         ],
-        minimum=["Due", "Started", "At"],
-        maximum=["Due", "At", "Record ID#"],
+        min=["Due", "Started", "At"],
+        max=["Due", "At", "Record ID#"],
     )[0]
-    assert row.minimum == {
+    assert row.min == {
         "Due": date(2026, 1, 1),
         "Started": datetime(2026, 1, 1, tzinfo=UTC),
         "At": "09:00:00",
     }
-    assert row.maximum == {"Due": date(2027, 1, 1), "At": "13:30:00", "Record ID#": None}
+    assert row.max == {"Due": date(2027, 1, 1), "At": "13:30:00", "Record ID#": None}
 
 
 def test_durations_add_up() -> None:
-    assert summarize([rec(Spent=1000), rec(Spent=500)], total="Spent")[0].total == {"Spent": 1500}
+    assert summarize([rec(Spent=1000), rec(Spent=500)], sum="Spent")[0].sum == {"Spent": 1500}
 
 
 @pytest.mark.parametrize(
     "options",
     [
-        {"total": "Status"},
-        {"average": "Due"},
-        {"total": "Done"},
-        {"total": "Record ID#"},
-        {"minimum": "Status"},
-        {"maximum": "Owner"},
-        {"total": [None]},
+        {"sum": "Status"},
+        {"avg": "Due"},
+        {"sum": "Done"},
+        {"sum": "Record ID#"},
+        {"min": "Status"},
+        {"max": "Owner"},
+        {"sum": [None]},
         {"group_by": "Tags"},
         {"group_by": "Team"},
         {"group_by": "File"},
@@ -262,7 +262,7 @@ def test_arguments_it_cant_use_are_refused(options: dict[str, Any]) -> None:
 
 @pytest.mark.parametrize(
     "options",
-    [{"group_by": "Nope"}, {"total": "Nope"}, {"total": True}, {"group_by": Period("Nope", "day")}],
+    [{"group_by": "Nope"}, {"sum": "Nope"}, {"sum": True}, {"group_by": Period("Nope", "day")}],
 )
 def test_unknown_fields_are_refused(options: dict[str, Any]) -> None:
     with pytest.raises(UnknownFieldError):
@@ -288,12 +288,12 @@ def test_bad_periods_are_refused(arguments: tuple[Any, ...]) -> None:
 @pytest.mark.parametrize(
     ("record", "options"),
     [
-        (rec(Hours="abc"), {"total": "Hours"}),
-        (rec(Hours=True), {"average": "Hours"}),
-        (rec(Hours=[1]), {"total": "Hours"}),
-        (rec(Hours="abc"), {"maximum": "Hours"}),
-        (rec(Due="soon"), {"minimum": "Due"}),
-        (rec(At=5), {"minimum": "At"}),
+        (rec(Hours="abc"), {"sum": "Hours"}),
+        (rec(Hours=True), {"avg": "Hours"}),
+        (rec(Hours=[1]), {"sum": "Hours"}),
+        (rec(Hours="abc"), {"max": "Hours"}),
+        (rec(Due="soon"), {"min": "Due"}),
+        (rec(At=5), {"min": "At"}),
         (rec(Due="soon"), {"group_by": Period("Due", "month")}),
         (rec(Status=["a"]), {"group_by": "Status"}),
         (rec(Owner={"name": "No email or ID"}), {"group_by": "Owner"}),
@@ -308,9 +308,9 @@ def test_a_value_that_doesnt_match_its_type_raises_rather_than_being_skipped(
 
 def test_errors_and_reprs_dont_show_values() -> None:
     with pytest.raises(InvalidResponseError) as caught:
-        summarize([rec(Hours="s3cret")], total="Hours")
+        summarize([rec(Hours="s3cret")], sum="Hours")
     assert "s3cret" not in str(caught.value)
-    row = summarize([rec(Status="s3cret", Hours=1)], group_by="Status", total="Hours")[0]
+    row = summarize([rec(Status="s3cret", Hours=1)], group_by="Status", sum="Hours")[0]
     assert "s3cret" not in repr(row)
     assert "Status" in repr(row)
 
@@ -319,10 +319,10 @@ def test_it_only_selects_the_fields_it_needs() -> None:
     summary = Summary(
         FIELDS,
         group_by=["Status", Period("Due", "year")],
-        total="Hours",
-        average="Hours",
-        minimum="Price",
-        maximum=None,
+        sum="Hours",
+        avg="Hours",
+        min="Price",
+        max=None,
     )
     assert summary.select == [6, 8, 7, 14]
 
@@ -335,25 +335,25 @@ def test_results_match_a_plain_calculation(pairs: list[tuple[str, float | None]]
     rows = summarize(
         [rec(Status=status, Hours=hours) for status, hours in pairs],
         group_by="Status",
-        total="Hours",
-        average="Hours",
-        minimum="Hours",
-        maximum="Hours",
+        sum="Hours",
+        avg="Hours",
+        min="Hours",
+        max="Hours",
     )
     assert [row.group["Status"] for row in rows] == sorted({status for status, _ in pairs})
     assert sum(row.count for row in rows) == len(pairs)
     for row in rows:
         values = [h for s, h in pairs if s == row.group["Status"] and h is not None]
         assert row.count == sum(1 for s, _ in pairs if s == row.group["Status"])
-        assert math.isclose(row.total["Hours"], math.fsum(values), abs_tol=1e-6)
+        assert math.isclose(row.sum["Hours"], math.fsum(values), abs_tol=1e-6)
         if values:
             assert math.isclose(
-                row.average["Hours"] or 0.0, statistics.fmean(values), rel_tol=1e-6, abs_tol=1e-6
+                row.avg["Hours"] or 0.0, statistics.fmean(values), rel_tol=1e-6, abs_tol=1e-6
             )
-            assert row.minimum["Hours"] == min(values)
-            assert row.maximum["Hours"] == max(values)
+            assert row.min["Hours"] == min(values)
+            assert row.max["Hours"] == max(values)
         else:
-            assert row.average["Hours"] is None
+            assert row.avg["Hours"] is None
 
 
 @given(st.dates(min_value=date(1900, 1, 1), max_value=date(2100, 12, 31)))

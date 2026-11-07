@@ -32,7 +32,7 @@ def open_tasks(project: str, skip: int = 0) -> dict:
         with Quickbase.from_env(policy=Policy.read_only()) as qb:
             tasks = qb.app("bq1234567").table("Tasks")
             where = (F("Project") == project) & (F("Status") == "Open")
-            page = tasks.query_page(where=where, select=["Title", "Due Date"], top=50, skip=skip)
+            page = tasks.query_page(where=where, select=["Title", "Due Date"], limit=50, skip=skip)
         return tool_result(page, compact=True)
     except QuickbaseError as error:
         return tool_error(error)
@@ -177,7 +177,7 @@ from pyquickbase import AsyncTable, F, tool_result
 
 
 async def list_open_tasks(tasks: AsyncTable) -> dict:
-    page = await tasks.query_page(where=F("Status") == "Open", top=50)
+    page = await tasks.query_page(where=F("Status") == "Open", limit=50)
     # https://<realm>/nav/app/<app ID>/table/<table ID>/action/dr?rid={Record ID#}
     pattern = await tasks.record_url_pattern()
     return {**tool_result(page), "record_link": pattern}
@@ -218,12 +218,12 @@ def task_totals(project: str, where: dict | None = None) -> dict:
         with Quickbase.from_env(policy=Policy.read_only()) as qb:
             tasks = qb.app("bq1234567").table("Tasks")
             rows = tasks.summarize(
-                group_by="Status", where=condition, total="Amount", max_records=5000
+                group_by="Status", where=condition, sum="Amount", max_records=5000
             )
         return tool_result(rows)
     except QuickbaseError as error:
         return tool_error(error)
 ```
 
-`tool_result()` writes dates in `minimum` and `maximum` as text, as it does everywhere. A `max_records`
+`tool_result()` writes dates in `min` and `max` as text, as it does everywhere. A `max_records`
 that's exceeded is an `invalid_arguments`, whose message says how many records matched.

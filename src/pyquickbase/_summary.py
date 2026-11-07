@@ -66,20 +66,20 @@ class SummaryRow:
         group: The values that define this group, or empty without `group_by`. An empty value is
             None, and a user is their email.
         count: How many records are in the group, including those with empty values.
-        total: The sum of each `total` field, which is 0 if every value is empty.
-        average: The average of each `average` field, or None if every value is empty.
-        minimum: The lowest value of each `minimum` field, or None if every value is empty.
-        maximum: The highest value of each `maximum` field, or None if every value is empty.
+        sum: The sum of each `sum` field, which is 0 if every value is empty.
+        avg: The average of each `avg` field, or None if every value is empty.
+        min: The lowest value of each `min` field, or None if every value is empty.
+        max: The highest value of each `max` field, or None if every value is empty.
 
     `repr` shows only the row's shape, because values may be sensitive and reprs end up in logs.
     """
 
     group: Mapping[str, Any] = field(default_factory=dict[str, Any])
     count: int = 0
-    total: Mapping[str, float] = field(default_factory=dict[str, float])
-    average: Mapping[str, float | None] = field(default_factory=dict[str, float | None])
-    minimum: Mapping[str, Any] = field(default_factory=dict[str, Any])
-    maximum: Mapping[str, Any] = field(default_factory=dict[str, Any])
+    sum: Mapping[str, float] = field(default_factory=dict[str, float])
+    avg: Mapping[str, float | None] = field(default_factory=dict[str, float | None])
+    min: Mapping[str, Any] = field(default_factory=dict[str, Any])
+    max: Mapping[str, Any] = field(default_factory=dict[str, Any])
 
     def __repr__(self) -> str:
         return f"SummaryRow(group={sorted(self.group)!r}, count={self.count!r})"
@@ -136,17 +136,17 @@ class Summary:
         all_fields: Sequence[Field],
         *,
         group_by: SummaryGroups | None,
-        total: FieldRefs | None,
-        average: FieldRefs | None,
-        minimum: FieldRefs | None,
-        maximum: FieldRefs | None,
+        sum: FieldRefs | None,
+        avg: FieldRefs | None,
+        min: FieldRefs | None,
+        max: FieldRefs | None,
     ) -> None:
         self._index = FieldIndex(all_fields)
         self._groups = self._resolve_groups(group_by)
-        self._total = self._numeric(total, "total")
-        self._average = self._numeric(average, "average")
-        self._minimum = self._ranged(minimum, "minimum")
-        self._maximum = self._ranged(maximum, "maximum")
+        self._total = self._numeric(sum, "sum")
+        self._average = self._numeric(avg, "avg")
+        self._minimum = self._ranged(min, "min")
+        self._maximum = self._ranged(max, "max")
         # Totals and averages share a running sum.
         self._summed = {item.id: item for item in (*self._total, *self._average)}
         self._ranged_fields = {item.id: item for item in (*self._minimum, *self._maximum)}
@@ -272,10 +272,10 @@ class Summary:
         return SummaryRow(
             group={item.label: value for (item, _), value in zip(self._groups, key, strict=True)},
             count=group.count,
-            total={item.label: float(group.totals.get(item.id, 0)) for item in self._total},
-            average={item.label: average(item) for item in self._average},
-            minimum={item.label: group.lowest.get(item.id) for item in self._minimum},
-            maximum={item.label: group.highest.get(item.id) for item in self._maximum},
+            sum={item.label: float(group.totals.get(item.id, 0)) for item in self._total},
+            avg={item.label: average(item) for item in self._average},
+            min={item.label: group.lowest.get(item.id) for item in self._minimum},
+            max={item.label: group.highest.get(item.id) for item in self._maximum},
         )
 
     def rows(self) -> list[SummaryRow]:

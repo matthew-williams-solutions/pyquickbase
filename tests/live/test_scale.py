@@ -70,7 +70,7 @@ def test_paging_by_hand_and_query_filters(big: Any) -> None:
     assert big.count(where) == 2500
     skip, seen = 0, 0
     while True:
-        page = big.query_page(select=["Amount"], where=where, top=1000, skip=skip)
+        page = big.query_page(select=["Amount"], where=where, limit=1000, skip=skip)
         seen += len(page.records)
         if not page.has_more:
             break
@@ -127,7 +127,7 @@ def test_wide_rows_are_split_and_all_come_back(scratch: Any) -> None:
     sizes: list[int] = []
     skip = 0
     while True:
-        page = table.query_page(select=["Title", "Note"], top=rows, skip=skip)
+        page = table.query_page(select=["Title", "Note"], limit=rows, skip=skip)
         sizes.append(len(page.records))
         assert page.records or not page.has_more
         if not page.has_more:

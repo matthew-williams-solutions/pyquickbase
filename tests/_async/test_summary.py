@@ -126,11 +126,11 @@ async def test_it_reads_every_page_and_only_the_fields_it_needs() -> None:
     fake = Fake(total=25)
     async with client(fake, policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        rows = await tasks.summarize("Status", total="Hours", page_size=10)
+        rows = await tasks.summarize("Status", sum="Hours", page_size=10)
     assert [query["options"]["skip"] for query in fake.queries] == [0, 10, 20]
     assert fake.queries[0]["select"] == [3, 6, 7]
     assert [(row.group["Status"], row.count) for row in rows] == [("a", 12), ("b", 13)]
-    assert sum(row.total["Hours"] for row in rows) == sum(range(25))
+    assert sum(row.sum["Hours"] for row in rows) == sum(range(25))
     assert fake.writes == []
 
 
@@ -189,7 +189,7 @@ async def test_records_added_past_the_read_rules_limit_refuse_rather_than_cut_sh
     [
         ({"max_records": 0}, QueryError),
         ({"page_size": 0}, QueryError),
-        ({"total": "Status"}, QueryError),
+        ({"sum": "Status"}, QueryError),
         ({"group_by": "Nope"}, UnknownFieldError),
         ({"where": "{6.ex.'x'}"}, QueryError),
     ],
@@ -219,9 +219,9 @@ async def test_typed_tables_can_summarize_by_label_or_id() -> None:
     fake = Fake(total=4)
     async with client(fake) as qb:
         tasks = qb.app("bq1234567").typed(Task)
-        rows = await tasks.summarize(F(6), total=F("Hours"), where=F("Status") != "x")
+        rows = await tasks.summarize(F(6), sum=F("Hours"), where=F("Status") != "x")
     assert [row.group["Status"] for row in rows] == ["a", "b"]
-    assert rows[0].total == {"Hours": 4}
+    assert rows[0].sum == {"Hours": 4}
 
 
 # Summary and chart reports
@@ -250,7 +250,7 @@ async def test_rows_can_stop_at_a_limit() -> None:
     fake = Fake(total=25)
     async with client(fake) as qb:
         report = qb.app("bq1234567").table("Tasks").report("By Status")
-        rows = await report.summary_rows(page_size=10, limit=15)
+        rows = await report.summary_rows(page_size=10, max_total=15)
     assert len(rows) == 15
     assert [params["top"] for _, params in fake.runs] == ["10", "5"]
 
@@ -284,7 +284,7 @@ async def test_a_short_response_raises_rather_than_looping() -> None:
             await report.summary_rows(page_size=10)
 
 
-@pytest.mark.parametrize("options", [{"page_size": 0}, {"limit": 0}, {"page_size": -1}])
+@pytest.mark.parametrize("options", [{"page_size": 0}, {"max_total": 0}, {"page_size": -1}])
 async def test_bad_paging_is_refused(options: Any) -> None:
     fake = Fake()
     async with client(fake) as qb:

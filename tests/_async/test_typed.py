@@ -137,7 +137,7 @@ async def test_query_returns_instances_of_the_class() -> None:
 
 async def test_query_stops_at_the_limit() -> None:
     async with client(Server(total=50)) as qb:
-        found = [t async for t in qb.app(APP).typed(Tasks).query(limit=2)]
+        found = [t async for t in qb.app(APP).typed(Tasks).query(max_total=2)]
     assert len(found) == 2
 
 
@@ -145,7 +145,7 @@ async def test_query_checks_arguments_before_sending() -> None:
     server = Server()
     async with client(server) as qb:
         with pytest.raises(QueryError):
-            qb.app(APP).typed(Tasks).query(limit=0)
+            qb.app(APP).typed(Tasks).query(max_total=0)
     assert server.requests == []
 
 
@@ -154,7 +154,7 @@ async def test_select_reads_only_some_fields_and_leaves_the_rest_unset() -> None
     async with client(server) as qb:
         tasks = qb.app(APP).typed(Tasks)
         found = [task async for task in tasks.query(select=[Tasks.fields.title])]
-        page = await tasks.query_page(select=Tasks.fields.due_date, top=1)
+        page = await tasks.query_page(select=Tasks.fields.due_date, limit=1)
         first = await tasks.first(select=[Tasks.fields.title])
         got = await tasks.get(1, select=[Tasks.fields.title])
     assert [body["select"] for body in server.sent("/records/query")] == [[3, 6]] + [[3, 7]] + [
@@ -227,7 +227,7 @@ async def test_schema_is_checked_once_on_first_use() -> None:
         tasks = qb.app(APP).typed(Tasks)
         await tasks.count()
         await tasks.count()
-        assert [task async for task in tasks.query(limit=1)]
+        assert [task async for task in tasks.query(max_total=1)]
     assert [r.url.path for r in server.requests].count("/v1/fields") == 1
 
 
@@ -450,7 +450,7 @@ async def test_query_page_returns_instances_and_paging_details() -> None:
     async with client(server) as qb:
         tasks = qb.app(APP).typed(Tasks)
         page = await tasks.query_page(
-            where=Tasks.fields.title == "Item", order_by=Tasks.fields.due_date.desc, top=2, skip=1
+            where=Tasks.fields.title == "Item", order_by=Tasks.fields.due_date.desc, limit=2, skip=1
         )
     assert isinstance(page, TypedPage)
     assert [task.id for task in page.records] == [2, 3]
@@ -505,7 +505,7 @@ async def test_query_page_refuses_bad_paging_before_querying(top: int, skip: int
     server = Server(total=1)
     async with client(server) as qb:
         with pytest.raises(QueryError):
-            await qb.app(APP).typed(Tasks).query_page(top=top, skip=skip)
+            await qb.app(APP).typed(Tasks).query_page(limit=top, skip=skip)
     assert not server.sent("/records/query")
 
 

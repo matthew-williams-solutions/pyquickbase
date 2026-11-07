@@ -6,5 +6,5 @@ with Quickbase(realm="demo", token="demo") as qb:
 
     print([(report.id, report.name, report.type) for report in tasks.reports()])
 
-    for row in tasks.report("Open tasks").run(limit=3):
+    for row in tasks.report("Open tasks").run(max_total=3):
         print(row["Due Date"], row["Title"])

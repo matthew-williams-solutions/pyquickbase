@@ -208,9 +208,9 @@ async def test_a_query_needs_a_limit_within_max_records() -> None:
         tasks = qb.app("bq1234567").table("Tasks")
         with pytest.raises(PolicyRefusedError, match="at most 50"):
             [record async for record in tasks.query()]
-        assert len([record async for record in tasks.query(limit=50)]) == 1
+        assert len([record async for record in tasks.query(max_total=50)]) == 1
         with pytest.raises(PolicyRefusedError, match="at most 50"):
-            await tasks.query_page(top=10, skip=41)
+            await tasks.query_page(limit=10, skip=41)
 
 
 async def test_summarize_counts_first_and_has_its_own_limit() -> None:
@@ -224,7 +224,7 @@ async def test_summarize_counts_first_and_has_its_own_limit() -> None:
         rows = await tasks.summarize(group_by="Status")
         assert [row.count for row in rows] == [1]
         with pytest.raises(UnknownFieldError):
-            await tasks.summarize(total="Hours")
+            await tasks.summarize(sum="Hours")
 
 
 async def test_summarize_groups_users_by_id_without_emails() -> None:
@@ -240,7 +240,7 @@ async def test_reports_must_be_listed_and_lose_hidden_columns() -> None:
         tasks = qb.app("bq1234567").table("Tasks")
         assert [item.name for item in await tasks.reports()] == ["Open", "Totals"]
         assert all("query" not in item.raw for item in await tasks.reports())
-        record = (await tasks.report("Open").run_page(top=5)).records[0]
+        record = (await tasks.report("Open").run_page(limit=5)).records[0]
         assert dict(record) == {"F3": 1, "F6": "Pour slab"}
         assert await tasks.report("Totals").summary_rows(page_size=5) == [{"F3": 1, "F8": 4}]
     async with client(Fake(), rules()) as qb:

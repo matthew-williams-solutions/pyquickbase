@@ -27,7 +27,7 @@ def open_tasks(project: str) -> list[dict]:
     with Quickbase.from_env(policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         where = (F("Project") == project) & (F("Status") == "Open")
-        return [dict(task) for task in tasks.query(where=where, select=["Title"], limit=50)]
+        return [dict(task) for task in tasks.query(where=where, select=["Title"], max_total=50)]
 ```
 
 ## Limiting access

@@ -153,7 +153,7 @@ def test_a_delete_preview_counts_every_match_without_deleting() -> None:
     fake = Fake({1: {6: "a"}, 2: {6: "b"}, 3: {6: "c"}})
     with client(fake, policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        page = tasks.preview_delete(F("Status") == "Done", select=["Title"], top=2)
+        page = tasks.preview_delete(F("Status") == "Done", select=["Title"], limit=2)
     assert page.total == 3
     assert len(page.records) == 2
     assert fake.queries[0]["where"] == "{7.EX.'Done'}"
@@ -207,7 +207,7 @@ def test_typed_tables_can_preview() -> None:
         tasks = qb.app("bq1234567").typed(Task)
         preview = tasks.preview_update([Task.change(1, "new")])
         assert preview.changes[0].fields["Title"].after == "new"
-        page = tasks.preview_delete(F("Status") == "x", top=1)
+        page = tasks.preview_delete(F("Status") == "x", limit=1)
     assert page.total == 1
     assert page.records[0] == Task(id=1, title="old")
     assert fake.writes == []

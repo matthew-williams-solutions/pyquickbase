@@ -136,7 +136,7 @@ def test_query_returns_instances_of_the_class() -> None:
 
 def test_query_stops_at_the_limit() -> None:
     with client(Server(total=50)) as qb:
-        found = [t for t in qb.app(APP).typed(Tasks).query(limit=2)]
+        found = [t for t in qb.app(APP).typed(Tasks).query(max_total=2)]
     assert len(found) == 2
 
 
@@ -144,7 +144,7 @@ def test_query_checks_arguments_before_sending() -> None:
     server = Server()
     with client(server) as qb:
         with pytest.raises(QueryError):
-            qb.app(APP).typed(Tasks).query(limit=0)
+            qb.app(APP).typed(Tasks).query(max_total=0)
     assert server.requests == []
 
 
@@ -153,7 +153,7 @@ def test_select_reads_only_some_fields_and_leaves_the_rest_unset() -> None:
     with client(server) as qb:
         tasks = qb.app(APP).typed(Tasks)
         found = [task for task in tasks.query(select=[Tasks.fields.title])]
-        page = tasks.query_page(select=Tasks.fields.due_date, top=1)
+        page = tasks.query_page(select=Tasks.fields.due_date, limit=1)
         first = tasks.first(select=[Tasks.fields.title])
         got = tasks.get(1, select=[Tasks.fields.title])
     assert [body["select"] for body in server.sent("/records/query")] == [[3, 6]] + [[3, 7]] + [
@@ -226,7 +226,7 @@ def test_schema_is_checked_once_on_first_use() -> None:
         tasks = qb.app(APP).typed(Tasks)
         tasks.count()
         tasks.count()
-        assert [task for task in tasks.query(limit=1)]
+        assert [task for task in tasks.query(max_total=1)]
     assert [r.url.path for r in server.requests].count("/v1/fields") == 1
 
 
@@ -449,7 +449,7 @@ def test_query_page_returns_instances_and_paging_details() -> None:
     with client(server) as qb:
         tasks = qb.app(APP).typed(Tasks)
         page = tasks.query_page(
-            where=Tasks.fields.title == "Item", order_by=Tasks.fields.due_date.desc, top=2, skip=1
+            where=Tasks.fields.title == "Item", order_by=Tasks.fields.due_date.desc, limit=2, skip=1
         )
     assert isinstance(page, TypedPage)
     assert [task.id for task in page.records] == [2, 3]
@@ -504,7 +504,7 @@ def test_query_page_refuses_bad_paging_before_querying(top: int, skip: int) -> N
     server = Server(total=1)
     with client(server) as qb:
         with pytest.raises(QueryError):
-            qb.app(APP).typed(Tasks).query_page(top=top, skip=skip)
+            qb.app(APP).typed(Tasks).query_page(limit=top, skip=skip)
     assert not server.sent("/records/query")
 
 

@@ -58,9 +58,9 @@ Things to know:
 - **Writing a field doesn't need read access to it,** so a client can set a field it can't see.
   Such a field can still be named, but its values aren't returned.
 - **`Record ID#` is readable wherever anything is,** because the SDK uses it to page through records.
-- **`max_records` limits each query, not the client.** A query needs a `limit`, or a `top`, of at most
-  this, and it's refused rather than cut short. Where several rules read a table, the highest
-  applies. It defaults to 100, and `max_summary_records` to 10,000.
+- **`max_records` limits each query, not the client.** A query needs a `limit` of at most this, and
+  it's refused rather than cut short. Where several rules read a table, the highest applies. It
+  defaults to 100, and `max_summary_records` to 10,000.
 - **A field you may filter or sort by reveals something about its values,** even if it isn't
   returned, because a model can see which records match and in which order.
 - **A report's own filter and sort can use any field,** and someone can change them in the Quickbase

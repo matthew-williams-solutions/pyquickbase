@@ -48,7 +48,7 @@ def test_a_query_lists_its_fields_filter_sort_and_window() -> None:
     assert request.field_ids == {3, 6}
     assert request.filter_field_ids == {7, 8}
     assert request.sort_field_ids == {9}
-    assert (request.top, request.skip) == (20, 40)
+    assert (request.limit, request.skip) == (20, 40)
 
 
 def test_a_query_without_a_filter_has_no_filter_fields() -> None:
@@ -95,7 +95,7 @@ def test_a_select_that_isnt_a_list_of_ids_is_unknown(select: Any) -> None:
 
 
 def test_a_query_without_top_has_no_top() -> None:
-    assert query(select=[3]).top is None
+    assert query(select=[3]).limit is None
 
 
 @pytest.mark.parametrize(

@@ -87,7 +87,7 @@ treats as "contains", or an unknown field, which matches nothing.
 
 ## Reading records
 
-`query()` fetches further pages as you iterate, and `limit` stops it early. Read values by label or
+`query()` fetches further pages as you iterate, and `max_total` stops it early. Read values by label or
 ID, with `record["Status"]` or `record[7]`. `dict(record)` gives you `{label: value}`. Record ID# is
 always selected, and without `order_by`, records come back in Record ID# order so that pages stay
 stable. For one page at a time, use `query_page()`, which returns the records, the `total` number of
@@ -103,9 +103,9 @@ Rows are dictionaries keyed by field label or ID. Python dates, timezone-aware d
 
 | Method | What it does |
 |---|---|
-| `table.insert(rows)` | Creates records, and never changes existing ones |
-| `table.update(rows)` | Changes records. Each row needs a `Record ID#`, and a missing record is an error |
-| `table.upsert(rows, merge_on="Code")` | Updates the record whose unique field matches, or creates one |
+| `table.insert(records)` | Creates records, and never changes existing ones |
+| `table.update(records)` | Changes records. Each one needs a `Record ID#`, and a missing record is an error |
+| `table.upsert(records, merge_on="Code")` | Updates the record whose unique field matches, or creates one |
 | `table.delete(where)` | Deletes matching records and returns the count. `where` is required |
 
 ```python

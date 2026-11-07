@@ -247,7 +247,7 @@ def test_query_arguments_become_a_page_query() -> None:
     assert call.method == "query_page"
     assert call.arguments["select"] == ["Title"]
     assert call.arguments["order_by"] == [-9, 6]
-    assert (call.arguments["top"], call.arguments["skip"]) == (5, 10)
+    assert (call.arguments["limit"], call.arguments["skip"]) == (5, 10)
     assert call.arguments["where"] is not None
 
 
@@ -284,7 +284,7 @@ def test_sort_is_only_read_as_order_by_once() -> None:
 
 def test_query_defaults() -> None:
     call = spec("query").plan({}, None)
-    assert call.arguments == {"where": None, "top": 20, "skip": 0}
+    assert call.arguments == {"where": None, "limit": 20, "skip": 0}
 
 
 @pytest.mark.parametrize(
@@ -335,23 +335,31 @@ def test_delete_needs_a_where() -> None:
     assert call.method == "delete"
 
 
+def test_summarize_reads_the_words_models_write_for_aggregates() -> None:
+    summarize = spec("summarize")
+    call = summarize.plan({"total": ["Hours"], "maximum": ["Due Date"]}, None)
+    assert (call.arguments["sum"], call.arguments["max"]) == (["Hours"], ["Due Date"])
+    with pytest.raises(QueryError, match="doesn't take"):
+        summarize.plan({"total": ["Hours"], "sum": ["Hours"]}, None)
+
+
 def test_summarize_arguments() -> None:
     summarize = spec("summarize")
     arguments = {
         "group_by": ["Status", {"field": "Due Date", "unit": "month"}],
-        "total": ["Hours"],
-        "maximum": ["Due Date"],
+        "sum": ["Hours"],
+        "max": ["Due Date"],
     }
     assert valid(summarize.schema, arguments)
     call = summarize.plan(arguments, None)
     assert call.arguments["group_by"] == ["Status", Period("Due Date", "month")]
-    assert call.arguments["total"] == ["Hours"]
+    assert call.arguments["sum"] == ["Hours"]
     assert call.arguments["max_records"] == 10_000
     for bad in (
         {"group_by": ["Tags"]},
         {"group_by": [{"field": "Title", "unit": "month"}]},
         {"group_by": [{"field": "Due Date", "unit": "decade"}]},
-        {"total": ["Title"]},
+        {"sum": ["Title"]},
     ):
         with pytest.raises(QueryError):
             summarize.plan(bad, None)
@@ -501,14 +509,18 @@ def test_reports_are_chosen_from_the_list_and_take_no_scope() -> None:
     run = spec("run_report")
     assert run.schema["properties"]["report"]["enum"] == ["1"]
     call = run.plan({"report": "1", "limit": 3}, None)
-    assert (call.method, call.report_id, call.arguments) == ("run_page", "1", {"top": 3, "skip": 0})
+    assert (call.method, call.report_id, call.arguments) == (
+        "run_page",
+        "1",
+        {"limit": 3, "skip": 0},
+    )
     with pytest.raises(QueryError, match="isn't a report this tool may run"):
         run.plan({"report": "5"}, None)
     with pytest.raises(QueryError, match="can't take a scope"):
         run.plan({"report": "1"}, F("Project") == "x")
     summary = spec("run_summary_report", report_descriptions={"5": "Hours by status."})
     assert "5: Totals, Hours by status." in summary.schema["properties"]["report"]["description"]
-    assert summary.plan({"report": "5"}, None).arguments == {"limit": 20}
+    assert summary.plan({"report": "5"}, None).arguments == {"max_total": 20}
 
 
 @pytest.mark.parametrize("report", ["1", 1, "List All", "list all"])
@@ -568,7 +580,7 @@ def test_a_name_shared_by_two_reports_needs_the_id() -> None:
         ("query", {"where": {"field": "STATUS", "op": "==", "value": "Open"}}, "Status"),
         ("query", {"order_by": [{"field": "hours"}]}, "Hours"),
         ("summarize", {"group_by": ["status"]}, "Status"),
-        ("summarize", {"total": ["hours"]}, "Hours"),
+        ("summarize", {"sum": ["hours"]}, "Hours"),
         ("insert", {"records": [{"title": "x"}]}, "Title"),
     ],
 )

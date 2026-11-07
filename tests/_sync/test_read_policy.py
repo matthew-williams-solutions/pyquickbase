@@ -207,9 +207,9 @@ def test_a_query_needs_a_limit_within_max_records() -> None:
         tasks = qb.app("bq1234567").table("Tasks")
         with pytest.raises(PolicyRefusedError, match="at most 50"):
             [record for record in tasks.query()]
-        assert len([record for record in tasks.query(limit=50)]) == 1
+        assert len([record for record in tasks.query(max_total=50)]) == 1
         with pytest.raises(PolicyRefusedError, match="at most 50"):
-            tasks.query_page(top=10, skip=41)
+            tasks.query_page(limit=10, skip=41)
 
 
 def test_summarize_counts_first_and_has_its_own_limit() -> None:
@@ -223,7 +223,7 @@ def test_summarize_counts_first_and_has_its_own_limit() -> None:
         rows = tasks.summarize(group_by="Status")
         assert [row.count for row in rows] == [1]
         with pytest.raises(UnknownFieldError):
-            tasks.summarize(total="Hours")
+            tasks.summarize(sum="Hours")
 
 
 def test_summarize_groups_users_by_id_without_emails() -> None:
@@ -239,7 +239,7 @@ def test_reports_must_be_listed_and_lose_hidden_columns() -> None:
         tasks = qb.app("bq1234567").table("Tasks")
         assert [item.name for item in tasks.reports()] == ["Open", "Totals"]
         assert all("query" not in item.raw for item in tasks.reports())
-        record = (tasks.report("Open").run_page(top=5)).records[0]
+        record = (tasks.report("Open").run_page(limit=5)).records[0]
         assert dict(record) == {"F3": 1, "F6": "Pour slab"}
         assert tasks.report("Totals").summary_rows(page_size=5) == [{"F3": 1, "F8": 4}]
     with client(Fake(), rules()) as qb:

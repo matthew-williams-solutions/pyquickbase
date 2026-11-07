@@ -238,7 +238,7 @@ def tool_error(error: BaseException) -> dict[str, Any]:
 
     ```python
     try:
-        return tool_result(await tasks.query_page(where=where, top=50))
+        return tool_result(await tasks.query_page(where=where, limit=50))
     except QuickbaseError as error:
         return tool_error(error)
     ```
@@ -426,7 +426,7 @@ def _paged(
 
 def _summary(row: SummaryRow, state: _State) -> dict[str, Any]:
     found: dict[str, Any] = {"group": _value(dict(row.group), state) or {}, "count": row.count}
-    for name in ("total", "average", "minimum", "maximum"):
+    for name in ("sum", "avg", "min", "max"):
         values: Mapping[str, Any] = getattr(row, name)
         if values:
             found[name] = {label: _value(item, state) for label, item in values.items()}
@@ -668,7 +668,7 @@ def tool_result(
     """Describe a result for a model, as the result of its tool call.
 
     ```python
-    page = await tasks.query_page(select=["Title", "Due Date"], top=50)
+    page = await tasks.query_page(select=["Title", "Due Date"], limit=50)
     return tool_result(page, compact=True)
     ```
 

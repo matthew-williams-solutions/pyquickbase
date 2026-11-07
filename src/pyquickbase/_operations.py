@@ -152,6 +152,14 @@ def _field_names(value: Any, name: str, offered: Sequence[Field]) -> list[str]:
 
 
 _DIRECTIONS = {"asc": "asc", "ascending": "asc", "desc": "desc", "descending": "desc"}
+# Words a model writes for summarize's arguments, read as the ones the schema lists.
+_AGGREGATE_ALIASES = {
+    "total": "sum",
+    "average": "avg",
+    "mean": "avg",
+    "minimum": "min",
+    "maximum": "max",
+}
 # Keys a model writes for an order_by item's direction, other than direction itself.
 _DIRECTION_KEYS = ("order", "dir", "sort_order")
 
@@ -181,8 +189,9 @@ def _sort_item(item: Any) -> Any:
 
 def normalize_arguments(data: Mapping[str, Any], offered: Collection[str]) -> dict[str, Any]:
     """Arguments in the spelling the schema lists, from the ones models tend to write: `sort` for
-    `order_by`, one item for a list, and the aliases of `normalize_where()`. Each alias means
-    exactly one thing, and labels are never guessed, so nothing here changes what a call does."""
+    `order_by`, one item for a list, `total` for `sum`, and the aliases of `normalize_where()`.
+    Each alias means exactly one thing, and labels are never guessed, so nothing here changes what
+    a call does."""
     found = dict(data)
     if "sort" in found and "order_by" not in found and "order_by" in offered:
         found["order_by"] = found.pop("sort")
@@ -192,6 +201,9 @@ def normalize_arguments(data: Mapping[str, Any], offered: Collection[str]) -> di
             order = [order]
         if isinstance(order, list | tuple):
             found["order_by"] = [_sort_item(item) for item in cast(list[Any], order)]
+    for old, new in _AGGREGATE_ALIASES.items():
+        if old in found and new not in found and new in offered:
+            found[new] = found.pop(old)
     if "where" in found:
         found["where"] = normalize_where(found["where"])
     return found
@@ -699,10 +711,10 @@ def _summary_fields(ctx: Context) -> dict[str, Sequence[Field]]:
     return {
         "group_by": [item for item in readable if item.type not in _UNGROUPABLE_TYPES],
         "dates": [item for item in readable if item.type in _DATE_TYPES],
-        "total": numeric,
-        "average": numeric,
-        "minimum": ranged,
-        "maximum": ranged,
+        "sum": numeric,
+        "avg": numeric,
+        "min": ranged,
+        "max": ranged,
     }
 
 
@@ -733,10 +745,10 @@ def _summary(ctx: Context) -> dict[str, Any]:
             + _glossary(groupable, ctx.descriptions),
         }
     for name, what in (
-        ("total", "add up"),
-        ("average", "average"),
-        ("minimum", "find the lowest of"),
-        ("maximum", "find the highest of"),
+        ("sum", "add up"),
+        ("avg", "average"),
+        ("min", "find the lowest of"),
+        ("max", "find the highest of"),
     ):
         if offered[name]:
             parts[name] = _array_of(_labels(offered[name]), f"Fields to {what}.")
@@ -761,7 +773,7 @@ def _read_summary(ctx: Context, arguments: Mapping[str, Any]) -> dict[str, Any]:
                 hint = case_hint(item, _labels(offered["group_by"]))
                 raise QueryError(f"{path} isn't a field this tool may group by.{hint}")
         found["group_by"] = groups
-    for key in ("total", "average", "minimum", "maximum"):
+    for key in ("sum", "avg", "min", "max"):
         if key in arguments:
             found[key] = _field_names(arguments[key], key, offered[key])
     return found
@@ -802,7 +814,7 @@ def _needs(group: str, reason: str) -> Callable[[Allowed, str | None], str | Non
 def _plan_query(ctx: Context, arguments: Mapping[str, Any], scope: Expression | None) -> Call:
     found: dict[str, Any] = {
         "where": _read_where(ctx, arguments.get("where"), scope, required=False),
-        "top": _read_limit(ctx, arguments),
+        "limit": _read_limit(ctx, arguments),
         "skip": _whole(arguments.get("skip", 0), "skip", minimum=0),
     }
     if "select" in arguments:
@@ -840,7 +852,7 @@ def _plan_preview_delete(
 ) -> Call:
     found: dict[str, Any] = {
         "where": _read_where(ctx, arguments.get("where"), scope, required=True),
-        "top": _read_limit(ctx, arguments),
+        "limit": _read_limit(ctx, arguments),
     }
     if "select" in arguments:
         found["select"] = _field_names(arguments["select"], "select", ctx.allowed.readable)
@@ -858,7 +870,7 @@ def _plan_report(ctx: Context, arguments: Mapping[str, Any], scope: Expression |
         arguments["report"], ctx.allowed.reports, ctx.allowed.summary_reports, summary=False
     )
     found = {
-        "top": _read_limit(ctx, arguments),
+        "limit": _read_limit(ctx, arguments),
         "skip": _whole(arguments.get("skip", 0), "skip", minimum=0),
     }
     return Call(method="run_page", arguments=found, report_id=report_id)
@@ -871,7 +883,7 @@ def _plan_summary_report(
     report_id = _read_report(
         arguments["report"], ctx.allowed.summary_reports, ctx.allowed.reports, summary=True
     )
-    found = {"limit": _read_limit(ctx, arguments)}
+    found = {"max_total": _read_limit(ctx, arguments)}
     return Call(method="summary_rows", arguments=found, report_id=report_id)
 
 

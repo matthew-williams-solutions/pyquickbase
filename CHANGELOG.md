@@ -80,6 +80,15 @@ before they're made, for scripts and for agents. **It breaks every client that u
 
 ### Changed
 
+- **Paging has one word per meaning.** `limit` is the most records one call returns, everywhere: it
+  replaces `top` in `query_page()`, `preview_delete()`, `Report.run_page()`, their typed versions,
+  and `ReadRequest`. `max_total` replaces `limit` on `query()`, `Report.run()`, and
+  `summary_rows()`, where it stops iterating across pages.
+- **Writes take `records`**, not `rows`, in `insert()`, `update()`, `upsert()`, and
+  `preview_update()`, as the operations do.
+- **Aggregates are `sum`, `avg`, `min`, and `max`** in `summarize()`, on `SummaryRow`, in the
+  `summarize` operation's arguments, and in `tool_result()`'s groups, as summary fields are.
+  The operation still reads `total`, `average`, `minimum`, and `maximum`.
 - **Results and errors say what they hold.** A `count` operation's result is `{"count": n}` and a
   `delete` operation's is `{"deleted_count": n}`, rather than `value`. An error's `changed` is
   `data_changed`, with `no`, `partly`, or `unknown` for `none`, `some`, or `unknown`. A shortened text

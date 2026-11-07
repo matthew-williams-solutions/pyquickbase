@@ -53,7 +53,7 @@ def preview_delete_tasks(project: str, where: dict) -> dict:
     with Quickbase.from_env(policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         condition = (F("Project") == project) & where_from_dict(where, fields=["Status"])
-        page = tasks.preview_delete(condition, select=["Title"], top=10)
+        page = tasks.preview_delete(condition, select=["Title"], limit=10)
     return tool_result(page)
 ```
 
@@ -189,7 +189,7 @@ from myapp.tables import Tasks
 
 tasks = qb.app("bq1234567").typed(Tasks)
 
-for task in tasks.query(where=Tasks.fields.status == status, limit=50):
+for task in tasks.query(where=Tasks.fields.status == status, max_total=50):
     print(task.id, task.title)
 ```
 

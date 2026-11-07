@@ -120,7 +120,7 @@ TABLE_CALLS: list[tuple[str, Callable[[Any], Any], tuple[str, str, dict[str, str
     (
         "query-page",
         lambda t: t.query_page(
-            where=F("Title") == "a", select=["Title"], order_by="-Title", top=5, skip=2
+            where=F("Title") == "a", select=["Title"], order_by="-Title", limit=5, skip=2
         ),
         (
             "POST",
@@ -278,7 +278,7 @@ TABLE_CALLS: list[tuple[str, Callable[[Any], Any], tuple[str, str, dict[str, str
     ),
     (
         "report-page",
-        lambda t: t.report("All").run_page(top=5, skip=2),
+        lambda t: t.report("All").run_page(limit=5, skip=2),
         ("POST", "/reports/1/run", {"tableId": TABLE, "top": "5", "skip": "2"}, None),
     ),
     (

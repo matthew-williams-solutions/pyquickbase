@@ -103,7 +103,8 @@ class ReadRequest:
             filter can't be read, and for a report, whose filter is its own.
         sort_field_ids: The fields it sorts by. None if it doesn't say, as the table's default
             sort would apply, and for a report.
-        top: The most records it asks for. None if it doesn't say, so Quickbase returns them all.
+        limit: The most records it asks for, which Quickbase calls `top`. None if it doesn't say,
+            so Quickbase returns them all.
         skip: How many matching records it passes over first.
         report_id: The report it runs.
         method: The HTTP method.
@@ -115,7 +116,7 @@ class ReadRequest:
     field_ids: frozenset[int] | None = None
     filter_field_ids: frozenset[int] | None = None
     sort_field_ids: frozenset[int] | None = None
-    top: int | None = None
+    limit: int | None = None
     skip: int | None = None
     report_id: str | None = None
     method: str
@@ -179,7 +180,7 @@ def _describe_query(body: Any, method: str, path: str, summarizing: bool) -> Rea
         field_ids=_id_set(body.get("select")),  # pyright: ignore[reportUnknownMemberType]
         filter_field_ids=_where_ids(body),  # pyright: ignore[reportUnknownArgumentType]
         sort_field_ids=_sort_ids(body.get("sortBy")),  # pyright: ignore[reportUnknownMemberType]
-        top=_plain_int(options.get("top")),  # pyright: ignore[reportUnknownMemberType]
+        limit=_plain_int(options.get("top")),  # pyright: ignore[reportUnknownMemberType]
         skip=_plain_int(options.get("skip", 0)),  # pyright: ignore[reportUnknownMemberType]
         method=method,
         path=path,
@@ -229,7 +230,7 @@ def _describe_report(
     return ReadRequest(
         action="report" if report_type == "table" else "summary_report",
         table_id=table_id if isinstance(table_id, str) else None,
-        top=_plain_int(found.get("top")),
+        limit=_plain_int(found.get("top")),
         skip=_plain_int(found.get("skip", 0)),
         # Quickbase runs the same report for an ID with leading zeros.
         report_id=str(int(report_id)),

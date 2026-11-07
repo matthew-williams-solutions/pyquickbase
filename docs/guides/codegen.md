@@ -36,7 +36,7 @@ with Quickbase(realm="acme", token="your_user_token") as qb:
     for task in tasks.query(
         where=Tasks.fields.status == "Open",
         order_by=[Tasks.fields.due_date.desc, Tasks.fields.title],
-        limit=50,
+        max_total=50,
     ):
         print(task.id, task.title, task.due_date)
 
@@ -92,7 +92,7 @@ attributes out.
 ## Reading a page at a time
 
 Use `query_page()` when you control the paging yourself, such as for a list endpoint. It takes `where`,
-`order_by`, `top`, and `skip`, and returns a `TypedPage` whose `records` are instances of the class, so
+`order_by`, `limit`, and `skip`, and returns a `TypedPage` whose `records` are instances of the class, so
 money still reads as `Decimal`.
 
 ```python
@@ -100,7 +100,9 @@ from myapp.tables import Tasks
 
 tasks = qb.app("bq1234567").typed(Tasks)
 
-page = tasks.query_page(where=Tasks.fields.status == "Open", order_by=Tasks.fields.due_date, top=25)
+page = tasks.query_page(
+    where=Tasks.fields.status == "Open", order_by=Tasks.fields.due_date, limit=25
+)
 print([task.title for task in page.records])
 print(page.total, page.skip, page.has_more, page.next_skip)
 
@@ -108,7 +110,7 @@ if page.has_more:
     following = tasks.query_page(
         where=Tasks.fields.status == "Open",
         order_by=Tasks.fields.due_date,
-        top=25,
+        limit=25,
         skip=page.next_skip,
     )
 ```

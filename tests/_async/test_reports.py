@@ -192,7 +192,7 @@ async def test_run_stops_at_the_limit() -> None:
     server = FakeReports(total=50)
     async with client(server) as qb:
         records = [
-            r async for r in qb.app(APP).table("Tasks").report("1").run(page_size=2, limit=3)
+            r async for r in qb.app(APP).table("Tasks").report("1").run(page_size=2, max_total=3)
         ]
     assert len(records) == 3
     assert server.run_params()[-1]["top"] == "1"
@@ -201,7 +201,7 @@ async def test_run_stops_at_the_limit() -> None:
 async def test_run_page() -> None:
     server = FakeReports(total=5)
     async with client(server) as qb:
-        page = await qb.app(APP).table("Tasks").report("1").run_page(top=2, skip=1)
+        page = await qb.app(APP).table("Tasks").report("1").run_page(limit=2, skip=1)
     assert [r["Title"] for r in page.records] == ["Item 1", "Item 2"]
     assert (page.total, page.next_skip, page.has_more) == (5, 3, True)
     assert server.run_params() == [{"tableId": TASKS, "top": "2", "skip": "1"}]
@@ -209,11 +209,11 @@ async def test_run_page() -> None:
 
 async def test_record_id_is_available_only_when_the_report_includes_it() -> None:
     async with client(FakeReports(with_record_id=True)) as qb:
-        page = await qb.app(APP).table("Tasks").report("1").run_page(top=1)
+        page = await qb.app(APP).table("Tasks").report("1").run_page(limit=1)
         assert page.records[0].id == 1
 
     async with client(FakeReports()) as qb:
-        page = await qb.app(APP).table("Tasks").report("1").run_page(top=1)
+        page = await qb.app(APP).table("Tasks").report("1").run_page(limit=1)
         assert repr(page.records[0]) == "Record(id=None, fields=1)"
         with pytest.raises(KeyError, match="no Record ID#"):
             _ = page.records[0].id
@@ -243,7 +243,7 @@ async def test_reports_that_arent_records_are_refused_without_running(
 
 
 @pytest.mark.parametrize(
-    "kwargs", [{"top": 0}, {"top": -1}, {"skip": -1}], ids=["top0", "top-1", "skip-1"]
+    "kwargs", [{"limit": 0}, {"limit": -1}, {"skip": -1}], ids=["limit0", "limit-1", "skip-1"]
 )
 async def test_run_page_checks_arguments_before_sending(kwargs: dict[str, int]) -> None:
     server = FakeReports()
@@ -253,7 +253,9 @@ async def test_run_page_checks_arguments_before_sending(kwargs: dict[str, int]) 
     assert server.requests == []
 
 
-@pytest.mark.parametrize("kwargs", [{"page_size": 0}, {"limit": 0}], ids=["page_size", "limit"])
+@pytest.mark.parametrize(
+    "kwargs", [{"page_size": 0}, {"max_total": 0}], ids=["page_size", "max_total"]
+)
 async def test_run_checks_arguments_before_sending(kwargs: dict[str, int]) -> None:
     server = FakeReports()
     async with client(server) as qb:

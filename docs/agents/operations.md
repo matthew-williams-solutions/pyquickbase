@@ -43,7 +43,7 @@ The schema goes in your framework's tool definition, under the name it uses, suc
 |---|---|---|---|
 | `query` | `where`, `select`, `order_by`, `limit`, `skip` | `query_page()` | `Page` |
 | `count` | `where` | `count()` | An `int`, which `tool_result()` shows as `count` |
-| `summarize` | `where`, `group_by`, `total`, `average`, `minimum`, `maximum` | `summarize()` | A list of `SummaryRow` |
+| `summarize` | `where`, `group_by`, `sum`, `avg`, `min`, `max`. `total`, `average`, `minimum`, and `maximum` are read too | `summarize()` | A list of `SummaryRow` |
 | `insert` | `records` | `insert()` | `WriteResult` |
 | `update` | `records`, each with `Record ID#` | `update()` | `WriteResult` |
 | `delete` | `where`, which is required. It's refused if it matches more than `max_records` | `delete()` | An `int`, which `tool_result()` shows as `deleted_count` |

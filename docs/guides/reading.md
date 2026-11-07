@@ -154,7 +154,7 @@ for task in tasks.query(
     where=F("Status") == "Open",
     select=["Title", "Due Date"],
     order_by=["-Due Date", "Title"],
-    limit=50,
+    max_total=50,
 ):
     print(task["Title"])
 ```
@@ -165,7 +165,7 @@ for task in tasks.query(
 | `select` | Field labels, IDs, or field objects. Defaults to the table's default fields |
 | `order_by` | Field labels, IDs, or field objects. Prefix a label with `-`, or negate an ID, to sort descending |
 | `page_size` | Records to request per call to Quickbase. Defaults to 1,000 |
-| `limit` | Stop after this many records |
+| `max_total` | Stop after this many records in all, across pages |
 
 Record ID# is always selected, and it's always the last sort key so that pages stay stable. That
 means that without `order_by`, records come back in Record ID# order rather than the table's default
@@ -186,15 +186,15 @@ class's own `order_by` takes only these fields or their IDs, not labels.
 ## Fetching one page at a time
 
 `query_page()` fetches a single page, for when you control the paging yourself, such as behind a list
-endpoint. It takes the same arguments as `query()`, with `top` and `skip` in place of `page_size` and
-`limit`.
+endpoint. It takes the same arguments as `query()`, with `limit` and `skip` in place of `page_size` and
+`max_total`.
 
 ```python
 from pyquickbase import F
 
 skip = 0
 while True:
-    page = tasks.query_page(where=F("Status") == "Open", select=["Title"], top=100, skip=skip)
+    page = tasks.query_page(where=F("Status") == "Open", select=["Title"], limit=100, skip=skip)
     for task in page.records:
         print(task["Title"])
     if not page.has_more:
@@ -221,7 +221,7 @@ instances of the class.
 Read values by label or ID. `dict(record)` gives you `{label: value}`.
 
 ```python
-task = next(iter(tasks.query(limit=1)))
+task = next(iter(tasks.query(max_total=1)))
 
 print(task.id)
 print(task["Status"], task[7])
@@ -250,32 +250,32 @@ from pyquickbase import F, Period
 rows = tasks.summarize(
     group_by=["Status", Period("Due Date", "month")],
     where=F("Project") == "Roof",
-    total="Amount",
-    average="Amount",
-    maximum="Due Date",
+    sum="Amount",
+    avg="Amount",
+    max="Due Date",
 )
 for row in rows:
-    print(row.group["Status"], row.group["Due Date"], row.count, row.total["Amount"])
+    print(row.group["Status"], row.group["Due Date"], row.count, row.sum["Amount"])
 ```
 
 Leave out `group_by` for one row covering every matching record:
 
 ```python
-overall = tasks.summarize(total="Amount", where=F("Status") == "Open")[0]
-print(overall.count, overall.total["Amount"])
+overall = tasks.summarize(sum="Amount", where=F("Status") == "Open")[0]
+print(overall.count, overall.sum["Amount"])
 ```
 
 | `SummaryRow` attribute | What it holds |
 |---|---|
 | `group` | The values that define the group. Empty without `group_by`. A user is their email, and an empty value is `None` |
 | `count` | How many records are in the group, including those with empty values |
-| `total` | The sum of each field, which is `0` if every value is empty |
-| `average`, `minimum`, `maximum` | Each field's result, or `None` if every value is empty. Empty values don't count toward an average |
+| `sum` | The sum of each field, which is `0` if every value is empty |
+| `avg`, `min`, `max` | Each field's result, or `None` if every value is empty. Empty values don't count toward an average |
 
 Groups are sorted by their values, with empty ones last. If nothing matches, you get an empty list, or one
 row with a `count` of 0 without `group_by`.
 
-`total` and `average` take numeric fields. `minimum` and `maximum` also take dates, timestamps, and times of
+`sum` and `avg` take numeric fields. `min` and `max` also take dates, timestamps, and times of
 day. You can't group by a multi-select, multi-user, or file field, because a record can hold several of
 those values at once.
 
@@ -324,10 +324,10 @@ create reports, so build them in Quickbase.
 ```python
 print([(report.id, report.name, report.type) for report in tasks.reports()])
 
-for row in tasks.report("Open tasks").run(limit=50):
+for row in tasks.report("Open tasks").run(max_total=50):
     print(row["Title"])
 
-page = tasks.report("12").run_page(top=100, skip=0)
+page = tasks.report("12").run_page(limit=100, skip=0)
 print(len(page.records), page.total, page.has_more)
 ```
 
@@ -383,13 +383,13 @@ These all raise before the query is sent, though the SDK may read table metadata
 | `select`, `order_by`, or `where` names a field the table doesn't have, or the token can't see | `UnknownFieldError` |
 | `where` can't be sent as written, such as a lowercase operator in a query string, or `_curuser_` on a user field through `F` | `QueryError` |
 | `where_from_dict()` got data it can't use, such as an unknown operator, a missing `value`, or `today` on a date field | `QueryError` |
-| `top`, `page_size`, or `limit` below 1, or a negative `skip` | `QueryError` |
+| `limit`, `page_size`, or `max_total` below 1, or a negative `skip` | `QueryError` |
 | `select` or `order_by` isn't a field or a list of them | `QueryError` |
 | `get()` with something other than a positive integer | `InvalidValueError` |
 | Reading a field the record doesn't hold | `KeyError` |
 | The table has no such report, or several with that name | `UnknownReportError` |
 | `run()` on a summary, chart, or ask-the-user report, or `summary_rows()` on a table or ask-the-user report, or one with two columns of the same label | `UnsupportedReportError` |
-| `summarize()` with a field it can't use, such as text in `total`, or a multi-select field in `group_by` | `QueryError` |
+| `summarize()` with a field it can't use, such as text in `sum`, or a multi-select field in `group_by` | `QueryError` |
 | `summarize()` finds more records than `max_records` | `QueryError`, and no records are read |
 | `summarize()` finds a value that isn't what its field's type says | `InvalidResponseError`, and there's no partial result |
 
