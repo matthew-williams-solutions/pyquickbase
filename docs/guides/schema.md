@@ -98,22 +98,20 @@ child table.
 - `ensure_count_field()` counts the child's records, and puts the count on the parent.
 
 ```mermaid
-flowchart LR
-    subgraph Projects [Projects, the parent]
-        PID["Record ID#"]
-        PN[Name]
-        PT["Total Hours<br/>summary"]
-        PC["Task Count<br/>count"]
-    end
-    subgraph Tasks [Tasks, the child]
-        FK["Project<br/>foreign key"]
-        LK["Project Name<br/>lookup"]
-        TH[Hours]
-    end
-    FK -- "holds a project's ID" --> PID
-    PN -. shown on each task .-> LK
-    TH -. added up per project .-> PT
-    Tasks -. counted per project .-> PC
+erDiagram
+    Projects ||--o{ Tasks : "has"
+    Projects {
+        recordid Record_ID "key"
+        text Name
+        numeric Total_Hours "summary: sum of the Tasks' Hours"
+        numeric Task_Count "count: how many Tasks"
+    }
+    Tasks {
+        recordid Record_ID "key"
+        numeric Project "foreign key: a project's Record ID#"
+        text Project_Name "lookup: the project's Name"
+        numeric Hours
+    }
 ```
 
 Every method is called on the child, but a summary or count is created on the parent.
@@ -202,6 +200,16 @@ tasks.ensure_summary_field(link, "Hours", "Hours Sum")
 projects.ensure_field("Total Hours", "numeric", formula="Nz([Hours Sum])")
 ```
 
+```mermaid
+flowchart TD
+    E["ensure_...()"] --> F{"Found by its<br/>name or label?"}
+    F -- no --> C[Create it]
+    F -- yes --> M{"Same as what<br/>you passed?"}
+    M -- yes --> R[Return it]
+    M -- "a setting differs" --> U[Change that setting]
+    M -- "another type or<br/>calculation" --> X[SchemaMismatchError]
+```
+
 | Method | Finds what's there by | If it exists |
 |---|---|---|
 | `ensure_table()` | Its name, ignoring case | Returns it unchanged |
@@ -287,16 +295,15 @@ fields, and link it to another.
 
 ```mermaid
 flowchart TD
-    C[A list of changes] --> P["preview_schema_changes()"]
-    P --> B{Any blockers?}
+    P["preview_schema_changes()"] --> B{Blockers?}
     B -- yes --> F[Fix the changes] --> P
     B -- no --> A["apply_schema_changes(plan)"]
-    A --> S{"Plan again: tables and<br/>fields as they were?"}
+    A --> S{"Tables and fields<br/>unchanged?"}
     S -- no --> M["SchemaMismatchError,<br/>nothing sent"]
     S -- yes --> G[Make each ready change, in order]
     G -- all made --> OK[SchemaChangeResult]
-    G -- one fails --> E["SchemaChangeError, with what<br/>was made and what wasn't"]
-    E -. preview again, and the made<br/>ones are already_done .-> P
+    G -- one fails --> E["SchemaChangeError,<br/>listing what was made"]
+    E -. preview again .-> P
 ```
 
 **Applying is checked again.** `apply_schema_changes()` plans the same changes again first. If the tables and

@@ -61,6 +61,19 @@ with Quickbase.from_env() as qb:
 tasks.insert([{"Title": "Pour slab", "Status": "Not Started"}])
 ```
 
+## How the objects fit together
+
+A client gives you apps, an app gives you tables, and a table gives you its records, fields, reports,
+and operations. Getting an app or a table sends nothing. They're checked when first used.
+
+```mermaid
+flowchart TD
+    QB["<b>Quickbase</b><br/>Quickbase(...)"] --> App["<b>App</b><br/>qb.app(id)"]
+    App --> T["<b>Table</b><br/>app.table(name)"]
+    App --> AO["<b>Also from an app</b><br/>TypedTable: app.typed(Class)<br/>SchemaOperation: app.operation(name)"]
+    T --> TO["<b>From a table</b><br/>Record: .query(), .get()<br/>Field: .fields()<br/>Report: .report(name)<br/>Operation: .operation(name)"]
+```
+
 ## Next steps
 
 - [Reading records](guides/reading.md) covers queries, paging, and record values.

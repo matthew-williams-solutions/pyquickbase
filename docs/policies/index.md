@@ -42,6 +42,18 @@ field looks as if it doesn't exist.
    pins each table and field by ID.
 3. **Give the bound policy to a client.** From then on, every request is checked against it.
 
+```mermaid
+flowchart TD
+    P["<b>Policy</b><br/>by name and label"] -- "bind(app)" --> B["<b>BoundPolicy</b><br/>by ID"]
+    B -- "policy=" --> C[Client]
+    B -- "to_json()" --> J[JSON]
+    J -- "from_json(), in<br/>another process" --> B2["<b>BoundPolicy</b>"]
+```
+
+A bound policy holds tables and fields by ID, so renaming one doesn't change what a rule means. A
+field added after binding follows `new_fields` until you bind again, and a table the client creates
+gives it a new policy, `qb.policy`, that includes it.
+
 ## Making a client read-only
 
 `Policy.read_only()` guarantees a client can't change data. It only sends GET requests, record

@@ -171,6 +171,23 @@ Record ID# is always selected, and it's always the last sort key so that pages s
 means that without `order_by`, records come back in Record ID# order rather than the table's default
 sort.
 
+```mermaid
+sequenceDiagram
+    participant L as Your for loop
+    participant I as query()
+    participant Q as Quickbase
+    L->>I: Start iterating
+    I->>Q: First page, up to page_size
+    Q-->>I: Records, and how many match
+    loop Until nothing more matches, or max_total is reached
+        I-->>L: One record at a time
+        I->>Q: Next page, skipping those already read
+        Q-->>I: Records
+    end
+```
+
+Breaking out of the loop fetches no more pages.
+
 Paging uses offsets, so if records are deleted while you read, others can be skipped without any error.
 Avoid deleting from the set you're reading, or read it all first.
 
@@ -329,6 +346,15 @@ for row in tasks.report("Open tasks").run(max_total=50):
 
 page = tasks.report("12").run_page(limit=100, skip=0)
 print(len(page.records), page.total, page.has_more)
+```
+
+Which method reads a report depends on its type, which `report.info().type` gives:
+
+```mermaid
+flowchart LR
+    R[A report] --> T["<b>A table report</b><br/>run() or run_page(),<br/>records as from query()"]
+    R --> S["<b>A summary or chart report</b><br/>summary_rows(),<br/>rows keyed by column label"]
+    R --> X["<b>Asks the user for a value</b><br/>Can't run through the API"]
 ```
 
 The report decides the filter, sort, and columns:

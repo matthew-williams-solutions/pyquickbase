@@ -59,28 +59,18 @@ qb = Quickbase(realm="acme", token="your_user_token", retry=policy)
 `RateLimitError`. A `Retry-After` of 0 uses the backoff from `base_delay` instead, because Quickbase
 can send it while still limiting. Use `max_retries=0` to disable retrying.
 
-What's retried:
+For a 429, the wait depends on Quickbase's `Retry-After`:
 
 ```mermaid
-flowchart TD
-    S[Send the request] --> O{What happened?}
-    O -- "couldn't connect,<br/>nothing was sent" --> B[Wait with backoff]
-    O -- "timed out or dropped<br/>after sending" --> RD1{A read?}
-    O -- "502, 503, or 504" --> RD2{A read?}
-    O -- 429 --> RA{Retry-After?}
-    O -- "anything else" --> DONE[Return it, or raise its error]
-    RD1 -- yes --> B
-    RD1 -- no --> X[Raise, as it may have been applied]
-    RD2 -- yes --> B
-    RD2 -- no --> DONE
-    RA -- "missing or 0" --> B
-    RA -- "up to max_retry_after" --> WA[Wait that long]
-    RA -- longer --> RL[Raise RateLimitError]
-    B --> L{Retries left?}
-    WA --> L
-    L -- yes --> S
-    L -- no --> DONE
+flowchart LR
+    RA{"A 429's<br/>Retry-After"} --> B["<b>None, or 0</b><br/>Retry after a backoff"]
+    RA --> W["<b>Up to max_retry_after</b><br/>Retry after that wait"]
+    RA --> X["<b>Longer</b><br/>Raise RateLimitError"]
 ```
+
+Each retry counts toward `max_retries`. Once they're used up, the last error is raised.
+
+What's retried:
 
 
 | Failure | Reads | Writes |

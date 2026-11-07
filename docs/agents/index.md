@@ -90,10 +90,10 @@ Each layer checks a request on its own, so a mistake or a manipulated model has 
 them:
 
 ```mermaid
-flowchart LR
-    M[Model] -- tool call --> T["Your tool<br/>fixes table, fields, scope"]
+flowchart TD
+    M[Model] -- tool call --> T["Your tool fixes the table,<br/>fields, and scope"]
     T --> P{"Client's policy<br/>allows it?"}
-    P -- no --> X1["PolicyRefusedError<br/>nothing sent"]
+    P -- no --> X1["PolicyRefusedError,<br/>nothing sent"]
     P -- yes --> R{"Token's role<br/>allows it?"}
     R -- no --> X2["Quickbase refuses it,<br/>or hides the data"]
     R -- yes --> Q[(Quickbase app)]

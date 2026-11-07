@@ -12,5 +12,12 @@ to those tables, including through `qb.request()`. The fields it uses may be fil
   added to them.
 - **It doesn't check updates by `Record ID#`,** which name a record without a filter.
 
+```mermaid
+flowchart LR
+    L["limit.rows(tables, where)"] --> Q["<b>Queries, summaries, and deletes</b><br/>The condition is ANDed on"]
+    L --> R["<b>Reports, file downloads, and formulas</b><br/>Refused"]
+    L --> U["<b>Updates by Record ID#</b><br/>Not checked"]
+```
+
 It's defense in depth. Quickbase's [record-level rules](../api-notes.md#record-level-rules) for the
 token's role are the real boundary, so set those as well.

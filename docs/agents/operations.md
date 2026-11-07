@@ -42,16 +42,12 @@ Only the last step changes anything:
 
 ```mermaid
 flowchart TD
-    A[The model's arguments] --> N["Read spellings models guess,<br/>such as sort or starts with"]
-    N --> C["Check every key, field, and value<br/>against the schema"]
-    C --> S["Add the scope to the filter, or<br/>fill its fields in on an insert"]
-    S --> K["Count what a delete matches, and<br/>check named records are in the scope"]
-    K --> P{"require_preview?"}
-    P -- yes --> CF{"Confirmation matches<br/>these arguments?"}
-    CF -- no --> E[ConfirmationError]
-    CF -- yes --> T
-    P -- no --> T["Call the table method,<br/>under the client's policy"]
-    T --> R["The result, for tool_result()"]
+    A[Normalize the spellings] --> B[Check keys, fields, and values]
+    B --> C[Apply the scope]
+    C --> D[Count what a delete matches]
+    D --> E[Check named records are in scope]
+    E --> F["Check the confirmation,<br/>with require_preview"]
+    F --> G[Call the table method]
 ```
 
 ### What each operation takes

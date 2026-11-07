@@ -21,6 +21,19 @@ client, use `await` on each call.
 | `table.upsert(records, merge_on="Code")` | Updates the record whose unique field matches, or creates one |
 | `table.delete(where)` | Deletes matching records and returns the count |
 
+To choose between the three that write: use `update()` to change records you know by Record ID#,
+`upsert()` to update or create by a unique field, and `insert()` to only create.
+
+```mermaid
+flowchart TD
+    S{"Know each<br/>Record ID#?"} -- yes --> U["update()"]
+    S -- no --> K{"Match on a<br/>unique field?"}
+    K -- yes --> UP["upsert(merge_on=...)<br/>updates or creates"]
+    K -- no --> N{"Key field is<br/>Record ID#?"}
+    N -- yes --> I["insert()<br/>only creates"]
+    N -- no --> UP
+```
+
 ## Writing values
 
 Rows are dictionaries keyed by field label or ID. [Field types](../field-types.md) lists what to write
@@ -227,6 +240,22 @@ where every value is empty. Quickbase can skip such a row without saying so, whi
 Large writes are split into batches of 1,000 rows, which you can change with `batch_size`. If a later
 batch fails outright, `WriteError` is raised with the results so far. Check `error.result` before
 trying again, so you don't write the same rows twice.
+
+```mermaid
+sequenceDiagram
+    participant Y as Your code
+    participant S as pyquickbase
+    participant Q as Quickbase
+    Y->>S: insert(2,500 records)
+    S->>Q: Batch 1, records 1 to 1,000
+    Q-->>S: Written
+    S->>Q: Batch 2, records 1,001 to 2,000
+    Q-->>S: Written
+    S->>Q: Batch 3, records 2,001 to 2,500
+    Q-->>S: Fails, such as a 429 after the retries
+    S-->>Y: WriteError: result lists batches 1 and 2,<br/>and __cause__ is batch 3's error
+    Note over Y,Q: Batches 1 and 2 stay written
+```
 
 A write that times out isn't retried, because Quickbase may already have applied it.
 

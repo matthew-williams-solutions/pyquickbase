@@ -73,6 +73,17 @@ def search_tasks(project: str, where: dict) -> list[dict]:
         return [dict(task) for task in tasks.query(where=condition, select=["Title"], max_total=50)]
 ```
 
+The model only supplies part of the filter. Your code fixes the rest, and a policy adds its own:
+
+```mermaid
+flowchart TD
+    J["The model's JSON"] --> W["where_from_dict(fields=...)"]
+    S["Your scope, such as<br/>the user's project"] --> AND((AND))
+    W --> AND
+    AND --> Q["tasks.query(where=...)"]
+    P["The policy's limit.rows()"] -. also ANDed on .-> Q
+```
+
 Return a `QueryError` or `UnknownFieldError` to the model as the tool's result, with
 [`tool_error()`](results.md#errors). Their messages say where the mistake is and what's allowed, so it can correct
 itself, and they don't repeat the values it sent. Nothing has been sent to Quickbase at that point.

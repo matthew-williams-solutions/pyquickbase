@@ -13,8 +13,9 @@ formula that can't be read counts as reading every field of its table, and one t
 that reads other records counts as reading every field of the app.
 
 ```mermaid
-flowchart LR
+flowchart TD
     subgraph Staff
+        direction LR
         H["Hourly Rate<br/>class: pay"] --> D["Day Rate<br/>formula"]
     end
     subgraph Shifts

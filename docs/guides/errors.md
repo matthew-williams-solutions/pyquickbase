@@ -34,40 +34,17 @@ with Quickbase(realm="acme", token="your_user_token") as qb:
 
 The other examples on this page use `tasks`, a table from a client made in the same way.
 
-Catching a class catches everything under it. `WritePermissionError` is under both `WriteError` and
-`PermissionDeniedError`, so either one catches a refused write.
+Catching a class catches everything under it. In each box, the class in bold is the parent of the
+ones listed below it. `WritePermissionError` is under both `WriteError` and `PermissionDeniedError`,
+so either one catches a refused write.
 
 ```mermaid
 flowchart LR
-    Q[QuickbaseError] --> Before
-    Q --> Answer
-    Q --> W[WriteError]
-    Q --> API[APIError]
-    subgraph Before [Caught before sending]
-        direction TB
-        CE[ConfigurationError]
-        QE[QueryError]
-        IV[InvalidValueError]
-        CF[ConfirmationError]
-        PR[PolicyRefusedError]
-        UN["UnknownTableError<br/>UnknownFieldError<br/>UnknownReportError"]
-        US[UnsupportedReportError]
-        SM[SchemaMismatchError]
-    end
-    subgraph Answer [No usable answer]
-        direction TB
-        NE[NetworkError] --> RT[RequestTimeoutError]
-        IR[InvalidResponseError]
-    end
-    W --> SC[SchemaChangeError]
-    W --> WP[WritePermissionError]
-    API --> BR[BadRequestError]
-    API --> AU[AuthenticationError]
-    API --> PD[PermissionDeniedError]
-    API --> NF[NotFoundError]
-    API --> RL[RateLimitError]
-    API --> SE[ServerError]
-    PD --> WP
+    Q[QuickbaseError] --> B["<b>Caught before sending</b><br/>ConfigurationError<br/>QueryError<br/>InvalidValueError<br/>ConfirmationError<br/>PolicyRefusedError<br/>SchemaMismatchError<br/>UnknownTableError<br/>UnknownFieldError<br/>UnknownReportError<br/>UnsupportedReportError"]
+    Q --> N["<b>NetworkError</b><br/>RequestTimeoutError"]
+    Q --> I["<b>InvalidResponseError</b>"]
+    Q --> W["<b>WriteError</b><br/>SchemaChangeError<br/>WritePermissionError"]
+    Q --> A["<b>APIError</b><br/>BadRequestError<br/>AuthenticationError<br/>PermissionDeniedError<br/>NotFoundError<br/>RateLimitError<br/>ServerError"]
 ```
 
 `ConfigurationError`, `QueryError`, and `InvalidValueError` are also `ValueError`s, and the three
