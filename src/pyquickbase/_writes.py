@@ -251,9 +251,9 @@ def refuse_field(rows: Sequence[Mapping[str, Any]], field_id: int, purpose: str)
             raise InvalidValueError(f"Row {index} sets field {field_id}, {purpose}.")
 
 
-RowErrorKind = Literal["duplicate", "permission", "invalid_choice", "rule", "other"]
+RowErrorReason = Literal["duplicate", "permission", "invalid_choice", "rule", "other"]
 # Quickbase only gives text. Message wording isn't a promise, so unknown text counts as "other".
-_ROW_ERROR_KINDS: tuple[tuple[RowErrorKind, re.Pattern[str]], ...] = (
+_ROW_ERROR_REASONS: tuple[tuple[RowErrorReason, re.Pattern[str]], ...] = (
     # A rule's message is the app builder's own text, so only the prefix can be matched, and it's
     # checked first so that a message mentioning permissions or choices isn't misread.
     ("rule", re.compile(r"^Table rule validation:()", re.I)),
@@ -269,9 +269,9 @@ class RowError:
 
     Attributes:
         index: The row's position in the rows you passed, starting from 0.
-        messages: Quickbase's wording, which can change, so use `kind` to decide what to do. For a
-            `rule` failure, this holds the rule's message.
-        kind: `duplicate` for a value already in a unique field, `permission` for a refusal by the
+        messages: Quickbase's wording, which can change, so use `reason` to decide what to do. For
+            a `rule` failure, this holds the rule's message.
+        reason: `duplicate` for a value already in a unique field, `permission` for a refusal by the
             token's role, `invalid_choice` for a value outside a field's choices, `rule` for a
             refusal by one of the table's custom data rules, and `other` for anything else,
             including wording this version doesn't recognize.
@@ -280,18 +280,18 @@ class RowError:
 
     index: int
     messages: tuple[str, ...]
-    kind: RowErrorKind = "other"
+    reason: RowErrorReason = "other"
     field_id: int | None = None
 
 
 def row_error(index: int, messages: tuple[str, ...]) -> RowError:
     """Classify a failed row from Quickbase's messages."""
     for message in messages:
-        for kind, pattern in _ROW_ERROR_KINDS:
+        for reason, pattern in _ROW_ERROR_REASONS:
             found = pattern.search(message)
             if found:
                 field_id = int(found.group(1)) if found.group(1) else None
-                return RowError(index=index, messages=messages, kind=kind, field_id=field_id)
+                return RowError(index=index, messages=messages, reason=reason, field_id=field_id)
     return RowError(index=index, messages=messages)
 
 
@@ -330,7 +330,7 @@ def write_result_summary(result: WriteResult) -> str:
 def write_failure(result: WriteResult) -> WriteError:
     """The error for rows that failed, which is about permissions only if they all were."""
     summary = write_result_summary(result)
-    if all(item.kind == "permission" for item in result.errors):
+    if all(item.reason == "permission" for item in result.errors):
         return WritePermissionError(
             summary, result=result, status_code=207, method="POST", path="/records"
         )

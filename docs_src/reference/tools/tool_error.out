@@ -1,2 +1,2 @@
-write_refused none
+write_refused no
 This tool may not make that change. Don't try it another way. Tell the user.

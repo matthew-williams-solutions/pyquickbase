@@ -73,6 +73,7 @@ from .._operations import (
     scope_rows,
     unavailable,
 )
+from .._output import Count, DeletedCount
 from .._policy import Policy, PolicyRule
 from .._preview import (
     ConfirmedUpdatePreview,
@@ -2615,6 +2616,10 @@ class AsyncOperation:
                 confirmation=await self._confirmation("update", arguments, scope, None),
             )
         result = await getattr(table, call.method)(**call.arguments)
+        if call.method == "count":
+            return Count(result)
+        if call.method == "delete":
+            return DeletedCount(result)
         if call.method == "preview_delete":
             page = cast(Page, result)
             limit = self._spec.context.limit

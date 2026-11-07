@@ -236,7 +236,7 @@ async def test_a_failure_stops_the_plan_and_says_what_was_made() -> None:
         assert result.failed is not None
         assert result.failed.change == changes[1]
         assert [item.change for item in result.not_attempted] == [changes[2]]
-        assert tool_error(caught.value)["error"]["changed"] == "some"
+        assert tool_error(caught.value)["error"]["data_changed"] == "partly"
         fake.fail = None
         again = await app.preview_schema_changes(changes)
     assert [item.status for item in again.changes] == ["already_done", "ready", "ready"]

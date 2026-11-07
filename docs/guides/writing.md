@@ -189,9 +189,9 @@ except WriteError as error:
         print(rows[failed.index], failed.messages)
 ```
 
-`kind` says why a row failed, without you having to read Quickbase's wording, which can change:
+`reason` says why a row failed, without you having to read Quickbase's wording, which can change:
 
-| `kind` | Why the row failed |
+| `reason` | Why the row failed |
 |---|---|
 | `duplicate` | A value is already in a unique field, which `field_id` names |
 | `permission` | The token's role refused it |
@@ -206,7 +206,7 @@ change:
 try:
     movements.insert([{"Key": "order-7", "Quantity": -1}])
 except WriteError as error:
-    if any(failed.kind != "duplicate" for failed in error.result.errors):
+    if any(failed.reason != "duplicate" for failed in error.result.errors):
         raise
 ```
 

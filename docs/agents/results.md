@@ -51,6 +51,8 @@ Every result has `"ok": true`, and a key for what it holds:
 | A list of `SummaryRow`, from `summarize()` | `groups`, each with `group`, `count`, and the totals it has |
 | An `UpdatePreview` | `changes`, with `before` and `after` for each field, `unchanged_ids`, and `missing_ids` |
 | A `FormulaResult` | `value` and `type` |
+| A `count` operation's result | `count` |
+| A `delete` operation's result | `deleted_count` |
 | Text, a number, a date, or a bool, such as from `count()` | `value` |
 
 Records are keyed by field label, or by attribute name for a generated class. Values are written the same
@@ -85,7 +87,7 @@ Results cost tokens, so return as little as the model needs:
 - **Pass `max_records`** to cut a list your code already has. `page.has_more` is then true, so the model
   knows it doesn't have them all.
 - **Pass `max_text`** to shorten long text, such as notes. A shortened value ends by saying how many
-  characters were left out, and the result has `"text_shortened": true`, so a model can't mistake it for
+  characters were left out, and the result has `"text_truncated": true`, so a model can't mistake it for
   the whole value.
 - **Select only the fields the tool needs.** Every field is in every record.
 
@@ -99,10 +101,10 @@ Every error has `"ok": false`, and an `error` with these keys:
 | `message` | The SDK's explanation, which says where the mistake is. It doesn't repeat the values a model sent |
 | `hint` | What the model should do next, in fixed words for each code |
 | `retryable` | Whether the same call can succeed later, without changing it |
-| `changed` | `none` if nothing was changed, `some` if part of a write was, and `unknown` if a write may have been |
+| `data_changed` | `no` if nothing was changed, `partly` if part of a write was, and `unknown` if a write may have been |
 | `retry_after` | For a rate limit, the seconds Quickbase asked to wait, when it said |
 | `status` | For an error from Quickbase, the HTTP status |
-| `written`, `failed_rows` | For a write that failed, the IDs that were created, updated, and left unchanged, and each failed row's `index`, `kind`, `field_id`, and `messages` |
+| `written`, `failed_rows` | For a write that failed, the IDs that were created, updated, and left unchanged, and each failed row's `index`, `reason`, `field_id`, and `messages` |
 
 ```json
 {
@@ -112,32 +114,32 @@ Every error has `"ok": false`, and an `error` with these keys:
     "message": "1 of 3 rows failed ...",
     "hint": "Some records were changed. Fix the failed rows and send only those again.",
     "retryable": false,
-    "changed": "some",
+    "data_changed": "partly",
     "written": {"created_ids": [4, 5], "updated_ids": [], "unchanged_ids": []},
-    "failed_rows": [{"index": 2, "kind": "duplicate", "field_id": 10, "messages": ["..."]}]
+    "failed_rows": [{"index": 2, "reason": "duplicate", "field_id": 10, "messages": ["..."]}]
   }
 }
 ```
 
-`changed` is what tells a partial write from a complete failure. A model should check the data before
-repeating a call whose `changed` isn't `none`, as repeating an insert can add duplicates.
+`data_changed` is what tells a partial write from a complete failure. A model should check the data
+before repeating a call whose `data_changed` isn't `no`, as repeating an insert can add duplicates.
 
-| Code | Raised for | `changed` | `retryable` |
+| Code | Raised for | `data_changed` | `retryable` |
 |---|---|---|---|
-| `needs_confirmation` | A change without the confirmation from its preview or plan, or with one that's expired or for something else | `none` | No |
-| `invalid_query`, `invalid_value` | A filter, argument, or value that can't be sent | `none` | No |
-| `unknown_table`, `unknown_field`, `unknown_report` | A name that doesn't exist, or that the token or the read rules hide | `none` | No |
-| `unsupported_report` | A report that can't be read that way | `none` | No |
-| `read_refused`, `write_refused`, `refused` | The client's limits refused it, and it wasn't sent | `none` | No |
-| `write_failed` | Every row of a write failed | `none` | No |
-| `partial_write` | Some rows were written and some weren't, or a later batch failed | `some`, or `unknown` if the failed batch may have been written | No |
-| `write_permission` | The token's role refused a write | `none`, or `some` if earlier rows were written | No |
-| `bad_request`, `not_found`, `permission_denied`, `authentication`, `api_error` | Quickbase answered with an error | `none` | No |
-| `rate_limited` | Quickbase is limiting requests, and the retries ran out | `none` | Yes |
-| `server_error`, `timeout`, `network` | Quickbase failed, or didn't answer | `unknown` | Yes |
+| `needs_confirmation` | A change without the confirmation from its preview or plan, or with one that's expired or for something else | `no` | No |
+| `invalid_arguments`, `invalid_value` | A filter, argument, or value that can't be sent | `no` | No |
+| `unknown_table`, `unknown_field`, `unknown_report` | A name that doesn't exist, or that the token or the read rules hide | `no` | No |
+| `unsupported_report` | A report that can't be read that way | `no` | No |
+| `read_refused`, `write_refused` | The client's limits refused it, and it wasn't sent | `no` | No |
+| `write_failed` | Every row of a write failed | `no` | No |
+| `partial_write` | Some rows were written and some weren't, or a later batch failed | `partly`, or `unknown` if the failed batch may have been written | No |
+| `write_permission_denied` | The token's role refused a write | `no`, or `partly` if earlier rows were written | No |
+| `bad_request`, `not_found`, `permission_denied`, `authentication`, `api_error` | Quickbase answered with an error | `no` | No |
+| `rate_limited` | Quickbase is limiting requests, and the retries ran out | `no` | Yes |
+| `server_error`, `timeout`, `network_error` | Quickbase failed, or didn't answer | `unknown` | Yes |
 | `invalid_response` | Quickbase's answer couldn't be read | `unknown` | No |
-| `schema_mismatch`, `configuration` | The tool's setup no longer matches, which the model can't fix | `none` | No |
-| `error` | Any other error from the SDK | `none` | No |
+| `schema_mismatch`, `misconfigured` | The tool's setup no longer matches, which the model can't fix | `no` | No |
+| `quickbase_error` | Any other error from the SDK | `no` | No |
 | `internal` | An exception from outside the SDK, such as a bug in the tool | `unknown` | No |
 
 An exception from outside the SDK gets the message "An unexpected error occurred in the tool.", so a
@@ -224,4 +226,4 @@ def task_totals(project: str, where: dict | None = None) -> dict:
 ```
 
 `tool_result()` writes dates in `minimum` and `maximum` as text, as it does everywhere. A `max_records`
-that's exceeded is an `invalid_query`, whose message says how many records matched.
+that's exceeded is an `invalid_arguments`, whose message says how many records matched.

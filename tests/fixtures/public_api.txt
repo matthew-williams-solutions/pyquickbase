@@ -507,11 +507,11 @@ class Row(dict, Generic)
     def __init__(self, values: Mapping[int, Any] | None = None, *, table_id: str | None = None) -> None
 class RowError(object)
     def __eq__(self, other)
-    def __init__(self, *, index: int, messages: tuple[str, ...], kind: Literal['duplicate', 'permission', 'invalid_choice', 'rule', 'other'] = 'other', field_id: int | None = None) -> None
+    def __init__(self, *, index: int, messages: tuple[str, ...], reason: Literal['duplicate', 'permission', 'invalid_choice', 'rule', 'other'] = 'other', field_id: int | None = None) -> None
     field field_id: int | None
     field index: int
-    field kind: Literal['duplicate', 'permission', 'invalid_choice', 'rule', 'other']
     field messages: tuple[str, ...]
+    field reason: Literal['duplicate', 'permission', 'invalid_choice', 'rule', 'other']
 class Rule(Protocol)
     def __init__(self, *args, **kwargs)
     def decide(self, request: 'ReadRequest | WriteRequest') -> Decision | None
@@ -628,7 +628,7 @@ class TableSelector(object)
     def __init__(self, kind: Literal['all', 'created', 'named'], values: tuple[str, ...] = ()) -> None
     field kind: Literal['all', 'created', 'named']
     field values: tuple[str, ...]
-value ToolErrorCode = Literal['configuration', 'needs_confirmation', 'invalid_query', 'invalid_value', 'read_refused', 'write_refused', 'unknown_table', 'unknown_field', 'unknown_report', 'unsupported_report', 'schema_mismatch', 'partial_write', 'write_failed', 'write_permission', 'authentication', 'permission_denied', 'not_found', 'bad_request', 'rate_limited', 'server_error', 'api_error', 'timeout', 'network', 'invalid_response', 'error', 'internal']
+value ToolErrorCode = Literal['misconfigured', 'needs_confirmation', 'invalid_arguments', 'invalid_value', 'read_refused', 'write_refused', 'unknown_table', 'unknown_field', 'unknown_report', 'unsupported_report', 'schema_mismatch', 'partial_write', 'write_failed', 'write_permission_denied', 'authentication', 'permission_denied', 'not_found', 'bad_request', 'rate_limited', 'server_error', 'api_error', 'timeout', 'network_error', 'invalid_response', 'quickbase_error', 'internal']
 class TypedField(F)
     def __eq__(self, value: object) -> Condition
     def __ge__(self, value: Any) -> Condition

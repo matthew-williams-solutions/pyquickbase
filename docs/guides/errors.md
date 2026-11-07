@@ -84,12 +84,12 @@ except WriteError as error:
     for row, record_id in zip(rows, error.result.row_ids):
         print(row["Title"], record_id)  # None for a row that failed
     for failed in error.result.errors:
-        print(failed.index, failed.kind, failed.messages)
+        print(failed.index, failed.reason, failed.messages)
 ```
 
 When a later batch of a large write fails, the error's `__cause__` is that batch's own error, such as a
 `RateLimitError`, and `result` holds the batches before it. See [When rows fail](writing.md#when-rows-fail)
-for each row's `kind`.
+for each row's `reason`.
 
 ## Refused writes
 
@@ -98,7 +98,7 @@ the table gets a 403. Any other refusal, including a field the role can only vie
 successful response. `WritePermissionError` covers both. It's a `WriteError` and a
 `PermissionDeniedError`, so either one catches it, and its `status_code` is 403 or 207.
 
-If some rows failed for another reason too, you get a plain `WriteError`, so check each row's `kind`. A row
+If some rows failed for another reason too, you get a plain `WriteError`, so check each row's `reason`. A row
 with one field the role can't change is refused whole, so its other fields don't change either.
 
 ## Errors from Quickbase
@@ -152,5 +152,5 @@ use up a call's retries and raise `RateLimitError`, so handle it if you make man
 
 ## Errors for a model
 
-`tool_error()` turns any of these into plain data with a fixed `code`, whether anything `changed`, and
+`tool_error()` turns any of these into plain data with a fixed `code`, whether any data changed, and
 whether it's `retryable`. See [Returning results to a model](../agents/results.md#returning-results-to-a-model).

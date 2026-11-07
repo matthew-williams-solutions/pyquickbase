@@ -70,7 +70,7 @@ def write_response(line_errors: dict[str, list[str]] | None = None) -> httpx.Res
 )
 def test_row_errors_are_classified(message: str, kind: str, field_id: int | None) -> None:
     error = row_error(0, (message,))
-    assert error.kind == kind
+    assert error.reason == kind
     assert error.field_id == field_id
     assert error.messages == (message,)
 
@@ -98,7 +98,7 @@ def test_permission_row_errors_raise_the_same_error() -> None:
         with pytest.raises(WritePermissionError) as caught:
             qb.app(APP).table("Tasks").insert([{"Title": "x"}])
     assert caught.value.status_code == 207
-    assert caught.value.result.errors[0].kind == "permission"
+    assert caught.value.result.errors[0].reason == "permission"
 
 
 def test_other_row_errors_stay_a_plain_write_error() -> None:
@@ -109,7 +109,7 @@ def test_other_row_errors_stay_a_plain_write_error() -> None:
         with pytest.raises(WriteError) as caught:
             qb.app(APP).table("Tasks").insert([{"Title": "x"}])
     assert not isinstance(caught.value, PermissionDeniedError)
-    assert caught.value.result.errors[0].kind == "duplicate"
+    assert caught.value.result.errors[0].reason == "duplicate"
     assert caught.value.result.errors[0].field_id == 8
 
 
@@ -126,7 +126,7 @@ def test_mixed_row_errors_are_a_plain_write_error() -> None:
         with pytest.raises(WriteError) as caught:
             qb.app(APP).table("Tasks").insert([{"Title": "x"}, {"Title": "y"}])
     assert not isinstance(caught.value, PermissionDeniedError)
-    assert [e.kind for e in caught.value.result.errors] == ["permission", "duplicate"]
+    assert [e.reason for e in caught.value.result.errors] == ["permission", "duplicate"]
 
 
 def test_a_403_on_a_later_batch_keeps_the_earlier_results() -> None:

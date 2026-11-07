@@ -390,7 +390,7 @@ async def test_delete_fields_reports_partial_failure() -> None:
 
 
 @pytest.mark.parametrize(
-    ("deleted", "code", "changed"), [([6], "partial_write", "some"), ([], "write_failed", "none")]
+    ("deleted", "code", "changed"), [([6], "partial_write", "partly"), ([], "write_failed", "no")]
 )
 async def test_delete_fields_says_whether_any_were_deleted(
     deleted: list[int], code: str, changed: str
@@ -402,7 +402,7 @@ async def test_delete_fields_says_whether_any_were_deleted(
         with pytest.raises(WriteError, match=rf"fields \{deleted}\ were") as caught:
             await qb.app(APP).table("Tasks").delete_fields(["Title", "Record ID#"])
     error = tool_error(caught.value)["error"]
-    assert (error["code"], error["changed"]) == (code, changed)
+    assert (error["code"], error["data_changed"]) == (code, changed)
 
 
 async def test_create_field_says_it_was_created_when_setting_unique_fails() -> None:
@@ -412,7 +412,7 @@ async def test_create_field_says_it_was_created_when_setting_unique_fails() -> N
         with pytest.raises(BadRequestError, match="Field 50 was created") as caught:
             await qb.app(APP).table("Tasks").create_field("New", "text", unique=True)
     assert "non-unique" in str(caught.value)
-    assert tool_error(caught.value)["error"]["changed"] == "some"
+    assert tool_error(caught.value)["error"]["data_changed"] == "partly"
 
 
 async def test_row_ids_match_new_records_to_rows_when_some_fail() -> None:

@@ -190,12 +190,12 @@ def test_rows_refused_by_quickbase(scratch: Any) -> None:
     result = caught.value.result
     assert len(result.created_ids) == 1
     by_index = {item.index: item for item in result.errors}
-    assert by_index[1].kind == "duplicate"
+    assert by_index[1].reason == "duplicate"
     assert by_index[1].field_id == 8
-    assert by_index[2].kind == "invalid_choice"
+    assert by_index[2].reason == "invalid_choice"
     assert by_index[2].field_id == 7
-    assert by_index[3].kind == "other"
-    assert by_index[4].kind == "other"
+    assert by_index[3].reason == "other"
+    assert by_index[4].reason == "other"
 
     with pytest.raises(WriteError):
         table.update([{"Record ID#": 999999, "Title": "x"}])
@@ -212,7 +212,7 @@ def test_new_choices_are_allowed_unless_turned_off(scratch: Any) -> None:
     assert not updated.allow_new_choices
     with pytest.raises(WriteError) as caught:
         table.insert([{"Open Choice": "Also not listed"}])
-    assert caught.value.result.errors[0].kind == "invalid_choice"
+    assert caught.value.result.errors[0].reason == "invalid_choice"
 
 
 def test_a_read_only_client_refuses_writes(scratch: Any) -> None:

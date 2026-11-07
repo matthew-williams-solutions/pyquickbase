@@ -513,6 +513,16 @@ async def test_a_confirmation_expires_and_only_works_with_its_own_client(
             await update.run({**CHANGE, "confirmation": confirmation})
 
 
+async def test_count_and_delete_say_what_their_number_is() -> None:
+    async with client(Fake(matching=2)) as qb:
+        tasks = qb.app("bq1234567").table("Tasks")
+        count = await (await tasks.operation("count")).run({"where": OPEN})
+        deleted = await (await tasks.operation("delete", max_records=10)).run({"where": OPEN})
+    assert count == 2
+    assert tool_result(count) == {"ok": True, "count": 2}
+    assert tool_result(deleted) == {"ok": True, "deleted_count": 1}
+
+
 async def test_a_delete_needs_a_preview_and_the_same_records_to_match() -> None:
     fake = Fake(matching=2)
     async with client(fake) as qb:

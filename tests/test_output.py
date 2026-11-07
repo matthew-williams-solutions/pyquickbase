@@ -203,8 +203,8 @@ def test_one_record_or_none() -> None:
 def test_max_text_shortens_and_says_so() -> None:
     found = tool_result(record(Record_ID=1, Title="x" * 30), max_text=10)
     assert found["record"]["Title"] == "xxxxxxxxxx… (20 more characters)"
-    assert found["text_shortened"] is True
-    assert "text_shortened" not in tool_result(record(Record_ID=1, Title="short"), max_text=10)
+    assert found["text_truncated"] is True
+    assert "text_truncated" not in tool_result(record(Record_ID=1, Title="short"), max_text=10)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True, repr=False)
@@ -346,41 +346,41 @@ def written(**ids: Any) -> WriteResult:
 @pytest.mark.parametrize(
     ("error", "code", "changed", "retryable"),
     [
-        (ConfigurationError("x"), "configuration", "none", False),
-        (QueryError("x"), "invalid_query", "none", False),
-        (InvalidValueError("x"), "invalid_value", "none", False),
-        (PolicyRefusedError(Decision(allowed=False, verb="read")), "read_refused", "none", False),
-        (PolicyRefusedError(Decision(allowed=False, verb="filter")), "read_refused", "none", False),
+        (ConfigurationError("x"), "misconfigured", "no", False),
+        (QueryError("x"), "invalid_arguments", "no", False),
+        (InvalidValueError("x"), "invalid_value", "no", False),
+        (PolicyRefusedError(Decision(allowed=False, verb="read")), "read_refused", "no", False),
+        (PolicyRefusedError(Decision(allowed=False, verb="filter")), "read_refused", "no", False),
         (
             PolicyRefusedError(Decision(allowed=False, verb="update")),
             "write_refused",
-            "none",
+            "no",
             False,
         ),
         (
             PolicyRefusedError(Decision(allowed=False, verb="lookup")),
             "write_refused",
-            "none",
+            "no",
             False,
         ),
-        (UnknownTableError("x"), "unknown_table", "none", False),
-        (UnknownFieldError("x"), "unknown_field", "none", False),
-        (UnknownReportError("x"), "unknown_report", "none", False),
-        (UnsupportedReportError("x"), "unsupported_report", "none", False),
-        (SchemaMismatchError("x"), "schema_mismatch", "none", False),
-        (AuthenticationError("x", status_code=401), "authentication", "none", False),
-        (PermissionDeniedError("x", status_code=403), "permission_denied", "none", False),
-        (NotFoundError("x", status_code=404), "not_found", "none", False),
-        (BadRequestError("x", status_code=400), "bad_request", "none", False),
-        (RateLimitError("x", status_code=429), "rate_limited", "none", True),
+        (UnknownTableError("x"), "unknown_table", "no", False),
+        (UnknownFieldError("x"), "unknown_field", "no", False),
+        (UnknownReportError("x"), "unknown_report", "no", False),
+        (UnsupportedReportError("x"), "unsupported_report", "no", False),
+        (SchemaMismatchError("x"), "schema_mismatch", "no", False),
+        (AuthenticationError("x", status_code=401), "authentication", "no", False),
+        (PermissionDeniedError("x", status_code=403), "permission_denied", "no", False),
+        (NotFoundError("x", status_code=404), "not_found", "no", False),
+        (BadRequestError("x", status_code=400), "bad_request", "no", False),
+        (RateLimitError("x", status_code=429), "rate_limited", "no", True),
         (ServerError("x", status_code=503), "server_error", "unknown", True),
-        (APIError("x", status_code=413), "api_error", "none", False),
+        (APIError("x", status_code=413), "api_error", "no", False),
         (RequestTimeoutError("x"), "timeout", "unknown", True),
-        (NetworkError("x"), "network", "unknown", True),
+        (NetworkError("x"), "network_error", "unknown", True),
         (InvalidResponseError("x"), "invalid_response", "unknown", False),
-        (QuickbaseError("x"), "error", "none", False),
-        (WriteError("x", result=written()), "write_failed", "none", False),
-        (WritePermissionError("x", result=written()), "write_permission", "none", False),
+        (QuickbaseError("x"), "quickbase_error", "no", False),
+        (WriteError("x", result=written()), "write_failed", "no", False),
+        (WritePermissionError("x", result=written()), "write_permission_denied", "no", False),
         (KeyError("s3cret"), "internal", "unknown", False),
     ],
 )
@@ -390,7 +390,11 @@ def test_each_error_has_a_code(
     found = tool_error(error)
     assert found["ok"] is False
     details = found["error"]
-    assert (details["code"], details["changed"], details["retryable"]) == (code, changed, retryable)
+    assert (details["code"], details["data_changed"], details["retryable"]) == (
+        code,
+        changed,
+        retryable,
+    )
     assert details["hint"]
     dumps(found)
 
@@ -420,26 +424,26 @@ def test_api_errors_give_their_status_and_rate_limits_their_wait() -> None:
 
 
 def test_failed_rows_and_what_was_written() -> None:
-    failure = RowError(index=1, messages=("Duplicate",), kind="duplicate", field_id=10)
+    failure = RowError(index=1, messages=("Duplicate",), reason="duplicate", field_id=10)
     result = WriteResult(created_ids=(4,), errors=(failure,))
     found = tool_error(WriteError("1 row failed", result=result))["error"]
     assert found["code"] == "partial_write"
-    assert found["changed"] == "some"
+    assert found["data_changed"] == "partly"
     assert found["written"] == {"created_ids": [4], "updated_ids": [], "unchanged_ids": []}
     assert found["failed_rows"] == [
-        {"index": 1, "kind": "duplicate", "field_id": 10, "messages": ["Duplicate"]}
+        {"index": 1, "reason": "duplicate", "field_id": 10, "messages": ["Duplicate"]}
     ]
 
 
 def test_every_row_failing_changed_nothing() -> None:
     failure = RowError(index=0, messages=("x",))
     found = tool_error(WriteError("x", result=WriteResult(errors=(failure,))))["error"]
-    assert (found["code"], found["changed"]) == ("write_failed", "none")
+    assert (found["code"], found["data_changed"]) == ("write_failed", "no")
 
 
 def test_unchanged_records_arent_a_change() -> None:
     found = tool_error(WriteError("x", result=written(unchanged_ids=[1])))["error"]
-    assert found["changed"] == "none"
+    assert found["data_changed"] == "no"
 
 
 def batch_failure(cause: BaseException, result: WriteResult) -> WriteError:
@@ -452,19 +456,19 @@ def batch_failure(cause: BaseException, result: WriteResult) -> WriteError:
 def test_a_later_batch_that_may_have_been_written_is_unknown() -> None:
     for cause in (RequestTimeoutError("x"), ServerError("x", status_code=502)):
         found = tool_error(batch_failure(cause, written(created_ids=[1])))["error"]
-        assert (found["code"], found["changed"]) == ("partial_write", "unknown")
+        assert (found["code"], found["data_changed"]) == ("partial_write", "unknown")
 
 
 def test_a_later_batch_that_was_refused_leaves_earlier_ones() -> None:
     error = batch_failure(BadRequestError("x", status_code=400), written(created_ids=[1]))
     found = tool_error(error)["error"]
-    assert (found["code"], found["changed"]) == ("partial_write", "some")
+    assert (found["code"], found["data_changed"]) == ("partial_write", "partly")
 
 
 def test_a_permission_refusal_after_earlier_rows_were_written() -> None:
     error = WritePermissionError("x", result=written(updated_ids=[1, 2]))
     found = tool_error(error)["error"]
-    assert (found["code"], found["changed"]) == ("write_permission", "some")
+    assert (found["code"], found["data_changed"]) == ("write_permission_denied", "partly")
 
 
 # Metadata and files
@@ -536,7 +540,7 @@ def test_a_text_file_has_its_text_and_a_binary_one_says_so() -> None:
     assert binary["file"]["text"] is None
     assert binary["file"]["binary"] is True
     long = tool_result(FileDownload(name="a.txt", data=b"x" * 30, content_type=None), max_text=10)
-    assert long["text_shortened"] is True
+    assert long["text_truncated"] is True
     empty = tool_result(FileDownload(name="a.txt", data=b"", content_type=None))
     assert empty["file"]["text"] == ""
 

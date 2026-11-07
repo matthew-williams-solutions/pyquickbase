@@ -382,7 +382,7 @@ def test_a_new_field_the_rules_hide_says_it_was_made() -> None:
         tasks = qb.app(APP).table("Tasks")
         with pytest.raises(UnknownFieldError, match="was created") as caught:
             tasks.ensure_lookup_field((tasks.relationships())[0], "Name")
-    assert tool_error(caught.value)["error"]["changed"] == "some"
+    assert tool_error(caught.value)["error"]["data_changed"] == "partly"
 
 
 def test_a_summary_needs_the_parents_grant() -> None:

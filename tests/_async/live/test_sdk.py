@@ -743,7 +743,7 @@ async def test_setup_methods_create_once_and_read_back_exactly(
     await child.insert([{"Code": "a", "Parent": created.created_ids[0], "Hours": 2}])
     with pytest.raises(WriteError) as caught:
         await child.insert([{"Code": "a"}])
-    assert caught.value.result.errors[0].kind == "duplicate"
+    assert caught.value.result.errors[0].reason == "duplicate"
     assert caught.value.result.errors[0].field_id == field.id
 
     assert any(role.access for role in await app.roles())

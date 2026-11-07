@@ -10,4 +10,4 @@ try:
 except WriteError as error:
     print(error.result.created_ids)
     for failure in error.result.errors:
-        print(failure.index, failure.kind, failure.field_id)
+        print(failure.index, failure.reason, failure.field_id)

@@ -70,9 +70,9 @@ from .errors import (
 )
 
 ToolErrorCode = Literal[
-    "configuration",
+    "misconfigured",
     "needs_confirmation",
-    "invalid_query",
+    "invalid_arguments",
     "invalid_value",
     "read_refused",
     "write_refused",
@@ -83,7 +83,7 @@ ToolErrorCode = Literal[
     "schema_mismatch",
     "partial_write",
     "write_failed",
-    "write_permission",
+    "write_permission_denied",
     "authentication",
     "permission_denied",
     "not_found",
@@ -92,22 +92,37 @@ ToolErrorCode = Literal[
     "server_error",
     "api_error",
     "timeout",
-    "network",
+    "network_error",
     "invalid_response",
-    "error",
+    "quickbase_error",
     "internal",
 ]
 """The `code` of a `tool_error()`. See the table in the agents guide for what each one means."""
 
-Changed = Literal["none", "some", "unknown"]
+DataChanged = Literal["no", "partly", "unknown"]
+
+
+class Count(int):
+    """What a `count` operation returns: the number of matching records, which `tool_result()`
+    describes as `count`."""
+
+    __slots__ = ()
+
+
+class DeletedCount(int):
+    """What a `delete` operation returns: the number of records deleted, which `tool_result()`
+    describes as `deleted_count`."""
+
+    __slots__ = ()
+
 
 # The most specific class wins, so subclasses come before their bases.
 _CODES: tuple[tuple[type[BaseException], ToolErrorCode], ...] = (
-    (WritePermissionError, "write_permission"),
+    (WritePermissionError, "write_permission_denied"),
     (WriteError, "write_failed"),
-    (ConfigurationError, "configuration"),
+    (ConfigurationError, "misconfigured"),
     (ConfirmationError, "needs_confirmation"),
-    (QueryError, "invalid_query"),
+    (QueryError, "invalid_arguments"),
     (InvalidValueError, "invalid_value"),
     (UnknownTableError, "unknown_table"),
     (UnknownFieldError, "unknown_field"),
@@ -122,15 +137,15 @@ _CODES: tuple[tuple[type[BaseException], ToolErrorCode], ...] = (
     (ServerError, "server_error"),
     (APIError, "api_error"),
     (RequestTimeoutError, "timeout"),
-    (NetworkError, "network"),
+    (NetworkError, "network_error"),
     (InvalidResponseError, "invalid_response"),
-    (QuickbaseError, "error"),
+    (QuickbaseError, "quickbase_error"),
 )
 _HINTS: dict[ToolErrorCode, str] = {
-    "configuration": "The tool is set up wrongly. Tell the user, as changing the call won't help.",
+    "misconfigured": "The tool is set up wrongly. Tell the user, as changing the call won't help.",
     "needs_confirmation": "Preview or plan the same change again, show the user the result, and "
     "send its confirmation once they approve.",
-    "invalid_query": "Fix the filter or arguments as the message says, then try again.",
+    "invalid_arguments": "Fix the filter or arguments as the message says, then try again.",
     "invalid_value": "Fix the values as the message says, then try again.",
     "read_refused": "This tool may not read that. Ask for less, as the message says, or tell "
     "the user.",
@@ -142,7 +157,7 @@ _HINTS: dict[ToolErrorCode, str] = {
     "schema_mismatch": "The table has changed since the tool was built. Tell the user.",
     "partial_write": "Some records were changed. Fix the failed rows and send only those again.",
     "write_failed": "Nothing was changed. Fix the failed rows, then try again.",
-    "write_permission": "The user's role doesn't allow this change. Tell the user.",
+    "write_permission_denied": "The user's role doesn't allow this change. Tell the user.",
     "authentication": "Quickbase didn't accept the token, or the app or table ID is wrong. Tell "
     "the user.",
     "permission_denied": "The user's role doesn't allow this. Tell the user.",
@@ -152,14 +167,14 @@ _HINTS: dict[ToolErrorCode, str] = {
     "server_error": "Quickbase failed. Check whether a change was made before trying again.",
     "api_error": "Quickbase refused the request. Tell the user if the message doesn't say why.",
     "timeout": "There was no answer in time. Check whether a change was made before trying again.",
-    "network": "Quickbase couldn't be reached. Check whether a change was made before trying "
+    "network_error": "Quickbase couldn't be reached. Check whether a change was made before trying "
     "again.",
     "invalid_response": "Quickbase's answer couldn't be read. Check whether a change was made "
     "before trying again.",
-    "error": "The request failed. Tell the user.",
+    "quickbase_error": "The request failed. Tell the user.",
     "internal": "The tool failed. Tell the user, as trying again won't help.",
 }
-_RETRYABLE = frozenset({"rate_limited", "server_error", "timeout", "network"})
+_RETRYABLE = frozenset({"rate_limited", "server_error", "timeout", "network_error"})
 _UNCERTAIN = (NetworkError, ServerError, InvalidResponseError)
 _INTERNAL_MESSAGE = "An unexpected error occurred in the tool."
 _MAX_MESSAGE = 2000
@@ -169,7 +184,7 @@ _MAX_MESSAGE = 2000
 class _State:
     compact: bool
     max_text: int | None
-    shortened: bool = False
+    truncated: bool = False
 
 
 def _code(error: BaseException) -> ToolErrorCode:
@@ -182,29 +197,29 @@ def _code(error: BaseException) -> ToolErrorCode:
     return "internal"
 
 
-def _write_changed(error: WriteError) -> Changed:
+def _write_changed(error: WriteError) -> DataChanged:
     result = error.result
     wrote = isinstance(result, WriteResult) and bool(result.created_ids or result.updated_ids)
     # A later batch that failed this way may have been written.
     if isinstance(error.__cause__, _UNCERTAIN):
         return "unknown"
-    return "some" if wrote else "none"
+    return "partly" if wrote else "no"
 
 
-def _changed(error: BaseException) -> Changed:
+def _changed(error: BaseException) -> DataChanged:
     if isinstance(error, QuickbaseError) and error._changed:  # pyright: ignore[reportPrivateUsage]
-        return "some"
+        return "partly"
     if isinstance(error, WriteError):
         return _write_changed(error)
     if isinstance(error, _UNCERTAIN) or not isinstance(error, QuickbaseError):
         return "unknown"
-    return "none"
+    return "no"
 
 
 def _row_error(item: RowError) -> dict[str, Any]:
     return {
         "index": item.index,
-        "kind": item.kind,
+        "reason": item.reason,
         "field_id": item.field_id,
         "messages": list(item.messages),
     }
@@ -229,18 +244,18 @@ def tool_error(error: BaseException) -> dict[str, Any]:
     ```
 
     The result is `{"ok": false, "error": {...}}`, which `json.dumps()` always accepts. `error`
-    holds `code`, `message`, `hint`, `retryable`, and `changed`, and more for some codes:
+    holds `code`, `message`, `hint`, `retryable`, and `data_changed`, and more for some codes:
 
     - `code` is one of `ToolErrorCode`, which doesn't change between 1.x versions, unlike the
       wording of `message`.
     - `hint` says what the model should do next, in fixed words for each code.
     - `retryable` is true when the same call can succeed later, such as after a rate limit or a
       timeout. `retry_after` is added when Quickbase said how long to wait.
-    - `changed` is `none` if nothing was changed, `some` if part of a write was, and `unknown` if
-      a write may have been applied, such as after a timeout. A model should check the data
-      before repeating a call whose `changed` isn't `none`.
+    - `data_changed` is `no` if nothing was changed, `partly` if part of a write was, and
+      `unknown` if a write may have been applied, such as after a timeout. A model should check
+      the data before repeating a call whose `data_changed` isn't `no`.
     - A `WriteError` adds `written`, with the IDs that were created, updated, and left unchanged,
-      and `failed_rows`, with each row's `index`, `kind`, `field_id`, and Quickbase's `messages`.
+      and `failed_rows`, with each row's `index`, `reason`, `field_id`, and Quickbase's `messages`.
     - An `APIError` adds `status`, the HTTP status.
 
     An exception from outside the SDK gets the code `internal` and a message that says nothing
@@ -253,7 +268,7 @@ def tool_error(error: BaseException) -> dict[str, Any]:
         The error, as plain data.
     """
     code = _code(error)
-    if code == "write_failed" and _changed(error) != "none":
+    if code == "write_failed" and _changed(error) != "no":
         code = "partial_write"
     message = _INTERNAL_MESSAGE if code == "internal" else str(error)[:_MAX_MESSAGE]
     found: dict[str, Any] = {
@@ -261,7 +276,7 @@ def tool_error(error: BaseException) -> dict[str, Any]:
         "message": message,
         "hint": _HINTS[code],
         "retryable": code in _RETRYABLE,
-        "changed": _changed(error),
+        "data_changed": _changed(error),
     }
     if isinstance(error, RateLimitError) and error.retry_after is not None:
         found["retry_after"] = error.retry_after
@@ -288,7 +303,7 @@ def _text(value: str, state: _State) -> str | None:
     limit = state.max_text
     if limit is None or len(value) <= limit:
         return value
-    state.shortened = True
+    state.truncated = True
     return f"{value[:limit]}… ({len(value) - limit} more characters)"
 
 
@@ -609,6 +624,10 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
         return _applied(value)
     if isinstance(value, FormulaResult):
         return {"value": _value(value.value, state), "type": value.type}
+    if isinstance(value, Count):
+        return {"count": int(value)}
+    if isinstance(value, DeletedCount):
+        return {"deleted_count": int(value)}
     if isinstance(value, str | int | float | bool | Decimal | date | time):
         return {"value": _value(value, state)}
     if isinstance(value, TableInfo | Field | ReportInfo):
@@ -670,6 +689,8 @@ def tool_result(
     | `SchemaChangeResult` | `applied` and `already_done`, and `failed` and `not_attempted` too |
     | A list of `TableSchema` | `tables`, each with `fields` and `relationships` |
     | `FormulaResult` | `value` and `type` |
+    | A `count` operation's result | `count` |
+    | A `delete` operation's result | `deleted_count` |
     | Text, a number, a date, or a bool | `value` |
     | `TableInfo`, `Field`, or `ReportInfo` | `table`, `field`, or `report`, without `raw` |
     | A list of one of those | `tables`, `fields`, or `reports` |
@@ -700,7 +721,7 @@ def tool_result(
         max_records: The most records to include. Any more are left out, and `page.has_more` is
             true, so a model knows it doesn't have them all.
         max_text: The most characters to include of each text value. A longer one is cut and
-            ends by saying how much was left out, and `text_shortened` is true.
+            ends by saying how much was left out, and `text_truncated` is true.
 
     Returns:
         The result, as plain data.
@@ -717,6 +738,6 @@ def tool_result(
     state = _State(compact=compact, max_text=max_text)
     found = _describe(value, state, max_records)
     result: dict[str, Any] = {"ok": True, **found}
-    if state.shortened:
-        result["text_shortened"] = True
+    if state.truncated:
+        result["text_truncated"] = True
     return result

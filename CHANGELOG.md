@@ -80,6 +80,14 @@ before they're made, for scripts and for agents. **It breaks every client that u
 
 ### Changed
 
+- **Results and errors say what they hold.** A `count` operation's result is `{"count": n}` and a
+  `delete` operation's is `{"deleted_count": n}`, rather than `value`. An error's `changed` is
+  `data_changed`, with `no`, `partly`, or `unknown` for `none`, `some`, or `unknown`. A shortened text
+  value sets `text_truncated` rather than `text_shortened`, and a failed row's `kind` is `reason`.
+- **Error codes:** `invalid_query` is `invalid_arguments`, as it covers every operation's arguments,
+  `write_permission` is `write_permission_denied`, `configuration` is `misconfigured`, `network` is
+  `network_error`, and `error` is `quickbase_error`.
+- **`RowError.kind` is `RowError.reason`.**
 - **The `summary_report` operation is `run_summary_report`**, to match `run_report`.
 - **`ensure_summary_field()` takes `function` in lower case**, such as `sum` or `std_dev`, as schema
   changes do. Quickbase's names, such as `SUM`, still work, and an unknown one raises

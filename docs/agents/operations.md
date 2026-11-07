@@ -42,11 +42,11 @@ The schema goes in your framework's tool definition, under the name it uses, suc
 | Operation | The model sends | Runs | Returns |
 |---|---|---|---|
 | `query` | `where`, `select`, `order_by`, `limit`, `skip` | `query_page()` | `Page` |
-| `count` | `where` | `count()` | `int` |
+| `count` | `where` | `count()` | An `int`, which `tool_result()` shows as `count` |
 | `summarize` | `where`, `group_by`, `total`, `average`, `minimum`, `maximum` | `summarize()` | A list of `SummaryRow` |
 | `insert` | `records` | `insert()` | `WriteResult` |
 | `update` | `records`, each with `Record ID#` | `update()` | `WriteResult` |
-| `delete` | `where`, which is required. It's refused if it matches more than `max_records` | `delete()` | `int` |
+| `delete` | `where`, which is required. It's refused if it matches more than `max_records` | `delete()` | An `int`, which `tool_result()` shows as `deleted_count` |
 | `preview_update` | As `update` | `preview_update()` | `UpdatePreview` |
 | `preview_delete` | `where`, `select`, `limit`. Give it the same `max_records` as `delete`, and `tool_result()` lists a blocker when a delete would be refused | `preview_delete()` | `Page` |
 | `run_report` | `report`, as its ID, its ID as a number, or its name, and `limit`, `skip` | `Report.run_page()` | `Page` |
