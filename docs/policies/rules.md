@@ -9,15 +9,15 @@ from pyquickbase import F, Policy, Quickbase, allow, deny, fields, limit, tables
 
 policy = Policy(
     classes={
-        "pay": ["Technicians.Hourly Rate"],
-        "internal": [("Appointments", "Sync ID"), fields.labeled_like("_*")],
+        "pay": ["Tasks.Amount"],
+        "internal": [("Tasks", "Code"), fields.labeled_like("Old*")],
     },
     rules=[
         allow.read(tables.all(), max_records=50),
-        allow.insert("Job Tasks", fields.all()),
-        allow.update("Job Tasks", ["Status", "Priority", "Due Date", "Notes"]),
-        allow.delete("Job Tasks", max_records=3),
-        limit.rows("Time Entries", F("Billable") == True),
+        allow.insert("Tasks", fields.all()),
+        allow.update("Tasks", ["Status", "Due Date", "Notes"]),
+        allow.delete("Tasks", max_records=3),
+        limit.rows("Tasks", F("Project") == "Roof"),
         deny.all(fields.classed("pay", "internal")),
     ],
 )
@@ -26,9 +26,9 @@ with Quickbase(realm="acme", token="your_user_token") as setup:
     bound = policy.bind(setup.app("bq1234567"))
 
 with Quickbase(realm="acme", token="your_user_token", policy=bound) as qb:
-    tasks = qb.app("bq1234567").table("Job Tasks")
+    tasks = qb.app("bq1234567").table("Tasks")
     tasks.update([{"Record ID#": 1, "Status": "Done"}])  # Allowed
-    # tasks.update([{"Record ID#": 1, "Labor Cost": 90}])  # Raises PolicyRefusedError
+    # tasks.update([{"Record ID#": 1, "Amount": 90}])  # Raises PolicyRefusedError
 ```
 
 With the async client, it's `await policy.bind(app)`. Bind with a client that has no policy, so it

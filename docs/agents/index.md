@@ -43,14 +43,14 @@ itself, so it doesn't depend on the model following its instructions.
 from pyquickbase import Policy, Quickbase, allow, deny, fields, tables
 
 policy = Policy(
-    classes={"contact": ["Customers.Email", "Customers.Phone", fields.labeled_like("Internal*")]},
+    classes={"internal": ["Tasks.Amount", "Tasks.Code", fields.labeled_like("Old*")]},
     rules=[
-        # It can read everything but contact details, 50 records at a time, add tasks, and
+        # It can read everything but costs and codes, 50 records at a time, add tasks, and
         # change two of their fields. It can't delete anything.
         allow.read(tables.all(), max_records=50),
         allow.insert("Tasks", fields.all()),
         allow.update("Tasks", ["Status", "Notes"]),
-        deny.all(fields.classed("contact")),
+        deny.all(fields.classed("internal")),
     ],
 )
 with Quickbase.from_env() as setup:

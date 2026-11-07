@@ -9,12 +9,15 @@ or any approval. With `require_preview=True`, the `update` and `delete` operatio
 `confirmation` that `preview_update` or `preview_delete` returned, for exactly the same arguments:
 
 ```python
-preview = await tasks.operation("preview_update")
-update = await tasks.operation("update", require_preview=True)
+from pyquickbase import tool_result
 
-shown = tool_result(await preview.run(arguments))  # holds "confirmation"
+preview = tasks.operation("preview_update")
+update = tasks.operation("update", require_preview=True)
+arguments = {"records": [{"Record ID#": 1, "Status": "Done"}]}
+
+shown = tool_result(preview.run(arguments))  # holds "confirmation"
 # ... the person approves what the preview showed ...
-await update.run({**arguments, "confirmation": shown["confirmation"]})
+update.run({**arguments, "confirmation": shown["confirmation"]})
 ```
 
 - **The arguments must match.** The order of records, and of fields in a record, doesn't matter, but

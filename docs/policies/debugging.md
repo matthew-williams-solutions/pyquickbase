@@ -24,9 +24,15 @@ Nothing was sent. To allow it: add "Labor Cost" to an allow.update("Job Tasks", 
 A bound policy answers questions without sending anything:
 
 ```python
-bound.allows("update", "Job Tasks", field="Labor Cost").allowed  # False
-print(bound.explain("lookup", "Job Tasks", source=("Technicians", "Hourly Rate")))
-bound.offers("Job Tasks").updatable  # What an operation would offer
+from pyquickbase import Policy, Quickbase, allow
+
+policy = Policy(rules=[allow.read("Tasks"), allow.update("Tasks", ["Status", "Notes"])])
+with Quickbase.from_env() as setup:
+    bound = policy.bind(setup.app("bq1234567"))
+
+bound.allows("update", "Tasks", field="Amount").allowed  # False
+print(bound.explain("lookup", "Tasks", source=("Tasks", "Amount")))
+bound.offers("Tasks").updatable  # What an operation would offer
 ```
 
 Each returns or explains a `Decision`, with `allowed`, the `layer` that decided, the `rule` as

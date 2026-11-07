@@ -174,7 +174,7 @@ that the client's policy hides is refused as unknown.
 from pyquickbase import AsyncTable, F, tool_result
 
 
-async def open_tasks(tasks: AsyncTable) -> dict:
+async def list_open_tasks(tasks: AsyncTable) -> dict:
     page = await tasks.query_page(where=F("Status") == "Open", top=50)
     # https://<realm>/nav/app/<app ID>/table/<table ID>/action/dr?rid={Record ID#}
     pattern = await tasks.record_url_pattern()
