@@ -463,12 +463,14 @@ def test_a_later_batch_that_may_have_been_written_is_unknown() -> None:
     for cause in (RequestTimeoutError("x"), ServerError("x", status_code=502)):
         found = tool_error(batch_failure(cause, written(created_ids=[1])))["error"]
         assert (found["code"], found["data_changed"]) == ("partial_write", "unknown")
+        assert found["hint"].startswith("A batch may have been written")
 
 
 def test_a_later_batch_that_was_refused_leaves_earlier_ones() -> None:
     error = batch_failure(BadRequestError("x", status_code=400), written(created_ids=[1]))
     found = tool_error(error)["error"]
     assert (found["code"], found["data_changed"]) == ("partial_write", "partly")
+    assert found["hint"].startswith("Some records were changed")
 
 
 def test_a_failed_schema_change_has_its_own_hint() -> None:
@@ -479,6 +481,15 @@ def test_a_failed_schema_change_has_its_own_hint() -> None:
         assert found["hint"].startswith("Changes made before this one stay made")
         assert "failed_rows" not in found
     assert tool_error(made)["error"]["code"] == "partial_write"
+
+
+def test_a_schema_change_that_may_have_been_made_keeps_its_own_hint() -> None:
+    try:
+        raise SchemaChangeError("x", result=SchemaChangeResult()) from RequestTimeoutError("x")
+    except SchemaChangeError as error:
+        found = tool_error(error)["error"]
+    assert (found["code"], found["data_changed"]) == ("partial_write", "unknown")
+    assert found["hint"].startswith("Changes made before this one stay made")
 
 
 def test_a_permission_refusal_after_earlier_rows_were_written() -> None:

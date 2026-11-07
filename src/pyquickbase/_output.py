@@ -180,6 +180,11 @@ _SCHEMA_CHANGE_HINT = (
     "Changes made before this one stay made. Preview the same changes again, which shows only "
     "what's left, and show the user the result."
 )
+# A partial write whose last batch may or may not have landed, so its failed rows can't be trusted.
+_UNKNOWN_WRITE_HINT = (
+    "A batch may have been written before it failed. Check what was written, then send only what's "
+    "missing."
+)
 _RETRYABLE = frozenset({"rate_limited", "server_error", "timeout", "network_error"})
 _UNCERTAIN = (NetworkError, ServerError, InvalidResponseError)
 _INTERNAL_MESSAGE = "An unexpected error occurred in the tool."
@@ -239,9 +244,11 @@ def _written(result: WriteResult) -> dict[str, list[int]]:
     }
 
 
-def _hint(error: BaseException, code: ToolErrorCode) -> str:
+def _hint(error: BaseException, code: ToolErrorCode, changed: DataChanged) -> str:
     if isinstance(error, SchemaChangeError):
         return _SCHEMA_CHANGE_HINT
+    if code == "partial_write" and changed == "unknown":
+        return _UNKNOWN_WRITE_HINT
     return _HINTS[code]
 
 
@@ -261,7 +268,8 @@ def tool_error(error: BaseException) -> dict[str, Any]:
     - `code` is one of `ToolErrorCode`, which doesn't change between 1.x versions, unlike the
       wording of `message`.
     - `hint` says what the model should do next, in fixed words for each code. A failed schema
-      change has its own, as it has no failed rows.
+      change has its own, as it has no failed rows, and so does a `partial_write` whose
+      `data_changed` is `unknown`, as its failed rows may have been written.
     - `retryable` is true when the same call can succeed later, such as after a rate limit or a
       timeout. `retry_after` is added when Quickbase said how long to wait.
     - `data_changed` is `no` if nothing was changed, `partly` if part of a write was, and
@@ -281,15 +289,16 @@ def tool_error(error: BaseException) -> dict[str, Any]:
         The error, as plain data.
     """
     code = _code(error)
-    if code == "write_failed" and _changed(error) != "no":
+    changed = _changed(error)
+    if code == "write_failed" and changed != "no":
         code = "partial_write"
     message = _INTERNAL_MESSAGE if code == "internal" else str(error)[:_MAX_MESSAGE]
     found: dict[str, Any] = {
         "code": code,
         "message": message,
-        "hint": _hint(error, code),
+        "hint": _hint(error, code, changed),
         "retryable": code in _RETRYABLE,
-        "data_changed": _changed(error),
+        "data_changed": changed,
     }
     if isinstance(error, RateLimitError) and error.retry_after is not None:
         found["retry_after"] = error.retry_after

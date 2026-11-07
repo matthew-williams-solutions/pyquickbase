@@ -80,6 +80,8 @@ before they're made, for scripts and for agents. **It breaks every client that u
 
 ### Changed
 
+- **A `partial_write` whose `data_changed` is `unknown` has its own `hint`:** check what was written,
+  then send only what's missing, as the batch that failed may have been written.
 - **`Layer` no longer lists `confirmation`,** which no check made. A missing or mismatched
   confirmation raises `ConfirmationError`, not `PolicyRefusedError`.
 - **A failed schema change has its own `hint`** in `tool_error()`: preview the same changes again,

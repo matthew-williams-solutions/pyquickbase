@@ -99,7 +99,7 @@ Every error has `"ok": false`, and an `error` with these keys:
 |---|---|
 | `code` | What went wrong, as a fixed word. Codes don't change within 1.x, unlike the wording of `message` |
 | `message` | The SDK's explanation, which says where the mistake is. It doesn't repeat the values a model sent |
-| `hint` | What the model should do next, in fixed words for each code |
+| `hint` | What the model should do next, in fixed words for each code. A failed schema change has its own, as it has no failed rows, and so does a `partial_write` whose `data_changed` is `unknown`, as the failed batch may have been written |
 | `retryable` | Whether the same call can succeed later, without changing it |
 | `data_changed` | `no` if nothing was changed, `partly` if part of a write was, and `unknown` if a write may have been |
 | `retry_after` | For a rate limit, the seconds Quickbase asked to wait, when it said |
