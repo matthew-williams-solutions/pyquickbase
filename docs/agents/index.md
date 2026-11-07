@@ -86,6 +86,21 @@ these limits can't stop an agent doing.
 A token has its user's permissions, through their role, so Quickbase enforces that limit whichever
 code is running.
 
+Each layer checks a request on its own, so a mistake or a manipulated model has to get past all of
+them:
+
+```mermaid
+flowchart LR
+    M[Model] -- tool call --> T["Your tool<br/>fixes table, fields, scope"]
+    T --> P{"Client's policy<br/>allows it?"}
+    P -- no --> X1["PolicyRefusedError<br/>nothing sent"]
+    P -- yes --> R{"Token's role<br/>allows it?"}
+    R -- no --> X2["Quickbase refuses it,<br/>or hides the data"]
+    R -- yes --> Q[(Quickbase app)]
+```
+
+The first two run in your process, and the role is enforced by Quickbase, whichever code is running.
+
 - Use a token whose user has a role with only the access the agent needs, and give the token access
   to as few apps as possible. Use a sandbox app while you're trying things out.
 - Use `Quickbase.from_env()` rather than putting a token in code or a prompt. This keeps it away

@@ -12,6 +12,25 @@ formula of `Hourly Rate`, a lookup of that formula on another table, and a summa
 formula that can't be read counts as reading every field of its table, and one that calls a function
 that reads other records counts as reading every field of the app.
 
+```mermaid
+flowchart LR
+    subgraph Staff
+        H["Hourly Rate<br/>class: pay"] --> D["Day Rate<br/>formula"]
+    end
+    subgraph Shifts
+        L["Staff - Day Rate<br/>lookup"]
+    end
+    subgraph Projects
+        T["Total Cost<br/>summary"]
+    end
+    D --> L --> T
+    classDef pay fill:#fde2e2,stroke:#c0392b,color:#000
+    class H,D,L,T pay
+```
+
+Every field in the chain is in `pay`, so `deny.all(fields.classed("pay"))` hides all four, on all
+three tables.
+
 **A new formula, lookup, or summary may only read what the client may read,** as anyone who can read
 it sees what it shows. The SDK's methods check this before sending one, and `qb.request()` can't make
 one.

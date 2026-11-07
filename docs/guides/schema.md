@@ -264,6 +264,20 @@ Each `PlannedChange` has:
 A later change can use a table or field an earlier one makes, so a plan can create a table, add its
 fields, and link it to another.
 
+```mermaid
+flowchart TD
+    C[A list of changes] --> P["preview_schema_changes()"]
+    P --> B{Any blockers?}
+    B -- yes --> F[Fix the changes] --> P
+    B -- no --> A["apply_schema_changes(plan)"]
+    A --> S{"Plan again: tables and<br/>fields as they were?"}
+    S -- no --> M["SchemaMismatchError,<br/>nothing sent"]
+    S -- yes --> G[Make each ready change, in order]
+    G -- all made --> OK[SchemaChangeResult]
+    G -- one fails --> E["SchemaChangeError, with what<br/>was made and what wasn't"]
+    E -. preview again, and the made<br/>ones are already_done .-> P
+```
+
 **Applying is checked again.** `apply_schema_changes()` plans the same changes again first. If the tables and
 fields they touch have changed, it raises `SchemaMismatchError`. If anything blocks them, it raises
 `InvalidValueError`. Either way, nothing is sent. Record counts aren't part of that check, as they

@@ -28,6 +28,29 @@ update.run({**arguments, "confirmation": shown["confirmation"]})
 - **It's signed with a key each client makes when it starts**, so nothing is stored, a model can't make
   one up, and the preview and the change must come from the same client. Give them the same `scope`.
 
+```mermaid
+sequenceDiagram
+    participant M as Model
+    participant P as Person
+    participant S as pyquickbase
+    participant Q as Quickbase
+    M->>S: preview_update(arguments)
+    S->>Q: Read the records
+    Q-->>S: Current values
+    S-->>M: Changes, and a signed confirmation
+    M->>P: Show what would change
+    P-->>M: Approve
+    M->>S: update(arguments, confirmation)
+    S->>S: Same arguments, client, and policy,<br/>within 15 minutes?
+    alt it matches
+        S->>Q: Write the records
+        Q-->>S: Result
+        S-->>M: created_ids, updated_ids
+    else it doesn't
+        S-->>M: needs_confirmation, nothing changed
+    end
+```
+
 It makes sure a preview happened, not that a person saw it. Ask your client to show each change for
 approval too.
 

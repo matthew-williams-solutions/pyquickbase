@@ -124,6 +124,23 @@ Every error has `"ok": false`, and an `error` with these keys:
 `data_changed` is what tells a partial write from a complete failure. A model should check the data
 before repeating a call whose `data_changed` isn't `no`, as repeating an insert can add duplicates.
 
+A model can decide what to do next from `retryable`, `data_changed`, and `code` alone, without
+reading the message:
+
+```mermaid
+flowchart TD
+    E[ok is false] --> R{retryable?}
+    R -- yes --> U{"data_changed<br/>is unknown?"}
+    U -- yes --> C1[Check the data first] --> W
+    U -- no --> W["Wait retry_after,<br/>then send it again"]
+    R -- no --> D{"data_changed<br/>is partly?"}
+    D -- yes --> F["Fix failed_rows, and<br/>send only those"]
+    D -- no --> K{code}
+    K -- needs_confirmation --> PV["Preview again, show<br/>the person, then confirm"]
+    K -- "invalid_arguments, invalid_value,<br/>unknown_table, unknown_field,<br/>unknown_report" --> FX[Fix the call, then try again]
+    K -- anything else --> TU[Stop, and tell the user]
+```
+
 | Code | Raised for | `data_changed` | `retryable` |
 |---|---|---|---|
 | `needs_confirmation` | A change without the confirmation from its preview or plan, or with one that's expired or for something else | `no` | No |
