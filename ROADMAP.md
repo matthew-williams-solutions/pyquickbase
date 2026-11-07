@@ -6,7 +6,13 @@ to keep are explained in the guides, not here.
 
 ## Before 1.0
 
-- Let the latest candidate run for at least a week with no code changes.
+- Release a candidate with schema plans, `feature/schema-changes`, then let it run for at least a week
+  with no code changes.
+- Check the formula functions a client with read rules allows, `SAFE_FUNCTIONS` in `_formula.py`,
+  against Quickbase's function list. A missing one is refused by name, so this only widens what's
+  allowed, but each one added must only read the record's own values.
+- A plan checks a table it creates against the client's limits only when it's applied, so a change to
+  that table can still be refused partway through. Planning again resumes from there.
 - In the 1.0 release commit:
   - Change the classifier in `pyproject.toml` from Beta to Production/Stable.
   - Remove the release candidate warnings from `README.md` and `docs/index.md`, and the advice to pin
