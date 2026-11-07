@@ -662,7 +662,7 @@ async def test_generated_classes_read_a_page_at_a_time(
     assert all(isinstance(task, Tasks) for task in first.records)
     assert [task.code for task in first.records] == ["C5", "C4"]
     assert first.records[0].due_date == date(2027, 1, 5)
-    assert (first.sum, first.skip, first.has_more, first.next_skip) == (4, 0, True, 2)
+    assert (first.total, first.skip, first.has_more, first.next_skip) == (4, 0, True, 2)
 
     last = await tasks.query_page(
         where=where, order_by=Tasks.fields.amount.desc, limit=2, skip=first.next_skip
