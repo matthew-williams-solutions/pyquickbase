@@ -1,7 +1,12 @@
+import importlib.util
 import os
 import secrets
+import signal
+import sys
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -9,6 +14,26 @@ import pytest
 # Tests that use a real Quickbase app. They never run unless asked for, so CI needs no credentials.
 LIVE = os.environ.get("QB_LIVE") == "1"
 collect_ignore_glob = [] if LIVE else ["live/*", "_async/live/*", "_sync/live/*"]
+
+
+def _raise_interrupt(signum: int, frame: object) -> None:
+    raise KeyboardInterrupt
+
+
+if LIVE:
+    # A run stopped by a timeout or `kill` still drops its tables, as pytest tears fixtures down
+    # after an interrupt, but not after the default SIGTERM.
+    signal.signal(signal.SIGTERM, _raise_interrupt)
+
+
+def _cleaner() -> Any:
+    path = Path(__file__).resolve().parent.parent / "scripts" / "clean_live_tables.py"
+    spec = importlib.util.spec_from_file_location("clean_live_tables", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Can't load {path}.")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 @pytest.fixture(params=["asyncio", "trio"])
@@ -70,6 +95,13 @@ def scratch() -> Iterator[Scratch]:
     second_app_id = os.environ.get("QB_SECOND_APP_ID")
     with Quickbase(realm=realm, token=token) as client:
         apps = [client.app(item) for item in (app_id, second_app_id) if item]
+        # Drop what earlier runs left, such as one that was killed, before counting records.
+        hours = float(os.environ.get("QB_LIVE_STALE_HOURS", "6"))
+        cleaned: list[str] = _cleaner().clean(
+            client, [app.id for app in apps], older_than=timedelta(hours=hours), dry_run=False
+        )
+        for line in cleaned:
+            sys.stderr.write(f"Dropped a table an earlier run left: {line}\n")
 
         def record_counts() -> dict[str, int]:
             return {

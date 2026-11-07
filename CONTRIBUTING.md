@@ -32,6 +32,16 @@ fail if the record count of any other table changed.
 QB_LIVE=1 QB_REALM=... QB_USER_TOKEN=... QB_APP_ID=... uv run pytest tests/_async/live tests/_sync/live tests/live
 ```
 
+A run drops its tables when it ends, including when it's stopped with Ctrl-C or `kill`. One that's
+killed outright, or loses its connection, can't, so each run first drops what earlier runs left: tables
+named `ZZ Live ...`, or one of the fixed names the examples need, that are more than 6 hours old, so a
+run still going in parallel keeps its own. Set `QB_LIVE_STALE_HOURS` to change that, or run the same
+cleanup yourself:
+
+```bash
+uv run scripts/clean_live_tables.py --dry-run   # then without --dry-run
+```
+
 Tests about reaching across apps also need `QB_SECOND_APP_ID`, another sandbox app the same token can
 reach, and skip without it. The same rules apply to that app.
 
