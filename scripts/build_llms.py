@@ -87,6 +87,7 @@ _CODE_SPAN = re.compile(r"(`[^`]*`)")
 _HEADING = re.compile(r"^(#{1,5}) ")
 _MODULE_PREFIX = re.compile(r"\b(?:collections\.abc|typing|pyquickbase(?:\.\w+)*)\.")
 _QUOTED_TYPE = re.compile(r"'([A-Z][\w\[\], ]*)'")
+_UNION = re.compile(r"\bUnion\[")
 
 
 class Page(NamedTuple):
@@ -146,7 +147,28 @@ def _next_fence(line: str, fence: str | None) -> str | None:
 
 def clean_types(text: str) -> str:
     """Show types by their public names, as in `Expression`, not `pyquickbase._query.Expression`."""
-    return _QUOTED_TYPE.sub(r"\1", _MODULE_PREFIX.sub("", text)).replace("~", "")
+    text = _QUOTED_TYPE.sub(r"\1", _MODULE_PREFIX.sub("", text)).replace("~", "")
+    return _pipes(text)
+
+
+def _pipes(text: str) -> str:
+    """Write `Union[A, B]` as `A | B`, which is how Python 3.14 prints a union with a `Literal`."""
+    while found := _UNION.search(text):
+        parts: list[str] = []
+        depth, start = 1, found.end()
+        index = start
+        while depth:
+            char = text[index]
+            if char == "[":
+                depth += 1
+            elif char == "]":
+                depth -= 1
+            if depth == 0 or (depth == 1 and char == ","):
+                parts.append(text[start:index].strip())
+                start = index + 1
+            index += 1
+        text = text[: found.start()] + " | ".join(parts) + text[index:]
+    return text
 
 
 def _resolve_snippets(text: str) -> str:

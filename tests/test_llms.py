@@ -237,3 +237,15 @@ def test_a_page_without_a_description_stops_the_build() -> None:
     config = CONFIG._replace(pages=[*CONFIG.pages, page])
     with pytest.raises(SystemExit, match=r"guides/new\.md"):
         build_llms.build_index(config)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Union[Literal['read', 'hidden'], str]", "Literal['read', 'hidden'] | str"),
+        ("list[Union[int, Union[str, bytes]]]", "list[int | str | bytes]"),
+        ("dict[str, int] | None", "dict[str, int] | None"),
+    ],
+)
+def test_a_union_is_written_with_pipes(text: str, expected: str) -> None:
+    assert build_llms.clean_types(text) == expected
