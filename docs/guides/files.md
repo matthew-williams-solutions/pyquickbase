@@ -99,8 +99,8 @@ if task["Attachment"] is not None:
 
 Each version names its uploader in `creator`, a `User` with their email address, so take care when
 logging these values or passing them on. A `User`'s `repr` leaves the email out, and a client's
-[`ReadRules`](clients.md#limiting-reads-by-table-field-and-number-of-records) leave `creator` out unless
-asked.
+[policy](clients.md#limiting-what-a-client-can-do) leaves `creator` out unless a rule passes
+`user_emails=True`.
 
 [Try it in the playground](../playground-app/index.html#read-users-tags-and-files), with simulated data.
 

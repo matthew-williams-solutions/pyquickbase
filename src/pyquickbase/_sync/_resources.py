@@ -415,7 +415,7 @@ class App:
 
         Raises:
             ConfigurationError: `name` isn't a schema operation, `max_changes` isn't a positive
-                whole number, or the client's limits allow no schema change for `plan_schema` or
+                whole number, or the client's policy allows no schema change for `plan_schema` or
                 `apply_schema`.
         """
         if name not in get_args(SchemaOperationName):
@@ -714,7 +714,7 @@ class Table:
             The URL, on the client's realm.
 
         Raises:
-            UnknownTableError: This app has no such table, or the client's read rules hide it.
+            UnknownTableError: This app has no such table, or the client's policy hides it.
         """
         return self._page("td")
 
@@ -731,7 +731,7 @@ class Table:
             The URL, on the client's realm.
 
         Raises:
-            UnknownTableError: This app has no such table, or the client's read rules hide it.
+            UnknownTableError: This app has no such table, or the client's policy hides it.
         """
         return self._page("nwr")
 
@@ -744,7 +744,7 @@ class Table:
             The URL, on the client's realm.
 
         Raises:
-            UnknownTableError: This app has no such table, or the client's read rules hide it.
+            UnknownTableError: This app has no such table, or the client's policy hides it.
         """
         return self._page("listfields")
 
@@ -757,7 +757,7 @@ class Table:
             The URL, on the client's realm.
 
         Raises:
-            UnknownTableError: This app has no such table, or the client's read rules hide it.
+            UnknownTableError: This app has no such table, or the client's policy hides it.
         """
         return self._page("Relationships")
 
@@ -770,7 +770,7 @@ class Table:
             The URL, on the client's realm.
 
         Raises:
-            UnknownTableError: This app has no such table, or the client's read rules hide it.
+            UnknownTableError: This app has no such table, or the client's policy hides it.
         """
         return self._page("KeyProps")
 
@@ -789,7 +789,7 @@ class Table:
 
         Raises:
             InvalidValueError: `form_id` isn't a positive integer.
-            UnknownTableError: This app has no such table, or the client's read rules hide it.
+            UnknownTableError: This app has no such table, or the client's policy hides it.
         """
         require_id("form_id", form_id)
         table_id = (self.info()).id
@@ -810,7 +810,7 @@ class Table:
 
         Raises:
             InvalidValueError: `record_id` isn't a positive integer.
-            UnknownTableError: This app has no such table, or the client's read rules hide it.
+            UnknownTableError: This app has no such table, or the client's policy hides it.
         """
         require_id("record_id", record_id)
         table_id = (self.info()).id
@@ -831,7 +831,7 @@ class Table:
             The URL, on the client's realm, with `{Record ID#}` for the record's ID.
 
         Raises:
-            UnknownTableError: This app has no such table, or the client's read rules hide it.
+            UnknownTableError: This app has no such table, or the client's policy hides it.
         """
         table_id = (self.info()).id
         return record_url_pattern(self._transport.realm, self._app.id, table_id, edit=edit)
@@ -849,8 +849,8 @@ class Table:
             The URL, on the client's realm.
 
         Raises:
-            UnknownFieldError: The table has no such field, or the client's read rules hide it.
-            UnknownTableError: This app has no such table, or the client's read rules hide it.
+            UnknownFieldError: The table has no such field, or the client's policy hides it.
+            UnknownTableError: This app has no such table, or the client's policy hides it.
         """
         table_id = (self.info()).id
         field_id = (self.resolve_field_ids([field]))[0]
@@ -871,7 +871,7 @@ class Table:
             The query text.
 
         Raises:
-            UnknownFieldError: The table has no such field, or the client's read rules hide it.
+            UnknownFieldError: The table has no such field, or the client's policy hides it.
             QueryError: `where` can't be sent as written.
         """
         return self._with_fields(lambda fields: compile_where(where, FieldIndex(fields)))
@@ -2181,7 +2181,7 @@ class Table:
                 also tells the model what it is, leaves its fields out of what a write may set,
                 and refuses a write that sets one with a message that says why. An `insert`
                 needs a scope of only `==` conditions joined with `&`, whose fields the client's
-                write rules let it set. A report or formula can't take one.
+                policy lets it set. A report or formula can't take one.
             require_preview: For `update` and `delete`: run only with the `confirmation` that
                 `preview_update` or `preview_delete` returns for exactly the same arguments,
                 within 15 minutes, so a model can't skip the preview. A delete is also refused if
@@ -2384,8 +2384,8 @@ class Report:
 
         Raises:
             UnknownReportError: The table has no such report, or several share the name, or the
-                client's read rules hide it.
-            UnknownTableError: The app has no such table, or the client's read rules hide it.
+                client's policy hides it.
+            UnknownTableError: The app has no such table, or the client's policy hides it.
         """
         report_id = (self.info()).id
         table_id = (self._table.info()).id

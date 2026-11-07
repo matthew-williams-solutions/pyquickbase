@@ -47,8 +47,8 @@ Quickbase always returns the result as a string, so `"0"` would count as true in
 
     A formula can read other tables with `GetRecord()` and `GetRecords()`, whichever table you run it on,
     and can return the realm and the token owner's email. Treat formula text from users or other systems
-    like code. A client with [`ReadRules`](clients.md#limiting-reads-by-table-field-and-number-of-records)
-    refuses formulas.
+    like code. A client with a [policy](clients.md#limiting-what-a-client-can-do) refuses
+    formulas, unless it's `Policy.read_only()`.
 
     It can't read a table in another app, even with a token that can reach both, or a table the token's
     role has no access to. **That isn't an error:** the result is empty, as it is for a table that doesn't
@@ -93,7 +93,7 @@ tasks.create_field("Next Day", "date", formula="[Due] + Days(1)")
 | A `record_id` that doesn't exist | `NotFoundError` | Nothing was run |
 | A formula on a plain field, or on a type that doesn't take one | `BadRequestError` | The field is unchanged |
 | A formula using a field the role can't see | `PermissionDeniedError` | Nothing was run |
-| A client with `ReadRules` | `ReadRefusedError` | Nothing was sent |
+| A client with a policy other than `Policy.read_only()` | `PolicyRefusedError` | Nothing was sent |
 | Writing to a formula field | `WriteError`, as a row error | The other rows were written |
 
 Quickbase's formula error messages can include HTML, such as a `javascript:` link, so escape them before

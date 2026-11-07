@@ -17,14 +17,14 @@ Give the agent small functions rather than the client. Your code fixes the table
 operators, and the model only supplies values.
 
 ```python
-from pyquickbase import F, Quickbase
+from pyquickbase import F, Policy, Quickbase
 
 
 def open_tasks(project: str) -> list[dict]:
     """A tool for the agent, which only chooses `project`."""
     if not project.strip():
         raise ValueError("A project is required.")
-    with Quickbase.from_env(read_only=True) as qb:
+    with Quickbase.from_env(policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         where = (F("Project") == project) & (F("Status") == "Open")
         return [dict(task) for task in tasks.query(where=where, select=["Title"], limit=50)]
@@ -32,81 +32,75 @@ def open_tasks(project: str) -> list[dict]:
 
 ## Limiting access
 
-Give an agent the narrowest client that does its job. `read_only=True` is the place to start, and it
-only sends GET requests, record queries, report runs, and formula runs. If the agent also needs to
-write, list exactly what it can change with
-[`WriteRules`](clients.md#limiting-writes-by-table-action-and-field). Anything else raises
-`WriteRefusedError` and is never sent, which also applies to `qb.request()`.
+Give an agent a client with a [policy](clients.md#limiting-what-a-client-can-do) that allows only
+what its job needs. `Policy.read_only()` is the place to start, and it only sends GET requests,
+record queries, report runs, and formula runs. If the agent also needs to write, or shouldn't see
+everything the token can, write a `Policy` and bind it to the app. Anything it doesn't allow raises
+`PolicyRefusedError` and is never sent, which also applies to `qb.request()`. The SDK enforces it
+itself, so it doesn't depend on the model following its instructions.
 
 ```python
-from pyquickbase import Quickbase, WriteAccess, WriteRules
+from pyquickbase import Policy, Quickbase, allow, deny, fields, tables
 
+policy = Policy(
+    classes={"contact": ["Customers.Email", "Customers.Phone", fields.labeled_like("Internal*")]},
+    rules=[
+        # It can read everything but contact details, 50 records at a time, add tasks, and
+        # change two of their fields. It can't delete anything.
+        allow.read(tables.all(), max_records=50),
+        allow.insert("Tasks", fields.all()),
+        allow.update("Tasks", ["Status", "Notes"]),
+        deny.all(fields.classed("contact")),
+    ],
+)
 with Quickbase.from_env() as setup:
-    tasks = setup.app("bq1234567").table("Tasks")
-    tasks_id = tasks.info().id
-    status, notes = tasks.resolve_field_ids(["Status", "Notes"])
-
-# It can add tasks and change these two fields, on this table only. It can't delete anything.
-rules = WriteRules({tasks_id: WriteAccess(insert=True, update=[status, notes])})
-agent_client = Quickbase.from_env(write_policy=rules)
+    bound = policy.bind(setup.app("bq1234567"))
+agent_client = Quickbase.from_env(policy=bound)
 ```
 
-Return a `WriteRefusedError` to the model as the tool's result, with [`tool_error()`](#errors). Its
-message says what was refused and why, such as a field that isn't allowed, and doesn't repeat the values
-it sent.
+To the agent, a field or table the policy hides looks as if it doesn't exist. `table.fields()` leaves
+it out, and naming it raises `UnknownFieldError`. Anything else it refuses raises
+`PolicyRefusedError`, whose message says what was refused, by name, which rule refused it, and what
+would allow it, without the values it sent. Return either one to the model as the tool's result, with
+[`tool_error()`](#errors).
 
-You can add rules of your own, such as a limit on how many records one call can change, with a
-[custom policy](clients.md#writing-your-own-policy).
+- **A class carries over to what's built from it.** A formula, lookup, or summary of a field in a
+  class is in the class too, so denying the class hides them all, whatever table they're on.
+- **Fields added after binding are read-only,** and follow the policy's `new_fields`, until you bind
+  again.
+- **`limit.rows()` keeps it to some records,** by ANDing a condition onto every query, summary, and
+  delete the client sends. It's defense in depth behind the role's record-level rules.
+- **Email addresses are left out** of user values, and the uploader's details out of file values,
+  unless a rule that reads the table passes `user_emails=True`.
+- **Formulas are refused** unless the policy is `Policy.read_only()`, because a formula can read any
+  table and field.
 
-### Limiting what it reads
-
-An agent doesn't need to see every field the token can, such as a customer's email, phone number, or
-internal notes. List what it may read with
-[`ReadRules`](clients.md#limiting-reads-by-table-field-and-number-of-records). The SDK enforces this
-itself, so it doesn't depend on the model following its instructions:
-
-```python
-from pyquickbase import Quickbase, ReadAccess, ReadRules
-
-with Quickbase.from_env() as setup:
-    visits = setup.app("bq1234567").table("Appointments")
-    visits_id = visits.info().id
-    when, status, technician = visits.resolve_field_ids(["When", "Status", "Technician"])
-
-access = ReadAccess(fields=[when, status, technician], filter=[status, technician], max_records=50)
-agent_client = Quickbase.from_env(read_policy=ReadRules({visits_id: access}), read_only=True)
-```
-
-To the agent, a field or table that isn't listed looks as if it doesn't exist. `table.fields()` leaves it
-out, and naming it raises `UnknownFieldError`. Asking for more than is allowed raises `ReadRefusedError`,
-whose message says what to change, such as asking for at most 50 records. Return either one to the model
-as the tool's result. Both leave out the values it sent.
-
-Email addresses are left out of user values, and the uploader's details out of file values, unless you
-pass `user_emails=True`. Formulas are always refused, because a formula can read any table and field.
+You can add checks of your own, such as a limit on how many records one call can change, with a
+[rule of your own](clients.md#rules-of-your-own), which can only refuse.
 
 ### What these limits don't do
 
-- **Read rules complement the token's role, and don't replace it.** Quickbase still enforces the role on
-  everything they allow.
-- **A field you allow can show one you don't.** A formula, lookup, or summary field can copy a hidden
-  value, so check what each allowed field is built from.
-- **Filtering and sorting reveal values.** A model that may filter on a field can find out what it holds by
-  seeing which records match, even if the field isn't returned, so `filter` and `sort` are separate
-  lists.
+- **A policy complements the token's role, and doesn't replace it.** Quickbase still enforces the
+  role on everything it allows.
+- **A value can be copied without a formula.** A class follows formulas, lookups, and summaries, but
+  not a value someone pasted into another field, or an address's subfields.
+- **Filtering and sorting reveal values.** A model that may filter on a field can find out what it
+  holds by seeing which records match, even if the field isn't returned, so `allow.read()` takes its
+  own `filter` and `sort`.
 - **Limits apply per query.** `max_records` stops one query from returning a whole table, but a model
-  can still make more queries. `ReadRules` `max_records` is how far paging can reach, counting
-  `skip`, while an operation's own `max_records` is the size of each page, so set the rules' number as
-  high as you want a model to page.
-- **`read_only` promises only that it changes no records.** It still runs reports, which adds to
-  their usage count in Quickbase, and formulas.
+  can still make more queries. The policy's `max_records` is how far paging can reach, counting
+  `skip`, while an operation's own `max_records` is the size of each page, so set the policy's number
+  as high as you want a model to page.
+- **`Policy.read_only()` promises only that it changes no records.** It still runs reports, which adds
+  to their usage count in Quickbase, and formulas.
 - **Formulas reach further than the table you run them on.** A formula can read other tables with
   `GetRecord()` and `GetRecords()`, and can return the realm and the token owner's email. Don't run
   formula text from a model or another person, even on a read-only client. See the [warning in
   Formulas](formulas.md#running-a-formula).
-- **They can't limit by record.** To keep an agent to certain records, use a role with
+- **They can't keep updates to certain records.** `limit.rows()` covers queries and deletes, but an
+  update names its record by ID. Use a role with
   [record-level rules](../api-notes.md#record-level-rules), and [fix the scope](#filters-from-a-model)
-  of what it reads in your code.
+  of what it reads and writes in your code.
 - **They aren't a sandbox.** They apply to one client. If an agent can run code of its own, it can
   create another client with the same token, call the API directly, or reach inside the client to
   remove them.
@@ -186,7 +180,7 @@ with JSON Schema. `where_schema()` provides that description, and `where_from_di
 comes back.
 
 ```python
-from pyquickbase import F, Quickbase, where_from_dict, where_schema
+from pyquickbase import F, Policy, Quickbase, where_from_dict, where_schema
 
 FILTERABLE = ["Status", "Due Date", "Amount"]
 
@@ -199,7 +193,7 @@ SEARCH_TOOL_INPUT = {
 
 def search_tasks(project: str, where: dict) -> list[dict]:
     """The tool. Your code fixes the table, the project, and the fields it may filter on."""
-    with Quickbase.from_env(read_only=True) as qb:
+    with Quickbase.from_env(policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         condition = (F("Project") == project) & where_from_dict(where, fields=FILTERABLE)
         return [dict(task) for task in tasks.query(where=condition, select=["Title"], limit=50)]
@@ -229,7 +223,7 @@ What it can't do is decide whether a filter is the right one:
 - **Pass `fields` to limit what it can filter on.** Otherwise a model can learn the value of a field
   you didn't select, by filtering on it and seeing which records come back. `where_schema()` only
   tells the model the list, so pass the same list to `where_from_dict()`, which enforces it. A client's
-  `ReadRules` enforce their `filter` list as well, on every query.
+  policy enforces what it may filter on as well, on every query.
 - **Keep the schema small.** A tool's schema goes to the model with every request. The default covers
   `A and (B or C)` at about 700 tokens, and `max_depth=1` takes it to about 450 if a tool doesn't need
   that.
@@ -248,8 +242,8 @@ delete unchecked.
 - Quickbase's formula error messages [can contain HTML](errors.md#errors-from-quickbase), such as a
   `javascript:` link, and errors pass it on unchanged.
 - File field values [include the uploader's email address](files.md#listing-versions), and user
-  fields hold an email too. Decide whether a model or a log should see them. `ReadRules` leave both
-  out unless you pass `user_emails=True`.
+  fields hold an email too. Decide whether a model or a log should see them. A policy leaves both
+  out unless a rule that reads the table passes `user_emails=True`.
 - [Don't use a file's name as a path](files.md#downloading). Quickbase stores names as sent,
   including `../../etc/passwd`.
 
@@ -318,18 +312,19 @@ The schema lists only what the client may do, so a model isn't offered a field t
 
 | Part | Offers | Limited by |
 |---|---|---|
-| `where` | Fields it may filter on | `ReadRules` `filter` |
-| `select`, `group_by`, totals | Fields it may return | `ReadRules` `fields` |
-| `order_by` | Fields it may sort by | `ReadRules` `sort` |
-| `limit` | Up to `max_records`, 100 by default | `ReadRules` `max_records`, if lower |
-| `records` | Fields the SDK can write, other than formula, lookup, summary, built-in, and user fields | `WriteRules` `insert` or `update` |
-| `report` | Table reports, or summary and chart reports, that can run through the API, by ID. `run()` also takes an ID as a number or a report's exact name, ignoring case, and says which operation runs a report of the other kind | `ReadRules` `reports` or `summary_reports`, and `reports=` |
-| `field`, for files | File fields | `ReadRules` `files`, or `WriteRules` `delete_files` |
+| `where` | Fields it may filter on | `allow.read()` or `allow.filter()` |
+| `select`, `group_by`, totals | Fields it may return | `allow.read()` |
+| `order_by` | Fields it may sort by | `allow.read()` or `allow.sort()` |
+| `limit` | Up to `max_records`, 100 by default | The policy's `max_records`, if lower |
+| `records` | Fields the SDK can write, other than formula, lookup, summary, built-in, and user fields | `allow.insert()` or `allow.update()` |
+| `report` | Table reports, or summary and chart reports, that can run through the API, by ID. `run()` also takes an ID as a number or a report's exact name, ignoring case, and says which operation runs a report of the other kind | `allow.report()`, and `reports=` |
+| `field`, for files | File fields | `allow.download()` or `allow.delete_file()` |
 
 `fields=` narrows all of these to the fields you list. An operation that the client can't run at all,
-such as `insert` on a `read_only` client, raises `WriteRefusedError` or `ReadRefusedError` when you make
-it, rather than giving the model a tool that always fails. Custom policy functions aren't consulted, as
-they can't be asked about a field without a request, so one may refuse more than the schema offers.
+such as `insert` on a read-only client, raises `PolicyRefusedError` when you make it, rather than
+giving the model a tool that always fails. Each list comes from `BoundPolicy.offers()`, which asks the
+policy about one field and verb at a time, so what's offered is exactly what's allowed. A rule of your
+own is asked too, so one that decides each field on its own is offered exactly what it allows.
 
 ### Writing values from JSON
 
@@ -376,7 +371,7 @@ A write can't set a field the scope uses, so `update` can't move a record out of
 conditions joined with `&`, and `insert` refuses any other scope, as a new record couldn't be made to
 match it. With a scope passed only to `run()`, pass `fields=` without the scope's fields, so the model
 isn't offered them at all. A report runs with its own filter, so it can't take a scope, and `operation()`
-and `run()` refuse one rather than ignore it. With `ReadRules`, fields in a scope must be ones the client
+and `run()` refuse one rather than ignore it. Under a policy, fields in a scope must be ones the client
 may filter on.
 
 ### Reports, formulas, and files
@@ -386,7 +381,7 @@ may filter on.
   sort are its own, so check what it shows before offering it.
 - **A formula's text is fixed by your code,** with `formula=`, and the model only chooses the record. A
   formula can read any table and field, and return the token owner's email, so a model never writes one.
-  A client with `ReadRules` refuses formulas.
+  A client with a policy refuses formulas, unless it's `Policy.read_only()`.
 - **A downloaded file** comes back as a `FileDownload`, and `tool_result()` gives the model its text if
   it's UTF-8 text. Its contents are untrusted, like any record data.
 
@@ -409,7 +404,7 @@ async def list_fields(table_id: str) -> dict:
 
 | What happened | Exception | What's left behind |
 |---|---|---|
-| The client can't run the operation at all, such as `insert` when read-only | `WriteRefusedError` or `ReadRefusedError`, from `operation()` | Nothing was sent |
+| The client can't run the operation at all, such as `insert` when read-only | `PolicyRefusedError`, from `operation()` | Nothing was sent |
 | The table has nothing for it, such as no file fields, or `formula` is missing | `ConfigurationError`, from `operation()` | Nothing was sent |
 | `fields` or `descriptions` names a field the client can't see, or that the operation doesn't offer | `UnknownFieldError`, from `operation()` | Nothing was sent |
 | An argument the schema doesn't allow, such as an unknown key or field, or a `limit` too high | `QueryError`, from `run()` | Nothing was sent |
@@ -443,13 +438,13 @@ record, what went wrong, and whether anything changed. They work with any tool-c
 `json.dumps()` always accepts what they return, and they don't need the network.
 
 ```python
-from pyquickbase import F, Quickbase, QuickbaseError, tool_error, tool_result
+from pyquickbase import F, Policy, Quickbase, QuickbaseError, tool_error, tool_result
 
 
 def open_tasks(project: str, skip: int = 0) -> dict:
     """A tool for the agent, which chooses the project and which page to read."""
     try:
-        with Quickbase.from_env(read_only=True) as qb:
+        with Quickbase.from_env(policy=Policy.read_only()) as qb:
             tasks = qb.app("bq1234567").table("Tasks")
             where = (F("Project") == project) & (F("Status") == "Open")
             page = tasks.query_page(where=where, select=["Title", "Due Date"], top=50, skip=skip)
@@ -588,7 +583,7 @@ bug's details, and any values in them, don't reach the model. Log it yourself be
 A tool can return links to what a model read or changed, so that a person can check it in the
 Quickbase interface. Each method looks up the IDs it needs from the client's cache, as any other
 method does, and puts only those IDs in the link, never a field's value. A table, field, or report
-that the client's `ReadRules` hide is refused as unknown.
+that the client's policy hides is refused as unknown.
 
 ```python
 from pyquickbase import AsyncTable, F, tool_result
@@ -616,7 +611,15 @@ broad request can't read a whole large table. If the limit is exceeded, nothing 
 a model can't report a total from only part of the data.
 
 ```python
-from pyquickbase import F, Quickbase, QuickbaseError, tool_error, tool_result, where_from_dict
+from pyquickbase import (
+    F,
+    Policy,
+    Quickbase,
+    QuickbaseError,
+    tool_error,
+    tool_result,
+    where_from_dict,
+)
 
 
 def task_totals(project: str, where: dict | None = None) -> dict:
@@ -625,7 +628,7 @@ def task_totals(project: str, where: dict | None = None) -> dict:
         condition = F("Project") == project
         if where:
             condition = condition & where_from_dict(where, fields=["Status"])
-        with Quickbase.from_env(read_only=True) as qb:
+        with Quickbase.from_env(policy=Policy.read_only()) as qb:
             tasks = qb.app("bq1234567").table("Tasks")
             rows = tasks.summarize(
                 group_by="Status", where=condition, total="Amount", max_records=5000
@@ -672,12 +675,12 @@ Have a tool show what it would do, and make the change only once someone has app
 reads, so the tool that shows it can use a read-only client, and only the tool that writes needs more.
 
 ```python
-from pyquickbase import F, Quickbase, tool_result, where_from_dict
+from pyquickbase import F, Policy, Quickbase, tool_result, where_from_dict
 
 
 def preview_status_change(record_id: int, status: str) -> dict:
     """The tool the model calls first. It changes nothing."""
-    with Quickbase.from_env(read_only=True) as qb:
+    with Quickbase.from_env(policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         preview = tasks.preview_update([{"Record ID#": record_id, "Status": status}])
     return tool_result(preview)
@@ -685,7 +688,7 @@ def preview_status_change(record_id: int, status: str) -> dict:
 
 def preview_delete_tasks(project: str, where: dict) -> dict:
     """Shows how many tasks a delete would remove, and the first few."""
-    with Quickbase.from_env(read_only=True) as qb:
+    with Quickbase.from_env(policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         condition = (F("Project") == project) & where_from_dict(where, fields=["Status"])
         page = tasks.preview_delete(condition, select=["Title"], top=10)
@@ -708,27 +711,26 @@ the `confirmation` that `plan_schema` returned for exactly those changes, within
 schema is as it was. Unlike `require_preview` for records, this can't be turned off.
 
 ```python
-from pyquickbase import (
-    AsyncQuickbase,
-    ReadAccess,
-    ReadRules,
-    SchemaAccess,
-    WriteAccess,
-    WriteRules,
-    tool_result,
-)
+from pyquickbase import AsyncQuickbase, Policy, allow, tables, tool_result
 
-schema = SchemaAccess(
-    create_fields=True,
-    update_fields=True,
-    field_types=["text", "numeric", "date", "checkbox", "text-multiple-choice"],
-    formulas=True,
+policy = Policy(
+    rules=[
+        allow.read("Tasks"),
+        allow.schema(
+            "Tasks",
+            "add_field",
+            "change_field",
+            "formula",
+            field_types=["text", "numeric", "date", "checkbox", "text-multiple-choice"],
+        ),
+        allow.create_tables(),
+        allow.read(tables.created()),
+        allow.schema(tables.created(), "add_field", "change_field", "delete_field"),
+    ]
 )
-writes = WriteRules({tasks_id: WriteAccess(schema=schema)})
-reads = ReadRules({tasks_id: ReadAccess(fields=True)})
-async with AsyncQuickbase.from_env(
-    token_env="QB_SCHEMA_TOKEN", write_policy=writes, read_policy=reads
-) as qb:
+async with AsyncQuickbase.from_env() as setup:
+    bound = await policy.bind(setup.app("bq1234567"))
+async with AsyncQuickbase.from_env(token_env="QB_SCHEMA_TOKEN", policy=bound) as qb:
     app = qb.app("bq1234567")
     describe = await app.operation("describe_schema")
     plan = await app.operation("plan_schema", max_changes=10)
@@ -736,23 +738,32 @@ async with AsyncQuickbase.from_env(
     shown = tool_result(await plan.run(arguments))  # holds "confirmation" if nothing blocks it
 ```
 
-- **Each schema offers only what the rules allow:** the kinds of change, the tables that can change,
-  and the field types they can create. A plan reports anything the rules would refuse as a blocker, so
-  the person sees it before approving.
-- **Formulas, lookups, and summaries each need their own grant**, as they show other fields' values.
-  On a client with `ReadRules`, one may only use fields the client can already return. A formula can't
-  call a function that reads other records, such as `GetRecords()`. It can't make a link or rich text,
-  which act as whoever clicks them. A field's formula is only shown when everything it uses is
-  readable.
-- **Tables the client creates need access of their own.** Pass `new_tables` to `WriteRules` and
-  `ReadRules`. Without it, a table the model creates is off limits, even to the same client.
+- **Each schema offers only what the policy allows:** the kinds of change, the tables that can change,
+  and the field types they can create. A plan reports anything the policy would refuse as a blocker,
+  so the person sees it before approving.
+- **Each change is granted where it lands.** A lookup is granted on the child, and needs `read` on
+  the parent's field. A summary is granted on the parent, and needs `read` on the child's field and
+  `filter` on the fields its filter uses. A relationship needs both tables, as it adds fields to the
+  parent too.
+- **Formulas, lookups, and summaries may only use fields the client can already read.** A formula
+  can't call a function that reads other records, such as `GetRecords()`. It can't make a link or rich
+  text, which act as whoever clicks them. A field's formula is only shown when everything it uses is
+  readable, and a summary's filter when every field it uses is readable on the child.
+- **A plan says what the policy would do with each change,** in its `policy_effects`: who could read
+  and write a new field, the classes a new formula, lookup, or summary would get, and which rules lose
+  a deleted field or table. A deletion that would leave a rule matching nothing is a blocker, and so
+  is a label a field the client can't see already uses.
+- **Tables the client creates are covered by `tables.created()`.** Creating one gives the client a
+  new policy that includes it, so a table the model creates is off limits unless a rule names
+  `tables.created()` or `tables.all()`.
 - **Use a separate token for schema changes.** Changing the schema needs more rights than reading and
   writing records, so keep those on a token with less.
-- **A confirmation is signed with the client's key.** Give clients in several processes the same
-  `confirmation_key` if a plan may be applied by another one.
+- **A confirmation is signed with the client's key, and tied to its policy.** Give clients in several
+  processes the same `confirmation_key`, and the same bound policy, if a plan may be applied by
+  another one.
 
 A plan's `tool_result()` has `plan.changes`, each with its `summary`, `risk`, `settings`, `warnings`,
-`blockers`, and a `link` to check it in Quickbase, then `blockers`, `warnings`, `confirmation`, and
+`blockers`, any `policy_effects`, and a `link` to check it in Quickbase, then `blockers`, `warnings`, `confirmation`, and
 `expires_at`. Show the person the summaries and warnings, and send `apply_schema` the same changes with
 the confirmation once they approve. It makes sure a plan happened, not that a person saw it, so ask
 your client to show each change for approval too.
@@ -779,13 +790,13 @@ may already have applied, so an agent should check the data before trying again.
 
 | Exception | What it means for a write |
 |---|---|
-| [Mistakes caught before sending](errors.md#mistakes-caught-before-sending), such as `QueryError`, `InvalidValueError`, `WriteRefusedError`, and `ReadRefusedError` | This request wasn't sent |
+| [Mistakes caught before sending](errors.md#mistakes-caught-before-sending), such as `QueryError`, `InvalidValueError`, and `PolicyRefusedError` | This request wasn't sent |
 | `WriteError` | Some rows may have been written. If a large write stopped at a later batch, `result` covers only the earlier batches, `errors` can be empty, and the failed batch may have been written |
 | `NetworkError`, `RequestTimeoutError`, `ServerError`, `InvalidResponseError` | Unknown, so check the data first |
 | Other `APIError`s, such as `BadRequestError` | Quickbase answered with an error, so fix the cause rather than repeating the request |
 
 `create_field()` with `required` or `unique` takes two requests, so if it raises an error, the field
-[may already exist](schema.md). This includes `WriteRefusedError`, when only the first is allowed.
+[may already exist](schema.md). This includes `PolicyRefusedError`, when only the first is allowed.
 
 Repeating an `update()`, or an `upsert()` on a unique field, reports the record as unchanged rather
 than adding another, but repeating an `insert()` can add a duplicate.

@@ -17,7 +17,7 @@ from .errors import PolicyRefusedError
 # Functions that only work on the values they're given, the current user, or the date. Compared in
 # lowercase, as Quickbase doesn't mind case. Size() only counts a list it's given. Anything that
 # queries records, such as GetRecord(), GetRecords(), GetFieldValues(), and SumValues(), is left out
-# on purpose, and so are the ones that turn a user into an email address, which read rules can hide.
+# on purpose, and so are the ones that turn a user into an email address, which a policy can hide.
 SAFE_FUNCTIONS = frozenset(
     name.lower()
     for name in [

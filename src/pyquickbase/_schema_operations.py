@@ -25,7 +25,7 @@ DEFAULT_MAX_CHANGES = 20
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class SchemaAllowed:
-    """What the client's limits could allow a schema change to do, which the schemas offer.
+    """What the client's policy allows a schema change to do, which the schemas offer.
 
     `tables` are the names of the tables it may change, and `create_tables` whether it may add
     one. A change that's offered can still be refused for a particular table or field, which the
@@ -278,7 +278,7 @@ def schema_operation_schema(
     """The JSON Schema for a schema operation's arguments.
 
     Raises:
-        ConfigurationError: The client's limits allow no schema change, for `plan_schema` or
+        ConfigurationError: The client's policy allows no schema change, for `plan_schema` or
             `apply_schema`.
     """
     if name == "describe_schema":
@@ -295,7 +295,7 @@ def schema_operation_schema(
         }
     if not allowed.kinds:
         raise ConfigurationError(
-            f"This client can't offer {name}: its limits on writes allow no schema change."
+            f"This client can't offer {name}: its policy allows no schema change."
         )
     properties: dict[str, Any] = {"changes": _changes(allowed, max_changes)}
     if name == "apply_schema":

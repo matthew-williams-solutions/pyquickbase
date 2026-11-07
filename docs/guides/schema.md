@@ -146,10 +146,13 @@ tasks.ensure_count_field(link, "Done Tasks", where="{9.EX.'Done'}")
 - **It's part of what makes a summary the same.** If a summary with that label exists with a different
   filter, or none, the method raises `SchemaMismatchError`. `Field.summary_query` holds a summary's
   filter.
-- **On a client with `ReadRules`,** the filter may only use fields the client can filter on, since the
-  summary shows how many records match. The rules also hide every summary's filter, because a field's
-  details don't say which table it reads. So `summary_query` is None, and an existing summary is
-  matched without its filter.
+- **On a client with a policy,** the filter may only use fields the client can filter on, since the
+  summary shows how many records match. A summary's filter is shown only when every field it uses is
+  readable on the child, and then an existing summary is compared with it. Otherwise `summary_query`
+  is None, and an existing summary is matched without its filter.
+- **A child with a row limit gets it in the filter.** The policy's `limit.rows()` for the child is
+  ANDed into the filter, so the summary counts only what the client may reach, and an existing
+  summary of that child whose filter doesn't hold the limit is hidden.
 - **Deleting a field a filter uses** stops the summary working. A plan lists it with the summaries that
   stop working.
 - `CreateSummaryField` takes the same `where`, as a string.

@@ -169,22 +169,30 @@ those, because Quickbase may already have applied it, so check the data before t
 
 ## Limiting what a client can do
 
-Pass `read_only=True` to guarantee a client can't change data. It only sends GET requests, record
-queries, report runs, and formula runs, including through `qb.request()`, and raises `WriteRefusedError`
-for anything else without sending it, though a table method may read the table's metadata first.
-Running a report adds to its usage count in Quickbase, but changes no records.
+Pass `policy=Policy.read_only()` to guarantee a client can't change data. It only sends GET requests,
+record queries, report runs, and formula runs, including through `qb.request()`, and raises
+`PolicyRefusedError` for anything else without sending it, though a table method may read the table's
+metadata first. Running a report adds to its usage count in Quickbase, but changes no records.
 
-To limit writes by table, action, and field, such as for an AI agent, pass `WriteRules`. To limit reads
-by table, field, report, and number of records, pass `ReadRules`, which also leaves out of each
-response what it doesn't allow. Anything they don't list is refused. See [Limiting what a client can do](https://matthew-williams-solutions.github.io/pyquickbase/guides/clients/#limiting-what-a-client-can-do)
-for these, your own policies, and what these limits don't do.
+To limit what a client reads and changes, such as for an AI agent, write a `Policy` of rules over
+tables and fields, by name, and bind it to the app. Anything it doesn't allow is refused, a deny always
+wins, and what it hides is left out of each response. See [Limiting what a client can do](https://matthew-williams-solutions.github.io/pyquickbase/guides/clients/#limiting-what-a-client-can-do)
+for every rule, and what a policy doesn't do.
 
 ```python
-from pyquickbase import Quickbase, ReadAccess, ReadRules, WriteAccess, WriteRules
+from pyquickbase import Policy, Quickbase, allow, deny, fields, tables
 
-writes = WriteRules({"bqtasks123": WriteAccess(insert=True, update=[7, 12])})
-reads = ReadRules({"bqtasks123": ReadAccess(fields=[6, 7, 12], max_records=50)})
-qb = Quickbase(realm="acme", token="your_user_token", write_policy=writes, read_policy=reads)
+policy = Policy(
+    classes={"pay": ["Technicians.Hourly Rate"]},
+    rules=[
+        allow.read(tables.all(), max_records=50),
+        allow.update("Job Tasks", ["Status", "Notes"]),
+        deny.all(fields.classed("pay")),
+    ],
+)
+with Quickbase(realm="acme", token="your_user_token") as setup:
+    bound = policy.bind(setup.app("bq1234567"))
+qb = Quickbase(realm="acme", token="your_user_token", policy=bound)
 ```
 
 ## Customizing

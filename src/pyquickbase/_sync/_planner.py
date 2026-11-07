@@ -351,7 +351,7 @@ class Planner:
         json: Any = None,
         parent: _Table | None = None,
     ) -> list[str]:
-        """Why the client's limits would refuse this request, if they would."""
+        """Why the client's policy would refuse this request, if it would."""
         try:
             self._transport.check_write(
                 method,

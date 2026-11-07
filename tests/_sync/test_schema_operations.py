@@ -143,7 +143,7 @@ def test_a_change_the_tool_doesnt_offer_is_refused() -> None:
 
 def test_a_client_that_cant_change_the_schema_cant_offer_it() -> None:
     with client(FakeApp(), policy=Policy.read_only()) as qb:
-        with pytest.raises(ConfigurationError, match="allow no schema change"):
+        with pytest.raises(ConfigurationError, match="allows no schema change"):
             qb.app(APP).operation("plan_schema")
         assert (qb.app(APP).operation("describe_schema")).name == "describe_schema"
     with pytest.raises(ConfigurationError, match="name must be one of"):

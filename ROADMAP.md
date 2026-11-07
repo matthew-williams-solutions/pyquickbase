@@ -8,14 +8,23 @@ to keep are explained in the guides, not here.
 
 - Release a candidate with schema plans, `feature/schema-changes`, then let it run for at least a week
   with no code changes.
-- Check the formula functions a client with read rules allows, `SAFE_FUNCTIONS` in `_formula.py`,
+- Check the formula functions a client with a policy allows, `SAFE_FUNCTIONS` in `_formula.py`,
   against Quickbase's function list. A missing one is refused by name, so this only widens what's
   allowed, but each one added must only read the record's own values.
-- A plan checks a table it creates against the client's limits only when it's applied, so a change to
+- A plan checks a table it creates against the client's policy only when it's applied, so a change to
   that table can still be refused partway through. Planning again resumes from there.
-- `ReadRules` hide every summary's filter (`Field.summary_query`), as a field's details don't say which
-  table the filter reads, so an existing summary is matched without it. The planned `Policy` binds
-  relationships, so it can show a filter whose fields are readable.
+- `limit.rows()` covers queries, summaries, and deletes, but not updates by `Record ID#`, which name a
+  record without a filter. Checking them would mean a count before each write batch, which could
+  race with another change.
+- `policy_effects` works from the bound policy, not by binding the original `Policy` against the
+  schema the plan leaves, so it doesn't see a class losing its only named field. A deny rule left
+  matching nothing that way isn't a blocker yet.
+- `BoundPolicy` has public methods that only the SDK uses, such as `trim()` and `offers_for()`, and a
+  public constructor. Move them behind a private interface, so the public API is only `decide()`,
+  `allows()`, `explain()`, `offers()`, and saving.
+- Run the live tests against the new `Policy`, and add the ones the design asks for: a hidden label
+  collision, a summary over a row-limited table, a lookup with only read access on the parent, and a
+  created table after `from_json()`.
 - In the 1.0 release commit:
   - Change the classifier in `pyproject.toml` from Beta to Production/Stable.
   - Remove the release candidate warnings from `README.md` and `docs/index.md`, and the advice to pin

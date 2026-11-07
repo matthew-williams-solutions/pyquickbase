@@ -47,14 +47,15 @@ These mean the request wasn't sent, though the SDK may have read the table's met
 | `QueryError` | A query that can't be sent as written, such as a lowercase operator in a hand-written string |
 | `InvalidValueError` | A row, value, or file request that can't be sent |
 | `SchemaMismatchError` | A generated class no longer matches its table, or an `ensure_` method found a field that isn't what it was asked for |
-| `UnknownTableError` | No table with that name or ID in this app, or the client's read policy hides it |
-| `UnknownFieldError` | No field with that label or ID in this table, or the token's role or the client's read policy hides it |
+| `UnknownTableError` | No table with that name or ID in this app, or the client's policy hides it |
+| `UnknownFieldError` | No field with that label or ID in this table, or the token's role or the client's policy hides it |
 | `UnknownReportError` | No report with that name or ID on this table, several with that name, or one the role can't use |
 | `UnsupportedReportError` | A report that can't be read as records, such as a summary or chart |
-| `WriteRefusedError` | The client's [limits on writes](clients.md#limiting-what-a-client-can-do) don't allow this request |
-| `ReadRefusedError` | The client's [read policy](clients.md#limiting-reads-by-table-field-and-number-of-records) doesn't allow this request |
+| `PolicyRefusedError` | The client's [policy](clients.md#limiting-what-a-client-can-do) doesn't allow this request |
 
-`RequestRefusedError` is the base of `WriteRefusedError` and `ReadRefusedError`, for catching either.
+A `PolicyRefusedError`'s `decision` says what was refused, by name, which rule refused it, and what
+would allow it. Its message follows one form: `Refused by <layer>: <what>. <reason>. (rule: <rule>)
+Nothing was sent. To allow it: <hint>.`
 
 ```python
 from pyquickbase import QueryError

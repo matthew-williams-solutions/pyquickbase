@@ -6,50 +6,88 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-This adds schema changes that are planned before they're made, for scripts and for agents, with limits
-on what a client may change. It breaks a few things, listed below.
+This replaces the permission classes with one `Policy`, and adds schema changes that are planned
+before they're made, for scripts and for agents. **It breaks every client that used `read_only`,
+`read_policy`, or `write_policy`,** with no compatibility layer, as listed below.
 
 ### Added
 
+- **`Policy`, one argument for what a client may do.** `AsyncQuickbase(policy=...)` and
+  `Quickbase(policy=...)` take a policy of `allow`, `deny`, and `limit` rules over tables and fields,
+  by name and label, or a `fields` or `tables` selector. Anything no rule allows is refused, and a
+  deny always wins. `Policy.bind(app)` looks up every name once, reports every problem in one
+  `ConfigurationError`, and returns a frozen `BoundPolicy` keyed by ID.
+- **One evaluator.** `BoundPolicy.decide()` is the only code that decides a request, and returns a
+  `Decision` with the layer, the rule as written, a reason, and a hint, naming tables and fields by
+  name and ID. `allows()` and `explain()` answer questions about it, and `offers()` asks it about
+  each field and verb, which is what operations and schema operations offer, so a model is never
+  offered what's refused.
+- **Classes** name groups of fields, and carry over to every formula, lookup, and summary that reads
+  one, through chains and across tables, including the fields a summary's filter uses. A formula that
+  can't be read counts as reading its whole table.
+- **`new_fields`** says what a field added after binding gets: `read`, `hidden`, or a class. It's never
+  writable until the policy is bound again.
+- **`limit.rows()`** ANDs a condition onto every query, summary, and delete the client sends,
+  including into a new summary field's filter. It hides existing summaries that read past it, and
+  lookups from a row-limited table, and refuses reports, downloads, and formulas there.
+- **Schema verbs granted where a change lands:** `lookup` on the child, with `read` on the parent's
+  field, `summary` on the parent, with `read` on the child's field and `filter` on its filter's fields,
+  and `link` and `unlink` on both tables. Creating a table gives the client a new `BoundPolicy`, as
+  `client.policy`, with the table in its `created` list for `tables.created()`.
+- **Saving a bound policy** with `to_json()` and `BoundPolicy.from_json()`, and a `hash` of it.
+- **Rules of your own**, as objects with `decide(request)`, which can only refuse.
+- **`PlannedChange.policy_effects`**, which says who could read and write a new field, its classes,
+  and which rules lose a deleted field or table. A rule a deletion leaves matching nothing is a
+  blocker, and so is a label that a field the client can't see already uses.
 - **Summaries of some child records.** `ensure_summary_field()`, `ensure_count_field()`, and
   `CreateSummaryField` take `where`, which is checked against the child's fields before it's sent, as
-  Quickbase saves a filter it can't use and the summary then reads as empty. On a client with
-  `ReadRules`, the filter may only use fields the client can filter on. `Field.summary_query` holds a
+  Quickbase saves a filter it can't use and the summary then reads as empty. Under a policy, the
+  filter may only use fields the client can filter on, and it's shown, and compared with an existing
+  summary's, when every field it uses is readable on the child. `Field.summary_query` holds a
   summary's filter, and a plan warns when a deleted field is one a summary filters on.
 - **`App.plan_schema()` and `App.apply_schema()`.** Changes such as `CreateField`, `UpdateField`,
   `DeleteField`, `CreateTable`, `CreateRelationship`, `CreateLookupField`, and `CreateSummaryField` are
   checked against the app as it is. Each `PlannedChange` says what it would set, its `risk`, what else it
   would do or affect, such as records that lose a deleted field's values or formulas that use it, and
-  anything that blocks it, including the client's own limits. Applying plans again first, and refuses if
+  anything that blocks it, including the client's policy. Applying plans again first, and refuses if
   the touched tables and fields have changed. A failure raises `SchemaChangeError`, which says what was
   made, and planning again shows only what's left.
 - **Schema operations for models:** `App.operation()` offers `describe_schema`, `plan_schema`, and
   `apply_schema`, which only runs with the confirmation its plan returned, for the same changes, while
-  the schema is as it was. Each schema offers only what the client's `WriteRules` could allow.
-- **`SchemaAccess`**, given as `WriteAccess(schema=...)`, allows changing a table, adding, changing, or
-  deleting fields, field types, and relationships, and separately formulas, lookups, and summaries.
-  `WriteRules(create_tables_in=..., new_tables=...)` and `ReadRules(new_tables=...)` cover tables a
-  client creates.
-- **Checks on what a new formula, lookup, or summary reads.** On a client with `ReadRules`, one may only
-  use fields the client can return, and a formula may only call functions known to stay on the record.
-  A formula can't make a link or rich text under `WriteRules`.
+  the schema is as it was. Each schema offers only what the client's policy allows.
+- **Checks on what a new formula, lookup, or summary reads.** Under a policy, one may only use fields
+  the client can read, and a formula may only call functions known to stay on the record. A formula
+  can't make a link or rich text.
 - **`Table.update_info()`** renames a table or changes its descriptions, and
   **`Table.delete_relationship()`** unlinks a child from its parent.
 - **`confirmation_key`** on the client, so several processes accept each other's previews.
 - **`TableSchema`**, and `tool_result()` for plans, results, and table schemas.
 - **`ConfirmationError`**, with the tool error code `needs_confirmation`, for a change without the
-  confirmation its preview or plan returned, or with one that's expired, for other arguments, or from
-  another process. It's a `QueryError`, so code that catches that still does.
+  confirmation its preview or plan returned, or with one that's expired, for other arguments, from
+  another client, or from a client with a different policy.
 
 ### Changed
 
-- **`ReadRules` no longer refuses schema changes.** The write limits decide them, and the SDK checks what
-  a new formula, lookup, or summary reads. `request()` can't make one on a client with limits.
+- **Every refusal is a `PolicyRefusedError`**, holding its `Decision`, with a message of the form
+  `Refused by <layer>: <what>. <reason>. (rule: <rule>) Nothing was sent. To allow it: <hint>.` A
+  hidden field still raises `UnknownFieldError`. `tool_error()` keeps the codes `read_refused` and
+  `write_refused`, chosen by the verb refused, and drops `refused`.
+- **A confirmation starts with an ID for its key**, and is bound to the hash of the client's policy.
+- **`ConfirmationError` is no longer a `QueryError`.**
+- **A write whose field keys can't be read is refused**, even where every field may be written.
 - **`WriteRequest.action` names each schema change**, such as `create_field`, rather than `other`, and
   `WriteRequest` has `app_id`, `parent_table_id`, `field_type`, and `derived`.
-- **A field's formula is kept by `ReadRules`** when everything it uses is readable.
 - **Previews share their approval keys:** `blockers`, `warnings`, `confirmation`, and `expires_at`. A
   delete preview over its limit lists a blocker, rather than `over_limit`.
+
+### Removed
+
+- **`read_only`, `read_policy`, and `write_policy`.** Pass `policy=Policy.read_only()` for
+  `read_only=True`, and a bound `Policy` for the others.
+- **`ReadRules`, `ReadAccess`, `WriteRules`, `WriteAccess`, `SchemaAccess`, and `all_of()`,** with
+  their `new_tables` arguments, and the `ReadPolicy` and `WritePolicy` types. A policy function
+  becomes a `Rule` of your own, which can only refuse.
+- **`WriteRefusedError`, `ReadRefusedError`, and `RequestRefusedError`,** for `PolicyRefusedError`.
 
 ## [1.0.0rc11] - 2026-11-05
 

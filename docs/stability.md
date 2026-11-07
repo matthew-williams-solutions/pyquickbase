@@ -11,14 +11,14 @@ minor release.
 - Every name in `pyquickbase.__all__` and `pyquickbase.errors`, with its documented methods,
   signatures, return types, and defaults.
 - The `pyquickbase` command and its options.
-- The promise that a `read_only` client changes no records. It can still run reports, which adds to
-  their usage count in Quickbase, and formulas.
+- The promise that a client with `Policy.read_only()` changes no records. It can still run reports,
+  which adds to their usage count in Quickbase, and formulas.
 - The attributes of `User`, `FileAttachment`, and `FileVersion`, which file and user fields read as. A
-  value a `ReadRules` leaves out, such as an email address, is None.
-- `WriteRules` and `ReadRules` refusing whatever they don't list, and `ReadRules` leaving out of a
-  response whatever it doesn't allow. A later version can add a new `WriteAction` or `ReadAction`, or a
-  new attribute on `WriteRequest` or `ReadRequest`, so have your own policy refuse an action it doesn't
-  recognize.
+  value a policy leaves out, such as an email address, is None.
+- A `Policy` refusing whatever its rules don't allow, a deny winning over any allow, and the policy
+  leaving out of a response whatever it hides. A later version can add a new `Verb`, `WriteAction`, or
+  `ReadAction`, or a new attribute on `Decision`, `WriteRequest`, or `ReadRequest`, so have a rule of
+  your own ignore an action it doesn't recognize.
 - The keys of what `tool_result()` and `tool_error()` return, how they write each kind of value, and the
   codes in `ToolErrorCode`, along with each code's `changed` and `retryable`. A later version can add a
   key or a code, so have your tool handle a code it doesn't recognize. The wording of `message` and
@@ -35,7 +35,7 @@ minor release.
 - The wording of error messages and `repr`s, so don't parse them.
 - Quickbase's own behavior, including any change it makes to its responses, and the contents of `raw`
   attributes.
-- Which metadata keys `ReadRules` keeps, as Quickbase's responses aren't covered either.
+- Which metadata keys a policy keeps, as Quickbase's responses aren't covered either.
 
 ## Generated code
 
