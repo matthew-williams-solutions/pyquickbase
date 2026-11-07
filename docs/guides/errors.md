@@ -34,18 +34,39 @@ with Quickbase(realm="acme", token="your_user_token") as qb:
 
 The other examples on this page use `tasks`, a table from a client made in the same way.
 
-Catching a class catches everything under it. In each box, the class in bold is the parent of the
-ones listed below it. `WritePermissionError` is under both `WriteError` and `PermissionDeniedError`,
-so either one catches a refused write.
+Catching a class catches everything under it. `WritePermissionError` is under both `WriteError` and
+`PermissionDeniedError`, so either one catches a refused write:
 
-```mermaid
-flowchart LR
-    Q[QuickbaseError] --> B["<b>Caught before sending</b><br/>ConfigurationError<br/>QueryError<br/>InvalidValueError<br/>ConfirmationError<br/>PolicyRefusedError<br/>SchemaMismatchError<br/>UnknownTableError<br/>UnknownFieldError<br/>UnknownReportError<br/>UnsupportedReportError"]
-    Q --> N["<b>NetworkError</b><br/>RequestTimeoutError"]
-    Q --> I["<b>InvalidResponseError</b>"]
-    Q --> W["<b>WriteError</b><br/>SchemaChangeError<br/>WritePermissionError"]
-    Q --> A["<b>APIError</b><br/>BadRequestError<br/>AuthenticationError<br/>PermissionDeniedError<br/>NotFoundError<br/>RateLimitError<br/>ServerError"]
+```text
+QuickbaseError
+├── ConfigurationError
+├── QueryError
+├── InvalidValueError
+├── ConfirmationError
+├── PolicyRefusedError
+├── SchemaMismatchError
+├── UnknownTableError
+├── UnknownFieldError
+├── UnknownReportError
+├── UnsupportedReportError
+├── NetworkError
+│   └── RequestTimeoutError
+├── InvalidResponseError
+├── WriteError
+│   ├── SchemaChangeError
+│   └── WritePermissionError
+└── APIError
+    ├── BadRequestError
+    ├── AuthenticationError
+    ├── PermissionDeniedError
+    │   └── WritePermissionError
+    ├── NotFoundError
+    ├── RateLimitError
+    └── ServerError
 ```
+
+The ten listed first, from `ConfigurationError` to `UnsupportedReportError`, mean the request wasn't
+sent, though the SDK may have read metadata or counted records first.
 
 `ConfigurationError`, `QueryError`, and `InvalidValueError` are also `ValueError`s, and the three
 `Unknown...Error`s are also `LookupError`s.

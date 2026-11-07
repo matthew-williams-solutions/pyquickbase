@@ -29,25 +29,24 @@ update.run({**arguments, "confirmation": shown["confirmation"]})
   one up, and the preview and the change must come from the same client. Give them the same `scope`.
 
 ```mermaid
+---
+config:
+  sequence: { width: 100, actorMargin: 20 }
+---
 sequenceDiagram
-    participant M as Model
     participant P as Person
+    participant M as Model
     participant S as pyquickbase
-    participant Q as Quickbase
-    M->>S: preview_update(arguments)
-    S->>Q: Read the records
-    Q-->>S: Current values
-    S-->>M: Changes, and a signed confirmation
-    M->>P: Show what would change
+    M->>S: preview_update<br/>(arguments)
+    S-->>M: The changes, and<br/>a confirmation
+    M->>P: The changes
     P-->>M: Approve
-    M->>S: update(arguments, confirmation)
-    S->>S: Same arguments, client, and policy,<br/>within 15 minutes?
-    alt it matches
-        S->>Q: Write the records
-        Q-->>S: Result
-        S-->>M: created_ids, updated_ids
-    else it doesn't
-        S-->>M: needs_confirmation, nothing changed
+    Note over P,M: pyquickbase<br/>can't see this
+    M->>S: update(arguments,<br/>confirmation)
+    alt Same arguments,<br/>client, and policy,<br/>in 15 minutes
+        S-->>M: created_ids,<br/>updated_ids
+    else Anything differs,<br/>or it's expired
+        S-->>M: needs_confirmation,<br/>nothing written
     end
 ```
 

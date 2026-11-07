@@ -70,8 +70,8 @@ and operations. Getting an app or a table sends nothing. They're checked when fi
 flowchart TD
     QB["<b>Quickbase</b><br/>Quickbase(...)"] --> App["<b>App</b><br/>qb.app(id)"]
     App --> T["<b>Table</b><br/>app.table(name)"]
-    App --> AO["<b>Also from an app</b><br/>TypedTable: app.typed(Class)<br/>SchemaOperation: app.operation(name)"]
-    T --> TO["<b>From a table</b><br/>Record: .query(), .get()<br/>Field: .fields()<br/>Report: .report(name)<br/>Operation: .operation(name)"]
+    App --> AO["<b>Also from an app</b><br/>TypedTable:<br/>.typed(Class)<br/>SchemaOperation:<br/>.operation(name)"]
+    T --> TO["<b>From a table</b><br/>Record: .query(), .get()<br/>Field: .fields()<br/>Report: .report(name)<br/>Operation:<br/>.operation(name)"]
 ```
 
 ## Next steps

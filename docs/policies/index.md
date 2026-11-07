@@ -17,24 +17,17 @@ so that Quickbase enforces the limit too.
 
 ## How a policy decides
 
-Every request a client sends goes through the same checks, in order, before anything reaches
-Quickbase. The first check that refuses it stops it, and nothing is sent.
+Every request a client sends is checked before anything reaches Quickbase. A refused one raises
+`PolicyRefusedError`, nothing is sent, and `error.decision.layer` says which check refused it:
 
-```mermaid
-flowchart LR
-    A[Request] --> B{Rules allow it?<br/>deny always wins}
-    B -- no --> R[PolicyRefusedError<br/>nothing sent]
-    B -- yes --> C{Row limit<br/>can be applied?}
-    C -- no --> R
-    C -- yes --> D{Derived fields read<br/>only what's allowed?}
-    D -- no --> R
-    D -- yes --> E{Confirmation<br/>needed and given?}
-    E -- no --> R
-    E -- yes --> Q[Sent to Quickbase]
-```
+| `layer` | Refused because |
+|---|---|
+| `policy` | No rule allows it, or a deny rule covers it. A deny always wins |
+| `rows` | A row limit can't be added to it, or it would show a row-limited table's records elsewhere |
+| `derived` | A formula, lookup, or summary would read something the client can't |
 
-Each check is a `layer` on the `Decision` it makes: `policy`, `rows`, `derived`, or
-`confirmation`. What the policy hides is also left out of every response, so a hidden table or
+A confirmation that `require_preview` asks for isn't part of the policy. A missing or mismatched one
+raises `ConfirmationError`. What the policy hides is also left out of every response, so a hidden table or
 field looks as if it doesn't exist.
 
 1. **Write a `Policy`** of rules, by table name and field label.

@@ -90,7 +90,7 @@ link = tasks.create_relationship(projects, foreign_key="Project", lookup_fields=
 
 ## Adding lookups and summaries
 
-Use these two methods to add to a relationship, including one that already exists. Call both on the
+Use these three methods to add to a relationship, including one that already exists. Call each on the
 child table.
 
 - `ensure_lookup_field()` shows a parent's field on the child.
@@ -101,15 +101,15 @@ child table.
 erDiagram
     Projects ||--o{ Tasks : "has"
     Projects {
-        recordid Record_ID "key"
+        recordid Record_ID PK
         text Name
-        numeric Total_Hours "summary: sum of the Tasks' Hours"
-        numeric Task_Count "count: how many Tasks"
+        numeric Total_Hours "ensure_summary_field()"
+        numeric Task_Count "ensure_count_field()"
     }
     Tasks {
-        recordid Record_ID "key"
-        numeric Project "foreign key: a project's Record ID#"
-        text Project_Name "lookup: the project's Name"
+        recordid Record_ID PK
+        numeric Project FK "ensure_relationship()"
+        text Project_Name "ensure_lookup_field()"
         numeric Hours
     }
 ```
@@ -200,16 +200,6 @@ tasks.ensure_summary_field(link, "Hours", "Hours Sum")
 projects.ensure_field("Total Hours", "numeric", formula="Nz([Hours Sum])")
 ```
 
-```mermaid
-flowchart TD
-    E["ensure_...()"] --> F{"Found by its<br/>name or label?"}
-    F -- no --> C[Create it]
-    F -- yes --> M{"Same as what<br/>you passed?"}
-    M -- yes --> R[Return it]
-    M -- "a setting differs" --> U[Change that setting]
-    M -- "another type or<br/>calculation" --> X[SchemaMismatchError]
-```
-
 | Method | Finds what's there by | If it exists |
 |---|---|---|
 | `ensure_table()` | Its name, ignoring case | Returns it unchanged |
@@ -295,15 +285,10 @@ fields, and link it to another.
 
 ```mermaid
 flowchart TD
-    P["preview_schema_changes()"] --> B{Blockers?}
-    B -- yes --> F[Fix the changes] --> P
-    B -- no --> A["apply_schema_changes(plan)"]
-    A --> S{"Tables and fields<br/>unchanged?"}
-    S -- no --> M["SchemaMismatchError,<br/>nothing sent"]
-    S -- yes --> G[Make each ready change, in order]
-    G -- all made --> OK[SchemaChangeResult]
-    G -- one fails --> E["SchemaChangeError,<br/>listing what was made"]
-    E -. preview again .-> P
+    P["preview_schema_changes()<br/>with no blockers"] --> A["apply_schema_changes(plan)<br/>plans them again"]
+    A --> X["<b>Changed or blocked</b><br/>SchemaMismatchError,<br/>or InvalidValueError<br/>Nothing changed"]
+    A --> G["<b>Makes each ready<br/>change, in order</b><br/>Returns<br/>SchemaChangeResult"]
+    G --> E["<b>If one fails</b><br/>SchemaChangeError,<br/>listing what was made"]
 ```
 
 **Applying is checked again.** `apply_schema_changes()` plans the same changes again first. If the tables and

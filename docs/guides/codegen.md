@@ -146,16 +146,6 @@ the async client, where you `await` it, or use `async for` on `query()`.
 
 ## Keeping it up to date
 
-```mermaid
-flowchart TD
-    G["pyquickbase codegen"] --> M[tables.py]
-    M --> T["app.typed(Tasks)"]
-    T --> C{"Still matches<br/>the table?"}
-    C -- yes --> OK[Reads and writes]
-    C -- no --> X[SchemaMismatchError]
-    X -. run codegen again .-> G
-```
-
 A generated class is compared with its table the first time it's used, and `SchemaMismatchError` lists
 what's different if a field was deleted, changed type, or became read-only. Reads and writes stop rather
 than risk returning wrong types. Run the command again to fix it. Adding a field, renaming one, or a

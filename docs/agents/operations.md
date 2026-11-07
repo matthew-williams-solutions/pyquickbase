@@ -40,15 +40,16 @@ The schema goes in your framework's tool definition, under the name it uses, suc
 Each call to `run()` goes through these steps, and stops with an error at the first one that fails.
 Only the last step changes anything:
 
-```mermaid
-flowchart TD
-    A[Normalize the spellings] --> B[Check keys, fields, and values]
-    B --> C[Apply the scope]
-    C --> D[Count what a delete matches]
-    D --> E[Check named records are in scope]
-    E --> F["Check the confirmation,<br/>with require_preview"]
-    F --> G[Call the table method]
-```
+1. Normalize the spellings.
+2. Check keys, fields, and values.
+3. Apply the scope. For an `insert`, `update`, or `preview_update`, this may read the table's fields,
+   which are usually cached.
+4. For a delete, count what it matches, and refuse it if that's more than `max_records_per_call`.
+   *One count query.*
+5. When there's a scope and the call names records (`update`, `preview_update`, `run_formula`,
+   `download_file`, or `delete_file_version`), check those records are in it. *One count query.*
+6. With `require_preview`, check the confirmation. For a delete, this reuses the count from step 4.
+7. Call the table method.
 
 ### What each operation takes
 

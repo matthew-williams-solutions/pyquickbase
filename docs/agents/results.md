@@ -125,21 +125,21 @@ Every error has `"ok": false`, and an `error` with these keys:
 before repeating a call whose `data_changed` isn't `no`, as repeating an insert can add duplicates.
 
 A model can decide what to do next from `retryable`, `data_changed`, and `code` alone, without
-reading the message:
+reading the message. Check these in order, and act on the first that applies:
 
-```mermaid
-flowchart TD
-    E[ok is false] --> R{retryable?}
-    R -- yes --> U{"data_changed<br/>is unknown?"}
-    U -- yes --> C1[Check the data first] --> W
-    U -- no --> W["Wait retry_after,<br/>then send it again"]
-    R -- no --> D{"data_changed<br/>is partly?"}
-    D -- yes --> F["Fix failed_rows, and<br/>send only those"]
-    D -- no --> K{code}
-    K -- needs_confirmation --> PV["Preview again, show<br/>the person, then confirm"]
-    K -- "invalid_arguments, invalid_value,<br/>unknown_table, unknown_field,<br/>unknown_report" --> FX[Fix the call, then try again]
-    K -- anything else --> TU[Stop, and tell the user]
-```
+| If | Then |
+|---|---|
+| `retryable` is true | Wait `retry_after` if it's given, then send it again. If `data_changed` is `unknown`, check the data first |
+| `code` is `write_permission_denied` | Stop, and tell the user what was written |
+| `code` is `internal` | Stop, and tell the user |
+| `data_changed` is `unknown` | Check what was written, then send only what's missing |
+| `data_changed` is `partly`, or `code` is `write_failed` | Fix `failed_rows`, and send only those. For a schema change, preview it again |
+| `code` is `needs_confirmation` | Preview again, show the person, then confirm |
+| `code` is `invalid_arguments`, `invalid_value`, `unknown_table`, `unknown_field`, `unknown_report`, `unsupported_report`, `not_found`, `bad_request`, or `read_refused` | Fix the call, and try again |
+| Anything else | Stop, and tell the user |
+
+The order matters: a `write_permission_denied` can be `partly`, and an `internal` error is always
+`unknown`, but neither is worth sending again.
 
 | Code | Raised for | `data_changed` | `retryable` |
 |---|---|---|---|

@@ -56,17 +56,8 @@ qb = Quickbase(realm="acme", token="your_user_token", retry=policy)
 ```
 
 `max_retry_after` is the longest `Retry-After` the client will wait for. Past that, it raises
-`RateLimitError`. A `Retry-After` of 0 uses the backoff from `base_delay` instead, because Quickbase
-can send it while still limiting. Use `max_retries=0` to disable retrying.
-
-For a 429, the wait depends on Quickbase's `Retry-After`:
-
-```mermaid
-flowchart LR
-    RA{"A 429's<br/>Retry-After"} --> B["<b>None, or 0</b><br/>Retry after a backoff"]
-    RA --> W["<b>Up to max_retry_after</b><br/>Retry after that wait"]
-    RA --> X["<b>Longer</b><br/>Raise RateLimitError"]
-```
+`RateLimitError`. A missing `Retry-After`, or one of 0, uses the backoff from `base_delay`
+instead, because Quickbase can send 0 while still limiting. Use `max_retries=0` to disable retrying.
 
 Each retry counts toward `max_retries`. Once they're used up, the last error is raised.
 

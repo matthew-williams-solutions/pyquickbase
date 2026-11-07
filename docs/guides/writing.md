@@ -22,17 +22,8 @@ client, use `await` on each call.
 | `table.delete(where)` | Deletes matching records and returns the count |
 
 To choose between the three that write: use `update()` to change records you know by Record ID#,
-`upsert()` to update or create by a unique field, and `insert()` to only create.
-
-```mermaid
-flowchart TD
-    S{"Know each<br/>Record ID#?"} -- yes --> U["update()"]
-    S -- no --> K{"Match on a<br/>unique field?"}
-    K -- yes --> UP["upsert(merge_on=...)<br/>updates or creates"]
-    K -- no --> N{"Key field is<br/>Record ID#?"}
-    N -- yes --> I["insert()<br/>only creates"]
-    N -- no --> UP
-```
+`upsert()` to update or create by a unique field, and `insert()` to only create. `insert()` refuses a
+table whose key field isn't Record ID#, so use `upsert()` with `merge_on` set to the key field there.
 
 ## Writing values
 
@@ -242,22 +233,18 @@ batch fails outright, `WriteError` is raised with the results so far. Check `err
 trying again, so you don't write the same rows twice.
 
 ```mermaid
-sequenceDiagram
-    participant Y as Your code
-    participant S as pyquickbase
-    participant Q as Quickbase
-    Y->>S: insert(2,500 records)
-    S->>Q: Batch 1, records 1 to 1,000
-    Q-->>S: Written
-    S->>Q: Batch 2, records 1,001 to 2,000
-    Q-->>S: Written
-    S->>Q: Batch 3, records 2,001 to 2,500
-    Q-->>S: Fails, such as a 429 after the retries
-    S-->>Y: WriteError: result lists batches 1 and 2,<br/>and __cause__ is batch 3's error
-    Note over Y,Q: Batches 1 and 2 stay written
+flowchart TD
+    I["insert(2,500 records)"] --> B1["<b>Batch 1</b><br/>records 1 to 1,000<br/>Written"]
+    B1 --> B2["<b>Batch 2</b><br/>records 1,001 to 2,000<br/>Written"]
+    B2 --> R["<b>Batch 3 is refused</b><br/>a 429 after retries,<br/>or a 403<br/>Not written"]
+    B2 --> T["<b>Batch 3 times out,<br/>or gets a 5xx</b><br/>Not retried<br/>May be written"]
+    R --> E["<b>WriteError</b><br/>error.result lists<br/>batches 1 and 2<br/>__cause__ is<br/>batch 3's error"]
+    T --> E
 ```
 
-A write that times out isn't retried, because Quickbase may already have applied it.
+A write that times out, or gets a 502, 503, or 504, isn't retried, because Quickbase may already have
+applied it. If batch 1 fails, its own error is raised, such as `RateLimitError`, except a 403, which is
+still a `WritePermissionError`.
 
 ## When something is refused
 

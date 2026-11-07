@@ -91,12 +91,15 @@ them:
 
 ```mermaid
 flowchart TD
-    M[Model] -- tool call --> T["Your tool fixes the table,<br/>fields, and scope"]
-    T --> P{"Client's policy<br/>allows it?"}
-    P -- no --> X1["PolicyRefusedError,<br/>nothing sent"]
-    P -- yes --> R{"Token's role<br/>allows it?"}
-    R -- no --> X2["Quickbase refuses it,<br/>or hides the data"]
-    R -- yes --> Q[(Quickbase app)]
+    subgraph proc["Your process"]
+        M[Model] -- tool call --> T["<b>Your tool</b><br/>fixes the table,<br/>fields, and scope"]
+        T --> P["<b>Client's policy</b><br/>or PolicyRefusedError,<br/>nothing sent"]
+    end
+    subgraph qb["Quickbase"]
+        R["<b>Token's role</b><br/>or refused,<br/>or the data is hidden"] --> A[(App data)]
+    end
+    P --> R
+    O["Any other code<br/>with the token"] -.-> R
 ```
 
 The first two run in your process, and the role is enforced by Quickbase, whichever code is running.
