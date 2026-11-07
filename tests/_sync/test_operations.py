@@ -497,7 +497,7 @@ def test_a_confirmation_expires_and_only_works_with_its_own_client(
         elsewhere = (
             other_qb.app("bq1234567").table("Tasks").operation("update", require_preview=True)
         )
-        with pytest.raises(ConfirmationError, match="doesn't match"):
+        with pytest.raises(ConfirmationError, match="another client or server process"):
             elsewhere.run({**CHANGE, "confirmation": confirmation})
         update = qb.app("bq1234567").table("Tasks").operation("update", require_preview=True)
         later = time.time() + 16 * 60

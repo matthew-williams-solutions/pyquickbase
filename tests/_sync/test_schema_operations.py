@@ -15,9 +15,11 @@ from pyquickbase import (
     SchemaChangeResult,
     SchemaPlan,
     allow,
+    tables,
     tool_error,
     tool_result,
 )
+from pyquickbase._confirm import key_id
 from tests.schema_fake import APP, PROJECTS, TASKS, FakeApp
 
 NEW_FIELD = {"kind": "create_field", "table": "Tasks", "label": "Due", "type": "date"}
@@ -51,7 +53,7 @@ def test_a_plan_then_its_confirmation_applies_the_changes() -> None:
 
 @pytest.mark.parametrize(
     ("confirmation", "match"),
-    [(None, "needs the confirmation that plan_schema returns"), ("1.x", "has expired")],
+    [(None, "needs the confirmation that plan_schema returns"), ("OWN.1.x", "has expired")],
 )
 def test_apply_needs_a_current_confirmation(confirmation: Any, match: str) -> None:
     fake = FakeApp()
@@ -59,7 +61,8 @@ def test_apply_needs_a_current_confirmation(confirmation: Any, match: str) -> No
         apply = qb.app(APP).operation("apply_schema")
         arguments: dict[str, Any] = {"changes": [NEW_FIELD]}
         if confirmation is not None:
-            arguments["confirmation"] = confirmation
+            own = key_id(qb._transport.confirmation_key)  # pyright: ignore[reportPrivateUsage]
+            arguments["confirmation"] = confirmation.replace("OWN", own)
         with pytest.raises(ConfirmationError, match=match):
             apply.run(arguments)
     assert not fake.writes()
@@ -172,8 +175,9 @@ def test_a_refused_confirmation_says_how_to_get_one() -> None:  # F20
     fake = FakeApp()
     with client(fake) as qb:
         apply = qb.app(APP).operation("apply_schema")
+        own = key_id(qb._transport.confirmation_key)  # pyright: ignore[reportPrivateUsage]
         with pytest.raises(ConfirmationError) as missing:
-            apply.run({"changes": [NEW_FIELD], "confirmation": "1.x"})
+            apply.run({"changes": [NEW_FIELD], "confirmation": f"{own}.1.x"})
         error = tool_error(missing.value)["error"]
         assert error["code"] == "needs_confirmation"
         assert "Preview or plan the same change again" in error["hint"]
@@ -182,3 +186,20 @@ def test_a_refused_confirmation_says_how_to_get_one() -> None:  # F20
             elsewhere = (other.app(APP).operation("plan_schema")).run({"changes": [NEW_FIELD]})
         with pytest.raises(ConfirmationError, match="another client or server process"):
             apply.run({"changes": [NEW_FIELD], "confirmation": elsewhere.confirmation})
+
+
+def test_a_confirmation_from_a_client_with_another_policy_doesnt_match() -> None:
+    fake = FakeApp()
+    key = bytes(range(32))
+    wide = fake.bind(allow.read(tables.all()), allow.schema(TASKS, "add_field"))
+    narrow = fake.bind(allow.read(TASKS), allow.schema(TASKS, "add_field"))
+    with client(fake, policy=wide, confirmation_key=key) as qb:
+        plan = (qb.app(APP).operation("plan_schema")).run({"changes": [NEW_FIELD]})
+    with client(fake, policy=narrow, confirmation_key=key) as other:
+        apply = other.app(APP).operation("apply_schema")
+        with pytest.raises(ConfirmationError, match="a client with a different policy"):
+            apply.run({"changes": [NEW_FIELD], "confirmation": plan.confirmation})
+    with client(fake, policy=wide, confirmation_key=key) as same:
+        apply = same.app(APP).operation("apply_schema")
+        apply.run({"changes": [NEW_FIELD], "confirmation": plan.confirmation})
+    assert fake.writes() == [("POST", "/fields")]

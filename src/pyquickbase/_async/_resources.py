@@ -2622,18 +2622,22 @@ class AsyncOperation:
         matching: int | None,
     ) -> str:
         table_id = (await self._table.info()).id
-        bound = confirmation_binding(kind, table_id, arguments, scope, matching)
-        key = self._table._transport.confirmation_key  # pyright: ignore[reportPrivateUsage]
-        return issue_confirmation(key, kind, bound)
+        transport = self._table._transport  # pyright: ignore[reportPrivateUsage]
+        bound = confirmation_binding(
+            kind, table_id, arguments, scope, matching, transport.policy_hash
+        )
+        return issue_confirmation(transport.confirmation_key, kind, bound)
 
     async def _check_confirmation(
         self, arguments: Mapping[str, Any], scope: Expression | None, matching: int | None
     ) -> None:
         kind: ConfirmationKind = "delete" if self._spec.name == "delete" else "update"
         table_id = (await self._table.info()).id
-        bound = confirmation_binding(kind, table_id, arguments, scope, matching)
-        key = self._table._transport.confirmation_key  # pyright: ignore[reportPrivateUsage]
-        check_confirmation(key, kind, arguments.get("confirmation"), bound)
+        transport = self._table._transport  # pyright: ignore[reportPrivateUsage]
+        bound = confirmation_binding(
+            kind, table_id, arguments, scope, matching, transport.policy_hash
+        )
+        check_confirmation(transport.confirmation_key, kind, arguments.get("confirmation"), bound)
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._spec.name!r}, table={self._table!r})"
@@ -2701,8 +2705,11 @@ class AsyncSchemaOperation:
                     f"changes[{position}].kind isn't one this tool offers: {kinds}."
                 )
         plan = await AsyncPlanner(self._app).plan(changes)
-        bound = schema_binding(self._app.id, canonical_changes(changes), plan.fingerprint)
-        key = self._app._transport.confirmation_key  # pyright: ignore[reportPrivateUsage]
+        transport = self._app._transport  # pyright: ignore[reportPrivateUsage]
+        bound = schema_binding(
+            self._app.id, canonical_changes(changes), plan.fingerprint, transport.policy_hash
+        )
+        key = transport.confirmation_key
         if self._name == "plan_schema":
             if plan.blockers or not plan.has_changes:
                 return plan

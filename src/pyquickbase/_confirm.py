@@ -9,7 +9,9 @@ refused if that has changed since. An `apply_schema` operation always needs the 
 
 A confirmation is signed with the client's key, so nothing is stored and a confirmation can't be
 made up. Each client makes a random key, so a confirmation only works with operations from the
-client that issued it.
+client that issued it, unless clients share one with `confirmation_key`. A confirmation starts with
+an ID for its key, so one from another client says so, and what it's bound to includes the hash of
+the client's policy, so one from a client with another policy doesn't match.
 """
 
 import base64
@@ -63,35 +65,48 @@ def _signature(key: bytes, expires: int, kind: ConfirmationKind, binding: Mappin
     return base64.urlsafe_b64encode(digest).decode().rstrip("=")
 
 
+def key_id(key: bytes) -> str:
+    """A short ID for a confirmation key, which reveals nothing about it."""
+    return hashlib.sha256(b"pyquickbase confirmation key\0" + key).hexdigest()[:8]
+
+
 def binding(
     kind: ConfirmationKind,
     table_id: str,
     arguments: Mapping[str, Any],
     scope: Any,
     matching: int | None,
+    policy_hash: str | None = None,
 ) -> dict[str, Any]:
     """What a confirmation holds: the table, the arguments that decide what changes, the scope,
-    and for a delete, how many records matched."""
+    the client's policy, and for a delete, how many records matched."""
     if kind == "update":
         decides: Any = _records(arguments.get("records"))
     else:
         decides = _canonical(arguments.get("where"))
-    found = {"table": table_id, "arguments": decides, "scope": repr(scope)}
+    found = {"table": table_id, "arguments": decides, "scope": repr(scope), "policy": policy_hash}
     if matching is not None:
         found["matching"] = matching
     return found
 
 
-def schema_binding(app_id: str, changes: list[dict[str, Any]], fingerprint: str) -> dict[str, Any]:
-    """What a schema plan's confirmation holds: the app, the changes, and the schema they were
-    checked against, so applying it is refused if any of those differ."""
-    return {"app": app_id, "arguments": _canonical(changes), "fingerprint": fingerprint}
+def schema_binding(
+    app_id: str, changes: list[dict[str, Any]], fingerprint: str, policy_hash: str | None = None
+) -> dict[str, Any]:
+    """What a schema plan's confirmation holds: the app, the changes, the schema they were
+    checked against, and the client's policy, so applying it is refused if any of those differ."""
+    return {
+        "app": app_id,
+        "arguments": _canonical(changes),
+        "fingerprint": fingerprint,
+        "policy": policy_hash,
+    }
 
 
 def expires_at(token: str) -> int | None:
     """When a confirmation stops working, in seconds since the epoch, or None if it isn't one."""
-    expires, _, _ = token.partition(".")
-    return int(expires) if expires.isdigit() else None
+    parts = token.split(".")
+    return int(parts[1]) if len(parts) == 3 and parts[1].isdigit() else None
 
 
 def issue(
@@ -99,7 +114,7 @@ def issue(
 ) -> str:
     """A confirmation for these arguments, lasting `CONFIRMATION_SECONDS`."""
     expires = int(time.time() if now is None else now) + CONFIRMATION_SECONDS
-    return f"{expires}.{_signature(key, expires, kind, bound)}"
+    return f"{key_id(key)}.{expires}.{_signature(key, expires, kind, bound)}"
 
 
 def check(
@@ -118,10 +133,17 @@ def check(
             "same arguments, show the person what it found, and once they approve, send its "
             "confirmation. Nothing was changed."
         )
-    expires_text, _, signature = token.partition(".") if isinstance(token, str) else ("", "", "")
-    if not expires_text.isdigit() or not signature:
+    parts = token.split(".") if isinstance(token, str) else []
+    if len(parts) != 3 or not parts[1].isdigit() or not parts[2]:
         raise ConfirmationError(
             f"confirmation isn't one {preview} returned. Call {preview} again. Nothing was changed."
+        )
+    issued_by, expires_text, signature = parts
+    if issued_by != key_id(key):
+        raise ConfirmationError(
+            f"The confirmation came from another client or server process, whose key this one "
+            f"doesn't have, so it can't be checked here. Call {preview} with this tool, or give "
+            "the clients the same confirmation_key. Nothing was changed."
         )
     expires = int(expires_text)
     if expires < (time.time() if now is None else now):
@@ -137,7 +159,7 @@ def check(
         }.get(kind, "")
         raise ConfirmationError(
             f"The confirmation doesn't match: these arguments differ from the {noun}'s,{changed} "
-            f"or it came from another {noun}, or from another client or server process, which "
-            f"can't check it. Call {preview} again with exactly these arguments, and show the "
-            "person the result. Nothing was changed."
+            f"or it came from another {noun}, or from a client with a different policy. Call "
+            f"{preview} again with exactly these arguments, and show the person the result. "
+            "Nothing was changed."
         )

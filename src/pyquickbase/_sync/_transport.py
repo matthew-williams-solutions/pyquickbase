@@ -97,6 +97,11 @@ class Transport:
         return payload
 
     @property
+    def policy_hash(self) -> str | None:
+        """The hash of the client's policy, which a confirmation is bound to."""
+        return None if self.policy is None else self.policy.hash
+
+    @property
     def limited(self) -> bool:
         """Whether the client has a policy."""
         return self.policy is not None
