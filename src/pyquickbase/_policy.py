@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Protocol, overload, runtime_checkable
 
 from ._decision import SCHEMA_VERBS, VERBS, Decision, SchemaVerb
-from ._query import Expression
+from ._query import NO_VALUE, Condition, Expression, Group
 from .errors import ConfigurationError
 
 if TYPE_CHECKING:
@@ -609,8 +609,35 @@ class _Limit:
             tables=_table_selectors(tables),
             grants=(),
             options={"where": where},
-            text=_text("limit.rows", _show(tables), where),
+            text=f"limit.rows({_show(tables)!r}, {_condition_text(where)})",
         )
+
+
+_OPERATORS = {
+    "EX": "==", "XEX": "!=", "LT": "<", "BF": "<", "LTE": "<=", "OBF": "<=", "GT": ">",
+    "AF": ">", "GTE": ">=", "OAF": ">=",
+}  # fmt: skip
+_METHODS = {"CT": "contains", "XCT": "not_contains", "SW": "starts_with", "XSW": "not_starts_with"}
+
+
+def _condition_text(where: Expression | str) -> str:
+    """A condition as it was written with `F`, for a rule's text."""
+    if isinstance(where, str):
+        return repr(where)
+    if isinstance(where, Group):
+        joiner = " & " if where.joiner == "AND" else " | "
+        return joiner.join(
+            f"({_condition_text(part)})" if isinstance(part, Group) else _condition_text(part)
+            for part in where.parts
+        )
+    if isinstance(where, Condition):
+        value = where.value if where.original is NO_VALUE else where.original
+        target = f"F({where.field!r})"
+        if where.operator in _OPERATORS:
+            return f"{target} {_OPERATORS[where.operator]} {value!r}"
+        if where.operator in _METHODS:
+            return f"{target}.{_METHODS[where.operator]}({value!r})"
+    return repr(where)
 
 
 allow = _AllowOnly("allow")
