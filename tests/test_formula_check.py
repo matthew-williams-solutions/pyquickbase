@@ -14,15 +14,15 @@ from pyquickbase._formula import check_formula, formula_parts
     ("formula", "fields", "functions"),
     [
         ("[Hours] * 2", {"Hours"}, set()),
-        ('If([Status] = "Done", [Hours], 0)', {"Status", "Hours"}, {"if"}),
+        ('If([Status] = "Done", [Hours], 0)', {"Status", "Hours"}, {"If"}),
         ('"[Not a field]" & [Title]', {"Title"}, set()),
         ('"He said \\"[x]\\"" & [Title]', {"Title"}, set()),
         ("// [Hidden]\n[Title]", {"Title"}, set()),
         ("/* [Hidden] */ [Title]", {"Title"}, set()),
-        ("ToText ([Hours])", {"Hours"}, {"totext"}),
+        ("ToText ([Hours])", {"Hours"}, {"ToText"}),
         ("var number x = [Hours]; $x", {"Hours"}, set()),
         ("[Hours] and ([Billable])", {"Hours", "Billable"}, {"and"}),
-        ('GetRecords("{3.GT.0}", [_DBID_TASKS])', {"_DBID_TASKS"}, {"getrecords"}),
+        ('GetRecords("{3.GT.0}", [_DBID_TASKS])', {"_DBID_TASKS"}, {"GetRecords"}),
         ("'[Quoted]'", {"Quoted"}, set()),
     ],
 )
@@ -49,7 +49,7 @@ def test_only_readable_fields_may_be_used_ignoring_case() -> None:
     "function", ["GetRecords", "GetRecord", "GetFieldValues", "SumValues", "UserToEmail", "Bogus"]
 )
 def test_functions_that_may_read_other_records_are_refused(function: str) -> None:
-    with pytest.raises(ReadRefusedError, match=rf"calls {function.lower()}\(\)"):
+    with pytest.raises(ReadRefusedError, match=rf"calls {function}\(\)"):
         check_formula(f"{function}([Hours])", ["Hours"])
 
 
@@ -61,3 +61,15 @@ def test_known_functions_are_allowed_in_any_case() -> None:
 def test_any_text_is_read_or_refused_never_crashes(formula: str) -> None:
     with contextlib.suppress(ReadRefusedError):
         formula_parts(formula)
+
+
+def test_a_field_may_be_named_by_its_id() -> None:
+    assert check_formula("[_FID_10] * 2", ["Hours"], [10]).fields == {"_FID_10"}
+    with pytest.raises(ReadRefusedError, match=r"uses \[_fid_16\]"):
+        check_formula("[_fid_16] * 2", ["Hours"], [10])
+
+
+def test_each_unsafe_function_is_named_once_as_written() -> None:
+    with pytest.raises(ReadRefusedError, match=r"calls GetRecords\(\), which") as caught:
+        check_formula('Size(GetRecords("{3.GT.0}")) + Size(getrecords("x"))', [])
+    assert "Size" not in str(caught.value)

@@ -8,6 +8,7 @@ import pytest
 
 from pyquickbase import (
     ConfigurationError,
+    ConfirmationError,
     InvalidValueError,
     QueryError,
     Quickbase,
@@ -18,6 +19,7 @@ from pyquickbase import (
     SchemaPlan,
     WriteAccess,
     WriteRules,
+    tool_error,
     tool_result,
 )
 from tests.schema_fake import APP, PROJECTS, TASKS, FakeApp
@@ -168,3 +170,19 @@ def test_describe_shows_what_the_client_can_read() -> None:
         {"parent_table_id": PROJECTS, "foreign_key": "Project", "lookups": []}
     ]
     assert [item["name"] for item in only["tables"]] == ["Projects"]
+
+
+def test_a_refused_confirmation_says_how_to_get_one() -> None:  # F20
+    fake = FakeApp()
+    with client(fake) as qb:
+        apply = qb.app(APP).operation("apply_schema")
+        with pytest.raises(ConfirmationError) as missing:
+            apply.run({"changes": [NEW_FIELD], "confirmation": "1.x"})
+        error = tool_error(missing.value)["error"]
+        assert error["code"] == "needs_confirmation"
+        assert "Preview or plan the same change again" in error["hint"]
+        assert "a plan's confirmation lasts 15 minutes" in error["message"]
+        with client(fake) as other:
+            elsewhere = (other.app(APP).operation("plan_schema")).run({"changes": [NEW_FIELD]})
+        with pytest.raises(ConfirmationError, match="another client or server process"):
+            apply.run({"changes": [NEW_FIELD], "confirmation": elsewhere.confirmation})

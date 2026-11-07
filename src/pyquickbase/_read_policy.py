@@ -599,7 +599,11 @@ class ReadRules:
             # The check refuses these first, so this only guards against a change to it.
             raise _refused(request, "its table isn't listed.")
         if action == "fields":
-            readable = [item["label"] for item in payload if _allows(access.fields, item["id"])]
+            readable = [
+                (item["label"], item["id"])
+                for item in payload
+                if _allows(access.fields, item["id"])
+            ]
             return [
                 _trim_field(item, access, readable)
                 for item in payload
@@ -649,7 +653,7 @@ def _pick(item: Mapping[str, Any], keys: Collection[str]) -> dict[str, Any]:
 
 
 def _trim_field(
-    item: Mapping[str, Any], access: ReadAccess, readable: Collection[str]
+    item: Mapping[str, Any], access: ReadAccess, readable: Collection[tuple[str, int]]
 ) -> dict[str, Any]:
     kept = _pick(item, _FIELD_KEYS)
     # A field that can't be returned mustn't be selected by default, or every default query fails.
@@ -665,14 +669,16 @@ def _trim_field(
     return kept
 
 
-def _shows_only(formula: str, readable: Collection[str]) -> bool:
+def _shows_only(formula: str, readable: Collection[tuple[str, int]]) -> bool:
     """Whether a formula's text reveals nothing hidden: every field it names is readable, and it
     calls no function that reads other records."""
     try:
         parts = formula_parts(formula)
     except ReadRefusedError:
         return False
-    return not unreadable_fields(parts, readable) and not unsafe_functions(parts)
+    labels = [label for label, _ in readable]
+    ids = [field_id for _, field_id in readable]
+    return not unreadable_fields(parts, labels, ids) and not unsafe_functions(parts)
 
 
 def _trim_value(value: Any) -> Any:

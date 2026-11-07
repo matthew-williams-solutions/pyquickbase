@@ -165,7 +165,9 @@ def test_making_a_field_required_needs_every_record_to_have_a_value() -> None:
                 CreateField(table="Tasks", label="Owner", type="text", required=True),
             ]
         )
-    assert plan.changes[0].blockers == ("3 records have no value, so it can't be required yet.",)
+    assert plan.changes[0].blockers == (
+        "3 records have no value in it, so it can't be required yet. Fill them in first.",
+    )
     assert "has records" in plan.changes[1].blockers[0]
 
 
@@ -263,3 +265,179 @@ def test_plan_schema_needs_a_change() -> None:
     with client(FakeApp()) as qb:
         with pytest.raises(InvalidValueError, match="at least one"):
             qb.app(APP).plan_schema([])
+
+
+# Findings from testing the schema tools by hand. Each names its finding.
+
+
+def test_a_formula_may_use_a_field_made_earlier_in_the_plan() -> None:  # F1
+    changes = [
+        CreateField(table="Tasks", label="Base", type="numeric"),
+        CreateField(table="Tasks", label="Twice", type="numeric", formula="[Base] * 2"),
+    ]
+    every = ReadRules({TASKS: ReadAccess(fields=True)})
+    listed = ReadRules({TASKS: ReadAccess(fields=[6, 8])})
+    with client(FakeApp(), read_policy=every) as qb:
+        plan = qb.app(APP).plan_schema(changes)
+    assert [item.status for item in plan.changes] == ["change", "change"], plan.blockers
+    with client(FakeApp(), read_policy=listed) as qb:
+        plan = qb.app(APP).plan_schema(changes)
+    # A new field isn't on the list of fields this client may read, so a formula can't show it.
+    assert "uses [Base]" in plan.changes[1].blockers[0]
+
+
+def add_owners(fake: FakeApp) -> None:
+    """Another parent of Tasks, whose Full Name has the same ID as Projects' Name."""
+    fake.tables["bqowners"] = {"id": "bqowners", "name": "Owners", "description": "",
+                               "keyFieldId": 3}  # fmt: skip
+    fake.fields["bqowners"] = [
+        *fake.built_in(),
+        {"id": 6, "label": "Full Name", "fieldType": "text"},
+    ]
+    fake.fields[TASKS] += [
+        {"id": 12, "label": "Owner", "fieldType": "numeric", "properties": {"foreignKey": True}},
+        {"id": 13, "label": "Owner - Full Name", "fieldType": "text", "mode": "lookup",
+         "properties": {"lookupReferenceFieldId": 12, "lookupTargetFieldId": 6}},
+    ]  # fmt: skip
+    fake.relationships.append(
+        {"id": 12, "parentTableId": "bqowners", "childTableId": TASKS,
+         "foreignKeyField": {"id": 12, "label": "Owner"}}
+    )  # fmt: skip
+
+
+def test_a_deletion_only_lists_lookups_of_that_table() -> None:  # F13
+    fake = FakeApp()
+    add_owners(fake)
+    with client(fake) as qb:
+        plan = qb.app(APP).plan_schema([DeleteField(table="Projects", field="Name")])
+    lookups = [item for item in plan.changes[0].warnings if item.startswith("Lookups")]
+    assert lookups == ['Lookups on Tasks stop working: "Project - Name".']
+
+
+def test_a_deletion_follows_formulas_to_what_uses_them() -> None:  # F22, F15
+    fake = FakeApp()
+    fake.fields[TASKS][9]["properties"]["formula"] = "[_FID_6] * 2"  # Double, by Hours' ID
+    fake.fields[PROJECTS].append(
+        {"id": 8, "label": "Total Double", "fieldType": "numeric", "mode": "summary",
+         "properties": {"summaryReferenceFieldId": 9, "summaryTargetFieldId": 10,
+                        "summaryFunction": "SUM"}}
+    )  # fmt: skip
+    with client(fake) as qb:
+        plan = qb.app(APP).plan_schema([DeleteField(table="Tasks", field="Hours")])
+    warnings = plan.changes[0].warnings
+    assert any('"Double"' in item and item.startswith("Formulas") for item in warnings)
+    assert 'Summaries on Projects stop working, through "Double": "Total Double".' in warnings
+
+
+def test_a_field_list_warns_that_a_hidden_label_is_refused_late() -> None:  # F14
+    reads = ReadRules({TASKS: ReadAccess(fields=[6, 7, 8])})
+    with client(FakeApp(), read_policy=reads) as qb:
+        plan = qb.app(APP).plan_schema([CreateField(table="Tasks", label="Pay", type="text")])
+    assert any("can't see every field of Tasks" in item for item in plan.changes[0].warnings)
+    with client(FakeApp()) as qb:
+        plan = qb.app(APP).plan_schema([CreateField(table="Tasks", label="Pay", type="text")])
+    assert not plan.changes[0].warnings
+
+
+@pytest.mark.parametrize(
+    ("change", "match"),
+    [
+        (CreateField(table="Tasks", label="Kind", type="text", choices=("a", "b")),
+         "not a text field"),
+        (UpdateField(table="Tasks", field="Code", choices=("a",)), "not a text field"),
+    ],
+)  # fmt: skip
+def test_choices_only_go_on_fields_that_take_them(change: Any, match: str) -> None:  # F17
+    with client(FakeApp()) as qb:
+        plan = qb.app(APP).plan_schema([change])
+    assert match in plan.changes[0].blockers[0]
+
+
+def test_a_label_that_only_differs_in_spaces_is_another_field() -> None:  # F16
+    # Quickbase keeps a label's spaces exactly, so these are new fields, which look like old ones.
+    with client(FakeApp()) as qb:
+        plan = qb.app(APP).plan_schema(
+            [
+                CreateField(table="Tasks", label="  Hours ", type="numeric"),
+                UpdateField(table="Tasks", field="Code", label="Double "),
+                CreateField(table="Tasks", label="Notes", type="text"),
+            ]
+        )
+    hours, code, notes = plan.changes
+    assert hours.status == "change"
+    assert hours.warnings[0].startswith('"  Hours " looks like "Hours", which Tasks already has.')
+    assert code.status == "change"
+    assert any('looks like "Double"' in item for item in code.warnings)
+    assert not notes.warnings
+
+
+def test_a_table_name_matches_ignoring_surrounding_spaces() -> None:  # F16
+    # Quickbase refuses a table name in use, ignoring case and surrounding spaces.
+    with client(FakeApp()) as qb:
+        plan = qb.app(APP).plan_schema([CreateTable(name=" tasks ")])
+    assert plan.changes[0].status == "no_change"
+    assert "ignoring case and spaces" in plan.changes[0].summary
+
+
+def test_a_plan_says_what_it_can_only_check_when_applied() -> None:  # F17, F18
+    with client(FakeApp()) as qb:
+        plan = qb.app(APP).plan_schema(
+            [
+                CreateField(table="Tasks", label="Kind", type="text-multiple-choice"),
+                CreateField(table="Tasks", label="Late", type="checkbox", formula="[Code] & 'x'"),
+            ]
+        )
+    kind, late = plan.changes
+    assert "no choices yet" in kind.warnings[0]
+    assert "only checks that the formula's result is a checkbox" in late.warnings[0]
+    assert "the changes before it in the plan stay made" in late.warnings[0]
+
+
+def test_a_name_that_matches_says_how() -> None:  # F19
+    with client(FakeApp()) as qb:
+        plan = qb.app(APP).plan_schema(
+            [
+                CreateTable(name="tasks"),
+                CreateField(table="Tasks", label="hours", type="numeric"),
+            ]
+        )
+    table, field = plan.changes
+    assert table.status == "no_change"
+    assert "Later changes to tasks change the existing Tasks" in table.warnings[0]
+    assert field.summary == 'Tasks already has field "Hours", which matches ignoring case.'
+
+
+def test_refusals_name_tables_and_say_what_the_other_table_needs() -> None:  # F3, F4
+    rules = WriteRules(
+        {TASKS: WriteAccess(schema=SchemaAccess(relationships=True, lookups=True,
+                                                field_types=["date"], create_fields=True)),
+         PROJECTS: WriteAccess()}
+    )  # fmt: skip
+    with client(FakeApp(), write_policy=rules) as qb:
+        plan = qb.app(APP).plan_schema(
+            [
+                CreateField(table="Tasks", label="Note", type="text"),
+                CreateLookupField(child="Tasks", foreign_key="Project", parent_field="Total Hours"),
+            ]
+        )
+    field, lookup = plan.changes
+    assert "table Tasks only allows fields of type date" in field.blockers[0]
+    assert TASKS not in field.blockers[0]
+    assert lookup.blockers[0].startswith("This needs Projects to allow linking")
+
+
+def test_counts_say_what_they_count() -> None:  # F5, F7, F21
+    fake = FakeApp()
+    fake.counts = {f"{TASKS} {{8.EX.''}}": 1, f"{TASKS} {{7.EX.'Done'}}": 4, f"{TASKS} ": 5}
+    with client(fake) as qb:
+        plan = qb.app(APP).plan_schema(
+            [
+                UpdateField(table="Tasks", field="Code", required=True),
+                UpdateField(table="Tasks", field="Status", choices=("Open",)),
+            ]
+        )
+    required, choices = plan.changes
+    assert required.blockers[0].startswith("1 record has no value in it")
+    assert choices.warnings == (
+        "These choices are taken away, but records that hold one keep it: 'Done' (4 records hold).",
+    )

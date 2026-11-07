@@ -53,6 +53,12 @@ class QueryError(QuickbaseError, ValueError):
     """A query can't be sent as written, so it wasn't sent to Quickbase."""
 
 
+class ConfirmationError(QueryError):
+    """A change needs the confirmation its preview or plan returned, and this one is missing,
+    expired, or for something else. Nothing was changed. Preview or plan again, and show the
+    person the result."""
+
+
 class InvalidValueError(QuickbaseError, ValueError):
     """A write can't be sent as written, so it wasn't sent to Quickbase."""
 

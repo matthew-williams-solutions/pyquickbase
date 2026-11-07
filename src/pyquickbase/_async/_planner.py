@@ -9,8 +9,15 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from .._derived import check_formula_sources, check_readable, table_access
-from .._formula import formula_parts
+from .._derived import (
+    Source,
+    check_formula_against,
+    check_readable,
+    emails_shown,
+    readable,
+    table_access,
+)
+from .._formula import field_id_reference, formula_parts
 from .._models import RECORD_ID_FIELD, Field, FieldIndex, Relationship, TableInfo
 from .._query import F
 from .._schema_plan import (
@@ -199,8 +206,8 @@ class AsyncPlanner:
     def _find(self, ref: str) -> _Table | None:
         live = [item for item in self._tables if not item.dropped]
         found = next((item for item in live if item.id == ref), None)
-        wanted = ref.casefold()
-        return found or next((item for item in live if item.name.casefold() == wanted), None)
+        wanted = _table_key(ref)
+        return found or next((item for item in live if _table_key(item.name) == wanted), None)
 
     async def _table(self, ref: str) -> _Table:
         table = self._find(ref)
@@ -296,8 +303,21 @@ class AsyncPlanner:
                 parent_table_id=None if parent is None else parent.id,
             )
         except RequestRefusedError as refused:
-            return [str(refused).replace(" It wasn't sent.", "")]
+            message = self._named(str(refused).replace(" It wasn't sent.", ""))
+            if parent is not None and parent.id is not None and parent.id in str(refused):
+                message = (
+                    f"This needs {parent.name} to allow linking and changing its fields too, and "
+                    f"this client's write rules don't. {message}"
+                )
+            return [message]
         return []
+
+    def _named(self, message: str) -> str:
+        """A message with each table's ID replaced by its name, which is what a person knows."""
+        for table in self._known():
+            assert table.info is not None
+            message = message.replace(f"table {table.info.id}", f"table {table.info.name}")
+        return message
 
     def _sources(self, check: Callable[[], None]) -> list[str]:
         """Why a derived field would be refused for reading what the client can't, if it would."""
@@ -311,6 +331,28 @@ class AsyncPlanner:
         if table.id is None:
             return None  # Checked when applied, against the client's access for new tables.
         return table_access(self._transport.read_rules, table.id)
+
+    def _formula_blockers(self, table: _Table, formula: str, *, own: _Field | None) -> list[str]:
+        """Why a formula would be refused for reading what the client can't, if it would. It may
+        use fields an earlier change makes, which are readable only if every field of the table
+        is, as a new field isn't on a list of fields."""
+        access = self._access(table)
+        if access is None:
+            return []
+        every = all(item.fields is True for item in access)
+        sources = [
+            Source(
+                item.label,
+                item.type,
+                item.id,
+                every if item.id is None else readable(_as_field(item), access),
+            )
+            for item in table.fields
+            if item is not own
+        ]
+        return self._sources(
+            lambda: check_formula_against(formula, sources, emails_shown=emails_shown(access))
+        )
 
     async def _count(self, table: _Table, where: Any) -> int | None:
         """How many records match, or None if the client can't count them."""
@@ -333,8 +375,15 @@ class AsyncPlanner:
         self._names_used = True
         existing = self._find(change.name)
         if existing is not None:
+            matched = "" if existing.name == change.name else ", ignoring case and spaces,"
             return self._result(
-                change, "no_change", f"Table {existing.name} already exists, so it's kept as it is."
+                change,
+                "no_change",
+                f"Table {existing.name} already exists{matched} so it's kept as it is.",
+                warnings=[
+                    f"Later changes to {change.name} change the existing {existing.name}. If you "
+                    "meant a new table, choose a name no table has."
+                ],
             )
         settings = _settings(
             name=(None, change.name),
@@ -363,6 +412,7 @@ class AsyncPlanner:
 
     async def _update_table(self, change: UpdateTable) -> PlannedChange:
         table = await self._table(change.table)
+
         info = table.info
         raw: Any = {} if info is None else info.raw
         settings = _settings(
@@ -394,7 +444,11 @@ class AsyncPlanner:
     async def _delete_table(self, change: DeleteTable) -> PlannedChange:
         table = await self._table(change.table)
         records = await self._count(table, None)
-        warnings = [_records_lost(records, "all its records")]
+        if records is None:
+            warnings = ["How many records it has wasn't checked."]
+        else:
+            held = "1 record is" if records == 1 else f"{records} records are"
+            warnings = [f"Its {held} deleted with it."]
         parents = sorted({item.parent.name for item in table.links})
         children = sorted(
             {item.name for item in self._tables if any(link.parent is table for link in item.links)}
@@ -419,6 +473,7 @@ class AsyncPlanner:
     async def _create_field(self, change: CreateField) -> PlannedChange:
         table = await self._table(change.table)
         kind = "formula field" if change.formula is not None else "field"
+        _check_choices(change.type, change.choices)
         existing = table.field(change.label)
         if existing is not None:
             if existing.id is not None:
@@ -427,8 +482,11 @@ class AsyncPlanner:
                 "datetime", "timestamp"
             }  # fmt: skip
             if same and (existing.formula or None) == (change.formula or None):
+                matched = "" if existing.label == change.label else ", which matches ignoring case"
                 return self._result(
-                    change, "no_change", f'{table.name} already has {kind} "{existing.label}".'
+                    change,
+                    "no_change",
+                    f'{table.name} already has {kind} "{existing.label}"{matched}.',
                 )
             raise _Blocked(
                 f'{table.name} already has a field labeled "{existing.label}" ({existing.type}), '
@@ -444,17 +502,21 @@ class AsyncPlanner:
             help_text=(None, change.help_text),
         )
         blockers: list[str] = []
-        warnings: list[str] = []
+        warnings = _lookalikes(table, change.label)
         if change.required and (await self._count(table, None) or 0) > 0:
             blockers.append(
                 f"{table.name} has records, which would all be missing a value, so the field "
                 "can't be required. Add it, fill it in, then make it required."
             )
         if change.formula is not None:
-            fields = await self._fields_of(table)
-            access = self._access(table)
-            blockers += self._sources(
-                lambda: check_formula_sources(change.formula or "", fields, access)
+            blockers += self._formula_blockers(table, change.formula, own=None)
+            warnings.append(_FORMULA_TYPE_WARNING.format(type=change.type))
+        if change.type in _CHOICE_TYPES and not change.choices:
+            warnings.append("It has no choices yet, so add them before anyone fills it in.")
+        if self._hides_fields(table):
+            warnings.append(
+                f"This client can't see every field of {table.name}, so if one it can't see has "
+                "this label, Quickbase refuses the field when it's applied."
             )
         if table.id is not None:
             body: dict[str, Any] = {"label": change.label, "fieldType": change.type}
@@ -484,15 +546,16 @@ class AsyncPlanner:
             settings=settings, blockers=blockers, warnings=warnings, link=await self._link(table),
         )  # fmt: skip
 
-    async def _fields_of(self, table: _Table) -> list[Field]:
-        """The table's fields as the client reads them, for checking what a formula uses."""
-        if table.handle is None:
-            return []
-        return await table.handle.fields()
+    def _hides_fields(self, table: _Table) -> bool:
+        """Whether the client's read rules may hide some of a table's fields."""
+        access = self._access(table)
+        return access is not None and not all(item.fields is True for item in access)
 
     async def _update_field(self, change: UpdateField) -> PlannedChange:
         table = await self._table(change.table)
         target = self._field(table, change.field)
+        if change.choices is not None:
+            _check_choices(target.type, change.choices)
         if target.id in _BUILT_IN_FIELDS:
             raise _Blocked(f'"{target.label}" is built into every table, so it can\'t be changed.')
         if change.formula is not None and target.mode != "formula":
@@ -520,6 +583,7 @@ class AsyncPlanner:
             other = table.field(change.label)
             if other is not None and other is not target:
                 blockers.append(f'{table.name} already has a field labeled "{other.label}".')
+            warnings += _lookalikes(table, change.label, own=target)
             if target.mode == "formula" or any(
                 item.formula and target.label.casefold() in _uses(item.formula)
                 for item in table.fields
@@ -527,25 +591,23 @@ class AsyncPlanner:
                 warnings.append("Quickbase updates the formulas that use it to the new label.")
         if "formula" in settings:
             warnings.append("Every record's value is recalculated with the new formula.")
-            fields = await self._fields_of(table)
-            access = self._access(table)
-            blockers += self._sources(
-                lambda: check_formula_sources(change.formula or "", fields, access)
-            )
+            warnings.append(_FORMULA_TYPE_WARNING.format(type=target.type))
+            blockers += self._formula_blockers(table, change.formula or "", own=target)
         if change.required and not target.required and target.id is not None:
             empty = await self._count(table, _is_empty(target.id))
             if empty is None:
                 warnings.append("Whether every record has a value wasn't checked.")
             elif empty:
-                blockers.append(f"{empty} records have no value, so it can't be required yet.")
+                blockers.append(
+                    f"{_records(empty)} no value in it, so it can't be required yet. Fill them in "
+                    "first."
+                )
         if change.unique and not target.unique and target.id is not None:
             blockers += await self._duplicates(table, target, warnings)
         if change.choices is not None and target.choices:
             removed = sorted(set(target.choices) - set(change.choices))
             if removed:
-                warnings.append(
-                    f"Records that hold {', '.join(repr(item) for item in removed)} keep it."
-                )
+                warnings.append(await self._removed_choices(table, target, removed))
         if table.id is not None and target.id is not None:
             body: dict[str, Any] = {"label": change.label or target.label}
             if change.formula is not None:
@@ -582,10 +644,27 @@ class AsyncPlanner:
         except QuickbaseError:
             warnings.append("Whether every value is different wasn't checked.")
             return []
-        repeated = sum(1 for row in rows if row.count > 1)
+        repeated = [row for row in rows if row.count > 1]
         if repeated:
-            return [f"{repeated} values appear on more than one record, so it can't be unique."]
+            records = sum(row.count for row in repeated)
+            values = "1 value is" if len(repeated) == 1 else f"{len(repeated)} values are"
+            return [
+                f"{values} each held by more than one record, {records} records in all, so it "
+                "can't be unique yet."
+            ]
         return []
+
+    async def _removed_choices(self, table: _Table, target: _Field, removed: list[str]) -> str:
+        """Which records hold the choices a change takes away, as Quickbase keeps their values."""
+        held: list[str] = []
+        for choice in removed:
+            count = None if target.id is None else await self._count(table, F(target.id) == choice)
+            held.append(
+                repr(choice) if count is None else f"{choice!r} ({_records(count, 'hold')})"
+            )
+        return (
+            f"These choices are taken away, but records that hold one keep it: {', '.join(held)}."
+        )
 
     async def _delete_field(self, change: DeleteField) -> PlannedChange:
         table = await self._table(change.table)
@@ -621,47 +700,54 @@ class AsyncPlanner:
         )  # fmt: skip
 
     async def _dependents(self, table: _Table, target: _Field) -> list[str]:
-        """The fields that use one about to be deleted, which stop working without it."""
+        """The fields that use one about to be deleted, which stop working without it, and the
+        fields that use those formulas in turn."""
         found: list[str] = []
         formulas = [
-            item.label
-            for item in table.fields
-            if item is not target
-            and item.formula
-            and target.label.casefold() in _uses(item.formula)
+            item for item in table.fields if item is not target and _formula_uses(item, target)
         ]
         if formulas:
             found.append(
-                f"Formulas that use it keep their text but become empty: {_names(formulas)}."
+                "Formulas that use it keep their text but become empty: "
+                f"{_names(item.label for item in formulas)}."
             )
-        if target.id is None:
-            return found
+        for used in (target, *formulas):
+            if used.id is None:
+                continue
+            via = "" if used is target else f', through "{used.label}"'
+            for other, kind, labels in await self._reached_from(table, used):
+                found.append(f"{kind} on {other.name} stop working{via}: {_names(labels)}.")
+        return found
+
+    async def _reached_from(
+        self, table: _Table, field: _Field
+    ) -> list[tuple[_Table, str, list[str]]]:
+        """The lookups of a field on its children, and the summaries of it on its parents."""
+        found: list[tuple[_Table, str, list[str]]] = []
         for other in self._tables:
             if other.dropped or other.handle is None:
                 continue
             await self._load(other)
-            for link in other.links:
-                if link.parent is table:
-                    lookups = [
-                        item.label
-                        for item in other.fields
-                        if item.lookup is not None and item.lookup[1] == target.id
-                    ]
-                    if lookups:
-                        found.append(f"Lookups on {other.name} stop working: {_names(lookups)}.")
-            for link in table.links:
-                if link.parent is other:
-                    summaries = [
-                        item.label
-                        for item in other.fields
-                        if item.summary is not None
-                        and item.summary[0] == link.foreign_key.id
-                        and item.summary[1] == target.id
-                    ]
-                    if summaries:
-                        found.append(
-                            f"Summaries on {other.name} stop working: {_names(summaries)}."
-                        )
+            lookups = [
+                item.label
+                for link in other.links
+                if link.parent is table
+                for item in other.fields
+                if item.lookup == (link.foreign_key.id, field.id)
+            ]
+            if lookups:
+                found.append((other, "Lookups", lookups))
+            summaries = [
+                item.label
+                for link in table.links
+                if link.parent is other
+                for item in other.fields
+                if item.summary is not None
+                and item.summary[0] == link.foreign_key.id
+                and item.summary[1] == field.id
+            ]
+            if summaries:
+                found.append((other, "Summaries", summaries))
         return found
 
     async def _create_relationship(self, change: CreateRelationship) -> PlannedChange:
@@ -692,7 +778,10 @@ class AsyncPlanner:
             f'Link {child.name} to {parent.name} through a new field "{change.foreign_key}" on '
             f"{child.name}.",
             settings=_settings(parent=(None, parent.name), foreign_key=(None, change.foreign_key)),
-            warnings=[f"{parent.name} also gets fields to list and add {child.name} records."],
+            warnings=[
+                *_lookalikes(child, change.foreign_key),
+                f"{parent.name} also gets fields to list and add {child.name} records.",
+            ],
             blockers=blockers, link=await self._link(child),
         )  # fmt: skip
 
@@ -754,7 +843,7 @@ class AsyncPlanner:
             change, "change",
             f'Show "{target.label}" from {parent.name} on each {child.name} record, as "{label}".',
             settings=_settings(label=(None, label), parent_field=(None, target.label)),
-            blockers=blockers, link=await self._link(child),
+            warnings=_lookalikes(child, label), blockers=blockers, link=await self._link(child),
         )  # fmt: skip
 
     async def _create_summary(self, change: CreateSummaryField) -> PlannedChange:
@@ -804,6 +893,7 @@ class AsyncPlanner:
                 label=(None, change.label), function=(None, change.function),
                 child_field=(None, None if target is None else target.label),
             ),
+            warnings=_lookalikes(parent, change.label, own=parent.fields[-1]),
             blockers=blockers, link=await self._link(parent),
         )  # fmt: skip
 
@@ -857,6 +947,70 @@ def _has_value(field_id: int) -> Any:
     return F(field_id) != None  # noqa: E711
 
 
+_CHOICE_TYPES = frozenset({"text-multiple-choice", "multitext"})
+_FORMULA_TYPE_WARNING = (
+    "Quickbase only checks that the formula's result is a {type} when it's applied. If it isn't, "
+    "this change fails, and the changes before it in the plan stay made."
+)
+
+
+def _table_key(name: str) -> str:
+    """A table's name as Quickbase compares it, ignoring case and surrounding spaces."""
+    return name.strip().casefold()
+
+
+def _label_shape(label: str) -> str:
+    """A label as a person reads it, ignoring case and how many spaces there are."""
+    return " ".join(label.split()).casefold()
+
+
+def _lookalikes(table: _Table, label: str, *, own: _Field | None = None) -> list[str]:
+    """A warning for each field whose label reads the same as this one, but which Quickbase
+    counts as another field, as it keeps a label's spaces exactly."""
+    shape = _label_shape(label)
+    return [
+        f'"{label}" looks like "{item.label}", which {table.name} already has. Quickbase keeps '
+        "spaces in a label, so they'd be two fields that look the same."
+        for item in table.fields
+        if item is not own
+        and item.label.casefold() != label.casefold()
+        and _label_shape(item.label) == shape
+    ]
+
+
+def _check_choices(field_type: str, choices: Sequence[str] | None) -> None:
+    if choices is not None and field_type not in _CHOICE_TYPES:
+        raise _Blocked(
+            f"Only a text-multiple-choice or multitext field has choices, not a {field_type} field."
+        )
+
+
+def _as_field(item: _Field) -> Field:
+    """Enough of a `Field` to check what the client may read of it."""
+    return Field(
+        id=item.id or 0, label=item.label, type=item.type, mode=item.mode, required=False,
+        unique=False, appears_by_default=False, choices=(), allow_new_choices=False, raw={},
+    )  # fmt: skip
+
+
+def _formula_uses(item: _Field, target: _Field) -> bool:
+    """Whether a field's formula uses `target`, by label or by `_FID_n`."""
+    if not item.formula:
+        return False
+    for reference in _uses(item.formula):
+        if reference == target.label.casefold() or (
+            target.id is not None and field_id_reference(reference) == target.id
+        ):
+            return True
+    return False
+
+
+def _records(count: int, verb: str = "have") -> str:
+    """`1 record has` or `3 records have`, for a count of records."""
+    singular = {"have": "has", "hold": "holds", "lose": "loses"}[verb]
+    return f"1 record {singular}" if count == 1 else f"{count} records {verb}"
+
+
 def _settings(**pairs: tuple[Any, Any]) -> dict[str, SettingChange]:
     """The settings a change would set, leaving out those it leaves alone or already has."""
     return {
@@ -869,7 +1023,7 @@ def _settings(**pairs: tuple[Any, Any]) -> dict[str, SettingChange]:
 def _records_lost(count: int | None, what: str) -> str:
     if count is None:
         return f"How many records hold {what} wasn't checked."
-    return f"{count} records lose {what}." if count != 1 else f"1 record loses {what}."
+    return f"{_records(count, 'lose')} {what}."
 
 
 def _names(labels: Any) -> str:

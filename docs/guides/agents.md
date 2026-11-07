@@ -544,6 +544,7 @@ repeating a call whose `changed` isn't `none`, as repeating an insert can add du
 
 | Code | Raised for | `changed` | `retryable` |
 |---|---|---|---|
+| `needs_confirmation` | A change without the confirmation from its preview or plan, or with one that's expired or for something else | `none` | No |
 | `invalid_query`, `invalid_value` | A filter, argument, or value that can't be sent | `none` | No |
 | `unknown_table`, `unknown_field`, `unknown_report` | A name that doesn't exist, or that the token or the read rules hide | `none` | No |
 | `unsupported_report` | A report that can't be read that way | `none` | No |

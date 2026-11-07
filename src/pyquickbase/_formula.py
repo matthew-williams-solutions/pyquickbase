@@ -13,10 +13,10 @@ from dataclasses import dataclass
 
 from .errors import ReadRefusedError
 
-# Functions that only work on the values they're given, the current user, or the date. Lowercase,
-# as Quickbase doesn't mind case. Anything that queries records, such as GetRecord(), GetRecords(),
-# GetFieldValues(), and SumValues(), is left out on purpose, and so are the ones that turn a user
-# into an email address, which read rules can hide.
+# Functions that only work on the values they're given, the current user, or the date. Compared in
+# lowercase, as Quickbase doesn't mind case. Size() only counts a list it's given. Anything that
+# queries records, such as GetRecord(), GetRecords(), GetFieldValues(), and SumValues(), is left out
+# on purpose, and so are the ones that turn a user into an email address, which read rules can hide.
 SAFE_FUNCTIONS = frozenset(
     name.lower()
     for name in [
@@ -92,6 +92,7 @@ SAFE_FUNCTIONS = frozenset(
         "Round",
         "Second",
         "Seconds",
+        "Size",
         "SearchAndReplace",
         "Split",
         "Sqrt",
@@ -127,6 +128,7 @@ SAFE_FUNCTIONS = frozenset(
 )
 
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_FIELD_ID_REFERENCE = re.compile(r"_FID_([1-9][0-9]*)", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,8 +136,8 @@ class FormulaParts:
     """What a formula uses.
 
     Attributes:
-        fields: The labels it references, as written.
-        functions: The functions it calls, in lowercase.
+        fields: The labels it references, as written. `[_FID_7]` names field 7 by its ID.
+        functions: The functions it calls, as written.
     """
 
     fields: frozenset[str]
@@ -174,7 +176,7 @@ def formula_parts(formula: str) -> FormulaParts:
             while after < end and formula[after].isspace():
                 after += 1
             if after < end and formula[after] == "(":
-                functions.add(match[0].lower())
+                functions.add(match[0])
             position = match.end()
         else:
             position += 1
@@ -198,17 +200,39 @@ def _unreadable(reason: str) -> ReadRefusedError:
 
 
 def unsafe_functions(parts: FormulaParts) -> list[str]:
-    """The functions a formula calls that aren't known to stay on the record's own values."""
-    return sorted(parts.functions - SAFE_FUNCTIONS)
+    """The functions a formula calls that aren't known to stay on the record's own values, each
+    once, as first written."""
+    found: dict[str, str] = {}
+    for name in sorted(parts.functions):
+        if name.lower() not in SAFE_FUNCTIONS:
+            found.setdefault(name.lower(), name)
+    return sorted(found.values(), key=str.lower)
 
 
-def unreadable_fields(parts: FormulaParts, readable_labels: Iterable[str]) -> list[str]:
-    """The labels a formula references that aren't readable. Labels are unique ignoring case."""
+def field_id_reference(reference: str) -> int | None:
+    """The field ID a reference such as `_FID_7` names, or None for a label."""
+    found = _FIELD_ID_REFERENCE.fullmatch(reference)
+    return None if found is None else int(found[1])
+
+
+def unreadable_fields(
+    parts: FormulaParts, readable_labels: Iterable[str], readable_ids: Iterable[int] = ()
+) -> list[str]:
+    """The references a formula has that aren't readable, by label, which is unique ignoring
+    case, or by `_FID_n`."""
     allowed = {label.casefold() for label in readable_labels}
-    return sorted(label for label in parts.fields if label.casefold() not in allowed)
+    ids = set(readable_ids)
+
+    def readable(reference: str) -> bool:
+        field_id = field_id_reference(reference)
+        return field_id in ids if field_id is not None else reference.casefold() in allowed
+
+    return sorted(reference for reference in parts.fields if not readable(reference))
 
 
-def check_formula(formula: str, readable_labels: Iterable[str]) -> FormulaParts:
+def check_formula(
+    formula: str, readable_labels: Iterable[str], readable_ids: Iterable[int] = ()
+) -> FormulaParts:
     """Refuse a formula unless it only reads these fields, with functions known to be safe.
 
     Raises:
@@ -216,7 +240,7 @@ def check_formula(formula: str, readable_labels: Iterable[str]) -> FormulaParts:
             or can't be read. The message says which.
     """
     parts = formula_parts(formula)
-    hidden = unreadable_fields(parts, readable_labels)
+    hidden = unreadable_fields(parts, readable_labels, readable_ids)
     if hidden:
         names = ", ".join(f"[{label}]" for label in hidden)
         raise ReadRefusedError(

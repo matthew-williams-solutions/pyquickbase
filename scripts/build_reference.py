@@ -607,6 +607,7 @@ SYMBOL_PAGES = (
                 (
                     "ConfigurationError",
                     "QueryError",
+                    "ConfirmationError",
                     "InvalidValueError",
                     "RequestRefusedError",
                     "WriteRefusedError",

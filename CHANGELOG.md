@@ -32,6 +32,9 @@ on what a client may change. It breaks a few things, listed below.
   **`Table.delete_relationship()`** unlinks a child from its parent.
 - **`confirmation_key`** on the client, so several processes accept each other's previews.
 - **`TableSchema`**, and `tool_result()` for plans, results, and table schemas.
+- **`ConfirmationError`**, with the tool error code `needs_confirmation`, for a change without the
+  confirmation its preview or plan returned, or with one that's expired, for other arguments, or from
+  another process. It's a `QueryError`, so code that catches that still does.
 
 ### Changed
 

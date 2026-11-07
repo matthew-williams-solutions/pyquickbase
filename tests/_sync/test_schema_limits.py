@@ -223,7 +223,7 @@ def test_a_formula_may_use_readable_fields() -> None:
     [
         ("[Salary] / 12", r"uses \[Salary\]"),
         ("[Missing]", r"uses \[Missing\]"),
-        ('GetRecords("{3.GT.0}")', r"calls getrecords\(\)"),
+        ('GetRecords("{3.GT.0}")', r"calls GetRecords\(\)"),
         ("ToText([Owner])", "a user field"),
     ],
 )

@@ -511,6 +511,7 @@ A `datetime` field reports its type as `timestamp`.
 | `dblink` | Created by a relationship, on the parent table |
 | Labels | **Can contain almost anything, including `"""`, line breaks, and code**, as can table names |
 | Label uniqueness | Exact duplicates are refused, ignoring case, but `Due Date` and `Due-Date` can both exist |
+| **Spaces in a label** | **Kept exactly.** `"  Spaced  "`, `"Title "`, and `"Two  Spaces"` are stored as sent, by creating and renaming, and `Title`, `"  Title  "`, and `"Title "` can all exist on one table. Live API, 2026-11-06 |
 | Table names | `POST /tables` and renaming with `POST /tables/{id}` refuse a name already in use with 400, `Table name exists`, ignoring case and surrounding spaces |
 | Changing a table with `POST /tables/{id}` | Needs `appId`, or it's 400, `Required query 'appId' not found`. An empty body is 200 and changes nothing. Live API, 2026-11-06 |
 | Table names in the UI | Creating a table with a name already in the app, or renaming a table to one, is refused too. Tried by hand with the same name on 2026-11-04. Case and spacing variations weren't tried in the UI |

@@ -47,6 +47,7 @@ from .errors import (
     AuthenticationError,
     BadRequestError,
     ConfigurationError,
+    ConfirmationError,
     InvalidResponseError,
     InvalidValueError,
     NetworkError,
@@ -71,6 +72,7 @@ from .errors import (
 
 ToolErrorCode = Literal[
     "configuration",
+    "needs_confirmation",
     "invalid_query",
     "invalid_value",
     "read_refused",
@@ -109,6 +111,7 @@ _CODES: tuple[tuple[type[BaseException], ToolErrorCode], ...] = (
     (WriteRefusedError, "write_refused"),
     (RequestRefusedError, "refused"),
     (ConfigurationError, "configuration"),
+    (ConfirmationError, "needs_confirmation"),
     (QueryError, "invalid_query"),
     (InvalidValueError, "invalid_value"),
     (UnknownTableError, "unknown_table"),
@@ -130,6 +133,8 @@ _CODES: tuple[tuple[type[BaseException], ToolErrorCode], ...] = (
 )
 _HINTS: dict[ToolErrorCode, str] = {
     "configuration": "The tool is set up wrongly. Tell the user, as changing the call won't help.",
+    "needs_confirmation": "Preview or plan the same change again, show the user the result, and "
+    "send its confirmation once they approve.",
     "invalid_query": "Fix the filter or arguments as the message says, then try again.",
     "invalid_value": "Fix the values as the message says, then try again.",
     "read_refused": "This tool may not read that. Ask for less, as the message says, or tell "

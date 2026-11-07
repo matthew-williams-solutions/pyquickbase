@@ -8,8 +8,9 @@ everything its token can.
 """
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
-from ._formula import check_formula
+from ._formula import check_formula, field_id_reference
 from ._models import Field
 from ._read_policy import ReadAccess, ReadRules, _allows  # pyright: ignore[reportPrivateUsage]
 from .errors import ReadRefusedError
@@ -41,6 +42,55 @@ def readable(field: Field, access: Sequence[ReadAccess]) -> bool:
     return all(_allows(item.fields, field.id) for item in access)
 
 
+@dataclass(frozen=True, slots=True)
+class Source:
+    """A field a formula may name, as a plan or the client sees it. A field a plan is still to
+    make has no ID."""
+
+    label: str
+    type: str
+    id: int | None
+    readable: bool
+
+
+def sources_of(fields: Sequence[Field], access: Sequence[ReadAccess]) -> list[Source]:
+    return [Source(item.label, item.type, item.id, readable(item, access)) for item in fields]
+
+
+def check_formula_against(formula: str, sources: Sequence[Source], *, emails_shown: bool) -> None:
+    """Refuse a formula that names a field that isn't readable, or a user field when the client
+    hides users' email addresses, which a formula can turn a user into.
+
+    Raises:
+        ReadRefusedError: The message says which field or function.
+    """
+    shown = [item for item in sources if item.readable]
+    parts = check_formula(
+        formula,
+        [item.label for item in shown],
+        [item.id for item in shown if item.id is not None],
+    )
+    if emails_shown:
+        return
+    users = [item for item in shown if item.type in _USER_TYPES]
+    labels = {item.label.casefold() for item in users}
+    ids = {item.id for item in users}
+    used = sorted(
+        reference
+        for reference in parts.fields
+        if reference.casefold() in labels or field_id_reference(reference) in ids
+    )
+    if used:
+        raise ReadRefusedError(
+            f"The formula uses {', '.join(f'[{label}]' for label in used)}, a user field, and "
+            "this client hides users' email addresses, which a formula can show. Nothing was sent."
+        )
+
+
+def emails_shown(access: Sequence[ReadAccess]) -> bool:
+    return all(item.user_emails for item in access)
+
+
 def check_formula_sources(
     formula: str, fields: Sequence[Field], access: Sequence[ReadAccess] | None
 ) -> None:
@@ -51,20 +101,7 @@ def check_formula_sources(
     """
     if access is None:
         return
-    shown = [item for item in fields if readable(item, access)]
-    if not all(item.user_emails for item in access):
-        # A formula can turn a user into an email address, which these rules leave out.
-        users = {item.label.casefold() for item in shown if item.type in _USER_TYPES}
-        named = check_formula(formula, [item.label for item in shown])
-        used = sorted(label for label in named.fields if label.casefold() in users)
-        if used:
-            raise ReadRefusedError(
-                f"The formula uses {', '.join(f'[{label}]' for label in used)}, a user field, and "
-                "this client hides users' email addresses, which a formula can show. Nothing was "
-                "sent."
-            )
-        return
-    check_formula(formula, [item.label for item in shown])
+    check_formula_against(formula, sources_of(fields, access), emails_shown=emails_shown(access))
 
 
 def check_readable(

@@ -20,7 +20,7 @@ import time
 from collections.abc import Mapping
 from typing import Any, Literal, cast
 
-from .errors import QueryError
+from .errors import ConfirmationError
 
 CONFIRMATION_SECONDS = 900
 """How long a preview's confirmation lasts: 15 minutes."""
@@ -31,6 +31,7 @@ _PREVIEWS: dict[str, str] = {
     "delete": "preview_delete",
     "schema": "plan_schema",
 }
+_NOUNS: dict[str, str] = {"update": "preview", "delete": "preview", "schema": "plan"}
 
 
 def _canonical(value: Any) -> Any:
@@ -110,31 +111,33 @@ def check(
     now: float | None = None,
 ) -> None:
     """Refuse unless `token` is a current confirmation for exactly these arguments."""
-    preview = _PREVIEWS[kind]
+    preview, noun = _PREVIEWS[kind], _NOUNS[kind]
     if token is None:
-        raise QueryError(
+        raise ConfirmationError(
             f"This tool needs the confirmation that {preview} returns. Call {preview} with the "
             "same arguments, show the person what it found, and once they approve, send its "
             "confirmation. Nothing was changed."
         )
     expires_text, _, signature = token.partition(".") if isinstance(token, str) else ("", "", "")
     if not expires_text.isdigit() or not signature:
-        raise QueryError(
-            f"confirmation isn't one {preview} returned. Preview again. Nothing was changed."
+        raise ConfirmationError(
+            f"confirmation isn't one {preview} returned. Call {preview} again. Nothing was changed."
         )
     expires = int(expires_text)
     if expires < (time.time() if now is None else now):
-        raise QueryError(
-            f"The confirmation has expired, as previews last {CONFIRMATION_SECONDS // 60} "
-            f"minutes. Call {preview} again, and show the person the result. Nothing was changed."
+        raise ConfirmationError(
+            f"The confirmation has expired, as a {noun}'s confirmation lasts "
+            f"{CONFIRMATION_SECONDS // 60} minutes. Call {preview} again, and show the person the "
+            "result. Nothing was changed."
         )
     if not hmac.compare_digest(signature, _signature(key, expires, kind, bound)):
         changed = {
-            "delete": " or the records that match have changed since,",
-            "schema": " or the schema has changed since,",
+            "delete": " the records that match have changed since,",
+            "schema": " the schema has changed since,",
         }.get(kind, "")
-        raise QueryError(
-            f"The confirmation doesn't match: these arguments differ from the preview,{changed} "
-            f"or it came from another preview. Call {preview} again with exactly these "
-            "arguments, and show the person the result. Nothing was changed."
+        raise ConfirmationError(
+            f"The confirmation doesn't match: these arguments differ from the {noun}'s,{changed} "
+            f"or it came from another {noun}, or from another client or server process, which "
+            f"can't check it. Call {preview} again with exactly these arguments, and show the "
+            "person the result. Nothing was changed."
         )

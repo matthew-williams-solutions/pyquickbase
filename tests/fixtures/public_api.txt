@@ -144,6 +144,7 @@ class Column(object)
     field read_as: str
     field writable: bool
 class ConfigurationError(QuickbaseError, ValueError)
+class ConfirmationError(QueryError)
 class CreateField(object)
     def __eq__(self, other)
     def __init__(self, *, table: str, label: str, type: str, choices: tuple[str, ...] | None = None, required: bool | None = None, unique: bool | None = None, help_text: str | None = None, formula: str | None = None) -> None
@@ -550,7 +551,7 @@ class TableSchema(object)
     field fields: tuple[Field, ...]
     field info: TableInfo
     field relationships: tuple[Relationship, ...]
-value ToolErrorCode = Literal['configuration', 'invalid_query', 'invalid_value', 'read_refused', 'write_refused', 'refused', 'unknown_table', 'unknown_field', 'unknown_report', 'unsupported_report', 'schema_mismatch', 'partial_write', 'write_failed', 'write_permission', 'authentication', 'permission_denied', 'not_found', 'bad_request', 'rate_limited', 'server_error', 'api_error', 'timeout', 'network', 'invalid_response', 'error', 'internal']
+value ToolErrorCode = Literal['configuration', 'needs_confirmation', 'invalid_query', 'invalid_value', 'read_refused', 'write_refused', 'refused', 'unknown_table', 'unknown_field', 'unknown_report', 'unsupported_report', 'schema_mismatch', 'partial_write', 'write_failed', 'write_permission', 'authentication', 'permission_denied', 'not_found', 'bad_request', 'rate_limited', 'server_error', 'api_error', 'timeout', 'network', 'invalid_response', 'error', 'internal']
 class TypedField(F)
     def __eq__(self, value: object) -> Condition
     def __ge__(self, value: Any) -> Condition
