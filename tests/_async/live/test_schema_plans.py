@@ -93,7 +93,7 @@ async def test_a_plan_counts_what_a_deletion_loses(qb: AsyncQuickbase, scratch: 
     duplicate = await app.preview_schema_changes(
         [UpdateField(table=name, field="Code", unique=True)]
     )
-    assert "1 values appear on more than one record" in duplicate.blockers[0]
+    assert "1 value is each held by more than one record, 2 records in all" in duplicate.blockers[0]
 
 
 async def test_a_plan_can_create_change_and_drop_a_table(qb: AsyncQuickbase, scratch: Any) -> None:
