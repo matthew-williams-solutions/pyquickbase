@@ -496,6 +496,8 @@ def _planned(item: PlannedChange) -> dict[str, Any]:
     }
     if item.affected_records is not None:
         found["affected_records"] = item.affected_records
+    if item.policy_effects:
+        found["policy_effects"] = list(item.policy_effects)
     if item.link is not None:
         found["link"] = item.link
     return found

@@ -49,6 +49,8 @@ _ROWS_CLASS = "\x00rows"
 _SEEN_VERBS = FIELD_VERBS
 """A field any of these allow is visible, so its label can be used. Otherwise it's hidden."""
 _READS = ("read", "filter", "sort")
+_NEW_PROBE = (1 << 30) + 1
+"""A field ID no table has, which the policy treats as a field added after binding."""
 _ANY_FIELD = 1 << 30
 """A field ID no table has, which only a rule for every field matches."""
 _NEW_FIELD_VERBS = frozenset({"read", "filter", "sort", "download"})
@@ -894,6 +896,81 @@ class BoundPolicy:
         """Whether a field can be named. A hidden one acts as if it didn't exist."""
         return any(self._check(verb, table_id, field_id).allowed for verb in _SEEN_VERBS)
 
+    def new_field_effects(
+        self, table_id: str, sources: Sequence[tuple[str, int]] | None = ()
+    ) -> tuple[str, ...]:
+        """What the policy would do with a field a plan adds, which reads `sources`, or every
+        field in the app for None."""
+        name = self._table_name(table_id)
+        if table_id not in self._fields:
+            return (f"{name} is new, so its fields follow the rules for tables.created().",)
+        found: list[str] = []
+        read = self._check("read", table_id, _NEW_PROBE)
+        if self._new_fields == "hidden":
+            found.append("It's hidden, as new_fields is 'hidden', until the policy is bound again.")
+        elif read.allowed:
+            found.append(f"It can be read, through {read.rule}.")
+        else:
+            found.append("No rule reads it, so it's hidden until a rule names it.")
+        found.append("It can't be written until the policy is bound again.")
+        if sources is None:
+            classes = {
+                item
+                for table in self._classes.values()
+                for value in table.values()
+                for item in value
+            }
+        else:
+            classes = {item for table, field in sources for item in self.classes_of(table, field)}
+        classes.discard(_ROWS_CLASS)
+        if classes:
+            found.append(f"Once bound again, it's in {_class_words(classes)}.")
+            for rule in self._rules:
+                if rule.effect != "deny" or not self._rule_has_table(rule, table_id):
+                    continue
+                if any(grant.fields is not None and grant.fields.classes & classes
+                       for grant in rule.grants):  # fmt: skip
+                    found.append(f"{rule.text} then hides it.")
+        return tuple(found)
+
+    def deletion_effects(
+        self, table_id: str, field_ids: Sequence[int] = (), *, table: bool = False
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Which rules lose what a plan deletes, and the blockers for any rule it leaves matching
+        nothing. Deleting the table, with `table=True`, loses every field and the table itself."""
+        effects: list[str] = []
+        blockers: list[str] = []
+        name = self._table_name(table_id)
+        gone = set(self._fields.get(table_id, {})) if table else set(field_ids)
+        for rule in self._rules:
+            if rule.effect not in ("allow", "deny") or rule.layer != "policy":
+                continue
+            if table and table_id in rule.table_ids:
+                left = rule.table_ids - {table_id}
+                effects.append(f"{rule.text} loses table {name}.")
+                if not left and not rule.all_tables and not rule.created:
+                    blockers.append(_nothing_left(rule.text, f"table {name}"))
+                continue
+            lost: set[int] = set()
+            empty = False
+            for grant in rule.grants:
+                match = grant.fields
+                if match is None:
+                    continue
+                named = match.ids.get(table_id, frozenset())
+                if not named & gone:
+                    continue
+                lost |= named & gone
+                others = any(ids for key, ids in match.ids.items() if key != table_id)
+                if not (named - gone) and not (match.all or match.new or match.classes or others):
+                    empty = True
+            if lost:
+                labels = ", ".join(str(item) for item in self._named_fields(table_id, lost))
+                effects.append(f"{rule.text} loses {labels}.")
+                if empty:
+                    blockers.append(_nothing_left(rule.text, labels))
+        return tuple(dict.fromkeys(effects)), tuple(dict.fromkeys(blockers))
+
     def hidden_labels(self, table_id: str) -> frozenset[str]:
         """The policy's names-only view: the labels, ignoring case, of a table's fields that the
         client can't see, as they were when it was bound. Nothing else about them is kept."""
@@ -1426,6 +1503,18 @@ _SCHEMA_TABLE_VERBS = (
     "change_table",
     "delete_table",
 )
+
+
+def _class_words(classes: Iterable[str]) -> str:
+    names = sorted(classes)
+    return f"class {names[0]}" if len(names) == 1 else f"classes {', '.join(names)}"
+
+
+def _nothing_left(rule: str, what: str) -> str:
+    return (
+        f"{rule} would match nothing once {what} is deleted, so it would no longer mean what it "
+        "says. Change the rule first, then bind the policy again."
+    )
 
 
 def _match_state(match: _Match | None) -> Any:

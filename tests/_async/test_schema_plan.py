@@ -21,9 +21,11 @@ from pyquickbase import (
     UpdateField,
     UpdateTable,
     allow,
+    deny,
     fields,
     tables,
     tool_error,
+    tool_result,
 )
 from pyquickbase._decision import SCHEMA_VERBS
 from tests.schema_fake import FakeApp
@@ -506,3 +508,85 @@ async def test_counts_say_what_they_count() -> None:  # F5, F7, F21
     assert choices.warnings == (
         "These choices are taken away, but records that hold one keep it: 'Done' (4 records hold).",
     )
+
+
+# What the policy would do once a plan is applied
+
+
+async def test_a_new_field_says_who_can_read_and_write_it() -> None:
+    fake = FakeApp()
+    policy = fake.bind(allow.read(TASKS), allow.schema(TASKS, "add_field", "formula"))
+    async with client(fake, policy=policy) as qb:
+        plan = await qb.app(APP).plan_schema(
+            [CreateField(table="Tasks", label="Notes", type="text")]
+        )
+    assert plan.changes[0].policy_effects == (
+        "It can be read, through allow.read('bqtasks').",
+        "It can't be written until the policy is bound again.",
+    )
+    assert tool_result(plan)["plan"]["changes"][0]["policy_effects"] == list(
+        plan.changes[0].policy_effects
+    )
+
+
+async def test_a_derived_field_says_which_classes_it_gets_and_what_hides_it() -> None:
+    fake = FakeApp()
+    policy = fake.bind(
+        allow.read(tables.all()),
+        allow.schema(TASKS, "add_field", "formula", "lookup"),
+        deny.read(TASKS, fields.classed("sensitive")),
+        classes={"sensitive": [("Projects", "Name"), ("Tasks", "Code")]},
+    )
+    async with client(fake, policy=policy) as qb:
+        plan = await qb.app(APP).plan_schema(
+            [
+                CreateField(table="Tasks", label="Code Copy", type="text", formula="[Hours] & 1"),
+                CreateLookupField(
+                    child="Tasks", foreign_key="Project", parent_field="Name", label="Name"
+                ),
+            ]
+        )
+    formula, lookup = plan.changes
+    assert not any("class" in item for item in formula.policy_effects)
+    assert "Once bound again, it's in class sensitive." in lookup.policy_effects
+    assert "deny.read('bqtasks', fields.classed('sensitive')) then hides it." in (
+        lookup.policy_effects
+    )
+    assert lookup.status == "change"
+
+
+async def test_deleting_the_only_field_a_rule_names_is_a_blocker() -> None:
+    fake = FakeApp()
+    policy = fake.bind(
+        allow.read(TASKS),
+        allow.update(TASKS, ["Code"]),
+        allow.insert(TASKS, ["Code", "Hours"]),
+        allow.schema(TASKS, "delete_field"),
+    )
+    async with client(fake, policy=policy) as qb:
+        plan = await qb.app(APP).plan_schema([DeleteField(table="Tasks", field="Code")])
+    (change,) = plan.changes
+    assert change.status == "blocked"
+    assert change.policy_effects == (
+        "allow.update('bqtasks', ['Code']) loses Code (8).",
+        "allow.insert('bqtasks', ['Code', 'Hours']) loses Code (8).",
+    )
+    assert change.blockers == (
+        "allow.update('bqtasks', ['Code']) would match nothing once Code (8) is deleted, so it "
+        "would no longer mean what it says. Change the rule first, then bind the policy again.",
+    )
+
+
+async def test_deleting_the_only_table_a_rule_names_is_a_blocker() -> None:
+    fake = FakeApp()
+    policy = fake.bind(
+        allow.read([TASKS, PROJECTS]),
+        allow.update(PROJECTS, fields.all()),
+        allow.schema(PROJECTS, "delete_table"),
+    )
+    async with client(fake, policy=policy) as qb:
+        plan = await qb.app(APP).plan_schema([DeleteTable(table="Projects")])
+    (change,) = plan.changes
+    assert "allow.read(['bqtasks', 'bqprojects']) loses table Projects." in change.policy_effects
+    assert any(item.startswith("allow.update('bqprojects', fields.all()) would match nothing")
+               for item in change.blockers)  # fmt: skip

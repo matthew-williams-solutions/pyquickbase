@@ -19,7 +19,7 @@ from .._derived import (
     check_readable,
     limited_where,
 )
-from .._formula import field_id_reference, formula_parts
+from .._formula import field_id_reference, formula_parts, unsafe_functions
 from .._models import RECORD_ID_FIELD, Field, FieldIndex, Relationship, TableInfo
 from .._query import F, compile_where, where_field_ids
 from .._schema_plan import (
@@ -283,6 +283,7 @@ class AsyncPlanner:
         blockers: Sequence[str] = (),
         affected: int | None = None,
         link: str | None = None,
+        effects: Sequence[str] = (),
     ) -> PlannedChange:
         if blockers:
             status = "blocked"
@@ -296,7 +297,49 @@ class AsyncPlanner:
             blockers=tuple(blockers),
             affected_records=affected,
             link=link,
+            policy_effects=tuple(effects),
         )
+
+    def _new_field_effects(
+        self, table: _Table, sources: Sequence[tuple[str | None, int | None]] | None = ()
+    ) -> tuple[str, ...]:
+        """What the policy would do with a field a change adds, which reads `sources`, or every
+        field in the app for None. A source a plan is still to make reads nothing yet."""
+        policy = self._transport.policy
+        if policy is None:
+            return ()
+        if table.id is None:
+            return (f"{table.name} is new, so its fields follow the rules for tables.created().",)
+        known = None if sources is None else [
+            (other, field) for other, field in sources if other is not None and field is not None
+        ]  # fmt: skip
+        return policy.new_field_effects(table.id, known)
+
+    def _formula_sources(
+        self, table: _Table, formula: str
+    ) -> list[tuple[str | None, int | None]] | None:
+        """The fields a formula reads, for its classes, or None if it may read anything."""
+        try:
+            parts = formula_parts(formula)
+        except PolicyRefusedError:
+            return [(table.id, item.id) for item in table.fields]
+        if unsafe_functions(parts):
+            return None
+        found: list[tuple[str | None, int | None]] = []
+        for reference in parts.fields:
+            field_id = field_id_reference(reference)
+            item = table.field(reference) if field_id is None else None
+            found.append((table.id, field_id if item is None else item.id))
+        return found
+
+    def _deletion_effects(
+        self, table: _Table, field_ids: Sequence[int | None] = (), *, whole: bool = False
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        policy = self._transport.policy
+        if policy is None or table.id is None:
+            return (), ()
+        ids = [item for item in field_ids if item is not None]
+        return policy.deletion_effects(table.id, ids, table=whole)
 
     def _allowed(
         self,
@@ -483,10 +526,11 @@ class AsyncPlanner:
             blockers = self._allowed(
                 "DELETE", f"/tables/{table.id}", params={"appId": self._app.id}
             )
+        effects, lost = self._deletion_effects(table, whole=True)
         table.dropped = True
         return self._result(
             change, "change", f"Delete table {table.name} and all its records.",
-            warnings=warnings, blockers=blockers, affected=records,
+            warnings=warnings, blockers=[*blockers, *lost], affected=records, effects=effects,
         )  # fmt: skip
 
     async def _create_field(self, change: CreateField) -> PlannedChange:
@@ -557,9 +601,11 @@ class AsyncPlanner:
                 choices=change.choices or (),
             )
         )
+        sources = () if change.formula is None else self._formula_sources(table, change.formula)
         return self._result(
             change, "change", f'Add {kind} "{change.label}" ({change.type}) to {table.name}.',
             settings=settings, blockers=blockers, warnings=warnings, link=await self._link(table),
+            effects=self._new_field_effects(table, sources),
         )  # fmt: skip
 
     def _hidden_label(self, table: _Table, label: str) -> bool:
@@ -712,10 +758,12 @@ class AsyncPlanner:
             blockers = self._allowed(
                 "DELETE", "/fields", params={"tableId": table.id}, json={"fieldIds": [target.id]}
             )
+        effects, lost = self._deletion_effects(table, [target.id])
         table.fields.remove(target)
         return self._result(
-            change, "change", f"Delete field {name}.", warnings=warnings, blockers=blockers,
-            affected=records, link=await self._link(table),
+            change, "change", f"Delete field {name}.", warnings=warnings,
+            blockers=[*blockers, *lost], affected=records, link=await self._link(table),
+            effects=effects,
         )  # fmt: skip
 
     async def _dependents(self, table: _Table, target: _Field) -> list[str]:
@@ -864,6 +912,7 @@ class AsyncPlanner:
             f'Show "{target.label}" from {parent.name} on each {child.name} record, as "{label}".',
             settings=_settings(label=(None, label), parent_field=(None, target.label)),
             warnings=_lookalikes(child, label), blockers=blockers, link=await self._link(child),
+            effects=self._new_field_effects(child, [(parent.id, target.id)]),
         )  # fmt: skip
 
     async def _create_summary(self, change: CreateSummaryField) -> PlannedChange:
@@ -947,7 +996,23 @@ class AsyncPlanner:
             ),
             warnings=_lookalikes(parent, change.label, own=parent.fields[-1]),
             blockers=blockers, link=await self._link(parent),
+            effects=self._new_field_effects(parent, self._summary_sources(child, target, clause)),
         )  # fmt: skip
+
+    @staticmethod
+    def _summary_sources(
+        child: _Table, target: _Field | None, clause: str | None
+    ) -> list[tuple[str | None, int | None]] | None:
+        """What a summary reads on its child: its field, and the fields its filter uses."""
+        found: list[tuple[str | None, int | None]] = []
+        if target is not None:
+            found.append((child.id, target.id))
+        if clause:
+            used = where_field_ids(clause)
+            if used is None:
+                return [(child.id, item.id) for item in child.fields]
+            found += [(child.id, item) for item in used]
+        return found
 
     async def _delete_relationship(self, change: DeleteRelationship) -> PlannedChange:
         child, link = await self._relationship(change.child, change.foreign_key)

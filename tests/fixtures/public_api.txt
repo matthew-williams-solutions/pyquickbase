@@ -143,6 +143,7 @@ class BoundPolicy(object)
     property created -> tuple[str, ...]
     property created_offers -> frozenset[str]
     def decide(self, request: ReadRequest | WriteRequest) -> Decision
+    def deletion_effects(self, table_id: str, field_ids: Sequence[int] = (), *, table: bool = False) -> tuple[tuple[str, ...], tuple[str, ...]]
     def emails_shown(self, table_id: str) -> bool
     def explain(self, verb: Literal['read', 'filter', 'sort', 'insert', 'update', 'delete', 'download', 'delete_file', 'report', 'run_formula', 'add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table', 'create_tables'], table: str, *, field: str | int | None = None, fields: Sequence[str | int] = (), source: tuple[str, str | int] | None = None) -> str
     def field_types(self, table_id: str) -> frozenset[str] | None
@@ -153,6 +154,7 @@ class BoundPolicy(object)
     def max_delete(self, table_id: str) -> int | None
     def max_records(self, table_id: str) -> int | None
     def max_summary_records(self, table_id: str) -> int | None
+    def new_field_effects(self, table_id: str, sources: Sequence[tuple[str, int]] | None = ()) -> tuple[str, ...]
     def offers(self, table: str) -> Offers[Named]
     def offers_for(self, table_id: str, items: Sequence[tuple[~T, str]], field_id: Callable[[~T], int], reports: Sequence[Any] = (), report_key: Callable[[Any], tuple[str, str]] | None = None) -> Offers[~T]
     def readable(self, table_id: str, field_id: int) -> bool
@@ -386,11 +388,12 @@ class PermissionDeniedError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
 class PlannedChange(object)
     def __eq__(self, other)
-    def __init__(self, *, change: CreateTable | UpdateTable | DeleteTable | CreateField | UpdateField | DeleteField | CreateRelationship | CreateLookupField | CreateSummaryField | DeleteRelationship, status: Literal['change', 'no_change', 'blocked'], risk: Literal['additive', 'modifying', 'destructive'], summary: str, settings: Mapping[str, SettingChange] = <factory>, warnings: tuple[str, ...] = (), blockers: tuple[str, ...] = (), affected_records: int | None = None, link: str | None = None) -> None
+    def __init__(self, *, change: CreateTable | UpdateTable | DeleteTable | CreateField | UpdateField | DeleteField | CreateRelationship | CreateLookupField | CreateSummaryField | DeleteRelationship, status: Literal['change', 'no_change', 'blocked'], risk: Literal['additive', 'modifying', 'destructive'], summary: str, settings: Mapping[str, SettingChange] = <factory>, warnings: tuple[str, ...] = (), blockers: tuple[str, ...] = (), affected_records: int | None = None, link: str | None = None, policy_effects: tuple[str, ...] = ()) -> None
     field affected_records: int | None
     field blockers: tuple[str, ...]
     field change: CreateTable | UpdateTable | DeleteTable | CreateField | UpdateField | DeleteField | CreateRelationship | CreateLookupField | CreateSummaryField | DeleteRelationship
     field link: str | None
+    field policy_effects: tuple[str, ...]
     field risk: Literal['additive', 'modifying', 'destructive']
     field settings: Mapping[str, SettingChange]
     field status: Literal['change', 'no_change', 'blocked']

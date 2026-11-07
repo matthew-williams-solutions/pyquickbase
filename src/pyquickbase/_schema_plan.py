@@ -404,6 +404,9 @@ class PlannedChange:
         affected_records: How many records it would affect, such as those that would lose a
             deleted field's values, if counted.
         link: A Quickbase page to check it on, if there is one yet.
+        policy_effects: What the client's policy would do once the change is made: who can read
+            and write a new field, and its classes, and which rules lose a deleted field or
+            table. A rule it would leave matching nothing is also a blocker.
     """
 
     change: SchemaChange
@@ -415,6 +418,7 @@ class PlannedChange:
     blockers: tuple[str, ...] = ()
     affected_records: int | None = None
     link: str | None = None
+    policy_effects: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

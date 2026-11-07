@@ -71,6 +71,8 @@ INTERNAL_METHODS = {
     "BoundPolicy.with_created",
     "BoundPolicy.created_offers",
     "BoundPolicy.trim",
+    "BoundPolicy.new_field_effects",
+    "BoundPolicy.deletion_effects",
 }
 # Type aliases have no docstrings of their own.
 ALIASES = {
