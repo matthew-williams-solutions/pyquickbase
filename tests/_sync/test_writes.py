@@ -313,7 +313,7 @@ def test_read_only_client_refuses_every_write() -> None:
             lambda: table.create_field("New", "text"),
             lambda: table.update_field("Title", label="Name"),
             lambda: table.delete_fields("Title"),
-            lambda: table.create_relationship(app.table("Projects"), foreign_key_label="P"),
+            lambda: table.create_relationship(app.table("Projects"), foreign_key="P"),
             lambda: table.drop(confirm="Tasks"),
             lambda: app.create_table("New"),
         ]
@@ -448,7 +448,7 @@ def test_create_relationship() -> None:
     with client(server) as qb:
         app = qb.app(APP)
         link = app.table("Tasks").create_relationship(
-            app.table("Projects"), foreign_key_label="Project", lookup_fields=["Title"]
+            app.table("Projects"), foreign_key="Project", lookup_fields=["Title"]
         )
     assert link.foreign_key_field_id == 12
     assert link.lookup_field_ids == (13,)

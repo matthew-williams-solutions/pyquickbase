@@ -1,5 +1,5 @@
 relationship = await tasks.ensure_relationship(
-    projects, foreign_key_label="Project"
+    projects, foreign_key="Project"
 )
 field = await tasks.ensure_count_field(
     relationship, "Task Count"

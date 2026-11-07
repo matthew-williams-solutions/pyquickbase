@@ -63,19 +63,19 @@ Files are held in memory, as bytes and as base64, while they're sent.
 file = tasks.download_file(7, "Attachment")
 older = tasks.download_file(7, "Attachment", version=2, timeout=120)
 
-print(file.name, len(file.data), file.content_type)
+print(file.file_name, len(file.data), file.content_type)
 ```
 
 `qb.request()` can't read these responses, because they aren't JSON.
 
-**Don't use `file.name` as a path.** Quickbase returns names exactly as they were uploaded, by anyone with
+**Don't use `file.file_name` as a path.** Quickbase returns names exactly as they were uploaded, by anyone with
 access and through any tool, so a name can be `../../.bashrc`. Keep only the last part, and decide where
 the file goes yourself:
 
 ```python
 from pathlib import Path, PureWindowsPath
 
-name = PureWindowsPath(file.name).name  # handles both / and \\
+name = PureWindowsPath(file.file_name).name  # handles both / and \\
 if name in ("", ".", ".."):
     name = "download"
 (Path("downloads") / name).write_bytes(file.data)

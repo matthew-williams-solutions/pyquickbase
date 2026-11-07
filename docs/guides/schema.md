@@ -69,7 +69,7 @@ app = qb.app("bq1234567")
 projects = app.table("Projects")
 tasks = app.table("Tasks")
 
-link = tasks.create_relationship(projects, foreign_key_label="Project", lookup_fields=["Name"])
+link = tasks.create_relationship(projects, foreign_key="Project", lookup_fields=["Name"])
 ```
 
 | Field | Table | What it is |
@@ -102,7 +102,7 @@ app = qb.app("bq1234567")
 projects = app.table("Projects")
 tasks = app.table("Tasks")
 
-link = tasks.ensure_relationship(projects, foreign_key_label="Project")
+link = tasks.ensure_relationship(projects, foreign_key="Project")
 tasks.ensure_lookup_field(link, "Name", label="Project Name")
 
 tasks.ensure_field("Hours", "numeric")
@@ -175,7 +175,7 @@ projects.ensure_field("Code", "text", unique=True)
 tasks = app.ensure_table("Tasks")
 tasks.ensure_field("Hours", "numeric")
 
-link = tasks.ensure_relationship(projects, foreign_key_label="Project")
+link = tasks.ensure_relationship(projects, foreign_key="Project")
 tasks.ensure_lookup_field(link, "Name", label="Project Name")
 tasks.ensure_summary_field(link, "Hours", "Hours Sum")
 projects.ensure_field("Total Hours", "numeric", formula="Nz([Hours Sum])")

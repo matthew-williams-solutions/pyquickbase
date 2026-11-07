@@ -383,7 +383,7 @@ def test_insert_converts_json_values() -> None:
     assert rows[0]["Started"] == datetime(2027, 1, 15, 9, 30, tzinfo=UTC)
     upload = rows[0]["Attachment"]
     assert isinstance(upload, FileUpload)
-    assert upload.name == "notes.txt"
+    assert upload.file_name == "notes.txt"
     assert upload.data == b"hello"
 
 

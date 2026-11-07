@@ -47,7 +47,7 @@ def test_upload_refuses_names_that_could_hurt_whoever_downloads_them(name: str) 
 
 @pytest.mark.parametrize("name", ["résumé 日本語.pdf", "a b;c,d'e\".txt", ".hidden", "a\xa0b.txt"])
 def test_upload_allows_ordinary_names(name: str) -> None:
-    assert FileUpload(name, b"x").name == name
+    assert FileUpload(name, b"x").file_name == name
 
 
 def test_upload_needs_bytes() -> None:
@@ -57,7 +57,7 @@ def test_upload_needs_bytes() -> None:
 
 def test_contents_stay_out_of_reprs() -> None:
     assert repr(FileUpload("a.txt", b"secret")) == "FileUpload('a.txt', 6 bytes)"
-    file = FileDownload(name="a.txt", data=b"secret", content_type="text/plain")
+    file = FileDownload(file_name="a.txt", data=b"secret", content_type="text/plain")
     assert repr(file) == "FileDownload('a.txt', 6 bytes)"
 
 
@@ -85,7 +85,7 @@ def test_download_name_is_decoded_without_being_cleaned() -> None:
     file = file_download_from_response(
         _response(b"", "attachment; filename*=utf-8''..%2Fr%C3%A9.txt")
     )
-    assert file.name == "../ré.txt"
+    assert file.file_name == "../ré.txt"
     assert file.data == b""
     assert file.content_type == "application/pdf"
 

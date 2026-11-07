@@ -215,7 +215,7 @@ async def test_ensure_field_treats_datetime_as_the_timestamp_it_reports(
 
 async def test_ensure_relationship_finds_the_existing_one(app: Any, fake: FakeSchema) -> None:
     found = await app.table("Tasks").ensure_relationship(
-        app.table("Projects"), foreign_key_label="project"
+        app.table("Projects"), foreign_key="project"
     )
     assert found.id == 7
     assert fake.writes() == []
@@ -225,9 +225,9 @@ async def test_ensure_relationship_creates_a_second_link_to_the_same_parent(
     app: Any, fake: FakeSchema
 ) -> None:
     tasks, projects = app.table("Tasks"), app.table("Projects")
-    created = await tasks.ensure_relationship(projects, foreign_key_label="Reviewed Project")
+    created = await tasks.ensure_relationship(projects, foreign_key="Reviewed Project")
     assert created.id != 7
-    again = await tasks.ensure_relationship(projects, foreign_key_label="Reviewed Project")
+    again = await tasks.ensure_relationship(projects, foreign_key="Reviewed Project")
     assert again.id == created.id
     assert len(fake.writes()) == 1
 

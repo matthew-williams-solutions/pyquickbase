@@ -117,12 +117,12 @@ def order_refs(order_by: OrderBy) -> list[int] | None:
 
 @dataclass(frozen=True, slots=True)
 class Column:
-    """How a generated attribute maps to a field. `field_type` is what codegen saw.
+    """How a generated attribute maps to a field. `type` is what codegen saw.
 
     Attributes:
         name: The attribute's name on the generated class.
         id: The field's ID.
-        field_type: The field's type when the class was generated.
+        type: The field's type when the class was generated.
         writable: Whether the class lets you write this field.
         label: The field's label when the class was generated.
         read_as: `int` or `decimal` when a number gets converted, and empty otherwise.
@@ -130,7 +130,7 @@ class Column:
 
     name: str
     id: int
-    field_type: str
+    type: str
     writable: bool
     label: str
     read_as: str = ""
@@ -328,8 +328,8 @@ def schema_problems(model: type[TypedRecord], current: Iterable[Field]) -> list[
             problems.append(
                 f"{column.name} (field {column.id}) no longer exists, or this client can't see it"
             )
-        elif field.type != column.field_type:
-            problems.append(f"{column.name} was {column.field_type} and is now {field.type}")
+        elif field.type != column.type:
+            problems.append(f"{column.name} was {column.type} and is now {field.type}")
         elif column.read_as and read_as(field) != column.read_as:
             problems.append(f"{column.name} is no longer read as {column.read_as}")
         elif column.writable and not is_writable(field):

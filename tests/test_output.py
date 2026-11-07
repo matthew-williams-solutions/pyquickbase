@@ -529,19 +529,23 @@ def test_metadata_leaves_out_raw() -> None:
 
 
 def test_a_text_file_has_its_text_and_a_binary_one_says_so() -> None:
-    text = tool_result(FileDownload(name="a.txt", data="héllo".encode(), content_type="text/plain"))
+    text = tool_result(
+        FileDownload(file_name="a.txt", data="héllo".encode(), content_type="text/plain")
+    )
     assert text["file"] == {
-        "name": "a.txt",
+        "file_name": "a.txt",
         "content_type": "text/plain",
         "size": 6,
         "text": "héllo",
     }
-    binary = tool_result(FileDownload(name="a.png", data=b"\x89PNG\x00", content_type=None))
+    binary = tool_result(FileDownload(file_name="a.png", data=b"\x89PNG\x00", content_type=None))
     assert binary["file"]["text"] is None
     assert binary["file"]["binary"] is True
-    long = tool_result(FileDownload(name="a.txt", data=b"x" * 30, content_type=None), max_text=10)
+    long = tool_result(
+        FileDownload(file_name="a.txt", data=b"x" * 30, content_type=None), max_text=10
+    )
     assert long["text_truncated"] is True
-    empty = tool_result(FileDownload(name="a.txt", data=b"", content_type=None))
+    empty = tool_result(FileDownload(file_name="a.txt", data=b"", content_type=None))
     assert empty["file"]["text"] == ""
 
 

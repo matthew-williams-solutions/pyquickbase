@@ -24,7 +24,7 @@ from .._links import (
     field_url,
     form_url,
     record_url,
-    record_url_pattern,
+    record_url_template,
     report_url,
     table_page,
 )
@@ -824,25 +824,25 @@ class AsyncTable:
         table_id = (await self.info()).id
         return record_url(self._transport.realm, self._app.id, table_id, record_id, edit=edit)
 
-    async def record_url_pattern(self, *, edit: bool = False) -> str:
-        """Link to any record's page in Quickbase, with `{Record ID#}` where its ID goes.
+    async def record_url_template(self, *, edit: bool = False) -> str:
+        """Link to any record's page in Quickbase, with `{record_id}` where its ID goes.
 
         A tool can send this once, rather than a link for each record, and each record's
         `Record ID#` fills it in. The placeholder is text, not part of a working URL, so replace
-        it with `pattern.replace("{Record ID#}", str(record_id))`. It only contacts Quickbase to
+        it with `template.replace("{record_id}", str(record_id))`. It only contacts Quickbase to
         look up the table's ID, as `url()` does.
 
         Args:
             edit: Link to the page that edits a record, rather than the one that shows it.
 
         Returns:
-            The URL, on the client's realm, with `{Record ID#}` for the record's ID.
+            The URL, on the client's realm, with `{record_id}` for the record's ID.
 
         Raises:
             UnknownTableError: This app has no such table, or the client's policy hides it.
         """
         table_id = (await self.info()).id
-        return record_url_pattern(self._transport.realm, self._app.id, table_id, edit=edit)
+        return record_url_template(self._transport.realm, self._app.id, table_id, edit=edit)
 
     async def field_url(self, field: FieldRef) -> str:
         """Link to the page in Quickbase that edits a field's settings.
@@ -1516,7 +1516,7 @@ class AsyncTable:
     async def create_field(
         self,
         label: str,
-        field_type: str,
+        type: str,
         *,
         choices: Sequence[str] | None = None,
         required: bool | None = None,
@@ -1537,7 +1537,7 @@ class AsyncTable:
 
         Args:
             label: The new field's label. Another field can't have the same label, ignoring case.
-            field_type: One of `text`, `text-multiple-choice`, `text-multi-line`, `rich-text`,
+            type: One of `text`, `text-multiple-choice`, `text-multi-line`, `rich-text`,
                 `numeric`, `currency`, `rating`, `percent`, `multitext`, `email`, `url`, `duration`,
                 `date`, `datetime`, `timestamp`, `timeofday`, `checkbox`, `user`, `multiuser`,
                 `address`, `phone`, or `file`. A `datetime` field reports its type as `timestamp`.
@@ -1548,7 +1548,7 @@ class AsyncTable:
             unique: Whether values must be different on every record.
             properties: Other settings, sent as they are, such as `{"decimalPlaces": 2}`. Quickbase
                 refuses a key it doesn't know.
-            formula: Makes this a formula field. `field_type` must match the formula's result, and
+            formula: Makes this a formula field. `type` must match the formula's result, and
                 can't be `timestamp` or `text-multi-line`. Use `datetime` for a timestamp formula.
             help_text: The help Quickbase shows beside the field on forms.
             bold: Whether forms and reports show the field's values in bold.
@@ -1580,7 +1580,7 @@ class AsyncTable:
         table_id = (await self.info()).id
         if choices is not None:
             merged["choices"] = list(choices)
-        body: dict[str, Any] = {"label": label, "fieldType": field_type, **settings}
+        body: dict[str, Any] = {"label": label, "fieldType": type, **settings}
         if merged:
             body["properties"] = merged
         if "formula" in merged:
@@ -1766,7 +1766,7 @@ class AsyncTable:
         self,
         parent: "AsyncTable",
         *,
-        foreign_key_label: str,
+        foreign_key: str,
         lookup_fields: Sequence[FieldRef] = (),
     ) -> Relationship:
         """Make this table a child of `parent`, with a new foreign key field on this table.
@@ -1777,7 +1777,7 @@ class AsyncTable:
 
         Args:
             parent: The `Table` to link to, which becomes the parent.
-            foreign_key_label: The label of the new field on this table, which holds the Record
+            foreign_key: The label of the new field on this table, which holds the Record
                 ID# of each record's parent.
             lookup_fields: Fields of the parent to show on this table, by label or ID. Quickbase
                 names each new field after the foreign key and the field, such as
@@ -1800,7 +1800,7 @@ class AsyncTable:
             f"/tables/{table_id}/relationship",
             json={
                 "parentTableId": parent_id,
-                "foreignKeyField": {"label": foreign_key_label},
+                "foreignKeyField": {"label": foreign_key},
                 "lookupFieldIds": lookup_ids,
             },
             sources_checked=True,
@@ -1812,7 +1812,7 @@ class AsyncTable:
     async def ensure_field(
         self,
         label: str,
-        field_type: str,
+        type: str,
         *,
         choices: Sequence[str] | None = None,
         required: bool | None = None,
@@ -1834,7 +1834,7 @@ class AsyncTable:
 
         Args:
             label: The field's label, ignoring case.
-            field_type: The field's type. `datetime` matches a field that reports `timestamp`.
+            type: The field's type. `datetime` matches a field that reports `timestamp`.
             choices: The options of a `text-multiple-choice` or `multitext` field.
             required: Whether the field must have a value. Quickbase refuses `True` if any record
                 has this field empty, which includes a new field on a table with records.
@@ -1868,7 +1868,7 @@ class AsyncTable:
         if found is None:
             return await self.create_field(
                 label,
-                field_type,
+                type,
                 choices=choices,
                 required=required,
                 unique=unique,
@@ -1876,10 +1876,10 @@ class AsyncTable:
                 formula=formula,
                 **given,
             )
-        reported_type = "timestamp" if field_type == "datetime" else field_type
+        reported_type = "timestamp" if type == "datetime" else type
         if found.type != reported_type:
             raise SchemaMismatchError(
-                f"Field {found.label!r} is {found.type}, not {field_type}, so it wasn't changed."
+                f"Field {found.label!r} is {found.type}, not {type}, so it wasn't changed."
             )
         wanted = field_properties(properties, formula)
         if choices is not None:
@@ -1908,16 +1908,14 @@ class AsyncTable:
             **new_settings,
         )
 
-    async def ensure_relationship(
-        self, parent: "AsyncTable", *, foreign_key_label: str
-    ) -> Relationship:
+    async def ensure_relationship(self, parent: "AsyncTable", *, foreign_key: str) -> Relationship:
         """Return this table's relationship with `parent`, creating it if it doesn't exist.
 
         Use the result with `ensure_lookup_field()` and `ensure_summary_field()`.
 
         Args:
             parent: The `Table` to link to, which becomes the parent.
-            foreign_key_label: The label of the field on this table that holds the Record ID# of
+            foreign_key: The label of the field on this table that holds the Record ID# of
                 each record's parent, ignoring case when looking for an existing relationship.
 
         Returns:
@@ -1932,9 +1930,9 @@ class AsyncTable:
         labels = {item.id: item.label.casefold() for item in await self.fields(refresh=True)}
         for item in await self.relationships(refresh=True):
             label = labels.get(item.foreign_key_field_id or 0)
-            if item.parent_table_id == parent_id and label == foreign_key_label.casefold():
+            if item.parent_table_id == parent_id and label == foreign_key.casefold():
                 return item
-        return await self.create_relationship(parent, foreign_key_label=foreign_key_label)
+        return await self.create_relationship(parent, foreign_key=foreign_key)
 
     async def ensure_lookup_field(
         self, relationship: Relationship, parent_field: FieldRef, *, label: str | None = None

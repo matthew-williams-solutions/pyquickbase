@@ -1,5 +1,5 @@
 relationship = await tasks.ensure_relationship(
-    projects, foreign_key_label="Project"
+    projects, foreign_key="Project"
 )
 print(relationship.foreign_key_field_id)
 print(

@@ -433,7 +433,7 @@ async def test_files(qb: AsyncQuickbase, scratch: Any, seeded: str) -> None:
     data = bytes(range(256))
     await table.update([{"Record ID#": record_id, "Attachment": FileUpload("a b é.bin", data)}])
     download = await table.download_file(record_id, "Attachment")
-    assert (download.name, download.data) == ("a b é.bin", data)
+    assert (download.file_name, download.data) == ("a b é.bin", data)
     await table.update([{"Record ID#": record_id, "Attachment": FileUpload("b.txt", b"second")}])
     assert (await table.download_file(record_id, "Attachment")).data == b"second"
     assert (await table.download_file(record_id, "Attachment", version=1)).data == data
@@ -488,9 +488,7 @@ async def test_schema_changes(qb: AsyncQuickbase, scratch: Any) -> None:
 async def test_relationships(qb: AsyncQuickbase, scratch: Any) -> None:
     parent = qb.app(scratch.app_id).table(scratch.table(("Name", "text")).info().id)
     child = qb.app(scratch.app_id).table(scratch.table(("Title", "text")).info().id)
-    link = await child.create_relationship(
-        parent, foreign_key_label="Parent", lookup_fields=["Name"]
-    )
+    link = await child.create_relationship(parent, foreign_key="Parent", lookup_fields=["Name"])
     assert link.parent_table_id == (await parent.info()).id
     assert link.child_table_id == (await child.info()).id
     assert link.foreign_key_field_id is not None
@@ -709,8 +707,8 @@ async def test_setup_methods_create_once_and_read_back_exactly(
     with pytest.raises(SchemaMismatchError):
         await child.ensure_field("Code", "numeric")
 
-    link = await child.ensure_relationship(parent, foreign_key_label="Parent")
-    assert (await child.ensure_relationship(parent, foreign_key_label="Parent")).id == link.id
+    link = await child.ensure_relationship(parent, foreign_key="Parent")
+    assert (await child.ensure_relationship(parent, foreign_key="Parent")).id == link.id
     foreign_key = next(f for f in await child.fields(refresh=True) if f.label == "Parent")
     assert foreign_key.is_foreign_key
     assert foreign_key.decimal_places == 0

@@ -39,32 +39,33 @@ class FileUpload:
     `repr` leaves out the contents, because they may be sensitive and reprs end up in logs.
 
     Args:
-        name: The file's name. It can't contain a path or control characters, because Quickbase
+        file_name: The file's name. It can't contain a path or control characters, because Quickbase
             stores them as sent and could pass them to whoever downloads the file later.
         data: The file's contents.
 
     Raises:
-        InvalidValueError: `name` is empty, or contains a path or control characters.
+        InvalidValueError: `file_name` is empty, or contains a path or control characters.
     """
 
-    name: str
+    file_name: str
     data: bytes = field(repr=False)
 
     def __post_init__(self) -> None:
-        if not self.name or any(c in "/\\" or category(c) == "Cc" for c in self.name):
+        if not self.file_name or any(c in "/\\" or category(c) == "Cc" for c in self.file_name):
             raise InvalidValueError(
-                f"A file name can't be empty or contain a path or control characters: {self.name!r}"
+                "A file name can't be empty or contain a path or control characters: "
+                f"{self.file_name!r}"
             )
         if not isinstance(self.data, bytes):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise InvalidValueError("A file's data must be bytes.")
 
     def __repr__(self) -> str:
         # File contents may be sensitive and reprs end up in logs, so show only the shape.
-        return f"FileUpload({self.name!r}, {len(self.data)} bytes)"
+        return f"FileUpload({self.file_name!r}, {len(self.data)} bytes)"
 
 
 def file_upload_to_api(upload: FileUpload) -> dict[str, str]:
-    return {"fileName": upload.name, "data": base64.b64encode(upload.data).decode("ascii")}
+    return {"fileName": upload.file_name, "data": base64.b64encode(upload.data).decode("ascii")}
 
 
 def require_id(name: str, value: int) -> None:

@@ -8,8 +8,8 @@ from urllib.parse import quote, urlencode
 
 from ._writes import require_id
 
-RECORD_ID_PLACEHOLDER = "{Record ID#}"
-"""Where the ID goes in `Table.record_url_pattern()`, named like the field it comes from."""
+RECORD_ID_PLACEHOLDER = "{record_id}"
+"""Where the ID goes in `Table.record_url_template()`."""
 
 
 def _segment(value: str) -> str:
@@ -42,12 +42,12 @@ def report_url(realm: str, app_id: str, table_id: str, report_id: str, *, edit: 
 
 def record_url(realm: str, app_id: str, table_id: str, record_id: int, *, edit: bool) -> str:
     require_id("record_id", record_id)
-    return record_url_pattern(realm, app_id, table_id, edit=edit).replace(
+    return record_url_template(realm, app_id, table_id, edit=edit).replace(
         RECORD_ID_PLACEHOLDER, str(record_id)
     )
 
 
-def record_url_pattern(realm: str, app_id: str, table_id: str, *, edit: bool) -> str:
+def record_url_template(realm: str, app_id: str, table_id: str, *, edit: bool) -> str:
     _require_bool("edit", edit)
     base = table_page(realm, app_id, table_id, "er" if edit else "dr")
     return f"{base}?rid={RECORD_ID_PLACEHOLDER}"

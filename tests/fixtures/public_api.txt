@@ -70,8 +70,8 @@ class AsyncSchemaOperation(object)
 class AsyncTable(object)
     async def compile_where(self, where: Expression | str) -> str
     async def count(self, where: Expression | str | None = None) -> int
-    async def create_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None, add_to_forms: bool | None = None) -> Field
-    async def create_relationship(self, parent: 'AsyncTable', *, foreign_key_label: str, lookup_fields: Sequence[str | int] = ()) -> Relationship
+    async def create_field(self, label: str, type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None, add_to_forms: bool | None = None) -> Field
+    async def create_relationship(self, parent: 'AsyncTable', *, foreign_key: str, lookup_fields: Sequence[str | int] = ()) -> Relationship
     async def delete(self, where: Expression | str) -> int
     async def delete_fields(self, fields: str | int | Sequence[str | int]) -> None
     async def delete_file_version(self, record_id: int, field: str | int, *, version: int) -> None
@@ -79,9 +79,9 @@ class AsyncTable(object)
     async def download_file(self, record_id: int, field: str | int, *, version: int | None = None, timeout: float | None = None) -> FileDownload
     async def drop(self, *, confirm: str) -> None
     async def ensure_count_field(self, relationship: Relationship, label: str, *, where: Expression | str | None = None) -> Field
-    async def ensure_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None) -> Field
+    async def ensure_field(self, label: str, type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None) -> Field
     async def ensure_lookup_field(self, relationship: Relationship, parent_field: str | int, *, label: str | None = None) -> Field
-    async def ensure_relationship(self, parent: 'AsyncTable', *, foreign_key_label: str) -> Relationship
+    async def ensure_relationship(self, parent: 'AsyncTable', *, foreign_key: str) -> Relationship
     async def ensure_summary_field(self, relationship: Relationship, child_field: str | int, label: str, *, function: str = 'sum', where: Expression | str | None = None) -> Field
     async def field_url(self, field: str | int) -> str
     async def fields(self, *, refresh: bool = False) -> list[Field]
@@ -98,7 +98,7 @@ class AsyncTable(object)
     def query(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, page_size: int = 1000, max_total: int | None = None) -> AsyncRecordIterator
     async def query_page(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, limit: int = 100, skip: int = 0) -> Page
     async def record_url(self, record_id: int, *, edit: bool = False) -> str
-    async def record_url_pattern(self, *, edit: bool = False) -> str
+    async def record_url_template(self, *, edit: bool = False) -> str
     async def relationships(self, *, refresh: bool = False) -> list[Relationship]
     async def relationships_url(self) -> str
     def report(self, name_or_id: str) -> 'AsyncReport'
@@ -169,12 +169,12 @@ class BoundPolicy(object)
     def with_created(self, table_id: str, name: str) -> 'BoundPolicy'
 class Column(object)
     def __eq__(self, other)
-    def __init__(self, name: str, id: int, field_type: str, writable: bool, label: str, read_as: str = '') -> None
-    field field_type: str
+    def __init__(self, name: str, id: int, type: str, writable: bool, label: str, read_as: str = '') -> None
     field id: int
     field label: str
     field name: str
     field read_as: str
+    field type: str
     field writable: bool
 class ConfigurationError(QuickbaseError, ValueError)
 class ConfirmationError(QuickbaseError)
@@ -310,15 +310,15 @@ class FileAttachment(object)
     field versions: tuple[FileVersion, ...]
 class FileDownload(object)
     def __eq__(self, other)
-    def __init__(self, *, name: str, data: bytes, content_type: str | None) -> None
+    def __init__(self, *, file_name: str, data: bytes, content_type: str | None) -> None
     field content_type: str | None
     field data: bytes
-    field name: str
+    field file_name: str
 class FileUpload(object)
     def __eq__(self, other)
-    def __init__(self, name: str, data: bytes) -> None
+    def __init__(self, file_name: str, data: bytes) -> None
     field data: bytes
-    field name: str
+    field file_name: str
 class FileVersion(object)
     def __eq__(self, other)
     def __init__(self, *, number: int, file_name: str, uploaded: datetime.datetime | None, creator: User | None) -> None
@@ -567,8 +567,8 @@ class SummaryRow(object)
 class Table(object)
     def compile_where(self, where: Expression | str) -> str
     def count(self, where: Expression | str | None = None) -> int
-    def create_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None, add_to_forms: bool | None = None) -> Field
-    def create_relationship(self, parent: 'Table', *, foreign_key_label: str, lookup_fields: Sequence[str | int] = ()) -> Relationship
+    def create_field(self, label: str, type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None, add_to_forms: bool | None = None) -> Field
+    def create_relationship(self, parent: 'Table', *, foreign_key: str, lookup_fields: Sequence[str | int] = ()) -> Relationship
     def delete(self, where: Expression | str) -> int
     def delete_fields(self, fields: str | int | Sequence[str | int]) -> None
     def delete_file_version(self, record_id: int, field: str | int, *, version: int) -> None
@@ -576,9 +576,9 @@ class Table(object)
     def download_file(self, record_id: int, field: str | int, *, version: int | None = None, timeout: float | None = None) -> FileDownload
     def drop(self, *, confirm: str) -> None
     def ensure_count_field(self, relationship: Relationship, label: str, *, where: Expression | str | None = None) -> Field
-    def ensure_field(self, label: str, field_type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None) -> Field
+    def ensure_field(self, label: str, type: str, *, choices: Sequence[str] | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None) -> Field
     def ensure_lookup_field(self, relationship: Relationship, parent_field: str | int, *, label: str | None = None) -> Field
-    def ensure_relationship(self, parent: 'Table', *, foreign_key_label: str) -> Relationship
+    def ensure_relationship(self, parent: 'Table', *, foreign_key: str) -> Relationship
     def ensure_summary_field(self, relationship: Relationship, child_field: str | int, label: str, *, function: str = 'sum', where: Expression | str | None = None) -> Field
     def field_url(self, field: str | int) -> str
     def fields(self, *, refresh: bool = False) -> list[Field]
@@ -595,7 +595,7 @@ class Table(object)
     def query(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, page_size: int = 1000, max_total: int | None = None) -> RecordIterator
     def query_page(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, limit: int = 100, skip: int = 0) -> Page
     def record_url(self, record_id: int, *, edit: bool = False) -> str
-    def record_url_pattern(self, *, edit: bool = False) -> str
+    def record_url_template(self, *, edit: bool = False) -> str
     def relationships(self, *, refresh: bool = False) -> list[Relationship]
     def relationships_url(self) -> str
     def report(self, name_or_id: str) -> 'Report'

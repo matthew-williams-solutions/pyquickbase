@@ -1250,7 +1250,7 @@ async def _apply(app: "AsyncApp", change: SchemaChange) -> None:
         await app.table(change.table).delete_fields(change.field)
     elif isinstance(change, CreateRelationship):
         await app.table(change.child_table).create_relationship(
-            app.table(change.parent_table), foreign_key_label=change.foreign_key
+            app.table(change.parent_table), foreign_key=change.foreign_key
         )
     else:
         child = app.table(change.child_table)

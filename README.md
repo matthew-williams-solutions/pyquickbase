@@ -138,7 +138,7 @@ projects.create_field("Name", "text")
 projects.create_field("Status", "text-multiple-choice", choices=["Active", "Done"])
 projects.create_field("Code", "text", unique=True)
 
-tasks.create_relationship(projects, foreign_key_label="Project", lookup_fields=["Name"])
+tasks.create_relationship(projects, foreign_key="Project", lookup_fields=["Name"])
 tasks.update_field("Notes", label="Comments")
 tasks.delete_fields("Old Field")
 tasks.drop(confirm="Tasks")  # deletes the table and its records

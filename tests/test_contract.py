@@ -189,7 +189,7 @@ VALUES: list[Any] = [
     *METADATA,
     Page(records=(), total=0, skip=0),
     FormulaResult(text="1", type="number"),
-    FileDownload(name="a", data=b"SECRET", content_type=None),
+    FileDownload(file_name="a", data=b"SECRET", content_type=None),
     FileUpload("a", b"SECRET"),
     WriteResult(),
     RowError(index=0, messages=()),
@@ -224,7 +224,7 @@ def test_keyword_only_where_promised() -> None:
 
 def test_file_contents_stay_out_of_reprs() -> None:
     assert "SECRET" not in repr(FileUpload("a", b"SECRET"))
-    assert "SECRET" not in repr(FileDownload(name="a", data=b"SECRET", content_type=None))
+    assert "SECRET" not in repr(FileDownload(file_name="a", data=b"SECRET", content_type=None))
     assert "SECRET" not in repr(FormulaResult(text="SECRET", type="text"))
 
 

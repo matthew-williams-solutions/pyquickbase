@@ -95,7 +95,7 @@ async def test_links_use_the_cache() -> None:
         for _ in range(2):
             await tasks.url()
             await tasks.record_url(1)
-            await tasks.record_url_pattern()
+            await tasks.record_url_template()
             await tasks.field_url("Title")
             await tasks.report("List All").url()
     assert server.paths() == ["/tables", "/fields", "/reports"]
@@ -131,14 +131,14 @@ async def test_record_url_refuses_edit_that_isnt_a_bool() -> None:
             await qb.app(APP).table("Tasks").record_url(1, edit=1)  # pyright: ignore[reportArgumentType]
 
 
-async def test_record_url_pattern() -> None:
+async def test_record_url_template() -> None:
     async with client(FakeSchema()) as qb:
         tasks = qb.app(APP).table("Tasks")
-        pattern = await tasks.record_url_pattern()
-        assert pattern == f"{BASE}/dr?rid={{Record ID#}}"
-        assert await tasks.record_url_pattern(edit=True) == f"{BASE}/er?rid={{Record ID#}}"
-        assert pattern.replace("{Record ID#}", "42") == await tasks.record_url(42)
-        assert pattern.format_map({"Record ID#": 42}) == await tasks.record_url(42)
+        pattern = await tasks.record_url_template()
+        assert pattern == f"{BASE}/dr?rid={{record_id}}"
+        assert await tasks.record_url_template(edit=True) == f"{BASE}/er?rid={{record_id}}"
+        assert pattern.replace("{record_id}", "42") == await tasks.record_url(42)
+        assert pattern.format_map({"record_id": 42}) == await tasks.record_url(42)
 
 
 @pytest.mark.parametrize("field", ["Title", 6])
@@ -187,7 +187,7 @@ async def test_read_rules_hide_tables_fields_and_reports() -> None:
         for link in (
             lambda: app.table(SECRET).url(),
             lambda: app.table("Secret").record_url(1),
-            lambda: app.table(SECRET).record_url_pattern(),
+            lambda: app.table(SECRET).record_url_template(),
             lambda: app.table(SECRET).field_url(6),
         ):
             with pytest.raises(UnknownTableError):

@@ -149,7 +149,7 @@ bug's details, and any values in them, don't reach the model. Log it yourself be
 
 | What happened | Exception | What's left behind |
 |---|---|---|
-| `tool_result()` got something it can't describe, such as a `FileDownload`, a `TableInfo`, or a dictionary | `TypeError` | Nothing was returned |
+| `tool_result()` got something it can't describe, such as an `AppInfo`, a dictionary, or a set | `TypeError` | Nothing was returned |
 | A record holds a value of a type JSON can't hold, such as `bytes` | `TypeError` | Nothing was returned |
 | `max_records` or `max_text` isn't a positive whole number | `ValueError` | Nothing was returned |
 
@@ -178,13 +178,13 @@ from pyquickbase import AsyncTable, F, tool_result
 
 async def list_open_tasks(tasks: AsyncTable) -> dict:
     page = await tasks.query_page(where=F("Status") == "Open", limit=50)
-    # https://<realm>/nav/app/<app ID>/table/<table ID>/action/dr?rid={Record ID#}
-    pattern = await tasks.record_url_pattern()
+    # https://<realm>/nav/app/<app ID>/table/<table ID>/action/dr?rid={record_id}
+    pattern = await tasks.record_url_template()
     return {**tool_result(page), "record_link": pattern}
 ```
 
 Send the pattern once, rather than a link for each record, and say in the tool's description that
-`{Record ID#}` is replaced by a record's `Record ID#`. [`record_url()`](../reference/table.md#links)
+`{record_id}` is replaced by a record's `Record ID#`. [`record_url()`](../reference/table.md#links)
 builds one record's link, and `url()` a table's, app's, or report's. Others link to the pages a
 change to the schema sends a person to, such as `field_url()` and `fields_url()` for a table's
 fields, `relationships_url()`, and `Report.url(edit=True)` for a report's settings. To show which records a query asked for, `compile_where()` returns a condition as

@@ -196,7 +196,7 @@ def test_relationships_add_what_the_guide_says(scratch: Any) -> None:
     child = scratch.table(("Hours", "numeric"))
     before = {field.label for field in parent.fields(refresh=True)}
 
-    link = child.create_relationship(parent, foreign_key_label="Project", lookup_fields=["Name"])
+    link = child.create_relationship(parent, foreign_key="Project", lookup_fields=["Name"])
 
     fields = {field.label: field for field in child.fields(refresh=True)}
     assert fields["Project"].is_foreign_key
@@ -207,8 +207,8 @@ def test_relationships_add_what_the_guide_says(scratch: Any) -> None:
     assert sorted(field.type for field in added) == ["dblink", "url"]
 
     # Calling it again makes another relationship, and ensure_ finds the first.
-    assert child.create_relationship(parent, foreign_key_label="Project").id != link.id
-    assert child.ensure_relationship(parent, foreign_key_label="project").id == link.id
+    assert child.create_relationship(parent, foreign_key="Project").id != link.id
+    assert child.ensure_relationship(parent, foreign_key="project").id == link.id
 
     # A relationship can only be seen from the child.
     assert parent.relationships(refresh=True) == []
@@ -231,7 +231,7 @@ def test_summary_functions(scratch: Any) -> None:
         ("Who", "user"),
         ("Rate", "currency"),
     )
-    link = child.ensure_relationship(parent, foreign_key_label="Project")
+    link = child.ensure_relationship(parent, foreign_key="Project")
     worked = [
         ("Hours", "SUM", "numeric"),
         ("Rate", "SUM", "currency"),
@@ -291,7 +291,7 @@ def test_a_lookup_is_named_after_the_foreign_key(scratch: Any) -> None:
     parent.create_field("Name", "text")
     parent.create_field("Other", "text")
     child = scratch.table(("Hours", "numeric"))
-    link = child.create_relationship(parent, foreign_key_label="Buyer", lookup_fields=["Name"])
+    link = child.create_relationship(parent, foreign_key="Buyer", lookup_fields=["Name"])
     labels = [field.label for field in child.fields(refresh=True) if field.mode == "lookup"]
     assert labels == ["Buyer - Name"]
     assert child.ensure_lookup_field(link, "Other").label == "Buyer - Other"

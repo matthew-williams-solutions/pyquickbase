@@ -80,6 +80,13 @@ before they're made, for scripts and for agents. **It breaks every client that u
 
 ### Changed
 
+- **`create_field()` and `ensure_field()` take `type`**, not `field_type`, as `Field.type` and the
+  schema changes do, and so does a generated class's `Column`.
+- **`create_relationship()` and `ensure_relationship()` take `foreign_key`**, not
+  `foreign_key_label`.
+- **`FileUpload` and `FileDownload` hold `file_name`**, not `name`, as `FileVersion` and the JSON
+  file value do, and a downloaded file in `tool_result()` has `file_name`.
+- **`record_url_pattern()` is `record_url_template()`**, with `{record_id}` where the ID goes.
 - **Paging has one word per meaning.** `limit` is the most records one call returns, everywhere: it
   replaces `top` in `query_page()`, `preview_delete()`, `Report.run_page()`, their typed versions,
   and `ReadRequest`. `max_total` replaces `limit` on `query()`, `Report.run()`, and

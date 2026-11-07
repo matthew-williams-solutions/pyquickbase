@@ -303,7 +303,7 @@ RESOURCES = (
                 (
                     "url",
                     "record_url",
-                    "record_url_pattern",
+                    "record_url_template",
                     "new_record_url",
                     "field_url",
                     "fields_url",

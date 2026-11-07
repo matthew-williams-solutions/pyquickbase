@@ -568,7 +568,7 @@ def _download(value: FileDownload, state: _State) -> dict[str, Any]:
     if text is not None and "\x00" in text:
         text = None
     found: dict[str, Any] = {
-        "name": value.name,
+        "file_name": value.file_name,
         "content_type": value.content_type,
         "size": len(value.data),
         "text": None if text is None else (_text(text, state) or ""),
@@ -694,7 +694,7 @@ def tool_result(
     | Text, a number, a date, or a bool | `value` |
     | `TableInfo`, `Field`, or `ReportInfo` | `table`, `field`, or `report`, without `raw` |
     | A list of one of those | `tables`, `fields`, or `reports` |
-    | `FileDownload` | `file`, with `name`, `content_type`, `size`, and `text` or `binary` |
+    | `FileDownload` | `file`, with `file_name`, `content_type`, `size`, and `text` or `binary` |
 
     A file's `text` is its contents if they're UTF-8 text, and otherwise it's null and `binary` is
     true, as a model can't read bytes.

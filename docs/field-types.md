@@ -1,6 +1,6 @@
 # Field types
 
-These are the values `create_field()` and `ensure_field()` accept as `field_type`, and what each type
+These are the values `create_field()` and `ensure_field()` accept as `type`, and what each type
 takes and returns. Quickbase refuses any other type with `BadRequestError`. To create fields, see
 [Changing the schema](guides/schema.md).
 
@@ -13,7 +13,7 @@ tasks.create_field("Priority", "text-multiple-choice", choices=["Low", "High"])
 
 ## Text types
 
-| `field_type` | Holds | Write | Reads as | Empty reads as | Takes a formula |
+| `type` | Holds | Write | Reads as | Empty reads as | Takes a formula |
 |---|---|---|---|---|---|
 | `text` | One line of text | `str` | `str` | `""` | Yes |
 | `text-multiple-choice` | One choice | `str` | `str` | `""` | Not tested |
@@ -28,7 +28,7 @@ tasks.create_field("Priority", "text-multiple-choice", choices=["Low", "High"])
 
 ## Number types
 
-| `field_type` | Holds | Write | Reads as | Empty reads as | Takes a formula |
+| `type` | Holds | Write | Reads as | Empty reads as | Takes a formula |
 |---|---|---|---|---|---|
 | `numeric` | A number | `float` or `int` | `float` | `None` | Yes |
 | `currency` | An amount of money | `float` or `int` | `float` | `None` | Yes |
@@ -48,7 +48,7 @@ field made through the API. See [API notes](api-notes.md#formulas).
 
 ## Date and time types
 
-| `field_type` | Holds | Write | Reads as | Empty reads as | Takes a formula |
+| `type` | Holds | Write | Reads as | Empty reads as | Takes a formula |
 |---|---|---|---|---|---|
 | `date` | A date | `date` | `date` | `None` | Yes |
 | `datetime` | A date and time. The field then reports its type as `timestamp` | Timezone-aware `datetime` | Timezone-aware `datetime` | `None` | Yes |
@@ -57,7 +57,7 @@ field made through the API. See [API notes](api-notes.md#formulas).
 
 ## Other types
 
-| `field_type` | Holds | Write | Reads as | Empty reads as | Takes a formula |
+| `type` | Holds | Write | Reads as | Empty reads as | Takes a formula |
 |---|---|---|---|---|---|
 | `checkbox` | True or false | `bool` | `bool` | `False`, so empty and unchecked look the same | Yes |
 | `user` | One Quickbase user | A `User`, or `{"id": ...}` | `User` | `None` | Not tested |

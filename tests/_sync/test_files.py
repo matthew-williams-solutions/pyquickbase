@@ -142,7 +142,11 @@ def test_download_latest_decodes_the_contents() -> None:
     server = FakeFiles()
     with client(server) as qb:
         file = qb.app(APP).table("Tasks").download_file(7, "Attachment")
-    assert (file.name, file.data, file.content_type) == ("spec.pdf", b"contents", "application/pdf")
+    assert (file.file_name, file.data, file.content_type) == (
+        "spec.pdf",
+        b"contents",
+        "application/pdf",
+    )
     assert server.sent("/files")[0].url.path == f"/v1{FILE_PATH}/0"
 
 

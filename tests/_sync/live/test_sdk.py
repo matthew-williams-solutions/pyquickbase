@@ -419,7 +419,7 @@ def test_files(qb: Quickbase, scratch: Any, seeded: str) -> None:
     data = bytes(range(256))
     table.update([{"Record ID#": record_id, "Attachment": FileUpload("a b é.bin", data)}])
     download = table.download_file(record_id, "Attachment")
-    assert (download.name, download.data) == ("a b é.bin", data)
+    assert (download.file_name, download.data) == ("a b é.bin", data)
     table.update([{"Record ID#": record_id, "Attachment": FileUpload("b.txt", b"second")}])
     assert (table.download_file(record_id, "Attachment")).data == b"second"
     assert (table.download_file(record_id, "Attachment", version=1)).data == data
@@ -474,7 +474,7 @@ def test_schema_changes(qb: Quickbase, scratch: Any) -> None:
 def test_relationships(qb: Quickbase, scratch: Any) -> None:
     parent = qb.app(scratch.app_id).table(scratch.table(("Name", "text")).info().id)
     child = qb.app(scratch.app_id).table(scratch.table(("Title", "text")).info().id)
-    link = child.create_relationship(parent, foreign_key_label="Parent", lookup_fields=["Name"])
+    link = child.create_relationship(parent, foreign_key="Parent", lookup_fields=["Name"])
     assert link.parent_table_id == (parent.info()).id
     assert link.child_table_id == (child.info()).id
     assert link.foreign_key_field_id is not None
@@ -687,8 +687,8 @@ def test_setup_methods_create_once_and_read_back_exactly(qb: Quickbase, scratch:
     with pytest.raises(SchemaMismatchError):
         child.ensure_field("Code", "numeric")
 
-    link = child.ensure_relationship(parent, foreign_key_label="Parent")
-    assert (child.ensure_relationship(parent, foreign_key_label="Parent")).id == link.id
+    link = child.ensure_relationship(parent, foreign_key="Parent")
+    assert (child.ensure_relationship(parent, foreign_key="Parent")).id == link.id
     foreign_key = next(f for f in child.fields(refresh=True) if f.label == "Parent")
     assert foreign_key.is_foreign_key
     assert foreign_key.decimal_places == 0

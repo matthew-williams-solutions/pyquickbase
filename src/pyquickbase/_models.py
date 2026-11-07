@@ -545,20 +545,20 @@ class FileDownload:
     `repr` leaves out the contents, because they may be sensitive and reprs end up in logs.
 
     Attributes:
-        name: The file's name. Quickbase stores names as sent, such as `../../x`, so don't use this
-            as a path without cleaning it.
+        file_name: The file's name. Quickbase stores names as sent, such as `../../x`, so don't use
+            this as a path without cleaning it.
         data: The file's contents.
         content_type: The media type, if reported. It's based on the name rather than the contents,
             so it doesn't tell you what's in the file.
     """
 
-    name: str
+    file_name: str
     data: bytes = field(repr=False)
     content_type: str | None
 
     def __repr__(self) -> str:
         # File contents may be sensitive and reprs end up in logs, so show only the shape.
-        return f"FileDownload({self.name!r}, {len(self.data)} bytes)"
+        return f"FileDownload({self.file_name!r}, {len(self.data)} bytes)"
 
 
 def file_download_from_response(response: Any) -> FileDownload:
@@ -567,7 +567,7 @@ def file_download_from_response(response: Any) -> FileDownload:
     if found is None:
         raise ValueError("No file name in the response.")
     return FileDownload(
-        name=unquote(found[1]),
+        file_name=unquote(found[1]),
         data=base64.b64decode(response.content, validate=True),
         content_type=response.headers.get("content-type"),
     )

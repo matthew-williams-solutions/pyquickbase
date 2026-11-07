@@ -269,7 +269,7 @@ TABLE_CALLS: list[tuple[str, Callable[[Any], Any], tuple[str, str, dict[str, str
     ),
     (
         "relationship",
-        lambda t: t.create_relationship(t, foreign_key_label="P", lookup_fields=["Title"]),
+        lambda t: t.create_relationship(t, foreign_key="P", lookup_fields=["Title"]),
         (
             "POST",
             f"/tables/{TABLE}/relationship",
@@ -350,7 +350,7 @@ async def test_changing_the_schema_forgets_what_was_cached() -> None:
             lambda: table.create_field("New", "text"),
             lambda: table.update_field("Title", label="L"),
             lambda: table.delete_fields("Title"),
-            lambda: table.create_relationship(table, foreign_key_label="P"),
+            lambda: table.create_relationship(table, foreign_key="P"),
         ):
             await table.fields()
             await table.relationships()

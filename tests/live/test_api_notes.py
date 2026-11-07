@@ -186,7 +186,7 @@ def test_a_missing_table_is_401_and_a_malformed_one_is_400(api: Api) -> None:
 
 def test_a_parent_table_lists_no_relationships(api: Api, scratch: Any) -> None:
     parent, child = scratch.table(("A", "text")), scratch.table(("B", "text"))
-    child.create_relationship(parent, foreign_key_label="P")
+    child.create_relationship(parent, foreign_key="P")
     for made, expected in ((parent, 0), (child, 1)):
         path = f"/tables/{made.info().id}/relationships"
         assert api.call("GET", path).json()["metadata"]["totalRelationships"] == expected

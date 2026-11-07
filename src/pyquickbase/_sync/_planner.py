@@ -1249,7 +1249,7 @@ def _apply(app: "App", change: SchemaChange) -> None:
         app.table(change.table).delete_fields(change.field)
     elif isinstance(change, CreateRelationship):
         app.table(change.child_table).create_relationship(
-            app.table(change.parent_table), foreign_key_label=change.foreign_key
+            app.table(change.parent_table), foreign_key=change.foreign_key
         )
     else:
         child = app.table(change.child_table)
