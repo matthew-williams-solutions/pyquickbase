@@ -56,7 +56,28 @@ def clean(text: str) -> str:
     text = re.sub(r"\b(?:typing|collections\.abc)\.", "", text)
     # Before Python 3.14, `R | None` with a TypeVar prints as `Optional[~R]`. They mean the same.
     text = re.sub(r"\bOptional\[([^\[\]]+)\]", r"\1 | None", text)
+    text = pipes(text)
     return re.sub(r" at 0x[0-9a-fA-F]+", "", text)
+
+
+def pipes(text: str) -> str:
+    """Before Python 3.14, a union with a `Literal` prints as `Union[A, B]`. It means `A | B`."""
+    while found := re.search(r"\bUnion\[", text):
+        parts: list[str] = []
+        depth, start = 1, found.end()
+        index = start
+        while depth:
+            char = text[index]
+            if char == "[":
+                depth += 1
+            elif char == "]":
+                depth -= 1
+            if depth == 0 or (depth == 1 and char == ","):
+                parts.append(text[start:index].strip())
+                start = index + 1
+            index += 1
+        text = text[: found.start()] + " | ".join(parts) + text[index:]
+    return text
 
 
 def signature(function: Any) -> str:
