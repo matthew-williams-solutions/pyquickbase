@@ -65,8 +65,20 @@ before they're made, for scripts and for agents. **It breaks every client that u
 - **`ConfirmationError`**, with the tool error code `needs_confirmation`, for a change without the
   confirmation its preview or plan returned, or with one that's expired, for other arguments, from
   another client, or from a client with a different policy.
+- **Operations and `where_from_dict()` read the spellings models tend to write** for a closed value,
+  as the one value each means: `starts with` or `startsWith` for `starts_with`, `eq`, `=`, `ne`,
+  `<>`, `lt`, `gte` and the like for the symbols, `and` and `or` for `all` and `any`, `sort` for
+  `order_by`, and an `order_by` item as a bare label, a single item, or with `order`, `dir`, or
+  `descending`. Labels must still match exactly. A preview and its change share a confirmation
+  whichever spelling each used.
+- **`F.has()` and `F.not_has()`**, for one exact value of a multi-select or list-user field.
 
 ### Changed
+
+- **`order_by` items take `"direction": "asc"` or `"desc"`**, defaulting to `asc`, in place of
+  `"descending": true`, which is still read.
+- **The filter operators `HAS` and `XHAS` are `has` and `not_has`** in `where_from_dict()` and the
+  schemas. The capitals are still read.
 
 - **Every refusal is a `PolicyRefusedError`**, holding its `Decision`, with a message of the form
   `Refused by <layer>: <what>. <reason>. (rule: <rule>) Nothing was sent. To allow it: <hint>.` A

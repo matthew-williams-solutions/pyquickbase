@@ -2538,7 +2538,10 @@ class AsyncOperation:
         """Check a model's arguments, and run the operation.
 
         Arguments the schema doesn't allow are refused before anything is sent, with a message that
-        says where the mistake is, and doesn't repeat the values sent.
+        says where the mistake is, and doesn't repeat the values sent. Spellings models tend to
+        write for a closed value are read as the one they mean, such as `sort` for `order_by`,
+        `"order": "DESC"` for `"direction": "desc"`, and `starts with` for `starts_with`. Labels
+        must match exactly.
 
         Args:
             arguments: The arguments from the model's tool call.
@@ -2558,6 +2561,9 @@ class AsyncOperation:
                 sent, other than the query that checks the scope or counts a delete.
             InvalidValueError: A record or value can't be written. Nothing was sent.
         """
+        # Read once in the schema's spelling, so a preview and its change sent with different
+        # spellings of the same arguments share a confirmation.
+        arguments = self._spec.normalize(arguments)
         fixed = self._spec.context.scope
         if fixed is not None:
             scope = fixed if scope is None else fixed & scope

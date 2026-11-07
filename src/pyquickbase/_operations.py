@@ -14,7 +14,7 @@ repeat the values they were given.
 import json
 import math
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
@@ -28,7 +28,7 @@ from ._query import NO_VALUE, Condition, Expression, FieldRef, Group
 from ._read_request import ReadRequest
 from ._summary import Period, PeriodUnit
 from ._typed import is_writable
-from ._where_data import case_hint, where_from_dict, where_schema
+from ._where_data import case_hint, normalize_where, where_from_dict, where_schema
 from ._writes import FileUpload
 from .errors import (
     ConfigurationError,
@@ -151,6 +151,52 @@ def _field_names(value: Any, name: str, offered: Sequence[Field]) -> list[str]:
     return cast(list[str], items)
 
 
+_DIRECTIONS = {"asc": "asc", "ascending": "asc", "desc": "desc", "descending": "desc"}
+# Keys a model writes for an order_by item's direction, other than direction itself.
+_DIRECTION_KEYS = ("order", "dir", "sort_order")
+
+
+def _sort_item(item: Any) -> Any:
+    """An order_by item as `{"field": ..., "direction": ...}`, from the shapes models write: a
+    bare label, `"order": "DESC"`, or `"descending": true`. Anything else is left to be refused."""
+    if isinstance(item, str):
+        return {"field": item, "direction": "asc"}
+    if not isinstance(item, Mapping):
+        return item
+    entry = dict(cast(Mapping[str, Any], item))
+    if "direction" not in entry:
+        for key in _DIRECTION_KEYS:
+            if key in entry:
+                entry["direction"] = entry.pop(key)
+                break
+    for key, value in (("descending", "desc"), ("ascending", "asc")):
+        if "direction" not in entry and isinstance(entry.get(key), bool):
+            flag = entry.pop(key)
+            entry["direction"] = value if flag else ("asc" if value == "desc" else "desc")
+    direction = entry.get("direction")
+    if isinstance(direction, str):
+        entry["direction"] = _DIRECTIONS.get(direction.strip().casefold(), direction)
+    return entry
+
+
+def normalize_arguments(data: Mapping[str, Any], offered: Collection[str]) -> dict[str, Any]:
+    """Arguments in the spelling the schema lists, from the ones models tend to write: `sort` for
+    `order_by`, one item for a list, and the aliases of `normalize_where()`. Each alias means
+    exactly one thing, and labels are never guessed, so nothing here changes what a call does."""
+    found = dict(data)
+    if "sort" in found and "order_by" not in found and "order_by" in offered:
+        found["order_by"] = found.pop("sort")
+    if "order_by" in found:
+        order: Any = found["order_by"]
+        if isinstance(order, str | Mapping):
+            order = [order]
+        if isinstance(order, list | tuple):
+            found["order_by"] = [_sort_item(item) for item in cast(list[Any], order)]
+    if "where" in found:
+        found["where"] = normalize_where(found["where"])
+    return found
+
+
 def _sort(value: Any, offered: Sequence[Field]) -> list[int]:
     """Read `order_by` as field IDs, negative for descending, which no label can make ambiguous."""
     ids = {item.label: item.id for item in offered}
@@ -159,17 +205,17 @@ def _sort(value: Any, offered: Sequence[Field]) -> list[int]:
     found: list[int] = []
     for index, item in enumerate(cast(list[Any], value)):
         path = f"order_by[{index}]"
-        if not isinstance(item, Mapping) or not set(item) <= {"field", "descending"}:  # pyright: ignore[reportUnknownArgumentType]
-            raise QueryError(f'{path} must be {{"field": ..., "descending": true or false}}.')
+        if not isinstance(item, Mapping) or not set(item) <= {"field", "direction"}:  # pyright: ignore[reportUnknownArgumentType]
+            raise QueryError(f'{path} must be {{"field": ..., "direction": "asc" or "desc"}}.')
         entry = cast(Mapping[str, Any], item)
         if entry.get("field") not in ids:
             hint = case_hint(entry.get("field"), ids)
             raise QueryError(f"{path}.field isn't a field this tool may sort by.{hint}")
-        descending = entry.get("descending", False)
-        if not isinstance(descending, bool):
-            raise QueryError(f"{path}.descending must be true or false.")
+        direction = entry.get("direction", "asc")
+        if direction not in ("asc", "desc"):
+            raise QueryError(f"{path}.direction must be asc or desc.")
         field_id = ids[entry["field"]]
-        found.append(-field_id if descending else field_id)
+        found.append(-field_id if direction == "desc" else field_id)
     return found
 
 
@@ -434,14 +480,14 @@ def _order_by(ctx: Context) -> dict[str, Any]:
                 "type": "object",
                 "properties": {
                     "field": {"enum": _labels(sortable)},
-                    "descending": {"type": "boolean"},
+                    "direction": {"enum": ["asc", "desc"]},
                 },
                 "required": ["field"],
                 "additionalProperties": False,
             },
             "minItems": 1,
             "maxItems": _MAX_SORT_FIELDS,
-            "description": "The fields to sort by, first to last."
+            "description": "The fields to sort by, first to last. Direction defaults to asc."
             + _glossary(sortable, ctx.descriptions),
         }
     }
@@ -1000,11 +1046,17 @@ class OperationSpec:
     context: Context
     schema: dict[str, Any]
 
+    def normalize(self, data: Any) -> dict[str, Any]:
+        """The arguments in the spelling the schema lists. See `normalize_arguments()`."""
+        if not isinstance(data, Mapping):
+            raise QueryError("The arguments must be an object.")
+        return normalize_arguments(cast(Mapping[str, Any], data), self.schema["properties"])
+
     def plan(self, data: Any, scope: Expression | None) -> Call:
         """Check a model's arguments, and return the call to make. Nothing is sent."""
         if not isinstance(data, Mapping):
             raise QueryError("The arguments must be an object.")
-        arguments = cast(Mapping[str, Any], data)
+        arguments = self.normalize(data)
         _check_names(arguments, list(self.schema["properties"]), self.kind.required)
         return self.kind.plan(self.context, arguments, scope)
 

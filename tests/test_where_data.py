@@ -55,11 +55,80 @@ def compiled(data: Any, **kwargs: Any) -> str:
         ("not_contains", "XCT"),
         ("starts_with", "SW"),
         ("not_starts_with", "XSW"),
+        ("has", "HAS"),
+        ("not_has", "XHAS"),
         ("HAS", "HAS"),
     ],
 )
 def test_operators_on_text(op: str, operator: str) -> None:
     assert compiled(cond("Title", op, "x")) == f"{{6.{operator}.'x'}}"
+
+
+@pytest.mark.parametrize(
+    ("op", "meant"),
+    [
+        ("starts with", "starts_with"),
+        ("startsWith", "starts_with"),
+        ("Starts-With", "starts_with"),
+        ("STARTS_WITH", "starts_with"),
+        ("startswith", "starts_with"),
+        ("begins with", "starts_with"),
+        ("doesn't start with", "not_starts_with"),
+        ("not contains", "not_contains"),
+        ("does not contain", "not_contains"),
+        ("notContains", "not_contains"),
+        ("eq", "=="),
+        ("=", "=="),
+        ("===", "=="),
+        ("equals", "=="),
+        ("ne", "!="),
+        ("<>", "!="),
+        ("neq", "!="),
+        ("lt", "<"),
+        ("lte", "<="),
+        ("gt", ">"),
+        ("gte", ">="),
+        ("≥", ">="),
+        ("HAS", "has"),
+        ("XHAS", "not_has"),
+        ("doesn't have", "not_has"),
+        ("ex", "=="),
+        ("ct", "contains"),
+        (" == ", "=="),
+    ],
+)
+def test_spellings_models_write_mean_one_operator(op: str, meant: str) -> None:
+    assert compiled(cond("Title", op, "x")) == compiled(cond("Title", meant, "x"))
+
+
+def test_every_alias_means_an_operator_the_schema_offers() -> None:
+    from pyquickbase import _where_data as module
+
+    offered = set(module._SCHEMA_OPERATORS)  # pyright: ignore[reportPrivateUsage]
+    words = module._WORD_ALIASES  # pyright: ignore[reportPrivateUsage]
+    symbols = module._SYMBOL_ALIASES  # pyright: ignore[reportPrivateUsage]
+    assert set(words.values()) | set(symbols.values()) <= offered
+    assert not (set(words) | set(symbols)) & offered
+    for word, meant in words.items():
+        # Each alias is already in the folded form, so it can be reached, and means one thing.
+        assert module.normalize_operator(word) == meant
+        if word.upper() in module._RAW_OPERATORS:  # pyright: ignore[reportPrivateUsage]
+            # Such as lt: Quickbase's code for the same operator.
+            assert module._NAMED_OPERATORS[meant] == word.upper()  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize("key", ["and", "AND", "All"])
+def test_and_and_or_are_read_as_all_and_any(key: str) -> None:
+    data = {key: [cond("Title", "==", "x"), {"or": [cond("Hours", "<", 1), cond("Hours", ">", 9)]}]}
+    expected = {
+        "all": [cond("Title", "==", "x"), {"any": [cond("Hours", "<", 1), cond("Hours", ">", 9)]}]
+    }
+    assert compiled(data) == compiled(expected)
+
+
+def test_labels_are_never_guessed() -> None:
+    with pytest.raises(UnknownFieldError):
+        compiled(cond("title", "starts with", "x"))
 
 
 def test_labels_and_ids_both_name_a_field() -> None:
@@ -125,7 +194,9 @@ def test_bad_shapes_are_refused(data: Any) -> None:
         where_from_dict(data)
 
 
-@pytest.mark.parametrize("op", ["ex", "=", "===", "like", "IR", "XIR", "", "EX'}OR{3.GT.'0"])
+@pytest.mark.parametrize(
+    "op", ["like", "is", "IR", "XIR", "ir", "last 7 days", "", "EX'}OR{3.GT.'0", "starts"]
+)
 def test_unknown_operators_are_refused(op: str) -> None:
     with pytest.raises(QueryError, match=r"where\.op"):
         where_from_dict(cond("Title", op, "x"))
@@ -361,7 +432,7 @@ VALID = [
     cond("Hours", ">", 1.5),
     cond("Done", "==", True),
     cond("Status", "in", ["a", "b", None]),
-    cond("Team", "HAS", "a@example.com"),
+    cond("Team", "has", "a@example.com"),
     {"all": [cond("Title", "==", "x")]},
     {"all": [cond("Title", "==", "x"), {"any": [cond("Hours", "<", 1), cond("Hours", ">", 9)]}]},
     {"any": [cond("Title", "==", "x"), {"all": [cond("Hours", ">", 1), cond("Hours", "<", 9)]}]},

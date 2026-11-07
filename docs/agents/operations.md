@@ -56,8 +56,14 @@ The schema goes in your framework's tool definition, under the name it uses, suc
 | `delete_file_version` | `record_id`, `field`, `version` | `delete_file_version()` | None |
 
 `where` is the format of [`where_from_dict()`](untrusted-input.md#filters-from-a-model). `order_by` is a list of
-`{"field": ..., "descending": true or false}`, and `group_by` takes labels, or
+`{"field": ..., "direction": "asc" or "desc"}`, and `group_by` takes labels, or
 `{"field": ..., "unit": "month"}` to group a date. Whatever `run()` returns, `tool_result()` takes.
+
+The schema lists one spelling of each value, but `run()` also reads the ones models tend to write,
+each as the one value it means: `starts with` or `startsWith` for `starts_with`, `eq` or `<>` for
+`==` or `!=`, `and` and `or` for `all` and `any`, `sort` for `order_by`, and `"order": "DESC"` or
+`"descending": true` for `"direction": "desc"`. Labels are never guessed, so a label in the wrong
+case is still refused, with a hint that names the right one.
 
 ### What a schema offers
 

@@ -73,7 +73,8 @@ Build conditions with `F`, combining them with `&` and `|` and wrapping each in 
 | `F("Title").contains("x")`, `.not_contains()` | Text anywhere in the value |
 | `F("Title").starts_with("x")`, `.not_starts_with()` | Text at the start of the value |
 | `F("Status").is_in(["Done", "Blocked"])` | Any of the values |
-| `F("Tags").op("HAS", "x")` | Any other Quickbase operator |
+| `F("Tags").has("x")`, `.not_has("x")` | One whole value of a multi-select or list-user field |
+| `F("Due Date").op("IR", "last 7 days")` | Any other Quickbase operator |
 
 Use `F` for any text you don't control. Quickbase reads some text as query syntax even inside quotes,
 so `F` escapes quotes, refuses values containing `{` or `}` or like `_FID_6`, and sends a standalone

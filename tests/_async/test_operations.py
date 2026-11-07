@@ -533,6 +533,17 @@ async def test_a_delete_needs_a_preview_and_the_same_records_to_match() -> None:
         assert shown["blockers"]
 
 
+async def test_a_preview_and_its_delete_share_a_confirmation_across_spellings() -> None:
+    async with client(Fake(matching=2)) as qb:
+        tasks = qb.app("bq1234567").table("Tasks")
+        preview = await tasks.operation("preview_delete", max_records=10)
+        delete = await tasks.operation("delete", max_records=10, require_preview=True)
+        where = {"and": [{"field": "Status", "op": "eq", "value": "Open"}]}
+        confirmation = tool_result(await preview.run({"where": where}))["confirmation"]
+        same = {"all": [{"field": "Status", "op": "==", "value": "Open"}]}
+        assert await delete.run({"where": same, "confirmation": confirmation}) == 1
+
+
 async def test_only_update_and_delete_can_require_a_preview() -> None:
     async with client(Fake()) as qb:
         with pytest.raises(ConfigurationError, match="only for update and delete"):

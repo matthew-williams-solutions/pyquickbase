@@ -302,6 +302,29 @@ class F:
         """
         return self._condition("XSW", value)
 
+    def has(self, value: Any) -> Condition:
+        """Match records where one of the field's values is exactly this, such as one choice of a
+        multi-select field, or one user of a list-user field.
+
+        Args:
+            value: The whole value to look for. Unlike `contains`, part of a value doesn't match.
+
+        Returns:
+            A condition to pass as `where`.
+        """
+        return self._condition("HAS", value)
+
+    def not_has(self, value: Any) -> Condition:
+        """Match records where none of the field's values is exactly this.
+
+        Args:
+            value: The whole value to look for.
+
+        Returns:
+            A condition to pass as `where`.
+        """
+        return self._condition("XHAS", value)
+
     def is_in(self, values: Iterable[Any]) -> Expression:
         """Match any of the values, as a series of `EX` conditions joined with `OR`.
 
@@ -320,7 +343,7 @@ class F:
         return conditions[0] if len(conditions) == 1 else Group.of("OR", *conditions)
 
     def op(self, operator: str, value: Any) -> Condition:
-        """Use any Quickbase operator directly, such as `HAS` or `IR`.
+        """Use any Quickbase operator directly, such as `TV` or `IR`.
 
         Args:
             operator: The operator, in capitals. Quickbase treats a lowercase one as "contains".

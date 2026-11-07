@@ -238,7 +238,7 @@ def test_query_arguments_become_a_page_query() -> None:
     arguments = {
         "where": {"field": "Status", "op": "==", "value": "Open"},
         "select": ["Title"],
-        "order_by": [{"field": "Due Date", "descending": True}, {"field": "Title"}],
+        "order_by": [{"field": "Due Date", "direction": "desc"}, {"field": "Title"}],
         "limit": 5,
         "skip": 10,
     }
@@ -249,6 +249,37 @@ def test_query_arguments_become_a_page_query() -> None:
     assert call.arguments["order_by"] == [-9, 6]
     assert (call.arguments["top"], call.arguments["skip"]) == (5, 10)
     assert call.arguments["where"] is not None
+
+
+@pytest.mark.parametrize(
+    "order_by",
+    [
+        [{"field": "Due Date", "descending": True}],
+        [{"field": "Due Date", "order": "DESC"}],
+        [{"field": "Due Date", "dir": "desc"}],
+        [{"field": "Due Date", "direction": "Descending"}],
+        [{"field": "Due Date", "ascending": False}],
+        {"field": "Due Date", "direction": "desc"},
+    ],
+)
+def test_sort_spellings_models_write_are_read(order_by: Any) -> None:
+    query = spec("query")
+    assert query.plan({"order_by": order_by}, None).arguments["order_by"] == [-9]
+    assert query.plan({"sort": order_by}, None).arguments["order_by"] == [-9]
+
+
+def test_a_bare_label_sorts_ascending() -> None:
+    query = spec("query")
+    assert query.plan({"order_by": ["Due Date", "Title"]}, None).arguments["order_by"] == [9, 6]
+    assert query.plan({"order_by": "Title"}, None).arguments["order_by"] == [6]
+
+
+def test_sort_is_only_read_as_order_by_once() -> None:
+    query = spec("query")
+    with pytest.raises(QueryError, match="doesn't take"):
+        query.plan({"sort": ["Title"], "order_by": ["Title"]}, None)
+    with pytest.raises(QueryError, match="doesn't take"):
+        spec("count").plan({"sort": ["Title"]}, None)
 
 
 def test_query_defaults() -> None:
@@ -264,7 +295,8 @@ def test_query_defaults() -> None:
         ({"select": []}, "at least one"),
         ({"select": ["Title", "Title"]}, "more than once"),
         ({"order_by": [{"field": "Nope"}]}, r"order_by\[0\]\.field"),
-        ({"order_by": [{"field": "Title", "descending": "yes"}]}, "true or false"),
+        ({"order_by": [{"field": "Title", "direction": "down"}]}, "asc or desc"),
+        ({"order_by": [{"field": "Title", "descending": "yes"}]}, 'asc" or "desc'),
         ({"order_by": [{"field": "Title"}] * 6}, "1 to 5"),
         ({"limit": 101}, "from 1 to 100"),
         ({"limit": True}, "whole number"),

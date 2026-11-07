@@ -261,8 +261,10 @@ class F(object)
     def __lt__(self, value: Any) -> Condition
     def __ne__(self, value: object) -> Condition
     def contains(self, value: Any) -> Condition
+    def has(self, value: Any) -> Condition
     def is_in(self, values: Iterable[Any]) -> Expression
     def not_contains(self, value: Any) -> Condition
+    def not_has(self, value: Any) -> Condition
     def not_starts_with(self, value: Any) -> Condition
     def op(self, operator: str, value: Any) -> Condition
     def starts_with(self, value: Any) -> Condition
@@ -637,9 +639,11 @@ class TypedField(F)
     def __ne__(self, value: object) -> Condition
     def contains(self, value: Any) -> Condition
     property desc -> int
+    def has(self, value: Any) -> Condition
     property id -> int
     def is_in(self, values: Iterable[Any]) -> Expression
     def not_contains(self, value: Any) -> Condition
+    def not_has(self, value: Any) -> Condition
     def not_starts_with(self, value: Any) -> Condition
     def op(self, operator: str, value: Any) -> Condition
     def starts_with(self, value: Any) -> Condition

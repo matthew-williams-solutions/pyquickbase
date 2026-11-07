@@ -70,7 +70,8 @@ print(tasks.count(where))
 | `F("Title").contains("x")`, `.not_contains("x")` | Text anywhere in the value |
 | `F("Title").starts_with("x")`, `.not_starts_with("x")` | Text at the start of the value |
 | `F("Status").is_in(["Done", "Blocked"])` | Any of the values |
-| `F("Tags").op("HAS", "x")` | Any other Quickbase operator |
+| `F("Tags").has("x")`, `.not_has("x")` | One whole value of a multi-select or list-user field |
+| `F("Due Date").op("IR", "last 7 days")` | Any other Quickbase operator |
 | `F("Owner") == "a@example.com"` | A `user` or `multiuser` field, by email or user ID |
 
 Using `and`, `or`, or a chained comparison like `1 < F("x") < 5` raises `QueryError`, because

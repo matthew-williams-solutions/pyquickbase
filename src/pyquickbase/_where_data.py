@@ -17,7 +17,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, cast
 
 from ._models import Field, FieldIndex
 from ._query import OPERATORS, Condition, Expression, FieldRef, Group, format_value
@@ -40,12 +40,52 @@ _NAMED_OPERATORS = {
     "not_contains": "XCT",
     "starts_with": "SW",
     "not_starts_with": "XSW",
+    "has": "HAS",
+    "not_has": "XHAS",
 }
 _LIST_OPERATORS = {"in": ("EX", "OR"), "not_in": ("XEX", "AND")}
 # IR and XIR take date ranges as text, such as `last 7 days`. Text Quickbase can't read as a range
 # matches nothing, with no error, and a model can compare with dates instead.
 _RAW_OPERATORS = OPERATORS - {"IR", "XIR"}
-_SCHEMA_OPERATORS = (*_NAMED_OPERATORS, *_LIST_OPERATORS, "HAS", "XHAS")
+_SCHEMA_OPERATORS = (*_NAMED_OPERATORS, *_LIST_OPERATORS)
+# What models write for an operator, other than its own spelling. Each is closed, and means exactly
+# one operator, so reading one can't change a query's meaning. They aren't in the schema, which
+# lists one spelling of each. Words are matched after `normalize_operator()` folds case and turns
+# spaces, hyphens, and camelCase into underscores.
+_SYMBOL_ALIASES = {"=": "==", "===": "==", "<>": "!=", "!==": "!=", "≠": "!=", "≤": "<=", "≥": ">="}
+_WORD_ALIASES = {
+    "eq": "==",
+    "equal": "==",
+    "equals": "==",
+    "ne": "!=",
+    "neq": "!=",
+    "not_equal": "!=",
+    "not_equals": "!=",
+    "lt": "<",
+    "less_than": "<",
+    "lte": "<=",
+    "le": "<=",
+    "less_than_or_equal": "<=",
+    "gt": ">",
+    "greater_than": ">",
+    "gte": ">=",
+    "ge": ">=",
+    "greater_than_or_equal": ">=",
+    "contain": "contains",
+    "does_not_contain": "not_contains",
+    "doesnt_contain": "not_contains",
+    "startswith": "starts_with",
+    "start_with": "starts_with",
+    "begins_with": "starts_with",
+    "not_startswith": "not_starts_with",
+    "does_not_start_with": "not_starts_with",
+    "doesnt_start_with": "not_starts_with",
+    "notin": "not_in",
+    "nin": "not_in",
+    "does_not_have": "not_has",
+    "doesnt_have": "not_has",
+}
+_GROUP_ALIASES = {"and": "all", "or": "any"}
 _EMPTY_ALLOWED = frozenset({"EX", "XEX"})
 
 _COMPARISONS = frozenset({"EX", "XEX", "LT", "LTE", "GT", "GTE", "BF", "OBF", "AF", "OAF"})
@@ -195,6 +235,7 @@ class _Builder:
             )
         if not isinstance(op, str):
             raise QueryError(f"{path}.op must be text. {_operators_help()}")
+        op = normalize_operator(op)
         try:
             if op in _LIST_OPERATORS:
                 return self._list_condition(field, op, value, path)
@@ -218,6 +259,42 @@ class _Builder:
             for item in values  # pyright: ignore[reportUnknownVariableType]
         ]
         return built[0] if len(built) == 1 else Group.of(joiner, *built)
+
+
+def normalize_operator(op: str) -> str:
+    """The operator a model meant, such as `starts_with` for `starts with` or `startsWith`, or
+    `==` for `eq`. Quickbase's own codes, such as `CT`, are kept, in capitals. Anything else is
+    returned unchanged, to be refused."""
+    if op in _NAMED_OPERATORS or op in _LIST_OPERATORS or op in _RAW_OPERATORS:
+        return op
+    key = op.strip()
+    if key in _SYMBOL_ALIASES:
+        return _SYMBOL_ALIASES[key]
+    key = re.sub(r"(?<=[a-z])(?=[A-Z])", "_", key).casefold().replace("'", "")
+    key = re.sub(r"[\s_-]+", "_", key)
+    if key in _NAMED_OPERATORS or key in _LIST_OPERATORS:
+        return key
+    if key in _WORD_ALIASES:
+        return _WORD_ALIASES[key]
+    return key.upper() if key.upper() in _RAW_OPERATORS else op
+
+
+def normalize_where(data: Any, depth: int = 0) -> Any:
+    """A filter with each operator, and `and` or `or` for a group, in the spelling the schema
+    lists. Anything else is left as it is, for `where_from_dict()` to check, including groups
+    nested deeper than it allows."""
+    if not isinstance(data, Mapping) or depth > MAX_WHERE_DEPTH:
+        return cast(Any, data)
+    items = cast(Mapping[Any, Any], data)
+    if len(items) == 1:
+        key = next(iter(items))
+        group = _GROUP_ALIASES.get(key.casefold(), key.casefold()) if isinstance(key, str) else key
+        if group in ("all", "any") and isinstance(items[key], list | tuple):
+            parts = cast(list[Any], items[key])
+            return {group: [normalize_where(part, depth + 1) for part in parts]}
+    if isinstance(items.get("op"), str):
+        return {**items, "op": normalize_operator(items["op"])}
+    return items
 
 
 def _text(value: Any, operator: str) -> str:
@@ -316,8 +393,15 @@ def where_from_dict(
 
     A condition is `{"field": "Status", "op": "==", "value": "Open"}`, and `{"all": [...]}` and
     `{"any": [...]}` combine them, nested if needed. `field` is a label or ID. `op` is `==`, `!=`,
-    `<`, `<=`, `>`, `>=`, `contains`, `not_contains`, `starts_with`, `not_starts_with`, `in`,
-    `not_in`, or a Quickbase operator such as `HAS`, other than `IR` and `XIR`.
+    `<`, `<=`, `>`, `>=`, `contains`, `not_contains`, `starts_with`, `not_starts_with`, `has`,
+    `not_has`, `in`, `not_in`, or a Quickbase operator such as `TV`, other than `IR` and `XIR`.
+    `has` matches one of a multi-select field's values exactly.
+
+    Spellings a model tends to write are read as the operator they mean: case, spaces, hyphens,
+    and camelCase don't matter, so `starts with` and `startsWith` are `starts_with`, and `eq`,
+    `=`, `ne`, `<>`, `lt`, `gte`, and the like are the matching symbol. `and` and `or` are read as
+    `all` and `any`. Each of these means exactly one operator, so none can change what a filter
+    means. Labels are never guessed: a label must match exactly.
 
     Values are escaped as they are with `F`. Unlike `F`, a value is also checked against the type of
     its field when the query is built: dates must be `YYYY-MM-DD`, timestamps need a time zone or to
@@ -346,7 +430,8 @@ def where_from_dict(
             deep, is refused too. Type checks raise this when the query is built, not here.
         UnknownFieldError: The table has no such field, raised when the query is built.
     """
-    return _Builder(None if fields is None else _field_set(fields)).build(data, "where", 0)
+    allowed = None if fields is None else _field_set(fields)
+    return _Builder(allowed).build(normalize_where(data), "where", 0)
 
 
 def _condition_schema(fields: frozenset[FieldRef] | None) -> dict[str, Any]:
