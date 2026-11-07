@@ -157,7 +157,7 @@ child table, built with `F` or written as a string, as in a query:
 
 ```python
 tasks.ensure_summary_field(link, "Hours", "Open Hours", where=F("Status") == "Open")
-tasks.ensure_count_field(link, "Done Tasks", where="{9.EX.'Done'}")
+tasks.ensure_count_field(link, "Done Tasks", where="{7.EX.'Done'}")
 ```
 
 - **The filter is checked before anything is sent.** Quickbase saves a filter it can't use, such as one
