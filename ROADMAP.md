@@ -19,6 +19,11 @@ to keep are explained in the guides, not here.
 - `policy_effects` works from the bound policy, not by binding the original `Policy` against the
   schema the plan leaves, so it doesn't see a class losing its only named field. A deny rule left
   matching nothing that way isn't a blocker yet.
+- Adding a lookup or summary is `update_relationship` in `WriteRequest.action`, because Quickbase adds
+  both with a POST to an existing relationship, and `request.derived` says which. Schema changes call
+  them `create_lookup_field` and `create_summary_field`. Giving `WriteAction` those values means
+  deciding what a request that adds both is called, changing the checks in `_bound.py`, and breaking
+  custom rules that test for `update_relationship`.
 - `BoundPolicy` has public methods that only the SDK uses, such as `trim()` and `offers_for()`, and a
   public constructor. Move them behind a private interface, so the public API is only `decide()`,
   `allows()`, `explain()`, `offers()`, and saving.
