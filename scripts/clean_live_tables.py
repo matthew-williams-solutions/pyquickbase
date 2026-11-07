@@ -22,7 +22,9 @@ from typing import Any
 
 PREFIX = "ZZ Live "
 # Tables the docs and reference examples make by name, because the examples show those names.
-FIXED_NAMES = frozenset({"Tasks", "Projects", "Job Tasks", "Job Projects", "Job Sites"})
+FIXED_NAMES = frozenset(
+    {"Tasks", "Projects", "Job Tasks", "Job Projects", "Job Sites", "Technicians"}
+)
 DEFAULT_HOURS = 6.0
 
 

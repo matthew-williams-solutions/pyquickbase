@@ -249,10 +249,12 @@ def test_summary_functions(scratch: Any) -> None:
     for number, (field, function, result) in enumerate(worked):
         made = child.ensure_summary_field(link, field, f"Works {number}", function=function)
         assert (made.type, made.mode, made.summary_function) == (result, "summary", function)
+    # The SDK's own names map to Quickbase's, so this finds the STD-DEV summary made above.
+    again = child.ensure_summary_field(link, "Hours", "Works 7", function="std_dev")
+    assert again.summary_function == "STD-DEV"
     refused = [
         ("Done", "SUM"),
         ("Title", "MAX"),
-        ("Hours", "sum"),
     ]
     for number, (field, function) in enumerate(refused):
         with pytest.raises(BadRequestError):

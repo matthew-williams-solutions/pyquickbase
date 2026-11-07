@@ -128,6 +128,13 @@ def prepare(code: str, world: Any, table_name: str, table_id: str) -> str:
         visits.create_field("Status", "text")
         visits.create_field("Technician", "user")
         code = code.replace('table("Appointments")', f"table({visits.info().id!r})")
+    if "Technicians.Hourly Rate" in code:
+        # The README policy binds to these by name. The world fixture drops them.
+        technicians = world.app.create_table("Technicians")
+        technicians.create_field("Hourly Rate", "numeric")
+        job_tasks = world.app.create_table("Job Tasks")
+        job_tasks.create_field("Status", "text")
+        job_tasks.create_field("Notes", "text")
     code = code.replace('realm="acme"', f"realm={world.scratch.realm!r}")
     code = code.replace('token="your_user_token"', f"token={world.scratch.token!r}")
     code = code.replace("bq1234567", world.scratch.app_id)
@@ -151,7 +158,7 @@ def settings_for(code: str, world: Any, tasks: Any, monkeypatch: Any) -> dict[st
         qb=world.qb,
         app=world.app,
         tasks=tasks,
-        records=ROWS,
+        rows=ROWS,
         status="Open",
         Tasks=module.Tasks,
     )
@@ -162,6 +169,11 @@ def settings_for(code: str, world: Any, tasks: Any, monkeypatch: Any) -> dict[st
             f"ZZ Live {secrets.token_hex(4)}"
         )
         namespace["projects"].create_field("Name", "text")
+    if "link" in code and "link =" not in code:
+        # Carries on from the example before it on the page, which links tasks to projects.
+        parent = world.app.create_table(f"ZZ Live {secrets.token_hex(4)}")
+        tasks.ensure_field("Hours", "numeric")
+        namespace["link"] = tasks.ensure_relationship(parent, foreign_key="Project ID")
     if "file." in code and "file =" not in code:
         namespace["file"] = tasks.download_file(7, "Attachment")
     return namespace
