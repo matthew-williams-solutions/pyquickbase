@@ -34,7 +34,6 @@ to keep are explained in the guides, not here.
   - Change the classifier in `pyproject.toml` from Beta to Production/Stable.
   - Remove the release candidate warnings from `README.md` and `docs/index.md`, and the advice to pin
     the exact version. If the pins go too, update `test_install_pins_match_the_version`.
-  - If codegen's output has changed, refresh `tests/fixtures/generated_tables.py` one last time.
 
 ## After 1.0
 
@@ -50,8 +49,6 @@ Nothing here should break anyone.
   section on its cause and fix, at the end of its message, and in `tool_error()` results. The
   sections must exist first, so `docs/reference/errors.md` or a new errors page needs a stable
   anchor for each error, and a test that every error's anchor exists.
-- A small config file to choose generated names.
-- A setting that repeats a typed table's schema check after a set time.
 
 ## Demo app
 
