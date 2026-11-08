@@ -61,6 +61,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **`anyio` 4.1 is now the lowest supported version,** as worker threads need it under Trio.
 - **Writes refuse two values Quickbase loses without an error:** text that isn't a plain number for
   a number field, such as `"1,234.5"`, which Quickbase leaves empty, and a user written as
   `{"email": ...}`, which it ignores. Both raise `InvalidValueError`. Plain numbers as text, such as
