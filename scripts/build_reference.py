@@ -33,6 +33,57 @@ CONSTRUCTOR = "__init__"
 TWO_COLUMN_PAGES = {"table"}
 # Beyond this many parameters, a two-column page folds the rest away.
 MAX_SHOWN_PARAMETERS = 3
+# What each method on a two-column page is called in its heading and the sidebar: what it does, in
+# plain words, with the method itself in the signature beside it. The same verb means the same kind
+# of action on every page: "Get or create" for an ensure_ method, and "Link to" for a URL.
+TITLES: dict[str, dict[str, str]] = {
+    "table": {
+        "query": "Query records",
+        "query_page": "Fetch one page of records",
+        "first": "Get the first matching record",
+        "get": "Get a record by ID",
+        "count": "Count records",
+        "compile_where": "Show a condition's query text",
+        "insert": "Create records",
+        "update": "Update records",
+        "upsert": "Create or update records",
+        "delete": "Delete records",
+        "preview_update": "Preview an update",
+        "preview_delete": "Preview a delete",
+        "summarize": "Summarize records",
+        "run_formula": "Run a formula",
+        "info": "Get the table's details",
+        "fields": "List fields",
+        "relationships": "List relationships",
+        "reports": "List reports",
+        "report": "Get a report",
+        "resolve_field_ids": "Turn field labels into IDs",
+        "download_file": "Download a file",
+        "delete_file_version": "Delete a file version",
+        "operation": "Make a tool for a model",
+        "url": "Link to the table",
+        "record_url": "Link to a record",
+        "record_url_template": "Link to any record",
+        "new_record_url": "Link to a new record",
+        "field_url": "Link to a field's settings",
+        "fields_url": "Link to the list of fields",
+        "relationships_url": "Link to the relationships",
+        "settings_url": "Link to the table's settings",
+        "form_url": "Link to a form",
+        "create_field": "Create a field",
+        "update_field": "Update a field",
+        "delete_fields": "Delete fields",
+        "ensure_field": "Create or update a field",
+        "create_relationship": "Create a relationship",
+        "ensure_relationship": "Get or create a relationship",
+        "ensure_lookup_field": "Get or create a lookup field",
+        "ensure_summary_field": "Get or create a summary field",
+        "ensure_count_field": "Get or create a count field",
+        "delete_relationship": "Delete a relationship",
+        "update_info": "Update the table's details",
+        "drop": "Delete the table",
+    },
+}
 # Methods that the async client names differently.
 ASYNC_NAMES = {"close": "aclose"}
 
@@ -1479,7 +1530,7 @@ def _page_header(page: Resource | SymbolPage, methods: dict[str, Method]) -> lis
     return lines + (_tabs(page.setup, page.async_setup) if page.setup else [])
 
 
-def _two_column_method(method: Method, methods: dict[str, Method]) -> list[str]:
+def _two_column_method(method: Method, methods: dict[str, Method], title: str) -> list[str]:
     """Write a method as two columns: what it does on the left, and its code on the right."""
     code = [f"```python\n{method.signature}\n```", ""]
     code += _example_lines(method.sync_code, method.async_code, method.output)
@@ -1487,7 +1538,7 @@ def _two_column_method(method: Method, methods: dict[str, Method]) -> list[str]:
         '<div class="ref-method" markdown>',
         '<div class="ref-text" markdown>',
         "",
-        f"### `{method.heading}` {{#{method.anchor}}}",
+        f"### {title} {{#{method.anchor}}}",
         "",
         *_describe(method, methods, two_columns=True),
         "</div>",
@@ -1501,7 +1552,20 @@ def _two_column_method(method: Method, methods: dict[str, Method]) -> list[str]:
 
 
 def _two_column_page(resource: Resource, methods: dict[str, Method]) -> str:
-    """Return a class's page laid out in two columns, with its contents in the left sidebar."""
+    """Return a class's page laid out in two columns, with its contents in the left sidebar.
+
+    Each method's heading is its title from `TITLES`, and each method's "Returns" links to what it
+    returns, so there's no table of return types.
+    """
+    titles = TITLES.get(resource.slug, {})
+    members = [name for group in resource.groups for name in group.members]
+    untitled = [name for name in members if name not in titles]
+    unknown = sorted(set(titles) - set(members))
+    if untitled or unknown:
+        raise SystemExit(
+            f"TITLES[{resource.slug!r}] needs a title for {untitled or 'nothing'}, "
+            f"and has titles for methods not on the page: {unknown or 'none'}"
+        )
     header = _page_header(resource, methods)
     split = header.index(f"# {resource.name}") + 2
     lines = [
@@ -1523,14 +1587,11 @@ def _two_column_page(resource: Resource, methods: dict[str, Method]) -> str:
         "</div>",
         "</div>",
         "",
-        "## What the methods return {#returns}",
-        "",
-        *_return_table(methods),
     ]
     for group in resource.groups:
         lines += [f"## {group.title} {{#{group.anchor}}}", "", *_guide_line(group)]
         for name in group.members:
-            lines += _two_column_method(methods[name], methods)
+            lines += _two_column_method(methods[name], methods, titles[name])
     return "\n".join(lines)
 
 

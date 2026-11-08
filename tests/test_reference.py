@@ -52,7 +52,9 @@ def ids(params: list[tuple[str, str]]) -> list[str]:
 @pytest.mark.parametrize(("name", "member"), EVERY_METHOD, ids=ids(EVERY_METHOD))
 def test_every_member_is_on_both_versions_of_the_page(name: str, member: str) -> None:
     method = METHODS[name][member]
-    assert f"### `{method.heading}` {{#{method.anchor}}}" in PAGES[name]
+    titles = build_reference.TITLES.get(RESOURCES[name].slug, {})
+    heading = titles.get(member, f"`{method.heading}`")
+    assert f"### {heading} {{#{method.anchor}}}" in PAGES[name]
     assert method.heading in MARKDOWN[name]
 
 

@@ -107,13 +107,10 @@ body:has(.ref-method) .md-grid {
   margin-top: 1rem;
 }
 
-/* A method's name, as the heading of its entry. */
-.md-typeset .ref-method h3 code {
-  background: none;
-  color: var(--md-default-fg-color);
-  font-size: 1.1em;
+/* A method's title, as the heading of its entry. */
+.md-typeset .ref-method h3 {
+  font-size: 1.1rem;
   font-weight: 600;
-  padding: 0;
 }
 
 .md-typeset .ref-method > .ref-code {
