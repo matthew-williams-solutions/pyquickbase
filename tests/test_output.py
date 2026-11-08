@@ -27,6 +27,7 @@ from pyquickbase import (
     NetworkError,
     NotFoundError,
     Page,
+    PeriodChange,
     PermissionDeniedError,
     PolicyRefusedError,
     QueryError,
@@ -716,3 +717,11 @@ def test_a_query_that_left_out_default_fields_says_how_many() -> None:
 def test_max_chars_must_be_a_positive_whole_number() -> None:
     with pytest.raises(ValueError, match="max_chars"):
         tool_result([], max_chars=0)
+
+
+def test_a_summary_row_shows_its_change_since_the_period_before() -> None:
+    change = PeriodChange(previous="2027-01", count=-1, values={"sum": {"Hours": 4.0}})
+    row = SummaryRow(group={"Due": "2027-02"}, count=2, sum={"Hours": 10.0}, change=change)
+    [group] = tool_result([row])["groups"]
+    assert group["change"] == {"previous": "2027-01", "count": -1, "sum": {"Hours": 4.0}}
+    assert "change" not in tool_result([SummaryRow(count=1)])["groups"][0]

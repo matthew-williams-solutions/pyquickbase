@@ -293,14 +293,21 @@ print(overall.count, overall.sum["Amount"])
 | `group` | The values that define the group. Empty without `group_by`. A user is their email, and an empty value is `None` |
 | `count` | How many records are in the group, including those with empty values |
 | `sum` | The sum of each field, which is `0` if every value is empty |
-| `avg`, `min`, `max` | Each field's result, or `None` if every value is empty. Empty values don't count toward an average |
+| `avg`, `median`, `min`, `max` | Each field's result, or `None` if every value is empty. Empty values are left out |
+| `std_dev` | Each field's sample standard deviation, or `None` with fewer than two values |
+| `distinct_count` | How many different values each field has, leaving out empty ones |
+| `change` | With `compare_periods`, how the group changed since the period before |
 
 Groups are sorted by their values, with empty ones last. If nothing matches, you get an empty list, or one
 row with a `count` of 0 without `group_by`.
 
-`sum` and `avg` take numeric fields. `min` and `max` also take dates, timestamps, and times of
-day. You can't group by a multi-select, multi-user, or file field, because a record can hold several of
-those values at once.
+`sum`, `avg`, `median`, and `std_dev` take numeric fields. `min` and `max` also take dates, timestamps,
+and times of day. `distinct_count` takes any field you can group by, such as how many clients have open
+tasks. You can't group by a multi-select, multi-user, or file field, because a record can hold several
+of those values at once. `row.statistic("median")` reads any statistic by name.
+
+A median keeps every value of its field in memory until the summary ends, so set `max_records_scanned`
+on a large table. The others keep only running totals.
 
 [Try it in the playground](../playground-app/index.html#add-up-time-across-tables), with simulated data.
 
@@ -319,9 +326,38 @@ by_week = Period("Date Created", "week", tz=ZoneInfo("America/New_York"))
 print(tasks.summarize(group_by=by_week))
 ```
 
+### Comparing each period with the one before
+
+With `compare_periods=True`, each row's `change` says how its group changed since the period before, so
+you don't have to line up the rows and subtract. `group_by` needs exactly one `Period`. Any other field in
+it stays fixed, so each owner's months are compared with their own.
+
+```python
+from pyquickbase import Period
+
+rows = tasks.summarize(
+    group_by=[Period("Due Date", "month"), "Status"],
+    sum="Amount",
+    compare_periods=True,
+)
+for row in rows:
+    if row.change:
+        print(row.group["Due Date"], row.change.previous, row.change.count, row.change.values)
+```
+
+| `PeriodChange` attribute | What it holds |
+|---|---|
+| `previous` | The period it's compared with, such as `2026-02` |
+| `count` | How many more records there are, negative for fewer |
+| `values` | How much each numeric statistic rose, as `{"sum": {"Amount": 120.0}}`, or `None` where either period has no value |
+
+A period with no records still counts: its count and `sum` are 0, and it has no average or median. The
+first period in the result has no `change`, since nothing before it was summarized. A filter that starts or
+ends partway through a period makes that period look smaller, so filter on whole periods.
+
 ### Large tables
 
-A summary that only counts, with no `group_by`, `sum`, `avg`, `min`, or `max`, asks Quickbase how many records match,
+A summary that only counts, with no `group_by` or statistics, asks Quickbase how many records match,
 in one request, and reads none, so it takes the same time at any size.
 
 Any other summary reads every matching record, in pages of up to 25,000. A page holds fewer records when the summary

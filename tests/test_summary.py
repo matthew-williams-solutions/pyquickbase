@@ -48,9 +48,8 @@ def rec(**values: Any) -> Record:
 
 
 def summarize(records: list[Record], group_by: Any = None, **options: Any) -> list[SummaryRow]:
-    plan = dict.fromkeys(("sum", "avg", "min", "max"))
-    plan.update(options)
-    summary = Summary(FIELDS, group_by=group_by, **plan)
+    compare = options.pop("compare_periods", False)
+    summary = Summary(FIELDS, group_by=group_by, statistics=options, compare_periods=compare)
     for record in records:
         summary.add(record)
     return summary.rows()
@@ -319,10 +318,7 @@ def test_it_only_selects_the_fields_it_needs() -> None:
     summary = Summary(
         FIELDS,
         group_by=["Status", Period("Due", "year")],
-        sum="Hours",
-        avg="Hours",
-        min="Price",
-        max=None,
+        statistics={"sum": "Hours", "avg": "Hours", "min": "Price", "max": None},
     )
     assert summary.select == [6, 8, 7, 14]
 
@@ -337,8 +333,11 @@ def test_results_match_a_plain_calculation(pairs: list[tuple[str, float | None]]
         group_by="Status",
         sum="Hours",
         avg="Hours",
+        median="Hours",
+        std_dev="Hours",
         min="Hours",
         max="Hours",
+        distinct_count="Hours",
     )
     assert [row.group["Status"] for row in rows] == sorted({status for status, _ in pairs})
     assert sum(row.count for row in rows) == len(pairs)
@@ -352,8 +351,18 @@ def test_results_match_a_plain_calculation(pairs: list[tuple[str, float | None]]
             )
             assert row.min["Hours"] == min(values)
             assert row.max["Hours"] == max(values)
+            assert math.isclose(
+                row.median["Hours"] or 0.0, statistics.median(values), rel_tol=1e-6, abs_tol=1e-6
+            )
         else:
             assert row.avg["Hours"] is None
+            assert row.median["Hours"] is None
+        assert row.distinct_count["Hours"] == len(set(values))
+        if len(values) > 1:
+            expected = statistics.stdev(values)
+            assert math.isclose(row.std_dev["Hours"] or 0.0, expected, rel_tol=1e-6, abs_tol=1e-3)
+        else:
+            assert row.std_dev["Hours"] is None
 
 
 @given(st.dates(min_value=date(1900, 1, 1), max_value=date(2100, 12, 31)))
@@ -367,9 +376,7 @@ def test_period_labels_sort_like_their_dates(day: date) -> None:
 
 
 def plan(group_by: Any = None, fields: Any = FIELDS, **options: Any) -> Summary:
-    found = dict.fromkeys(("sum", "avg", "min", "max"))
-    found.update(options)
-    return Summary(fields, group_by=group_by, **found)
+    return Summary(fields, group_by=group_by, statistics=options)
 
 
 def test_only_counting_needs_no_records() -> None:
@@ -437,3 +444,99 @@ def test_groups_sort_by_a_total_then_another_key() -> None:
 def test_no_keys_keep_the_order() -> None:
     rows = [row("b", 1), row("a", 2)]
     assert sort_rows(rows, []) == rows
+
+
+def test_a_median_and_spread_ignore_empty_values() -> None:
+    records = [rec(Hours=hours) for hours in (1, 2, 3, 10, None)]
+    [row] = summarize(records, median="Hours", std_dev="Price")
+    assert row.median == {"Hours": 2.5}
+    assert row.std_dev == {"Price": None}
+
+
+def test_distinct_count_counts_users_and_dates_once_each() -> None:
+    ann, bob = User(id="1.a", name="Ann", email="ann@x"), User(id="2.b", name="Bob", email="bob@x")
+    records = [rec(Owner=ann, Due=date(2027, 1, 1)), rec(Owner=ann), rec(Owner=bob), rec()]
+    [row] = summarize(records, distinct_count=["Owner", "Due"])
+    assert row.distinct_count == {"Owner": 2, "Due": 1}
+
+
+def test_distinct_count_refuses_fields_with_several_values() -> None:
+    with pytest.raises(QueryError, match="several of its values"):
+        summarize([], distinct_count="Tags")
+
+
+@pytest.mark.parametrize("name", ["median", "std_dev"])
+def test_a_spread_needs_numbers(name: str) -> None:
+    with pytest.raises(QueryError, match="needs a numeric field"):
+        summarize([], **{name: "Status"})
+
+
+def test_each_period_is_compared_with_the_one_before() -> None:
+    records = [
+        rec(Due=date(2027, 1, 5), Hours=4),
+        rec(Due=date(2027, 1, 20), Hours=6),
+        rec(Due=date(2027, 2, 3), Hours=7),
+        rec(Due=date(2027, 4, 1), Hours=1),
+        rec(Hours=100),
+    ]
+    rows = summarize(
+        records, group_by=Period("Due", "month"), sum="Hours", avg="Hours", compare_periods=True
+    )
+    changes = {row.group["Due"]: row.change for row in rows}
+    assert changes["2027-01"] is None  # Nothing before it was summarized.
+    assert changes[None] is None
+    february = changes["2027-02"]
+    assert february is not None
+    assert (february.previous, february.count) == ("2027-01", -1)
+    assert february.values == {"sum": {"Hours": -3.0}, "avg": {"Hours": 2.0}}
+    april = changes["2027-04"]
+    assert april is not None
+    # March had no records, so its sum is 0 and it has no average.
+    assert (april.previous, april.count) == ("2027-03", 1)
+    assert april.values == {"sum": {"Hours": 1.0}, "avg": {"Hours": None}}
+
+
+def test_periods_are_compared_within_the_other_groups() -> None:
+    records = [
+        rec(Status="a", Due=date(2027, 1, 1)),
+        rec(Status="a", Due=date(2027, 2, 1)),
+        rec(Status="a", Due=date(2027, 2, 2)),
+        rec(Status="b", Due=date(2027, 2, 1)),
+    ]
+    rows = summarize(records, group_by=["Status", Period("Due", "month")], compare_periods=True)
+    found = {
+        (row.group["Status"], row.group["Due"]): row.change and row.change.count for row in rows
+    }
+    assert found == {("a", "2027-01"): None, ("a", "2027-02"): 1, ("b", "2027-02"): 1}
+
+
+@pytest.mark.parametrize(
+    ("unit", "label", "previous"),
+    [
+        ("day", "2027-03-01", "2027-02-28"),
+        ("week", "2027-W01", "2026-W53"),
+        ("month", "2027-01", "2026-12"),
+        ("quarter", "2027-Q1", "2026-Q4"),
+        ("quarter", "2027-Q3", "2027-Q2"),
+        ("year", "2027", "2026"),
+    ],
+)
+def test_the_period_before_crosses_years(unit: Any, label: str, previous: str) -> None:
+    from pyquickbase._summary import _previous_period  # pyright: ignore[reportPrivateUsage]
+
+    assert _previous_period(label, unit) == previous
+
+
+@pytest.mark.parametrize(
+    "group_by", [None, "Status", [Period("Due", "month"), Period("Started", "year")]]
+)
+def test_comparing_needs_exactly_one_period(group_by: Any) -> None:
+    with pytest.raises(QueryError, match="exactly one Period"):
+        summarize([], group_by=group_by, compare_periods=True)
+
+
+def test_rows_can_be_sorted_by_a_new_statistic() -> None:
+    records = [rec(Status=s, Hours=h) for s, h in (("a", 1), ("a", 9), ("b", 4), ("b", 5))]
+    rows = summarize(records, group_by="Status", median="Hours")
+    ordered = sort_rows(rows, [GroupSort("median", "Hours", descending=True)])
+    assert [row.group["Status"] for row in ordered] == ["a", "b"]

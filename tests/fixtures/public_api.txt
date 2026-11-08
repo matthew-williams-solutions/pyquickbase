@@ -126,7 +126,7 @@ class AsyncTable(object)
     async def resolve_field_ids(self, fields: Sequence[str | int]) -> list[int]
     async def run_formula(self, formula: str, *, record_id: int | None = None) -> FormulaResult
     async def settings_url(self) -> str
-    async def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records_scanned: int | None = None, page_size: int | None = None) -> list[SummaryRow]
+    async def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, median: str | int | F | Sequence[str | int | F] | None = None, std_dev: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, distinct_count: str | int | F | Sequence[str | int | F] | None = None, compare_periods: bool = False, max_records_scanned: int | None = None, page_size: int | None = None) -> list[SummaryRow]
     async def update(self, records: 'Iterable[Mapping[str | int, Any]] | DataFrame', *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     async def update_field(self, field: str | int, *, label: str | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None) -> Field
     async def update_info(self, *, name: str | None = None, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> TableInfo
@@ -400,6 +400,12 @@ class Period(object)
     field field: str | int | F
     field tz: tzinfo
     field unit: Literal['day', 'week', 'month', 'quarter', 'year']
+class PeriodChange(object)
+    def __eq__(self, other)
+    def __init__(self, *, previous: str, count: int, values: Mapping[str, Mapping[str, float | None]] = <factory>) -> None
+    field count: int
+    field previous: str
+    field values: Mapping[str, Mapping[str, float | None]]
 value PeriodUnit = Literal['day', 'week', 'month', 'quarter', 'year']
 class PermissionDeniedError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
@@ -569,16 +575,22 @@ class SettingChange(object)
     def __init__(self, before: Any, after: Any) -> None
     field after: Any
     field before: Any
+value StatisticName = Literal['sum', 'avg', 'median', 'std_dev', 'min', 'max', 'distinct_count']
 value SummaryFunction = Literal['sum', 'avg', 'max', 'min', 'std_dev', 'count', 'distinct_count', 'combined_text', 'combined_user']
 value SummaryGroups = str | int | F | Period | Sequence[str | int | F | Period]
 class SummaryRow(object)
     def __eq__(self, other)
-    def __init__(self, *, group: Mapping[str, Any] = <factory>, count: int = 0, sum: Mapping[str, float] = <factory>, avg: Mapping[str, float | None] = <factory>, min: Mapping[str, Any] = <factory>, max: Mapping[str, Any] = <factory>) -> None
+    def __init__(self, *, group: Mapping[str, Any] = <factory>, count: int = 0, sum: Mapping[str, float] = <factory>, avg: Mapping[str, float | None] = <factory>, median: Mapping[str, float | None] = <factory>, std_dev: Mapping[str, float | None] = <factory>, min: Mapping[str, Any] = <factory>, max: Mapping[str, Any] = <factory>, distinct_count: Mapping[str, int] = <factory>, change: PeriodChange | None = None) -> None
     field avg: Mapping[str, float | None]
+    field change: PeriodChange | None
     field count: int
+    field distinct_count: Mapping[str, int]
     field group: Mapping[str, Any]
     field max: Mapping[str, Any]
+    field median: Mapping[str, float | None]
     field min: Mapping[str, Any]
+    def statistic(self, name: Literal['sum', 'avg', 'median', 'std_dev', 'min', 'max', 'distinct_count']) -> Mapping[str, Any]
+    field std_dev: Mapping[str, float | None]
     field sum: Mapping[str, float]
 class Table(object)
     def compile_where(self, where: Expression | str) -> str
@@ -621,7 +633,7 @@ class Table(object)
     def resolve_field_ids(self, fields: Sequence[str | int]) -> list[int]
     def run_formula(self, formula: str, *, record_id: int | None = None) -> FormulaResult
     def settings_url(self) -> str
-    def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records_scanned: int | None = None, page_size: int | None = None) -> list[SummaryRow]
+    def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, median: str | int | F | Sequence[str | int | F] | None = None, std_dev: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, distinct_count: str | int | F | Sequence[str | int | F] | None = None, compare_periods: bool = False, max_records_scanned: int | None = None, page_size: int | None = None) -> list[SummaryRow]
     def update(self, records: 'Iterable[Mapping[str | int, Any]] | DataFrame', *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     def update_field(self, field: str | int, *, label: str | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None) -> Field
     def update_info(self, *, name: str | None = None, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> TableInfo

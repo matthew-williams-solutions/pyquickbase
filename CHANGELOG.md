@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **More statistics in `summarize()`:** `median`, `std_dev` (sample standard deviation), and
+  `distinct_count`, beside `sum`, `avg`, `min`, and `max`. Each is exact, worked out from `Decimal`
+  values, and the `summarize` operation offers them to models, with aliases such as `stdev`.
+- **`summarize(compare_periods=True)`** gives each row a `change`, a `PeriodChange` with how its
+  count and statistics changed since the period before, within the same other groups. A period
+  without records counts as empty rather than being skipped.
+- `SummaryRow.statistic()` reads a statistic by name, and `StatisticName` names them.
+
 - **DataFrames.** `to_pandas()` and `to_polars()` on `query()`, a report's `run()`, and any `Page`
   fetch records into a DataFrame, with a column for each field, which a query with no matches still
   has. `insert()`, `update()`, `upsert()`, and `preview_update()` take a pandas or polars DataFrame
@@ -38,6 +46,9 @@ All notable changes to this project are documented here. The format follows
 - `TooManyRecordsError`, with `matched` and `limit`, and the tool error code `too_many_records`.
 
 ### Changed
+
+- Every statistic is defined once, in `_summary.STATISTICS`, which the summary, the operation's
+  schema, group sorting, and `tool_result()` read, so adding one changes one place.
 
 - **`preview_delete()` returns a `DeletePreview`,** a `Page` with `events`.
 - `ReadAction` adds `field_usage` and `app_events`, and `WriteAction` adds `create_app`, `copy_app`,

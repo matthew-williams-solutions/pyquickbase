@@ -25,7 +25,7 @@ from ._decision import Decision, Named
 from ._models import RECORD_ID_FIELD, Field, FieldIndex, ReportInfo
 from ._query import NO_VALUE, Condition, Expression, FieldRef, Group
 from ._read_request import ReadRequest
-from ._summary import GroupSort, GroupSortKind, Period, PeriodUnit
+from ._summary import STATISTICS, GroupSort, GroupSortKind, Period, PeriodUnit
 from ._where_data import case_hint, normalize_where, where_from_dict, where_schema
 from ._writes import FileUpload
 from .errors import (
@@ -181,6 +181,11 @@ _AGGREGATE_ALIASES = {
     "mean": "avg",
     "minimum": "min",
     "maximum": "max",
+    "stdev": "std_dev",
+    "stddev": "std_dev",
+    "standard_deviation": "std_dev",
+    "count_distinct": "distinct_count",
+    "unique_count": "distinct_count",
 }
 # Keys a model writes for an order_by item's direction, other than direction itself.
 _DIRECTION_KEYS = ("order", "dir", "sort_order")
@@ -736,15 +741,16 @@ def _read_records(ctx: Context, value: Any, *, update: bool, group: str) -> list
 
 def _summary_fields(ctx: Context) -> dict[str, Sequence[Field]]:
     readable = ctx.allowed.readable
-    numeric = [item for item in readable if item.type in _NUMERIC_TYPES]
-    ranged = [item for item in readable if item.type in _RANGE_TYPES]
+    groupable = [item for item in readable if item.type not in _UNGROUPABLE_TYPES]
     return {
-        "group_by": [item for item in readable if item.type not in _UNGROUPABLE_TYPES],
+        "group_by": groupable,
         "dates": [item for item in readable if item.type in _DATE_TYPES],
-        "sum": numeric,
-        "avg": numeric,
-        "min": ranged,
-        "max": ranged,
+        **{
+            name: groupable
+            if statistic.takes is None
+            else [item for item in readable if item.type in statistic.takes]
+            for name, statistic in STATISTICS.items()
+        },
     }
 
 
@@ -774,14 +780,15 @@ def _summary(ctx: Context) -> dict[str, Any]:
             'or year with {"field": ..., "unit": ...}. Without this, there\'s one group.'
             + _glossary(groupable, ctx.descriptions),
         }
-    for name, what in (
-        ("sum", "add up"),
-        ("avg", "average"),
-        ("min", "find the lowest of"),
-        ("max", "find the highest of"),
-    ):
+    for name, statistic in STATISTICS.items():
         if offered[name]:
-            parts[name] = _array_of(_labels(offered[name]), f"Fields to {what}.")
+            parts[name] = _array_of(_labels(offered[name]), f"Fields to {statistic.does}.")
+    if dates:
+        parts["compare_periods"] = {
+            "type": "boolean",
+            "description": "Add each group's change since the period before, such as month over "
+            "month. group_by needs exactly one date with a unit.",
+        }
     parts["order_by"] = {
         "type": "array",
         "minItems": 1,
@@ -797,7 +804,7 @@ def _summary(ctx: Context) -> dict[str, Any]:
             "additionalProperties": False,
         },
         "description": 'How to sort the groups, first to last: by "count", by "group" and a '
-        'group_by field, or by "sum", "avg", "min", or "max" and a field it calculates. Empty '
+        'group_by field, or by a statistic, such as "sum", and a field it calculates. Empty '
         "values sort last. Without this, groups are in order of their values. For the most or "
         'the top groups, sort by count or a total, "desc", and set limit.',
     }
@@ -832,9 +839,14 @@ def _read_summary(ctx: Context, arguments: Mapping[str, Any]) -> dict[str, Any]:
                 hint = case_hint(item, _labels(offered["group_by"]))
                 raise QueryError(f"{path} isn't a field this tool may group by.{hint}")
         found["group_by"] = groups
-    for key in ("sum", "avg", "min", "max"):
+    for key in STATISTICS:
         if key in arguments:
             found[key] = _field_names(arguments[key], key, offered[key])
+    if "compare_periods" in arguments:
+        compare = arguments["compare_periods"]
+        if not isinstance(compare, bool):
+            raise QueryError("compare_periods must be true or false.")
+        found["compare_periods"] = compare
     return found
 
 

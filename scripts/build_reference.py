@@ -154,6 +154,7 @@ TITLES: dict[str, dict[str, str]] = {
         "RecordIterator.to_polars": "Fetch records into polars",
         "Page.to_pandas": "Turn a page into pandas",
         "Page.to_polars": "Turn a page into polars",
+        "SummaryRow.statistic": "Get one statistic's values",
     },
     "retries": {
         "RetryPolicy.backoff": "Get the backoff delay",
@@ -262,6 +263,7 @@ ALIASES = {
     "FieldRef": "A field, by label (`str`) or ID (`int`).",
     "FieldRefs": "One or more fields, by label, ID, or `F`, as `select` and `order_by` take them.",
     "PeriodUnit": "How much time each group of a `Period` covers.",
+    "StatisticName": "A value `summarize()` works out from one field's values in each group.",
     "SummaryGroups": "What `Table.summarize()` can group by.",
     "WriteAction": "What kind of write a `WriteRequest` is.",
     "SchemaChange": (
@@ -644,7 +646,14 @@ SYMBOL_PAGES = (
                 "Summaries",
                 "summaries",
                 _READING,
-                ("SummaryRow", "Period", "PeriodUnit", "SummaryGroups"),
+                (
+                    "SummaryRow",
+                    "PeriodChange",
+                    "Period",
+                    "PeriodUnit",
+                    "StatisticName",
+                    "SummaryGroups",
+                ),
             ),
         ),
     ),

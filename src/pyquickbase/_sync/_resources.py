@@ -110,7 +110,7 @@ from .._schema_plan import (
     quickbase_function,
     summary_function,
 )
-from .._summary import Summary, SummaryGroups, SummaryRow, sort_rows
+from .._summary import StatisticName, Summary, SummaryGroups, SummaryRow, sort_rows
 from .._write_request import UNSAFE_FORMULA_TYPES
 from .._writes import (
     FIELD_SETTINGS,
@@ -1378,18 +1378,25 @@ class Table:
         where: Expression | str | None = None,
         sum: FieldRefs | None = None,
         avg: FieldRefs | None = None,
+        median: FieldRefs | None = None,
+        std_dev: FieldRefs | None = None,
         min: FieldRefs | None = None,
         max: FieldRefs | None = None,
+        distinct_count: FieldRefs | None = None,
+        compare_periods: bool = False,
         max_records_scanned: int | None = None,
         page_size: int | None = None,
     ) -> list[SummaryRow]:
-        """Count and total records, overall or per group, without a saved report.
+        """Count, total, and compare records, overall or per group, without a saved report.
 
-        A summary that only counts, with no `group_by`, `sum`, `avg`, `min`, or `max`, asks
-        Quickbase how many records match, in one request, and reads none. Any other summary reads
-        every matching record, in pages of up to 25,000. Records can change between pages, so on a
-        table in use, the result may not match any one moment. A field's values are added
-        exactly, and returned as `float`.
+        A summary that only counts, with no `group_by` or statistics, asks Quickbase how many
+        records match, in one request, and reads none. Any other summary reads every matching
+        record, in pages of up to 25,000. Records can change between pages, so on a table in use,
+        the result may not match any one moment. A field's values are added exactly, and returned
+        as `float`.
+
+        A median keeps every value of its field in memory until the summary ends, so give it
+        `max_records_scanned` on a large table.
 
         Args:
             group_by: The fields to group by, and `Period` for dates. Without this, the result is
@@ -1397,8 +1404,17 @@ class Table:
             where: A condition built with `F` or `where_from_dict()`, or a hand-written string.
             sum: Numeric fields to add up. Empty values are skipped.
             avg: Numeric fields to average. Empty values are skipped.
+            median: Numeric fields to find the middle value of. Empty values are skipped.
+            std_dev: Numeric fields to find the sample standard deviation of. Empty values are
+                skipped.
             min: Numeric, date, timestamp, or time of day fields to find the lowest of.
             max: Numeric, date, timestamp, or time of day fields to find the highest of.
+            distinct_count: Fields to count the different values of, such as how many clients
+                have records. Empty values are skipped.
+            compare_periods: Say how each group changed since the period before, in its
+                `change`. `group_by` must have exactly one `Period`, and the other fields in it
+                stay the same, so `[Period("Due", "month"), "Owner"]` compares each owner's months.
+                A filter that cuts a period short makes that period look smaller.
             max_records_scanned: Raise `TooManyRecordsError` if more records match than this,
                 without reading them. A summary that only counts reads no records, so this doesn't
                 limit it. It never returns a partial result. An agent's tool should always set
@@ -1426,14 +1442,21 @@ class Table:
             _require_positive("page_size", page_size)
         if max_records_scanned is not None:
             _require_positive("max_records_scanned", max_records_scanned)
+        statistics: dict[StatisticName, FieldRefs | None] = {
+            "sum": sum,
+            "avg": avg,
+            "median": median,
+            "std_dev": std_dev,
+            "min": min,
+            "max": max,
+            "distinct_count": distinct_count,
+        }
         summary = self._with_fields(
             lambda fields: Summary(
                 fields,
                 group_by=group_by,
-                sum=sum,
-                avg=avg,
-                min=min,
-                max=max,
+                statistics=statistics,
+                compare_periods=compare_periods,
             )
         )
         if summary.counts_only:

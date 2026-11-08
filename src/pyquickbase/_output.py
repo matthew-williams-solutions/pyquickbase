@@ -44,7 +44,7 @@ from ._schema_plan import (
     SchemaPlan,
     change_action,
 )
-from ._summary import SummaryRow
+from ._summary import STATISTICS, SummaryRow
 from ._writes import RowError, WriteResult
 from .errors import (
     APIError,
@@ -555,10 +555,16 @@ def _groups(rows: Sequence[SummaryRow], state: _State, *, total: int, skip: int)
 
 def _summary(row: SummaryRow, state: _State) -> dict[str, Any]:
     found: dict[str, Any] = {"group": _value(dict(row.group), state) or {}, "count": row.count}
-    for name in ("sum", "avg", "min", "max"):
-        values: Mapping[str, Any] = getattr(row, name)
+    for name in STATISTICS:
+        values = row.statistic(name)
         if values:
             found[name] = {label: _value(item, state) for label, item in values.items()}
+    if row.change is not None:
+        found["change"] = {
+            "previous": row.change.previous,
+            "count": row.change.count,
+            **{name: dict(values) for name, values in row.change.values.items()},
+        }
     return found
 
 

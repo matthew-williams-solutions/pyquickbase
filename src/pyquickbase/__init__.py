@@ -69,7 +69,14 @@ from ._schema_plan import (
     UpdateField,
     UpdateTable,
 )
-from ._summary import Period, PeriodUnit, SummaryGroups, SummaryRow
+from ._summary import (
+    Period,
+    PeriodChange,
+    PeriodUnit,
+    StatisticName,
+    SummaryGroups,
+    SummaryRow,
+)
 from ._sync._client import Quickbase
 from ._sync._resources import (
     App,
@@ -163,6 +170,7 @@ __all__ = [
     "OperationName",
     "Page",
     "Period",
+    "PeriodChange",
     "PeriodUnit",
     "PermissionDeniedError",
     "PlannedChange",
@@ -198,6 +206,7 @@ __all__ = [
     "SchemaVerb",
     "ServerError",
     "SettingChange",
+    "StatisticName",
     "SummaryFunction",
     "SummaryGroups",
     "SummaryRow",

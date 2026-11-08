@@ -1,13 +1,16 @@
-"""Count and total records, overall or per group. No network access.
+"""Count, total, and compare records, overall or per group. No network access.
 
 A model shouldn't do arithmetic it can be handed, and a wrong total that looks right is the worst
 outcome here, so a value that isn't what its field's type says raises an error, rather than being
 skipped. Totals add `Decimal` values, as floats would pick up rounding errors along the way.
+
+Every statistic is listed once, in `STATISTICS`, which the summary, its operation's schema, sorting,
+and `tool_result()` all read.
 """
 
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, tzinfo
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from decimal import Decimal
 from typing import Any, Literal, cast, get_args
 
@@ -32,6 +35,30 @@ _MIN_PAGE_SIZE = 1_000
 _MAX_PAGE_SIZE = 25_000
 _LONG_TEXT_TYPES = frozenset({"text-multi-line", "rich-text"})
 _LONG_TEXT_WEIGHT = 4
+
+StatisticName = Literal["sum", "avg", "median", "std_dev", "min", "max", "distinct_count"]
+"""A value `summarize()` works out for each group, from one field's values."""
+
+
+@dataclass(frozen=True, slots=True)
+class Statistic:
+    """What one statistic takes, and what it does in words, for an operation's schema."""
+
+    takes: frozenset[str] | None
+    """The field types it works on, or None for any field a summary can group by."""
+    does: str
+
+
+STATISTICS: Mapping[StatisticName, Statistic] = {
+    "sum": Statistic(_NUMERIC_TYPES, "add up"),
+    "avg": Statistic(_NUMERIC_TYPES, "average"),
+    "median": Statistic(_NUMERIC_TYPES, "find the middle value of"),
+    "std_dev": Statistic(_NUMERIC_TYPES, "find the sample standard deviation of"),
+    "min": Statistic(_RANGE_TYPES, "find the lowest of"),
+    "max": Statistic(_RANGE_TYPES, "find the highest of"),
+    "distinct_count": Statistic(None, "count the different values of"),
+}
+"""Every statistic, in the order results list them."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +95,25 @@ SummaryGroups = FieldRef | F | Period | Sequence[FieldRef | F | Period]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class PeriodChange:
+    """How a group changed since the period before it, from `summarize(compare_periods=True)`.
+
+    Attributes:
+        previous: The period it's compared with, such as `2026-02` for `2026-03`.
+        count: How many more records there are, which is negative for fewer.
+        values: How much each numeric statistic rose, as `{"sum": {"Hours": 4.0}}`, or None where
+            either period has no value. A period without records counts as 0 for `sum` and
+            `distinct_count`, and has no value for the others.
+    """
+
+    previous: str
+    count: int
+    values: Mapping[str, Mapping[str, float | None]] = field(
+        default_factory=dict[str, Mapping[str, float | None]]
+    )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class SummaryRow:
     """One group of records, from `table.summarize()`. Values are keyed by field label.
 
@@ -77,8 +123,16 @@ class SummaryRow:
         count: How many records are in the group, including those with empty values.
         sum: The sum of each `sum` field, which is 0 if every value is empty.
         avg: The average of each `avg` field, or None if every value is empty.
+        median: The middle value of each `median` field, or the average of the two middle ones,
+            or None if every value is empty.
+        std_dev: The sample standard deviation of each `std_dev` field, or None with fewer than
+            two values.
         min: The lowest value of each `min` field, or None if every value is empty.
         max: The highest value of each `max` field, or None if every value is empty.
+        distinct_count: How many different values each `distinct_count` field has, leaving out
+            empty ones.
+        change: With `compare_periods`, how the group changed since the period before. None for
+            the first period, and without `compare_periods`.
 
     `repr` shows only the row's shape, because values may be sensitive and reprs end up in logs.
     """
@@ -87,8 +141,23 @@ class SummaryRow:
     count: int = 0
     sum: Mapping[str, float] = field(default_factory=dict[str, float])
     avg: Mapping[str, float | None] = field(default_factory=dict[str, float | None])
+    median: Mapping[str, float | None] = field(default_factory=dict[str, float | None])
+    std_dev: Mapping[str, float | None] = field(default_factory=dict[str, float | None])
     min: Mapping[str, Any] = field(default_factory=dict[str, Any])
     max: Mapping[str, Any] = field(default_factory=dict[str, Any])
+    distinct_count: Mapping[str, int] = field(default_factory=dict[str, int])
+    change: PeriodChange | None = None
+
+    def statistic(self, name: StatisticName) -> Mapping[str, Any]:
+        """One statistic's values, by field label, such as `row.statistic("sum")`.
+
+        Args:
+            name: The statistic, such as `sum` or `median`.
+
+        Returns:
+            Its values, by field label, which is empty if the summary didn't ask for it.
+        """
+        return cast(Mapping[str, Any], getattr(self, name))
 
     def __repr__(self) -> str:
         return f"SummaryRow(group={sorted(self.group)!r}, count={self.count!r})"
@@ -105,6 +174,23 @@ def _period_label(value: date, unit: PeriodUnit) -> str:
     if unit == "quarter":
         return f"{value.year}-Q{(value.month - 1) // 3 + 1}"
     return str(value.year)
+
+
+def _previous_period(label: str, unit: PeriodUnit) -> str:
+    """The label of the period before one, such as `2026-02` for `2026-03`."""
+    if unit == "day":
+        return (date.fromisoformat(label) - timedelta(days=1)).isoformat()
+    if unit == "week":
+        year, week = label.split("-W")
+        monday = date.fromisocalendar(int(year), int(week), 1)
+        return _period_label(monday - timedelta(days=7), "week")
+    if unit == "month":
+        year, month = (int(part) for part in label.split("-"))
+        return f"{year - 1}-12" if month == 1 else f"{year}-{month - 1:02d}"
+    if unit == "quarter":
+        year, quarter = label.split("-Q")
+        return f"{int(year) - 1}-Q4" if quarter == "1" else f"{year}-Q{int(quarter) - 1}"
+    return str(int(label) - 1)
 
 
 def _unexpected(item: Field) -> InvalidResponseError:
@@ -128,7 +214,9 @@ def _group_order(value: Any) -> tuple[bool, str, Any]:
     return (False, type(value).__name__, value)
 
 
-GroupSortKind = Literal["count", "group", "sum", "avg", "min", "max"]
+GroupSortKind = Literal[
+    "count", "group", "sum", "avg", "median", "std_dev", "min", "max", "distinct_count"
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,8 +232,7 @@ class GroupSort:
             return row.count
         if self.kind == "group":
             return row.group.get(cast(str, self.label))
-        values: Mapping[str, Any] = getattr(row, self.kind)
-        return values.get(cast(str, self.label))
+        return row.statistic(self.kind).get(cast(str, self.label))
 
 
 def sort_rows(rows: Sequence["SummaryRow"], keys: Sequence[GroupSort]) -> list["SummaryRow"]:
@@ -163,13 +250,51 @@ def sort_rows(rows: Sequence["SummaryRow"], keys: Sequence[GroupSort]) -> list["
     return ordered
 
 
+class _Numbers:
+    """One numeric field's values in a group, kept exactly, with every value only for a median."""
+
+    __slots__ = ("count", "squares", "total", "values")
+
+    def __init__(self, keep: bool) -> None:
+        self.count = 0
+        self.total = Decimal(0)
+        self.squares = Decimal(0)
+        self.values: list[Decimal] | None = [] if keep else None
+
+    def add(self, value: Decimal) -> None:
+        self.count += 1
+        self.total += value
+        self.squares += value * value
+        if self.values is not None:
+            self.values.append(value)
+
+    def average(self) -> float | None:
+        return float(self.total / self.count) if self.count else None
+
+    def median(self) -> float | None:
+        if not self.values:
+            return None
+        ordered = sorted(self.values)
+        middle = len(ordered) // 2
+        if len(ordered) % 2:
+            return float(ordered[middle])
+        return float((ordered[middle - 1] + ordered[middle]) / 2)
+
+    def std_dev(self) -> float | None:
+        if self.count < 2:
+            return None
+        spread = self.squares - self.total * self.total / self.count
+        # Rounding can leave a tiny negative where every value is the same.
+        return float((max(spread, Decimal(0)) / (self.count - 1)).sqrt())
+
+
 class _Group:
     def __init__(self) -> None:
         self.count = 0
-        self.totals: dict[int, Decimal] = {}
-        self.counts: dict[int, int] = {}
+        self.numbers: dict[int, _Numbers] = {}
         self.lowest: dict[int, Any] = {}
         self.highest: dict[int, Any] = {}
+        self.distinct: dict[int, set[Any]] = {}
 
 
 class Summary:
@@ -180,20 +305,23 @@ class Summary:
         all_fields: Sequence[Field],
         *,
         group_by: SummaryGroups | None,
-        sum: FieldRefs | None,
-        avg: FieldRefs | None,
-        min: FieldRefs | None,
-        max: FieldRefs | None,
+        statistics: Mapping[StatisticName, FieldRefs | None],
+        compare_periods: bool = False,
     ) -> None:
         self._index = FieldIndex(all_fields)
         self._groups = self._resolve_groups(group_by)
-        self._total = self._numeric(sum, "sum")
-        self._average = self._numeric(avg, "avg")
-        self._minimum = self._ranged(min, "min")
-        self._maximum = self._ranged(max, "max")
-        # Totals and averages share a running sum.
-        self._summed = {item.id: item for item in (*self._total, *self._average)}
-        self._ranged_fields = {item.id: item for item in (*self._minimum, *self._maximum)}
+        self._statistics: dict[StatisticName, list[Field]] = {
+            name: self._statistic_fields(name, statistics.get(name)) for name in STATISTICS
+        }
+        self._numeric = {
+            item.id: item
+            for name in ("sum", "avg", "median", "std_dev")
+            for item in self._statistics[name]
+        }
+        self._medians = {item.id for item in self._statistics["median"]}
+        self._ranged = {item.id: item for name in ("min", "max") for item in self._statistics[name]}
+        self._counted = {item.id: item for item in self._statistics["distinct_count"]}
+        self._compared = self._period_position() if compare_periods else None
         self._seen: dict[tuple[Any, ...], _Group] = {}
 
     def _resolve(self, ref: FieldRef | F) -> Field:
@@ -233,35 +361,39 @@ class Summary:
             raise QueryError("group_by can't use a field twice, as rows are keyed by its label.")
         return groups
 
-    def _numeric(self, refs: FieldRefs | None, argument: str) -> list[Field]:
-        items = [] if refs is None else [self._resolve(ref) for ref in _as_list(refs, argument)]
+    def _statistic_fields(self, name: StatisticName, refs: FieldRefs | None) -> list[Field]:
+        items = [] if refs is None else [self._resolve(ref) for ref in _as_list(refs, name)]
+        takes = STATISTICS[name].takes
         for item in items:
-            if item.type not in _NUMERIC_TYPES:
+            if takes is None and item.type in _UNGROUPABLE_TYPES:
                 raise QueryError(
-                    f"{argument} needs a numeric field, and {item.label!r} is {item.type}."
+                    f"{name} can't use {item.label!r}, because a record can hold several of its "
+                    "values."
                 )
+            if takes is not None and item.type not in takes:
+                kinds = "a numeric" if takes == _NUMERIC_TYPES else "a numeric, date, or time"
+                raise QueryError(f"{name} needs {kinds} field, and {item.label!r} is {item.type}.")
         return items
 
-    def _ranged(self, refs: FieldRefs | None, argument: str) -> list[Field]:
-        items = [] if refs is None else [self._resolve(ref) for ref in _as_list(refs, argument)]
-        for item in items:
-            if item.type not in _RANGE_TYPES:
-                raise QueryError(
-                    f"{argument} needs a numeric, date, or time field, and {item.label!r} is "
-                    f"{item.type}."
-                )
-        return items
+    def _period_position(self) -> int:
+        positions = [index for index, (_, period) in enumerate(self._groups) if period]
+        if len(positions) != 1:
+            raise QueryError(
+                "compare_periods needs exactly one Period in group_by, to say which period comes "
+                "before which."
+            )
+        return positions[0]
 
     @property
     def counts_only(self) -> bool:
         """Whether this summary only counts, so it needs no records, only how many match."""
-        return not self._groups and not self._summed and not self._ranged_fields
+        return not self._groups and not any(self._statistics.values())
 
     def page_size(self) -> int:
         """How many records to read per request: fewer when more fields are read."""
         read = {item.id: item for item, _ in self._groups}
-        read.update(self._summed)
-        read.update(self._ranged_fields)
+        for items in self._statistics.values():
+            read.update({item.id: item for item in items})
         weight = 1 + sum(  # Record ID# comes with every record.
             _LONG_TEXT_WEIGHT if item.type in _LONG_TEXT_TYPES else 1 for item in read.values()
         )
@@ -271,7 +403,9 @@ class Summary:
     def select(self) -> list[int]:
         """The fields a record needs for this summary."""
         ids = [item.id for item, _ in self._groups]
-        return list(dict.fromkeys([*ids, *self._summed, *self._ranged_fields]))
+        for items in self._statistics.values():
+            ids += [item.id for item in items]
+        return list(dict.fromkeys(ids))
 
     def _group_value(self, item: Field, period: Period | None, value: Any) -> Any:
         if _is_empty(value):
@@ -288,13 +422,15 @@ class Summary:
             raise _unexpected(item)
         return value  # pyright: ignore[reportUnknownVariableType]
 
-    def _add_sum(self, group: _Group, item: Field, value: Any) -> None:
+    def _add_number(self, group: _Group, item: Field, value: Any) -> None:
         if _is_empty(value):
             return
         if isinstance(value, bool) or not isinstance(value, int | float):
             raise _unexpected(item)
-        group.totals[item.id] = group.totals.get(item.id, Decimal(0)) + Decimal(str(value))
-        group.counts[item.id] = group.counts.get(item.id, 0) + 1
+        numbers = group.numbers.get(item.id)
+        if numbers is None:
+            numbers = group.numbers[item.id] = _Numbers(keep=item.id in self._medians)
+        numbers.add(Decimal(str(value)))
 
     def _add_range(self, group: _Group, item: Field, value: Any) -> None:
         if _is_empty(value):
@@ -312,34 +448,93 @@ class Summary:
         if item.id not in group.highest or value > group.highest[item.id]:
             group.highest[item.id] = value
 
+    def _add_distinct(self, group: _Group, item: Field, value: Any) -> None:
+        found = self._group_value(item, None, value)
+        if found is not None:
+            group.distinct.setdefault(item.id, set()).add(found)
+
     def add(self, record: Record) -> None:
         key = tuple(
             self._group_value(item, period, record.get(item.id)) for item, period in self._groups
         )
         group = self._seen.setdefault(key, _Group())
         group.count += 1
-        for item in self._summed.values():
-            self._add_sum(group, item, record.get(item.id))
-        for item in self._ranged_fields.values():
+        for item in self._numeric.values():
+            self._add_number(group, item, record.get(item.id))
+        for item in self._ranged.values():
             self._add_range(group, item, record.get(item.id))
+        for item in self._counted.values():
+            self._add_distinct(group, item, record.get(item.id))
+
+    def _values(self, group: _Group) -> dict[StatisticName, dict[str, Any]]:
+        def numbers(item: Field) -> _Numbers:
+            return group.numbers.get(item.id) or _Numbers(keep=False)
+
+        work: dict[StatisticName, Callable[[Field], Any]] = {
+            "sum": lambda item: float(numbers(item).total),
+            "avg": lambda item: numbers(item).average(),
+            "median": lambda item: numbers(item).median(),
+            "std_dev": lambda item: numbers(item).std_dev(),
+            "min": lambda item: group.lowest.get(item.id),
+            "max": lambda item: group.highest.get(item.id),
+            "distinct_count": lambda item: len(group.distinct.get(item.id, ())),
+        }
+        return {
+            name: {item.label: work[name](item) for item in items}
+            for name, items in self._statistics.items()
+        }
 
     def _row(self, key: tuple[Any, ...], group: _Group) -> SummaryRow:
-        def average(item: Field) -> float | None:
-            count = group.counts.get(item.id)
-            return float(group.totals[item.id] / count) if count else None
-
         return SummaryRow(
             group={item.label: value for (item, _), value in zip(self._groups, key, strict=True)},
             count=group.count,
-            sum={item.label: float(group.totals.get(item.id, 0)) for item in self._total},
-            avg={item.label: average(item) for item in self._average},
-            min={item.label: group.lowest.get(item.id) for item in self._minimum},
-            max={item.label: group.highest.get(item.id) for item in self._maximum},
+            **self._values(group),
         )
+
+    def _change(self, key: tuple[Any, ...], row: SummaryRow, first: str) -> PeriodChange | None:
+        position = cast(int, self._compared)
+        label = key[position]
+        if label is None or label <= first:
+            return None
+        unit = cast(Period, self._groups[position][1]).unit
+        previous_label = _previous_period(label, unit)
+        previous_key = (*key[:position], previous_label, *key[position + 1 :])
+        before = self._row(previous_key, self._seen.get(previous_key) or _Group())
+        values: dict[str, dict[str, float | None]] = {}
+        for name, current in self._values_of(row).items():
+            earlier = before.statistic(name)
+            values[name] = {
+                label: _difference(value, earlier.get(label)) for label, value in current.items()
+            }
+        return PeriodChange(previous=previous_label, count=row.count - before.count, values=values)
+
+    @staticmethod
+    def _values_of(row: SummaryRow) -> dict[StatisticName, Mapping[str, Any]]:
+        return {name: row.statistic(name) for name in STATISTICS if row.statistic(name)}
 
     def rows(self) -> list[SummaryRow]:
         """The result so far: sorted groups, or a single row if there's no grouping."""
         if not self._groups and not self._seen:
             return [self._row((), _Group())]
         ordered = sorted(self._seen, key=lambda key: tuple(_group_order(value) for value in key))
-        return [self._row(key, self._seen[key]) for key in ordered]
+        rows = [self._row(key, self._seen[key]) for key in ordered]
+        if self._compared is None:
+            return rows
+        # A period before the first one in the result is outside what was summarized.
+        labels = [key[self._compared] for key in ordered if key[self._compared] is not None]
+        if not labels:
+            return rows
+        first = min(labels)
+        return [
+            replace(row, change=self._change(key, row, first))
+            for key, row in zip(ordered, rows, strict=True)
+        ]
+
+
+def _difference(current: Any, previous: Any) -> float | None:
+    """How much a numeric statistic rose, or None if it isn't numeric in both periods."""
+    if isinstance(current, bool) or isinstance(previous, bool):
+        return None
+    if isinstance(current, int | float) and isinstance(previous, int | float):
+        return float(Decimal(str(current)) - Decimal(str(previous)))
+    return None

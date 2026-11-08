@@ -178,6 +178,24 @@ class Summarized(Fake):
         )
 
 
+async def test_a_summary_finds_medians_spreads_and_distinct_values() -> None:
+    async with client(Summarized()) as qb:
+        summarize = await qb.app("bq1234567").table("Tasks").operation("summarize")
+        properties = summarize.schema["properties"]
+        assert properties["median"]["items"]["enum"] == ["Hours"]
+        assert "Status" in properties["distinct_count"]["items"]["enum"]
+        # The table has no date field, so there's no period to compare.
+        assert "compare_periods" not in properties
+        [row] = await summarize.run(
+            {"median": ["Hours"], "stdev": ["Hours"], "count_distinct": ["Status"]}
+        )
+    assert (row.median, row.distinct_count) == ({"Hours": 4.5}, {"Status": 5})
+    assert round(row.std_dev["Hours"] or 0, 4) == 3.0277
+    result = tool_result([row])
+    assert result["groups"][0]["median"] == {"Hours": 4.5}
+    assert result["groups"][0]["distinct_count"] == {"Status": 5}
+
+
 async def test_summary_groups_sort_and_page() -> None:
     async with client(Summarized()) as qb:
         summarize = await qb.app("bq1234567").table("Tasks").operation("summarize")
@@ -207,7 +225,7 @@ async def test_summary_groups_sort_and_page() -> None:
         ([{"by": "sum", "field": "Hours"}], "must be a field this summary has in sum"),
         ([{"by": "group", "field": "Hours"}], "must be a field this summary has in group_by"),
         ([{"by": "count", "field": "Hours"}], "takes no field"),
-        ([{"by": "median"}], "by must be one of"),
+        ([{"by": "mode"}], "by must be one of"),
         ([{"by": "count", "direction": "down"}], "direction must be asc or desc"),
         ([], "list of 1 to 5"),
     ],
