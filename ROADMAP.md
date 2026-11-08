@@ -46,6 +46,10 @@ Nothing here should break anyone.
   `mkdocs.yml`, so update it if the config moves.
 - `llms.txt` is at `/pyquickbase/llms.txt`, not the domain root where some tools look, because the
   site is served from a subpath. Only a custom domain would change that.
+- Link each error to the docs, as Stripe does: a `doc_url` on every `QuickbaseError`, pointing to a
+  section on its cause and fix, at the end of its message, and in `tool_error()` results. The
+  sections must exist first, so `docs/reference/errors.md` or a new errors page needs a stable
+  anchor for each error, and a test that every error's anchor exists.
 - A small config file to choose generated names.
 - A setting that repeats a typed table's schema check after a set time.
 
