@@ -103,7 +103,7 @@ data based on [recorded API behavior](api-notes.md#writes).
 ## Install
 
 ```bash
-pip install pyquickbase==1.0.0rc12
+pip install pyquickbase==1.0.0rc13
 ```
 
 It needs Python 3.11 or newer. Next, see [Getting started](getting-started.md).
