@@ -75,7 +75,7 @@
   display: none;
 }
 
-/* Two-column pages, from TWO_COLUMN_PAGES: each method's description on the left, and its
+/* Class pages, in two columns: each method's description on the left, and its
    signature, example, and output on the right, which stays in view while its method scrolls past.
    The page's contents move to the left sidebar, so the content area is widened to make room. */
 body:has(.ref-method) .md-grid {

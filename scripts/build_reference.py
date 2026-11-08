@@ -28,15 +28,71 @@ ROOT = Path(__file__).resolve().parent.parent
 OUTPUT = ROOT / "docs" / "reference"
 EXAMPLES = ROOT / "docs_src" / "reference"
 CONSTRUCTOR = "__init__"
-# A prototype of a layout like Stripe's, on these pages only: each method's code beside it, and the
-# page's contents in the left sidebar.
-TWO_COLUMN_PAGES = {"table"}
-# Beyond this many parameters, a two-column page folds the rest away.
+# Beyond this many parameters, a class's page folds the rest away.
 MAX_SHOWN_PARAMETERS = 3
-# What each method on a two-column page is called in its heading and the sidebar: what it does, in
+# What each method on a class's page is called in its heading and the sidebar: what it does, in
 # plain words, with the method itself in the signature beside it. The same verb means the same kind
-# of action on every page: "Get or create" for an ensure_ method, and "Link to" for a URL.
+# of action on every page: "Get or create" for an ensure_ method, and "Link to" for a URL. A
+# property is named by what it is.
 TITLES: dict[str, dict[str, str]] = {
+    "quickbase": {
+        "__init__": "Create a client",
+        "from_env": "Create a client from the environment",
+        "close": "Close a client",
+        "app": "Get an app",
+        "realm": "The client's realm",
+        "policy": "The client's policy",
+        "clear_schema_cache": "Clear the metadata cache",
+        "request": "Call any endpoint",
+    },
+    "app": {
+        "id": "The app's ID",
+        "info": "Get the app's details",
+        "tables": "List tables",
+        "roles": "List roles",
+        "table": "Get a table",
+        "typed": "Get a typed table",
+        "url": "Link to the app",
+        "settings_url": "Link to the app's settings",
+        "ensure_table": "Get or create a table",
+        "create_table": "Create a table",
+        "preview_schema_changes": "Preview schema changes",
+        "apply_schema_changes": "Apply schema changes",
+        "operation": "Make a schema tool for a model",
+    },
+    "report": {
+        "run": "Run a report",
+        "run_page": "Fetch one page of a report",
+        "summary_rows": "Get a summary report's rows",
+        "info": "Get the report's details",
+        "url": "Link to the report",
+    },
+    "operation": {
+        "schema": "The arguments' JSON Schema",
+        "name": "The operation's name",
+        "run": "Run an operation",
+    },
+    "schema-operation": {
+        "schema": "The arguments' JSON Schema",
+        "name": "The operation's name",
+        "run": "Run a schema operation",
+    },
+    "typed-table": {
+        "query": "Query records",
+        "query_page": "Fetch one page of records",
+        "first": "Get the first matching record",
+        "get": "Get a record by ID",
+        "count": "Count records",
+        "insert": "Create records",
+        "update": "Update records",
+        "upsert": "Create or update records",
+        "delete": "Delete records",
+        "preview_update": "Preview an update",
+        "preview_delete": "Preview a delete",
+        "summarize": "Summarize records",
+        "check_schema": "Check the class against the table",
+        "table": "The untyped table",
+    },
     "table": {
         "query": "Query records",
         "query_page": "Fetch one page of records",
@@ -1381,9 +1437,7 @@ def _prose_lines(doc: Docstring, methods: dict[str, Method]) -> list[str]:
     return lines
 
 
-def _shown_parameters(
-    parameters: list[Parameter], methods: dict[str, Method]
-) -> list[str]:
+def _shown_parameters(parameters: list[Parameter], methods: dict[str, Method]) -> list[str]:
     """Write the first few parameters, and fold the rest away when there are many."""
     if len(parameters) <= MAX_SHOWN_PARAMETERS + 1:
         return _parameter_lines(parameters, methods)
@@ -1551,8 +1605,8 @@ def _two_column_method(method: Method, methods: dict[str, Method], title: str) -
     ]
 
 
-def _two_column_page(resource: Resource, methods: dict[str, Method]) -> str:
-    """Return a class's page laid out in two columns, with its contents in the left sidebar.
+def build_page(resource: Resource, methods: dict[str, Method]) -> str:
+    """Return a class's page for the site, in two columns, with its contents in the left sidebar.
 
     Each method's heading is its title from `TITLES`, and each method's "Returns" links to what it
     returns, so there's no table of return types.
@@ -1592,26 +1646,6 @@ def _two_column_page(resource: Resource, methods: dict[str, Method]) -> str:
         lines += [f"## {group.title} {{#{group.anchor}}}", "", *_guide_line(group)]
         for name in group.members:
             lines += _two_column_method(methods[name], methods, titles[name])
-    return "\n".join(lines)
-
-
-def build_page(resource: Resource, methods: dict[str, Method]) -> str:
-    """Return a class's page for the site, with a tab for each client in every example."""
-    if resource.slug in TWO_COLUMN_PAGES:
-        return _two_column_page(resource, methods)
-    lines = [
-        *_page_header(resource, methods),
-        "## What the methods return {#returns}",
-        "",
-        *_return_table(methods),
-    ]
-    for group in resource.groups:
-        lines += [f"## {group.title} {{#{group.anchor}}}", "", *_guide_line(group)]
-        for name in group.members:
-            method = methods[name]
-            lines += [f"### `{method.heading}` {{#{method.anchor}}}", ""]
-            lines += _describe(method, methods)
-            lines += _example_lines(method.sync_code, method.async_code, method.output)
     return "\n".join(lines)
 
 
