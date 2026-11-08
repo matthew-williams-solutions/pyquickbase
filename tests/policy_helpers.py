@@ -65,6 +65,7 @@ def snapshot(
     relationships: Sequence[dict[str, Any]] = (),
     reports: Mapping[str, list[dict[str, Any]]] | None = None,
     app_id: str = APP,
+    relationships_complete: bool = True,
 ) -> Snapshot:
     found = TABLES if tables is None else tables
     return Snapshot(
@@ -82,6 +83,7 @@ def snapshot(
             table_id: tuple(report_info_from_api(item) for item in items)
             for table_id, items in (reports or {}).items()
         },
+        relationships_complete=relationships_complete,
     )
 
 
@@ -93,8 +95,16 @@ def bind(
     relationships: Sequence[dict[str, Any]] = (),
     reports: Mapping[str, list[dict[str, Any]]] | None = None,
     app_id: str = APP,
+    relationships_complete: bool = True,
 ) -> BoundPolicy:
     policy = Policy(classes=classes, rules=rules, new_fields=new_fields)
     return bind_snapshot(
-        policy, snapshot(tables, relationships=relationships, reports=reports, app_id=app_id)
+        policy,
+        snapshot(
+            tables,
+            relationships=relationships,
+            reports=reports,
+            app_id=app_id,
+            relationships_complete=relationships_complete,
+        ),
     )

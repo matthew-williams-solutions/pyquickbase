@@ -243,6 +243,7 @@ class App:
         Raises:
             AuthenticationError: Quickbase doesn't recognize the app ID. It answers with a 401
                 here, rather than a 404.
+            PermissionDeniedError: The token's role can't edit the app's structure.
         """
         cached = self._cache.get(_app_key(self._id))
         if cached is not None:
@@ -561,11 +562,16 @@ class App:
         tables = self.tables(refresh=True)
         fields: dict[str, tuple[Field, ...]] = {}
         relationships: dict[tuple[str, str, int], Relationship] = {}
+        relationships_complete = True
         for info in tables:
             table = self.table(info.id)
             fields[info.id] = tuple(table.fields(refresh=True))
-            for item in table.relationships(refresh=True):
-                relationships[(item.parent_table_id, item.child_table_id, item.id)] = item
+            try:
+                for item in table.relationships(refresh=True):
+                    relationships[(item.parent_table_id, item.child_table_id, item.id)] = item
+            except PermissionDeniedError:
+                # Only a role that can edit the app's structure may read these.
+                relationships_complete = False
         wanted: set[str] = set()
         for rule in policy.rules:
             if isinstance(rule, PolicyRule) and rule.options.get("reports"):
@@ -583,6 +589,7 @@ class App:
             fields=fields,
             relationships=tuple(relationships.values()),
             reports=reports,
+            relationships_complete=relationships_complete,
         )
         return bind_snapshot(policy, snapshot)
 
@@ -847,6 +854,7 @@ class Table:
 
         Raises:
             UnknownTableError: This app has no such table.
+            PermissionDeniedError: The token's role can't edit the app's structure.
         """
         table_id = (self.info()).id
         key = f"relationships:{table_id}"

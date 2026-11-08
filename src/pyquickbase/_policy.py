@@ -781,6 +781,10 @@ class Policy:
         the app's tables, each table's fields and relationships, and the reports of any table
         `allow.report()` lists by name, so use a client that can see them all.
 
+        Quickbase only shows relationships to a role that can edit the app's structure. With any
+        other role this still binds, but if the policy hides a field or limits rows, every lookup
+        and summary field is hidden too, because what they read can't be traced.
+
         Args:
             app: The app, from a client without a policy.
 

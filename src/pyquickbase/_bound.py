@@ -67,6 +67,9 @@ class Snapshot:
     fields: Mapping[str, tuple[Field, ...]]
     relationships: tuple[Relationship, ...]
     reports: Mapping[str, tuple[ReportInfo, ...]] = field(default_factory=dict[str, Any])
+    relationships_complete: bool = True
+    """False when the token's role couldn't read them all. What's missing can't be traced, so every
+    lookup and summary is treated as reading whatever a policy hides or limits."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -1939,6 +1942,11 @@ def bind_snapshot(policy: Policy, snapshot: Snapshot) -> BoundPolicy:
                 query = (found.summary_query or "") if found else ""
                 if limit_text not in query:
                     seed.setdefault(link.parent, {}).setdefault(field_id, set()).add(_ROWS_CLASS)
+    if row_text and not snapshot.relationships_complete:
+        for table_id, value in snapshot.fields.items():
+            for item in value:
+                if item.mode in ("lookup", "summary"):
+                    seed.setdefault(table_id, {}).setdefault(item.id, set()).add(_ROWS_CLASS)
     if any(_ROWS_CLASS in value for found in seed.values() for value in found.values()):
         texts = "; ".join(sorted({text for _, text in row_text.values()}))
         rules.insert(

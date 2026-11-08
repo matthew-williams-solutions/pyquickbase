@@ -224,6 +224,35 @@ def test_a_lookup_from_a_row_limited_parent_is_hidden_but_onto_a_limited_child_i
     assert onto_limited.allows("lookup", "Tasks", source=("Notes", "Text")).allowed
 
 
+def unknown_links(*rules: Any, **options: Any) -> BoundPolicy:
+    reads = allow.read(tables.all())
+    return app(reads, *rules, relationships=[], relationships_complete=False, **options)
+
+
+def test_unknown_relationships_change_nothing_when_nothing_is_hidden() -> None:
+    policy = unknown_links()
+    assert policy.visible(TASKS, 28)
+    assert policy.visible(NOTES, 30)
+
+
+def test_unknown_relationships_hide_every_lookup_and_summary_from_a_hiding_policy() -> None:
+    policy = unknown_links(deny.all(fields.classed("pay")), classes=PAY_CLASS)
+    assert not policy.visible(TASKS, 20)
+    assert not policy.visible(TASKS, 28), "this lookup doesn't read Rate, but that can't be known"
+    assert not policy.visible(NOTES, 30)
+    assert not policy.visible(NOTES, 32)
+    assert policy.visible(TASKS, 6)
+    assert policy.visible(TASKS, 29), "a formula of a plain field can still be traced"
+
+
+def test_unknown_relationships_hide_every_lookup_and_summary_from_a_row_limit() -> None:
+    policy = unknown_links(limit.rows(NOTES, F("Text") == "x"))
+    assert not policy.visible(TASKS, 28)
+    assert not policy.visible(NOTES, 30)
+    assert not policy.visible(NOTES, 31), "a filter can't show it holds a limit on an unknown table"
+    assert policy.visible(TASKS, 6)
+
+
 def test_a_row_limited_table_refuses_what_the_limit_cant_be_added_to() -> None:
     policy = app(
         allow.read(TASKS),

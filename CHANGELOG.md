@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `Policy.bind()` no longer fails for a role without "Edit app structure and permissions", which
+  Quickbase doesn't show relationships to. If the policy hides a field or limits rows, every lookup
+  and summary field is then hidden too, because what they read can't be traced.
+
 ## [1.0.0rc13] - 2026-11-08
 
 This candidate adds CSV and Excel files, DataFrames, more statistics in summaries, field usage, app

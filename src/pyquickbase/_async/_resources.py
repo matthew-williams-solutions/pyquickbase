@@ -242,6 +242,7 @@ class AsyncApp:
         Raises:
             AuthenticationError: Quickbase doesn't recognize the app ID. It answers with a 401
                 here, rather than a 404.
+            PermissionDeniedError: The token's role can't edit the app's structure.
         """
         cached = self._cache.get(_app_key(self._id))
         if cached is not None:
@@ -562,11 +563,16 @@ class AsyncApp:
         tables = await self.tables(refresh=True)
         fields: dict[str, tuple[Field, ...]] = {}
         relationships: dict[tuple[str, str, int], Relationship] = {}
+        relationships_complete = True
         for info in tables:
             table = self.table(info.id)
             fields[info.id] = tuple(await table.fields(refresh=True))
-            for item in await table.relationships(refresh=True):
-                relationships[(item.parent_table_id, item.child_table_id, item.id)] = item
+            try:
+                for item in await table.relationships(refresh=True):
+                    relationships[(item.parent_table_id, item.child_table_id, item.id)] = item
+            except PermissionDeniedError:
+                # Only a role that can edit the app's structure may read these.
+                relationships_complete = False
         wanted: set[str] = set()
         for rule in policy.rules:
             if isinstance(rule, PolicyRule) and rule.options.get("reports"):
@@ -584,6 +590,7 @@ class AsyncApp:
             fields=fields,
             relationships=tuple(relationships.values()),
             reports=reports,
+            relationships_complete=relationships_complete,
         )
         return bind_snapshot(policy, snapshot)
 
@@ -852,6 +859,7 @@ class AsyncTable:
 
         Raises:
             UnknownTableError: This app has no such table.
+            PermissionDeniedError: The token's role can't edit the app's structure.
         """
         table_id = (await self.info()).id
         key = f"relationships:{table_id}"

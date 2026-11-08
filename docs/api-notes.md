@@ -546,6 +546,7 @@ Tested on 2026-11-08 against the Integration Tests app and temporary apps the te
 | `GET /fields/usage` with `top` and `skip` | Pages as expected, but **a `skip` past the last field returns 500** |
 | `GET /fields/usage/{id}` | A list with one entry |
 | `GET /fields/usage` and `GET /apps/{id}/events` with a restricted user's token | **403**, `Insufficient permissions`, so both need an app administrator |
+| `GET /apps/{id}` and `GET /tables/{id}/relationships` with a token whose role lacks "Edit app structure and permissions" | **403**, `Insufficient permissions`, on an app the user can open. `GET /tables`, `GET /fields`, and `GET /reports` still return 200 for the tables the role can see. Tested on 2026-11-08 |
 | `GET /apps/{id}/events` on an app with none | 200, `[]` |
 
 ## Values written as text

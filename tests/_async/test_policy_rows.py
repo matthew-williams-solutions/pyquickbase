@@ -10,6 +10,7 @@ from pyquickbase import (
     AsyncQuickbase,
     BoundPolicy,
     F,
+    Policy,
     PolicyRefusedError,
     allow,
     limit,
@@ -139,6 +140,28 @@ async def test_a_lookup_from_a_row_limited_parent_is_refused() -> None:
             await tasks.ensure_lookup_field(relationship, "Name")
     assert caught.value.decision.rule == "limit.rows('bqprojects', F('Name') == 'Mine')"
     assert not fake.bodies("POST", f"/tables/{TASKS}/relationship/9")
+
+
+class RefusesRelationships(Fake):
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/relationships"):
+            return httpx.Response(403, json={"message": "Insufficient permissions"})
+        return super().__call__(request)
+
+
+async def test_a_role_that_cant_read_relationships_can_still_bind() -> None:
+    fake = RefusesRelationships()
+    properties = {"lookupReferenceFieldId": 9, "lookupTargetFieldId": 6}
+    fake.fields[TASKS].append(field(20, "Project Name", mode="lookup", properties=properties))
+    http = httpx.AsyncClient(transport=httpx.MockTransport(fake))
+    reads = allow.read(tables.all())
+    async with AsyncQuickbase(realm="acme", token="t", http_client=http) as qb:
+        app = qb.app(APP)
+        everything = await Policy(rules=[reads]).bind(app)
+        limited = await Policy(rules=[reads, limit.rows(PROJECTS, F("Name") == "Mine")]).bind(app)
+    assert everything.visible(TASKS, 20)
+    assert not limited.visible(TASKS, 20)
+    assert limited.visible(TASKS, 6)
 
 
 async def test_creating_a_table_gives_the_client_a_new_policy() -> None:
