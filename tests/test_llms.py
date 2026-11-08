@@ -18,7 +18,7 @@ CONFIG = build_llms.read_config()
 SITE = CONFIG.site_url
 INDEX = build_llms.build_index(CONFIG)
 FULL = build_llms.build_full(CONFIG)
-COVERED = [page for page in CONFIG.pages if page.path not in build_llms.LEFT_OUT]
+COVERED = [page for page in CONFIG.pages if build_llms.is_covered(page.path)]
 LINK = re.compile(r"\]\(([^)\s]+)")
 
 
@@ -45,13 +45,17 @@ def test_the_nav_lists_every_page() -> None:
         if path.parent != docs / "reference"
     }
     generated = {f"reference/{page.slug}.md" for page in build_reference.ALL_PAGES}
+    generated.add(build_llms.OVERVIEW)
     assert {page.path for page in CONFIG.pages} == written | generated
     assert "playground.md" in written
 
 
 def test_the_nav_keeps_its_sections() -> None:
     assert {page.path: page.section for page in CONFIG.pages}["agents/index.md"] == "AI agents"
-    assert {page.path: page.section for page in CONFIG.pages}["reference.md"] == "Reference"
+    sections = {page.path: page.section for page in CONFIG.pages}
+    assert sections["reference/index.md"] == "Reference"
+    assert sections["reference/table.md"] == "Reference"
+    assert sections["field-types.md"] == "Reference"
     assert {page.path: page.section for page in CONFIG.pages}["index.md"] is None
 
 
@@ -98,7 +102,7 @@ def test_the_index_follows_the_format() -> None:
 
 def test_every_link_in_the_index_is_under_the_site() -> None:
     found = links(INDEX)
-    assert len(found) == len(COVERED) + 1 + len(build_llms.REFERENCE_PAGES)
+    assert len(found) == len(COVERED) + 1 + len(build_llms.reference_pages())
     assert all(link.startswith(SITE) for link in found)
 
 
@@ -118,7 +122,7 @@ def test_links_to_other_sites_come_from_the_docs_unchanged() -> None:
 def test_links_between_pages_reach_real_pages() -> None:
     pages = {build_llms.page_url(SITE, page.path) for page in CONFIG.pages}
     files = {f"{SITE}llms.txt", f"{SITE}llms-full.txt"}
-    files |= {f"{SITE}reference/{page[1]}.txt" for page in build_llms.REFERENCE_PAGES}
+    files |= {f"{SITE}reference/{page[1]}.txt" for page in build_llms.reference_pages()}
     for link in links(FULL):
         if link.startswith(SITE) and "/playground-app/" not in link:
             assert link.partition("#")[0] in pages | files

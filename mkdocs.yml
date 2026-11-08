@@ -81,23 +81,31 @@ nav:
       - Recipes: policies/recipes.md
       - What a policy doesn't do: policies/limits.md
   - Reference:
-      - Overview: reference.md
-      - Quickbase: reference/quickbase.md
-      - App: reference/app.md
-      - Table: reference/table.md
-      - Report: reference/report.md
-      - Operation: reference/operation.md
-      - SchemaOperation: reference/schema-operation.md
-      - TypedTable: reference/typed-table.md
-      - Queries: reference/queries.md
-      - Records and results: reference/records.md
-      - Metadata: reference/metadata.md
-      - Schema changes: reference/schema-changes.md
-      - Limits and retries: reference/limits.md
-      - Tools for models: reference/tools.md
-      - Generated classes: reference/generated.md
-      - Errors: reference/errors.md
-      - Field types: field-types.md
+      - Overview: reference/index.md
+      - Core:
+          - Quickbase: reference/quickbase.md
+          - App: reference/app.md
+          - Table: reference/table.md
+          - Report: reference/report.md
+          - TypedTable: reference/typed-table.md
+          - Generated classes: reference/generated.md
+      - Data:
+          - Queries: reference/queries.md
+          - Records and results: reference/records.md
+          - Metadata: reference/metadata.md
+          - Field types: field-types.md
+      - Schema:
+          - Schema changes: reference/schema-changes.md
+          - SchemaOperation: reference/schema-operation.md
+      - Policies:
+          - Policies: reference/policies.md
+          - Rules: reference/rules.md
+      - AI agents:
+          - Operation: reference/operation.md
+          - Tools for models: reference/tools.md
+      - Errors and retries:
+          - Errors: reference/errors.md
+          - Retries: reference/retries.md
   - Playground: playground.md
   - Project:
       - Stability and versioning: stability.md

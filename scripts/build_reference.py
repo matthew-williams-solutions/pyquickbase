@@ -92,7 +92,7 @@ TITLES: dict[str, dict[str, str]] = {
         "where_schema": "Describe conditions as JSON Schema",
         "parse_where": "Check a hand-written condition",
     },
-    "limits": {
+    "policies": {
         "Policy.read_only": "Make a read-only policy",
         "Policy.bind": "Bind to an app",
         "Policy.bind_offline": "Bind without an app",
@@ -106,6 +106,8 @@ TITLES: dict[str, dict[str, str]] = {
         "BoundPolicy.to_json": "Save a bound policy",
         "BoundPolicy.from_json": "Load a bound policy",
         "Decision.message": "Get the refusal's message",
+    },
+    "rules": {
         "allow.filter": "Allow filtering",
         "allow.sort": "Allow sorting",
         "allow.insert": "Allow creating records",
@@ -137,6 +139,8 @@ TITLES: dict[str, dict[str, str]] = {
         "tables.all": "Select every table",
         "tables.created": "Select created tables",
         "Rule.decide": "Refuse a request",
+    },
+    "retries": {
         "RetryPolicy.backoff": "Get the backoff delay",
         "RetryPolicy.rate_limit_delay": "Get the wait after a 429",
     },
@@ -367,6 +371,9 @@ _WRITING = ("Writing records", "../guides/writing.md")
 _SCHEMA = ("Changing the schema", "../guides/schema.md")
 _CLIENTS = ("Configuring clients", "../guides/clients.md")
 _POLICIES = ("Policies", "../policies/index.md")
+_RULES = ("Writing rules", "../policies/rules.md")
+_CUSTOM_RULES = ("Rules of your own", "../policies/custom-rules.md")
+_DEBUGGING = ("Debugging refusals", "../policies/debugging.md")
 _CODEGEN = ("Generated classes", "../guides/codegen.md")
 _FILES = ("File attachments", "../guides/files.md")
 _FORMULAS = ("Formulas", "../guides/formulas.md")
@@ -599,6 +606,10 @@ RESOURCES = (
     ),
 )
 
+_OWN_CLIENT_NOTE = (
+    "Each example makes its own client from the environment, with `bqtasks123` standing for "
+    f"the ID of the `Job Tasks` table. {_LIVE_TEST}"
+)
 _SYMBOL_NOTE = (
     "The examples below use `tasks`, made as shown here, and `app`, which is "
     f'`qb.app("bq1234567")`. {_JOB_TASKS} {_LIVE_TEST}'
@@ -723,39 +734,47 @@ SYMBOL_PAGES = (
         ),
     ),
     SymbolPage(
-        "Limits and retries",
-        "limits",
-        "A `Policy` says what a client may read and change, and `RetryPolicy` how it retries. "
-        "Bind a policy to an app, and pass it to `Quickbase()` as `policy`. It protects against "
-        "bugs in your code and mistakes by a model, so give your token access to as little as "
-        "possible as well, as Quickbase's own permissions are still the real boundary.",
-        "Each example makes its own client from the environment, with `bqtasks123` standing for "
-        f"the ID of the `Job Tasks` table. {_LIVE_TEST}",
+        "Policies",
+        "policies",
+        "A `Policy` says what a client may read and change. Bind it to an app, which pins every "
+        "table and field by ID, and pass the `BoundPolicy` to `Quickbase()` as `policy`. It "
+        "protects against bugs in your code and mistakes by a model, so give your token access to "
+        "as little as possible as well, as Quickbase's own permissions are still the real "
+        "boundary.",
+        _OWN_CLIENT_NOTE,
+        "",
+        "",
+        (
+            Group("Write and bind a policy", "policies", _POLICIES, ("Policy", "BoundPolicy")),
+            Group("Decisions", "decisions", _DEBUGGING, ("Decision", "Named", "Offers")),
+        ),
+    ),
+    SymbolPage(
+        "Rules",
+        "rules",
+        "A policy is a list of rules. `allow` and `deny` name what a client may do with tables "
+        "and fields, `limit` keeps it to some records, and a `Rule` of your own can refuse "
+        "anything else. Anything no rule allows is refused, and a deny always wins.",
+        _OWN_CLIENT_NOTE,
         "",
         "",
         (
             Group(
-                "Policies",
-                "policies",
-                _POLICIES,
-                ("Policy", "BoundPolicy", "Decision", "Named", "Offers"),
-            ),
-            Group(
-                "Rules",
+                "Allow, deny, and limit",
                 "rules",
-                _POLICIES,
+                _RULES,
                 ("allow", "deny", "limit", "PolicyRule", "Verb", "SchemaVerb", "Layer"),
             ),
             Group(
                 "Tables and fields",
                 "selectors",
-                _POLICIES,
+                _RULES,
                 ("fields", "tables", "FieldSelector", "TableSelector"),
             ),
             Group(
                 "Rules of your own",
                 "own-rules",
-                _POLICIES,
+                _CUSTOM_RULES,
                 (
                     "Rule",
                     "WriteRequest",
@@ -765,8 +784,17 @@ SYMBOL_PAGES = (
                     "ReadAction",
                 ),
             ),
-            Group("Retries", "retries", _CLIENTS, ("RetryPolicy",)),
         ),
+    ),
+    SymbolPage(
+        "Retries",
+        "retries",
+        "A `RetryPolicy` says how a client retries a request that hit a rate limit or a "
+        "connection failure, and how long it waits. Pass one to `Quickbase()` as `retry`.",
+        _OWN_CLIENT_NOTE,
+        "",
+        "",
+        (Group("Retrying requests", "retries", _CLIENTS, ("RetryPolicy",)),),
     ),
     SymbolPage(
         "Tools for models",
@@ -865,6 +893,83 @@ SYMBOL_PAGES = (
     ),
 )
 ALL_PAGES: tuple[Resource | SymbolPage, ...] = (*RESOURCES, *SYMBOL_PAGES)
+
+
+class Section(NamedTuple):
+    """A group of reference pages, as the menu, the overview, and llms.txt show them."""
+
+    title: str
+    about: str
+    pages: tuple[tuple[str, str], ...]
+    # Hand-written pages that belong here, as `(title, path from docs/, what's in it)`.
+    extra: tuple[tuple[str, str, str], ...] = ()
+
+
+# The reference's sections, in order, with what each page holds. mkdocs.yml's nav must match this,
+# which a test checks, and every page is in exactly one section.
+SECTIONS = (
+    Section(
+        "Core",
+        "The client, and the apps, tables, and reports you reach through it.",
+        (
+            ("quickbase", "Create and close a client, and call any endpoint"),
+            ("app", "An app's details, its tables, and schema changes with a plan"),
+            ("table", "Read and write records and files, and change a table's fields"),
+            ("report", "Run reports built in the Quickbase interface"),
+            ("typed-table", "Read and write through a generated class"),
+            ("generated", "What supports the classes from `pyquickbase codegen`"),
+        ),
+    ),
+    Section(
+        "Data",
+        "The conditions you send, and what comes back.",
+        (
+            ("queries", "Build conditions with `F`, or from plain data"),
+            ("records", "What reads and writes return, files, previews, and summaries"),
+            ("metadata", "What describes apps, tables, fields, relationships, and reports"),
+        ),
+        (
+            (
+                "Field types",
+                "field-types.md",
+                "What to write to each field type, and what it reads as",
+            ),
+        ),
+    ),
+    Section(
+        "Schema",
+        "Changes to tables, fields, and relationships, checked before they're made.",
+        (
+            ("schema-changes", "The changes, and the plans that check them"),
+            ("schema-operation", "One schema operation offered to a model"),
+        ),
+    ),
+    Section(
+        "Policies",
+        "What a client may read and change.",
+        (
+            ("policies", "Write a policy, bind it, and ask what it allows"),
+            ("rules", "Allow, deny, and limit tables, fields, and rows"),
+        ),
+    ),
+    Section(
+        "AI agents",
+        "Operations and results for a model's tool calls.",
+        (
+            ("operation", "One table operation offered to a model"),
+            ("tools", "Results and errors as plain data for a tool call"),
+        ),
+    ),
+    Section(
+        "Errors and retries",
+        "What the SDK raises, and how a client retries.",
+        (
+            ("errors", "Everything the SDK raises, and what each one holds"),
+            ("retries", "How a client retries rate limits and failed connections"),
+        ),
+    ),
+)
+PAGES_BY_SLUG = {page.slug: page for page in ALL_PAGES}
 CLASS_PAGES = {resource.name: f"{resource.slug}.md" for resource in RESOURCES}
 
 
@@ -1156,7 +1261,13 @@ def _check_groups(resource: Resource) -> None:
 
 
 def check_every_name_is_covered() -> None:
-    """Stop the build if a public name has no page, or a page lists one that isn't public."""
+    """Stop the build if a public name has no page, or a page lists one that isn't public.
+
+    It also stops it if a page isn't in exactly one of `SECTIONS`.
+    """
+    listed = [slug for section in SECTIONS for slug, _ in section.pages]
+    if sorted(listed) != sorted(PAGES_BY_SLUG):
+        raise SystemExit(f"Each page needs to be in exactly one section: {sorted(listed)}")
     public = set(pyquickbase.__all__) - {"__version__"}
     if set(NAME_LINKS) != public:
         raise SystemExit(
@@ -1701,10 +1812,12 @@ def _two_column_header(page: Resource | SymbolPage, methods: dict[str, Method]) 
     header = _page_header(page, methods)
     split = header.index(f"# {page.name}") + 2
     intro = [line for line in header[split:] if not line.startswith(("===", "    "))]
-    setup = _tabs(page.setup, page.async_setup) if page.setup else []
-    row = _row(intro, setup)
+    front = ["---", "toc_in_nav: true", "hide:", "  - toc", "---", ""]
+    if not page.setup:
+        return [*front, *header[:split], *intro]
+    row = _row(intro, _tabs(page.setup, page.async_setup))
     row[0] = '<div class="ref-method ref-intro" markdown>'
-    return ["---", "toc_in_nav: true", "hide:", "  - toc", "---", "", *header[:split], *row]
+    return [*front, *header[:split], *row]
 
 
 def _check_titles(slug: str, called: list[str]) -> dict[str, str]:
@@ -1785,6 +1898,34 @@ def build_symbol_page(page: SymbolPage, symbols: dict[str, Symbol]) -> str:
                 text += _describe(method, {}, two_columns=True)
                 lines += _row(text, [f"```python\n{method.signature}\n```", ""])
     return "\n".join(lines)
+
+
+def build_overview() -> str:
+    """Return the reference's overview: a card for each section, then every public name."""
+    lines = [
+        "# API reference",
+        "",
+        "Every public class, function, and type, with a tested example for both clients. Each "
+        "page also has a plain Markdown copy for AI tools. Everything here is public, as "
+        "[Stability and versioning](../stability.md) describes, and modules starting with `_` "
+        "are private. The async classes have the same methods as the sync ones, which you "
+        "`await`, so they're described together.",
+        "",
+        '<div class="grid cards ref-cards" markdown>',
+        "",
+    ]
+    for section in SECTIONS:
+        lines += [f"-   **{section.title}**", "", f"    {section.about}", ""]
+        for slug, about in section.pages:
+            lines.append(f"    - [{PAGES_BY_SLUG[slug].name}]({slug}.md) {about}")
+        for title, path, about in section.extra:
+            lines.append(f"    - [{title}](../{path}) {about}")
+        lines.append("")
+    lines += ["</div>", "", "## Every public name {#names}", ""]
+    lines += ['<div class="ref-names" markdown>', ""]
+    for name in sorted(NAME_LINKS, key=str.casefold):
+        lines.append(f"- [`{name}`]({NAME_LINKS[name]})")
+    return "\n".join([*lines, "", "</div>", ""])
 
 
 def _qualified_heading(resource: Resource, method: Method) -> str:
@@ -1878,12 +2019,13 @@ def full_text(site_url: str) -> list[tuple[str, str, str]]:
     """Return `(title, slug, Markdown)` for each page, with sync examples, for llms-full.txt."""
     check_every_name_is_covered()
     pages: list[tuple[str, str, str]] = []
-    for resource in RESOURCES:
-        text = build_markdown(resource, read_methods(resource), site_url, both_clients=False)
-        pages.append((resource.name, resource.slug, text))
-    for page in SYMBOL_PAGES:
-        text = build_symbol_markdown(page, read_symbols(page), site_url, both_clients=False)
-        pages.append((page.name, page.slug, text))
+    for slug in (slug for section in SECTIONS for slug, _ in section.pages):
+        page = PAGES_BY_SLUG[slug]
+        if isinstance(page, Resource):
+            text = build_markdown(page, read_methods(page), site_url, both_clients=False)
+        else:
+            text = build_symbol_markdown(page, read_symbols(page), site_url, both_clients=False)
+        pages.append((page.name, slug, text))
     return pages
 
 
@@ -1910,7 +2052,8 @@ def main() -> None:
             build_symbol_page(page, symbols),
             build_symbol_markdown(page, symbols, config.site_url),
         )
-    print(f"Wrote {len(ALL_PAGES)} pages to docs/reference/")
+    (OUTPUT / "index.md").write_text(build_overview(), encoding="utf-8")
+    print(f"Wrote {len(ALL_PAGES)} pages and the overview to docs/reference/")
 
 
 if __name__ == "__main__":

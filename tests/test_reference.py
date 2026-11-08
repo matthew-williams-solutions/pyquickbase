@@ -103,20 +103,41 @@ def test_a_name_has_an_example_unless_there_is_a_reason(page: str, name: str) ->
 
 @pytest.mark.parametrize("name", sorted(set(pyquickbase.__all__) - {"__version__"}))
 def test_every_public_name_is_in_the_overview(name: str) -> None:
-    overview = (ROOT / "docs/reference.md").read_text()
-    assert f"`{name}`" in overview
-    assert name in build_reference.NAME_LINKS
+    overview = build_reference.build_overview()
+    assert f"- [`{name}`]({build_reference.NAME_LINKS[name]})" in overview
 
 
 def test_the_overview_lists_only_public_names() -> None:
-    overview = (ROOT / "docs/reference.md").read_text()
-    table = overview[overview.index("| Page |") :]
-    listed = {
-        name
-        for row in table.splitlines()[2:]
-        for name in re.findall(r"`(\w+)`", row.rsplit("|", 2)[1])
-    }
+    overview = build_reference.build_overview()
+    names = overview[overview.index("{#names}") :]
+    listed = set(re.findall(r"^- \[`(\w+)`\]", names, re.MULTILINE))
     assert listed == set(pyquickbase.__all__) - {"__version__"}
+
+
+def test_the_overview_has_a_card_for_each_section() -> None:
+    overview = build_reference.build_overview()
+    for section in build_reference.SECTIONS:
+        assert f"-   **{section.title}**" in overview
+        for slug, _ in section.pages:
+            assert f"]({slug}.md) " in overview
+
+
+def test_the_nav_matches_the_sections() -> None:
+    nav = [page for page in build_llms.read_config().pages if page.section == "Reference"]
+    expected = [("Overview", "reference/index.md")]
+    for section in build_reference.SECTIONS:
+        expected += [
+            (build_reference.PAGES_BY_SLUG[slug].name, f"reference/{slug}.md")
+            for slug, _ in section.pages
+        ]
+        expected += [(title, path) for title, path, _ in section.extra]
+    assert [(page.title, page.path) for page in nav] == expected
+
+
+def test_a_page_outside_every_section_stops_the_build(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(build_reference, "SECTIONS", build_reference.SECTIONS[1:])
+    with pytest.raises(SystemExit, match="exactly one section"):
+        build_reference.check_every_name_is_covered()
 
 
 def test_a_public_name_without_a_page_stops_the_build(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -135,7 +156,7 @@ def test_an_attribute_without_a_description_stops_the_build() -> None:
 
 def test_the_full_file_uses_sync_examples_only() -> None:
     pages = build_reference.full_text(SITE)
-    assert [title for title, _, _ in pages] == [item[0] for item in build_llms.REFERENCE_PAGES]
+    assert [title for title, _, _ in pages] == [item[0] for item in build_llms.reference_pages()]
     for _, _, text in pages:
         assert "Async example" not in text
 
@@ -291,10 +312,9 @@ def test_llms_index_points_at_each_page() -> None:
         assert f"reference/{page.slug}.txt): " in index
 
 
-def test_the_pages_match_the_list_in_build_llms() -> None:
-    assert [item[:2] for item in build_llms.REFERENCE_PAGES] == [
-        (item.name, item.slug) for item in build_reference.ALL_PAGES
-    ]
+def test_build_llms_lists_every_page() -> None:
+    listed = {slug for _, slug, _ in build_llms.reference_pages()}
+    assert listed == {item.slug for item in build_reference.ALL_PAGES}
 
 
 def test_tables_and_lists_in_a_docstring_keep_their_lines() -> None:

@@ -18,38 +18,10 @@ ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
 CONFIG = ROOT / "mkdocs.yml"
 
-# Reference pages with their own plain Markdown files, as `(title, name, what's in it)`.
-REFERENCE_PAGES = (
-    ("Quickbase", "quickbase", "Creating and closing a client, and calling any endpoint"),
-    ("App", "app", "An app's details, getting its tables, and changing its schema with a plan"),
-    ("Table", "table", "Reading and writing records, files, and changing a table's fields"),
-    ("Report", "report", "Running reports built in the Quickbase interface"),
-    ("Operation", "operation", "One table operation offered to a model, with its JSON Schema"),
-    (
-        "SchemaOperation",
-        "schema-operation",
-        "One schema operation offered to a model, with its JSON Schema",
-    ),
-    ("TypedTable", "typed-table", "Reading and writing through a generated class"),
-    ("Queries", "queries", "`F`, conditions from plain data, and checking hand-written ones"),
-    ("Records and results", "records", "What reads and writes return, files, and summaries"),
-    ("Metadata", "metadata", "What describes apps, tables, fields, relationships, and reports"),
-    (
-        "Schema changes",
-        "schema-changes",
-        "Changes to tables, fields, and relationships, and the plans that check them",
-    ),
-    (
-        "Limits and retries",
-        "limits",
-        "Limiting what a client can write and read, and how it retries",
-    ),
-    ("Tools for models", "tools", "Results and errors as plain data for a model's tool call"),
-    ("Generated classes", "generated", "What supports the classes from `pyquickbase codegen`"),
-    ("Errors", "errors", "Everything the SDK raises, and what each one holds"),
-)
-# An interactive page, which means nothing as text, and the pages above.
-LEFT_OUT = {"playground.md", *(f"reference/{page[1]}.md" for page in REFERENCE_PAGES)}
+# An interactive page, which means nothing as text. The reference's pages under reference/ are left
+# out too, except its overview, as build_reference.py writes their plain Markdown.
+LEFT_OUT = {"playground.md"}
+OVERVIEW = "reference/index.md"
 # What each page is for, shown in llms.txt. A page missing from here stops the build.
 DESCRIPTIONS = {
     "index.md": "What the SDK is, why to use it, and how to install it",
@@ -81,7 +53,7 @@ DESCRIPTIONS = {
     "policies/debugging.md": "Reading refusals, and asking a policy what it allows",
     "policies/recipes.md": "Complete policies for common jobs",
     "policies/limits.md": "What a policy can't protect against",
-    "reference.md": "An overview of the API reference, with where to find every public name",
+    OVERVIEW: "An overview of the API reference, with where to find every public name",
     "field-types.md": "Every field type, what to write, what it reads as, and field settings",
     "stability.md": "What 1.x promises, and what it doesn't",
     "api-notes.md": "How Quickbase's REST API behaves, as confirmed against a live app",
@@ -121,6 +93,8 @@ def read_config(text: str | None = None) -> Config:
     values = dict(line.split(": ", 1) for line in lines if re.match(r"site_\w+: ", line))
     start = lines.index("nav:") + 1
     pages: list[Page] = []
+    # The top-level section a page is in, as `(indent, title)`. A section inside it, such as the
+    # reference's "Core", doesn't change it.
     section: tuple[int, str] | None = None
     for line in lines[start:]:
         if line and not line.startswith(" "):
@@ -134,7 +108,7 @@ def read_config(text: str | None = None) -> Config:
         if section is not None and indent <= section[0]:
             section = None
         if path is None:
-            section = (indent, title)
+            section = section or (indent, title)
         else:
             pages.append(Page(title, path, section[1] if section else None))
     return Config(values["site_url"].rstrip("/") + "/", values["site_description"], pages)
@@ -296,8 +270,15 @@ def _reference_pages(site_url: str) -> list[str]:
     ]
 
 
+def is_covered(path: str) -> bool:
+    """Whether a nav page is in llms.txt, rather than the playground or a reference page."""
+    if path in LEFT_OUT:
+        return False
+    return path == OVERVIEW or not path.startswith("reference/")
+
+
 def _covered_pages(config: Config) -> list[Page]:
-    pages = [page for page in config.pages if page.path not in LEFT_OUT]
+    pages = [page for page in config.pages if is_covered(page.path)]
     paths = {page.path for page in pages}
     if paths != set(DESCRIPTIONS):
         raise SystemExit(
@@ -305,6 +286,18 @@ def _covered_pages(config: Config) -> list[Page]:
             f"{sorted(paths.symmetric_difference(DESCRIPTIONS))}"
         )
     return pages
+
+
+def reference_pages() -> list[tuple[str, str, str]]:
+    """Return the reference's pages in menu order, as `(title, slug, what's in it)`."""
+    # build_reference.py uses this module's helpers, so it can only be imported once they exist.
+    import build_reference
+
+    return [
+        (build_reference.PAGES_BY_SLUG[slug].name, slug, about)
+        for section in build_reference.SECTIONS
+        for slug, about in section.pages
+    ]
 
 
 def build_index(config: Config) -> str:
@@ -317,7 +310,7 @@ def build_index(config: Config) -> str:
             *(
                 f"- [API reference: {title}]({site_url}reference/{name}.txt): {about}, as "
                 "Markdown, with parameters, return values, errors, and tested examples"
-                for title, name, about in REFERENCE_PAGES
+                for title, name, about in reference_pages()
             ),
         ]
     }

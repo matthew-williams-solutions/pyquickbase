@@ -34,6 +34,13 @@ All notable changes to this project are documented here. The format follows
   `summarize()` asks Quickbase how many records match, in one request, at any size. It used to read
   every matching record, with the table's default fields. `max_records_scanned`, the argument and
   the read rule's, no longer limits it, as it reads nothing.
+- **The API reference is reorganized.** Every page has each entry's code beside it and its contents
+  in the left sidebar, and entries you call are titled by what they do. The menu groups the pages,
+  and the overview lists every public name. "Limits and retries" is now three pages: `Policy` and
+  `BoundPolicy` are under [Policies](https://matthew-williams-solutions.github.io/pyquickbase/reference/policies/),
+  the rules under [Rules](https://matthew-williams-solutions.github.io/pyquickbase/reference/rules/),
+  and `RetryPolicy` under [Retries](https://matthew-williams-solutions.github.io/pyquickbase/reference/retries/),
+  so links to `reference/limits/` need updating.
 - **A summary over `max_records_scanned` raises `TooManyRecordsError`,** and `tool_error()` gives it
   the code `too_many_records` with `matched` and `limit`. It was a `QueryError` with the code
   `invalid_arguments`. `TooManyRecordsError` is a `QueryError`, so `except QueryError` still catches
