@@ -310,7 +310,10 @@ def tool_error(error: BaseException) -> dict[str, Any]:
 
     ```python
     try:
-        return tool_result(await tasks.query_page(where=where, limit=50))
+        page = await tasks.query_page(
+            where=where, limit=50
+        )
+        return tool_result(page)
     except QuickbaseError as error:
         return tool_error(error)
     ```
@@ -811,7 +814,7 @@ def tool_result(
     """Describe a result for a model, as the result of its tool call.
 
     ```python
-    page = await tasks.query_page(select=["Title", "Due Date"], limit=50)
+    page = await tasks.query_page(limit=50)
     return tool_result(page, compact=True)
     ```
 

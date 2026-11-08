@@ -388,7 +388,11 @@ def where_from_dict(
     is how to keep a model inside a scope your code decides:
 
     ```python
-    where = (F("Project") == project) & where_from_dict(data, fields=["Status", "Due Date"])
+    scope = F("Project") == project
+    allowed = ["Status", "Due Date"]
+    where = scope & where_from_dict(
+        data, fields=allowed
+    )
     ```
 
     A condition is `{"field": "Status", "op": "==", "value": "Open"}`, and `{"all": [...]}` and

@@ -82,11 +82,13 @@ body:has(.ref-method) .md-grid {
   max-width: 80rem;
 }
 
+/* The code column fits LINE_LIMIT (62) characters of code, from build_reference.py, at every
+   size, as Material scales rem with the screen. The description takes the rest. */
 .md-typeset .ref-method {
   border-top: 0.05rem solid var(--md-default-fg-color--lightest);
   display: grid;
   gap: 0 2rem;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 27rem;
   margin-top: 1.5rem;
   padding-top: 0.5rem;
 }
@@ -173,8 +175,8 @@ body:has(.ref-method) .md-grid {
   margin-bottom: 0.5rem;
 }
 
-/* Below this width Material folds its sidebars away, so the columns stack. */
-@media screen and (max-width: 76.234375em) {
+/* Below 1280px the description would be too narrow beside the code, so the columns stack. */
+@media screen and (max-width: 79.984375em) {
   .md-typeset .ref-method {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -225,4 +227,11 @@ body:has(.ref-method) .md-grid {
 /* The overview is generated too, so it has no source to edit. */
 .md-content:has(.ref-cards) .md-content__button {
   display: none;
+}
+
+/* Output wraps, as it's there to read rather than copy, so a long URL or message breaks across
+   lines rather than hiding past the edge of its box. */
+.md-typeset .ref-label + .highlight pre > code {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }

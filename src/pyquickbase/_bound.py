@@ -778,8 +778,16 @@ class BoundPolicy:
         """Whether the policy allows a verb on a table, or on some of its fields.
 
         ```python
-        bound.allows("update", "Job Tasks", field="Labor Cost").allowed
-        bound.allows("lookup", "Job Tasks", source=("Technicians", "Hourly Rate"))
+        bound.allows(
+            "update",
+            "Job Tasks",
+            field="Labor Cost",
+        )
+        bound.allows(
+            "lookup",
+            "Job Tasks",
+            source=("Technicians", "Hourly Rate"),
+        )
         ```
 
         Args:

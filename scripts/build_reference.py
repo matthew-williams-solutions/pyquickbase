@@ -15,8 +15,11 @@ differ.
 """
 
 import dataclasses
+import functools
 import inspect
 import re
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any, NamedTuple, get_overloads
 
@@ -1134,10 +1137,99 @@ def _entries(lines: list[str], owner: str) -> list[tuple[str, str]]:
     return entries
 
 
+# The longest line in the code column, which docs/stylesheets/reference.css sizes to fit.
+# Examples are held to it by a test, and signatures and definitions are formatted to it.
+LINE_LIMIT = 62
+# The longest line of code in the description beside it, which is narrower.
+TEXT_LINE_LIMIT = 44
+# A type alias shorter than this is left written out: `FieldRef` is `str | int`, which appears in
+# many places that aren't about fields.
+_MIN_ALIAS_LENGTH = 24
+
+
+@functools.cache
+def _alias_texts() -> tuple[tuple[str, str], ...]:
+    """Each public type alias as Python writes it out, longest first, with its name."""
+    texts = [(build_llms.clean_types(repr(getattr(pyquickbase, name))), name) for name in ALIASES]
+    found = [(text, name) for text, name in texts if len(text) >= _MIN_ALIAS_LENGTH]
+    return tuple(sorted(found, key=lambda item: -len(item[0])))
+
+
 def _clean_annotation(annotation: Any) -> str:
-    """Write a type for the docs. A string annotation is written as the type it names."""
+    """Write a type for the docs, by its public alias where it has one, such as `Verb`.
+
+    Python resolves an alias such as `verb: Verb` to what it stands for, which can be dozens of
+    values. A string annotation is written as the type it names.
+    """
     text = annotation if isinstance(annotation, str) else inspect.formatannotation(annotation)
-    return build_llms.clean_types(text)
+    text = build_llms.clean_types(text)
+    for expanded, name in _alias_texts():
+        text = text.replace(expanded, name)
+    return text
+
+
+@functools.cache
+def _ruff_format(source: str) -> str | None:
+    """Format Python source as ruff would, to `LINE_LIMIT`, or None if it isn't valid Python."""
+    result = subprocess.run(
+        [sys.executable, "-m", "ruff", "format", "--isolated", "--line-length", str(LINE_LIMIT),
+         "--stdin-filename", "reference.py", "-"],
+        input=source, capture_output=True, text=True, check=False,
+    )  # fmt: skip
+    return result.stdout.rstrip("\n") if result.returncode == 0 else None
+
+
+def format_code(code: str) -> str:
+    """Format a signature, a type alias, or a property, so no line is longer than `LINE_LIMIT`.
+
+    A signature such as `query(*, where: Expression | None = None) -> RecordIterator` isn't a
+    statement on its own, so it's formatted as a function and then unwrapped. Anything that
+    can't be parsed is returned as it was, which the test of line lengths would catch.
+    """
+    if re.match(r"^\w+\(", code):
+        formatted = _ruff_format(f"def {code}: ...")
+        if formatted is not None:
+            unwrapped = re.sub(r":\s*\.\.\.$", "", formatted.removeprefix("def "))
+            return _parenthesize_unions(unwrapped)
+        return code
+    return _ruff_format(code) or code
+
+
+_SPLIT_PARAMETER = re.compile(r"^    (\*{0,2}\w+): (.+)$")
+
+
+def _parenthesize_unions(code: str) -> str:
+    """Put a parameter's union in parentheses where ruff split it, as black does.
+
+    ruff writes a long union as `tables: str` with `| TableSelector` on the next lines, at the
+    same indent as the parameters, so the type is hard to pick out. This puts it on one line
+    inside parentheses if it fits there, or else one member per line inside them.
+    """
+    lines = code.split("\n")
+    out: list[str] = []
+    index = 0
+    while index < len(lines):
+        found = _SPLIT_PARAMETER.match(lines[index])
+        if not found or index + 1 == len(lines) or not lines[index + 1].startswith("    | "):
+            out.append(lines[index])
+            index += 1
+            continue
+        members = [found[2]]
+        index += 1
+        while index < len(lines) and lines[index].startswith("    | "):
+            members.append(lines[index].removeprefix("    | "))
+            index += 1
+        last, equals, default = members[-1].partition(" = ")
+        members[-1] = last.removesuffix(",")
+        after = f" = {default}" if equals else ","
+        joined = " | ".join(members)
+        out.append(f"    {found[1]}: (")
+        if 8 + len(joined) <= LINE_LIMIT:
+            out.append(f"        {joined}")
+        else:
+            out += [f"        {members[0]}", *(f"        | {member}" for member in members[1:])]
+        out.append(f"    ){after}")
+    return "\n".join(out)
 
 
 def _annotation(parameter: inspect.Parameter) -> str:
@@ -1179,7 +1271,7 @@ def _return_type(function: Any, owner_class: str) -> str:
 
 
 def _signature(name: str, function: Any, returns: str) -> str:
-    """Write a signature on one line if it fits in the column, or else one parameter per line.
+    """Write a signature formatted to fit the code column, as `format_code()` does.
 
     An overloaded function shows each overload, as the one that runs only says `Any`.
     """
@@ -1195,8 +1287,11 @@ def _one_signature(name: str, function: Any, returns: str) -> str:
     parameters = _own_parameters(function)
     items: list[str] = []
     for index, parameter in enumerate(parameters):
+        # A bare `*` starts keyword-only parameters, unless `*args` already has.
         if parameter.kind is inspect.Parameter.KEYWORD_ONLY and (
-            index == 0 or parameters[index - 1].kind is not inspect.Parameter.KEYWORD_ONLY
+            index == 0
+            or parameters[index - 1].kind
+            not in (inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.VAR_POSITIONAL)
         ):
             items.append("*")
         default = (
@@ -1205,11 +1300,7 @@ def _one_signature(name: str, function: Any, returns: str) -> str:
         star = "*" if parameter.kind is inspect.Parameter.VAR_POSITIONAL else ""
         items.append(f"{star}{parameter.name}: {_annotation(parameter)}{default}")
     suffix = f" -> {returns}" if returns else ""
-    one_line = f"{name}({', '.join(items)}){suffix}"
-    if len(one_line) <= 60:
-        return one_line
-    body = "".join(f"    {item},\n" for item in items)
-    return f"{name}(\n{body}){suffix}"
+    return format_code(f"{name}({', '.join(items)}){suffix}")
 
 
 def _public_members(cls: type) -> dict[str, Any]:
@@ -1318,7 +1409,7 @@ def read_method(resource: Resource, name: str, inherited: dict[str, str]) -> Met
         name,
         name if is_property else f"{name}()",
         is_property,
-        f"{name}: {returns}" if is_property else _signature(name, function, returns),
+        format_code(f"{name}: {returns}") if is_property else _signature(name, function, returns),
         returns,
         doc,
         _parameters(function, doc, owner, inherited),
@@ -1480,7 +1571,7 @@ def read_symbol(page: SymbolPage, name: str) -> Symbol:
     sync_code, async_code, output = _symbol_example(page.slug, name)
     if name in ALIASES:
         doc = Docstring(ALIASES[name], [], {}, {}, "", [])
-        definition = f"{name} = {build_llms.clean_types(repr(item))}"
+        definition = format_code(f"{name} = {build_llms.clean_types(repr(item))}")
         return Symbol(name, doc, definition, "", "", [], [], [], [], "", "", "")
     doc = parse_docstring(inspect.getdoc(item), name)
     if not inspect.isclass(item) and not inspect.isfunction(item):

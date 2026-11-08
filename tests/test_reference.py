@@ -69,7 +69,7 @@ def test_examples_parse_and_show_each_client_properly(name: str, member: str) ->
 @pytest.mark.parametrize(("name", "member"), EVERY_METHOD, ids=ids(EVERY_METHOD))
 def test_examples_fit_on_a_phone(name: str, member: str) -> None:
     method = METHODS[name][member]
-    assert max(len(line) for line in method.async_code.splitlines()) <= 62
+    assert max(len(line) for line in method.async_code.splitlines()) <= build_reference.LINE_LIMIT
 
 
 @pytest.mark.parametrize(("page", "name"), EVERY_SYMBOL, ids=ids(EVERY_SYMBOL))
@@ -94,7 +94,9 @@ def test_a_name_has_an_example_unless_there_is_a_reason(page: str, name: str) ->
     if symbol.sync_code:
         compile(symbol.async_code, name, "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
         compile(symbol.sync_code, name, "exec")
-        assert max(len(line) for line in symbol.async_code.splitlines()) <= 62
+        assert (
+            max(len(line) for line in symbol.async_code.splitlines()) <= build_reference.LINE_LIMIT
+        )
         for text in ("await ", "async ", "Async", "aclose"):
             assert text not in symbol.sync_code
     else:
@@ -323,3 +325,82 @@ def test_tables_and_lists_in_a_docstring_keep_their_lines() -> None:
         "x",
     )
     assert doc.prose == ["| A | B |\n|---|---|\n| 1 | 2 |", "- One item that wraps.\n- Two."]
+
+
+_PYTHON_BLOCK = re.compile(r"^( *)```python\n(.*?)^\1```", re.DOTALL | re.MULTILINE)
+
+
+_DESCRIPTION = re.compile(
+    r'<div class="ref-text" markdown>(.*?)</div>\n<div class="ref-code"', re.DOTALL
+)
+
+
+def _long_lines(text: str, limit: int) -> list[str]:
+    return [
+        line.removeprefix(indent)
+        for indent, block in _PYTHON_BLOCK.findall(text)
+        for line in block.splitlines()
+        if len(line.removeprefix(indent)) > limit
+    ]
+
+
+@pytest.mark.parametrize("name", sorted(PAGES))
+def test_python_on_a_page_fits_its_column(name: str) -> None:
+    """Code wider than its column hides past the edge of its box, so nothing may be."""
+    page = PAGES[name]
+    assert _long_lines(page, build_reference.LINE_LIMIT) == []
+    for description in _DESCRIPTION.findall(page):
+        assert _long_lines(description, build_reference.TEXT_LINE_LIMIT) == []
+
+
+def _code_shown(name: str) -> list[str]:
+    if name in METHODS:
+        return [method.signature for method in METHODS[name].values()]
+    shown: list[str] = []
+    for symbol in SYMBOLS[name].values():
+        shown += [symbol.signature, symbol.definition]
+        shown += [method.signature for method in symbol.methods]
+    return [code for code in shown if code]
+
+
+def _as_python(code: str) -> str:
+    """Turn a signature, with each overload on its own, into source that `ast` can parse."""
+    if re.match(r"^\w+ = |^\w+: ", code):
+        return code
+    if code.startswith("class "):
+        return f"{code}: ..."
+    return "\n".join(f"def {part}: ..." for part in re.split(r"\n(?=\w+\()", code))
+
+
+@pytest.mark.parametrize("name", sorted(PAGES))
+def test_signatures_and_definitions_are_python(name: str) -> None:
+    for code in _code_shown(name):
+        ast.parse(_as_python(code))
+
+
+def test_a_long_alias_is_shown_by_name() -> None:
+    methods = {method.heading: method for method in SYMBOLS["Policies"]["BoundPolicy"].methods}
+    signature = methods["BoundPolicy.allows()"].signature
+    assert "verb: Verb," in signature
+    assert "Literal" not in signature
+
+
+def test_a_split_union_is_put_in_parentheses() -> None:
+    code = build_reference.format_code(
+        "rule(tables: str | TableSelector | Sequence[str | TableSelector], "
+        "fields: str | int | FieldSelector | Sequence[str | int | FieldSelector] | None = None)"
+    )
+    assert code == (
+        "rule(\n"
+        "    tables: (\n"
+        "        str | TableSelector | Sequence[str | TableSelector]\n"
+        "    ),\n"
+        "    fields: (\n"
+        "        str\n"
+        "        | int\n"
+        "        | FieldSelector\n"
+        "        | Sequence[str | int | FieldSelector]\n"
+        "        | None\n"
+        "    ) = None,\n"
+        ")"
+    )

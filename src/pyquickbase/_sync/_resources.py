@@ -408,8 +408,13 @@ class App:
         it adds can only show what it could already read.
 
         ```python
-        plan = app.operation("preview_schema_changes")
-        tool = {"name": "plan_changes", "input_schema": plan.schema}
+        plan = app.operation(
+            "preview_schema_changes"
+        )
+        tool = {
+            "name": "plan_changes",
+            "input_schema": plan.schema,
+        }
         result = plan.run(arguments)
         ```
 
@@ -2179,9 +2184,15 @@ class Table:
         lists hold only what the client's policy allows, narrowed by `fields`.
 
         ```python
-        search = tasks.operation("query", fields=["Title", "Status"])
-        tool = {"name": "search_tasks", "input_schema": search.schema}
-        page = search.run(arguments, scope=F("Project") == project)
+        search = tasks.operation(
+            "query", fields=["Title", "Status"]
+        )
+        tool = {
+            "name": "search_tasks",
+            "input_schema": search.schema,
+        }
+        scope = F("Project") == project
+        page = search.run(arguments, scope=scope)
         ```
 
         See [Using pyquickbase from an AI agent](agents/operations.md#giving-a-model-operations) for

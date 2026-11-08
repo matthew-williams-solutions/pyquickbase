@@ -656,15 +656,19 @@ class Policy:
     `BoundPolicy` to a client.
 
     ```python
+    pay = ["Technicians.Hourly Rate"]
     policy = Policy(
-        classes={"pay": ["Technicians.Hourly Rate"]},
+        classes={"pay": pay},
         rules=[
             allow.read(tables.all()),
-            allow.update("Job Tasks", ["Status", "Notes"]),
+            allow.update(
+                "Job Tasks", ["Status", "Notes"]
+            ),
             deny.all(fields.classed("pay")),
         ],
     )
-    bound = await policy.bind(qb.app("bq1234567"))
+    app = qb.app("bq1234567")
+    bound = await policy.bind(app)
     ```
 
     Anything no rule allows is refused, and a deny always wins. A formula, lookup, or summary is

@@ -409,8 +409,13 @@ class AsyncApp:
         it adds can only show what it could already read.
 
         ```python
-        plan = await app.operation("preview_schema_changes")
-        tool = {"name": "plan_changes", "input_schema": plan.schema}
+        plan = await app.operation(
+            "preview_schema_changes"
+        )
+        tool = {
+            "name": "plan_changes",
+            "input_schema": plan.schema,
+        }
         result = await plan.run(arguments)
         ```
 
@@ -2182,9 +2187,15 @@ class AsyncTable:
         lists hold only what the client's policy allows, narrowed by `fields`.
 
         ```python
-        search = await tasks.operation("query", fields=["Title", "Status"])
-        tool = {"name": "search_tasks", "input_schema": search.schema}
-        page = await search.run(arguments, scope=F("Project") == project)
+        search = await tasks.operation(
+            "query", fields=["Title", "Status"]
+        )
+        tool = {
+            "name": "search_tasks",
+            "input_schema": search.schema,
+        }
+        scope = F("Project") == project
+        page = await search.run(arguments, scope=scope)
         ```
 
         See [Using pyquickbase from an AI agent](agents/operations.md#giving-a-model-operations) for
