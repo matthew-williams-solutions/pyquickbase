@@ -4,7 +4,6 @@ import ast
 import asyncio
 import inspect
 import secrets
-import sys
 import textwrap
 import types
 from collections.abc import Iterator
@@ -15,8 +14,7 @@ import httpx
 import pytest
 
 import pyquickbase
-from pyquickbase import FileUpload, Quickbase, TypedRecord
-from pyquickbase._codegen import render
+from pyquickbase import FileUpload, Quickbase
 from tests.test_docs import examples
 
 # Each key is text from an example, so the entry survives edits elsewhere on the page.
@@ -104,18 +102,6 @@ def world(scratch: Any, shared_tasks: Any, tmp_path: Path, monkeypatch: Any) -> 
                 app.table(table.id).drop(confirm=table.name)
 
 
-def generated_module(table: Any, fields: Any) -> types.ModuleType:
-    """Stand in for the `myapp.tables` module the codegen guide has you generate."""
-    module = types.ModuleType("myapp.tables")
-    exec(render([(table, fields)]), module.__dict__)
-    module.Tasks = next(
-        item
-        for item in vars(module).values()
-        if inspect.isclass(item) and issubclass(item, TypedRecord) and item is not TypedRecord
-    )
-    return module
-
-
 def prepare(code: str, world: Any, table_name: str, table_id: str) -> str:
     if 'table("Projects")' in code:
         parent = world.app.create_table(f"ZZ Live {secrets.token_hex(4)}")
@@ -146,11 +132,8 @@ def prepare(code: str, world: Any, table_name: str, table_id: str) -> str:
     return code.replace('confirm="Tasks"', f"confirm={table_name!r}")
 
 
-def settings_for(code: str, world: Any, tasks: Any, monkeypatch: Any) -> dict[str, Any]:
+def settings_for(code: str, world: Any, tasks: Any) -> dict[str, Any]:
     namespace: dict[str, Any] = {name: getattr(pyquickbase, name) for name in pyquickbase.__all__}
-    module = generated_module(tasks.info(), tasks.fields())
-    monkeypatch.setitem(sys.modules, "myapp", types.ModuleType("myapp"))
-    monkeypatch.setitem(sys.modules, "myapp.tables", module)
     namespace.update(
         __name__="example",
         date=__import__("datetime").date,
@@ -160,10 +143,7 @@ def settings_for(code: str, world: Any, tasks: Any, monkeypatch: Any) -> dict[st
         tasks=tasks,
         rows=ROWS,
         status="Open",
-        Tasks=module.Tasks,
     )
-    if "Tasks." in code and ".typed(" not in code:
-        namespace["tasks"] = world.app.typed(module.Tasks)  # As set up earlier on that page
     if "projects" in code and "projects =" not in code:
         namespace["projects"] = world.scratch.client.app(world.scratch.app_id).create_table(
             f"ZZ Live {secrets.token_hex(4)}"
@@ -180,7 +160,7 @@ def settings_for(code: str, world: Any, tasks: Any, monkeypatch: Any) -> dict[st
 
 
 @pytest.mark.parametrize(("where", "code"), examples(), ids=[where for where, _ in examples()])
-def test_example_runs(where: str, code: str, world: Any, monkeypatch: Any) -> None:
+def test_example_runs(where: str, code: str, world: Any) -> None:
     source = textwrap.dedent(code)
     for text, reason in SKIPPED.items():
         if text in source:
@@ -191,7 +171,7 @@ def test_example_runs(where: str, code: str, world: Any, monkeypatch: Any) -> No
         add_fields(tasks, unique_code="merge_on" in source)
         tasks.insert([{"Title": f"Task {number}"} for number in range(1, 11)])
     source = prepare(source, world, tasks.info().name, tasks.info().id)
-    namespace = settings_for(source, world, tasks, monkeypatch)
+    namespace = settings_for(source, world, tasks)
     before = {key: namespace[key] for key in ("qb", "app", "tasks")}
     compiled = compile(source, where, "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
     result = eval(compiled, namespace)

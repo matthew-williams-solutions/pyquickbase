@@ -54,7 +54,6 @@ TITLES: dict[str, dict[str, str]] = {
         "tables": "List tables",
         "roles": "List roles",
         "table": "Get a table",
-        "typed": "Get a typed table",
         "url": "Link to the app",
         "settings_url": "Link to the app's settings",
         "ensure_table": "Get or create a table",
@@ -150,25 +149,6 @@ TITLES: dict[str, dict[str, str]] = {
     "tools": {
         "tool_result": "Return a result to a model",
         "tool_error": "Return an error to a model",
-    },
-    "generated": {
-        "TypedRecord.from_record": "Build from a record",
-    },
-    "typed-table": {
-        "query": "Query records",
-        "query_page": "Fetch one page of records",
-        "first": "Get the first matching record",
-        "get": "Get a record by ID",
-        "count": "Count records",
-        "insert": "Create records",
-        "update": "Update records",
-        "upsert": "Create or update records",
-        "delete": "Delete records",
-        "preview_update": "Preview an update",
-        "preview_delete": "Preview a delete",
-        "summarize": "Summarize records",
-        "check_schema": "Check the class against the table",
-        "table": "The untyped table",
     },
     "table": {
         "query": "Query records",
@@ -291,10 +271,6 @@ ALIASES = {
     "Verb": "What a policy grants or refuses, such as `read`, `update`, or `lookup`.",
     "SchemaVerb": "What `allow.schema()` grants on a table, where the change lands.",
     "Layer": "Which check made a `Decision`: `policy`, `rows`, `derived`, or `confirmation`.",
-    "OrderBy": "What a generated class's methods take as `order_by`, which is fields rather than "
-    "labels, so that renaming a label can't break it.",
-    "Select": "What a generated class's methods take as `select`: fields of the class, alone or in "
-    "a list. The attributes it leaves out are unset.",
 }
 # What can't be shown happening in an example, and why.
 NO_EXAMPLE = {
@@ -328,13 +304,6 @@ def _setup(last_line: str) -> tuple[str, str]:
         f"from pyquickbase import Quickbase\n\nwith Quickbase(\n{body}",
         f"from pyquickbase import AsyncQuickbase\n\nasync with AsyncQuickbase(\n{body}",
     )
-
-
-def _typed_setup() -> tuple[str, str]:
-    """Return the setup code for a generated class, which needs importing as well."""
-    sync_code, async_code = _setup('tasks = qb.app("bq1234567").typed(JobTasks)')
-    first = "from myapp.tables import JobTasks\n"
-    return first + sync_code, first + async_code
 
 
 class Resource(NamedTuple):
@@ -377,7 +346,6 @@ _POLICIES = ("Policies", "../policies/index.md")
 _RULES = ("Writing rules", "../policies/rules.md")
 _CUSTOM_RULES = ("Rules of your own", "../policies/custom-rules.md")
 _DEBUGGING = ("Debugging refusals", "../policies/debugging.md")
-_CODEGEN = ("Generated classes", "../guides/codegen.md")
 _FILES = ("File attachments", "../guides/files.md")
 _FORMULAS = ("Formulas", "../guides/formulas.md")
 _AGENTS = ("Using pyquickbase from an AI agent", "../agents/index.md")
@@ -427,8 +395,7 @@ RESOURCES = (
         "only fails on first use.",
         "The examples below use `app`, made as shown here, in an app that has a table named "
         f"`Job Tasks` with three records. {_LIVE_TEST} `AsyncApp` has the same methods, which you "
-        "`await`, but `table()`, `typed()`, `url()`, and `settings_url()` are called without "
-        "it.",
+        "`await`, but `table()`, `url()`, and `settings_url()` are called without it.",
         *_setup('app = qb.app("bq1234567")'),
         (
             Group(
@@ -437,7 +404,7 @@ RESOURCES = (
                 _READING,
                 ("id", "info", "tables", "roles"),
             ),
-            Group("Get a table", "get-a-table", _CODEGEN, ("table", "typed")),
+            Group("Get a table", "get-a-table", _READING, ("table",)),
             Group(_LINKS, "links", _AGENTS, ("url", "settings_url")),
             Group("Create tables", "create-tables", _SCHEMA, ("ensure_table", "create_table")),
             Group(
@@ -575,36 +542,6 @@ RESOURCES = (
         (
             Group("Describe it to a model", "describe-it", _AGENTS, ("schema", "name")),
             Group("Run it", "run-it", _AGENTS, ("run",)),
-        ),
-    ),
-    Resource(
-        "TypedTable",
-        "typed-table",
-        pyquickbase.TypedTable,
-        pyquickbase.AsyncTypedTable,
-        "A `TypedTable` reads and writes a table through a class from `pyquickbase codegen`, so "
-        "your editor and type checker know every field. Get one from `App.typed()`. The class is "
-        "compared with the table on first use, and it uses field IDs, so renaming a label can't "
-        "break it.",
-        "The examples below use `tasks`, made as shown here, and `JobTasks`, the class generated "
-        f"for `Job Tasks`. {_JOB_TASKS} {_LIVE_TEST} `AsyncTypedTable` has the same methods, which "
-        "you `await`, but `query()` is called without it, and `table` is a property.",
-        *_typed_setup(),
-        (
-            Group(
-                "Read records",
-                "read-records",
-                _CODEGEN,
-                ("query", "query_page", "first", "get", "count"),
-            ),
-            Group(
-                "Write records", "write-records", _CODEGEN, ("insert", "update", "upsert", "delete")
-            ),
-            Group(
-                "Preview writes", "preview-writes", _WRITING, ("preview_update", "preview_delete")
-            ),
-            Group("Summarize", "summaries", _READING, ("summarize",)),
-            Group("Check the class", "check-the-class", _CODEGEN, ("check_schema", "table")),
         ),
     ),
 )
@@ -817,21 +754,6 @@ SYMBOL_PAGES = (
         ),
     ),
     SymbolPage(
-        "Generated classes",
-        "generated",
-        "These support the classes from `pyquickbase codegen`, and you rarely need them directly. "
-        "`TypedTable` has its own page.",
-        "The examples below use `app`, as on the `App` page, and `JobTasks`, the class generated "
-        f"for `Job Tasks`. {_JOB_TASKS} {_LIVE_TEST}",
-        *_setup('app = qb.app("bq1234567")'),
-        (
-            Group("Generated records", "records", _CODEGEN, ("TypedRecord", "Column")),
-            Group("Queries", "queries", _CODEGEN, ("TypedField", "OrderBy", "Select")),
-            Group("Results", "results", _CODEGEN, ("TypedIterator", "TypedPage")),
-            Group("Writes", "writes", _CODEGEN, ("Row", "Unset")),
-        ),
-    ),
-    SymbolPage(
         "Errors",
         "errors",
         "Everything the SDK raises derives from `QuickbaseError`. Errors that mean a request "
@@ -919,8 +841,6 @@ SECTIONS = (
             ("app", "An app's details, its tables, and schema changes with a plan"),
             ("table", "Read and write records and files, and change a table's fields"),
             ("report", "Run reports built in the Quickbase interface"),
-            ("typed-table", "Read and write through a generated class"),
-            ("generated", "What supports the classes from `pyquickbase codegen`"),
         ),
     ),
     Section(
@@ -990,10 +910,7 @@ def _name_links() -> dict[str, str]:
     links["AsyncReport"] = links["Report"]
     links["AsyncOperation"] = links["Operation"]
     links["AsyncSchemaOperation"] = links["SchemaOperation"]
-    links["AsyncTypedTable"] = links["TypedTable"]
     links["AsyncRecordIterator"] = links["RecordIterator"]
-    links["AsyncTypedIterator"] = links["TypedIterator"]
-    links["UNSET"] = links["Unset"]
     return links
 
 

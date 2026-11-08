@@ -2,11 +2,7 @@
 
 import base64
 import dataclasses
-import hashlib
 import inspect
-import os
-import types
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -15,7 +11,6 @@ import pytest
 import pyquickbase
 from pyquickbase import (
     AppInfo,
-    Column,
     ConfigurationError,
     Field,
     FileDownload,
@@ -31,8 +26,6 @@ from pyquickbase import (
     WhereCondition,
     WriteResult,
 )
-from pyquickbase import _cli as cli
-from pyquickbase._codegen import _RESERVED_CLASSES, _RESERVED_NAMES, render
 from pyquickbase._config import DEFAULT_BASE_URL, validate_base_url
 from pyquickbase._models import (
     field_from_api,
@@ -41,61 +34,15 @@ from pyquickbase._models import (
     relationship_from_api,
     table_info_from_api,
 )
+from pyquickbase._operations import writable_fields
 from pyquickbase._query import OPERATORS, build_query_body
-from pyquickbase._typed import WRITABLE_TYPES, is_writable
 from pyquickbase._writes import MAX_ROWS_BYTES, split_batches
 
-GOLDEN = Path(__file__).parent / "fixtures" / "expected_codegen.py"
 ALL_TYPES = [
     "text", "text-multiple-choice", "text-multi-line", "rich-text", "email", "url", "phone",
     "address", "timeofday", "numeric", "currency", "rating", "percent", "duration", "date",
     "timestamp", "checkbox", "multitext", "user", "multiuser", "file", "dblink", "some-new-type",
 ]  # fmt: skip
-
-
-def schema() -> list[Field]:
-    built = [{"id": 3, "label": "Record ID#", "fieldType": "recordid"}]
-    built += [
-        {"id": 6 + index, "label": f"A {kind}", "fieldType": kind}
-        for index, kind in enumerate(ALL_TYPES)
-    ]
-    built += [
-        {"id": 100, "label": "A formula", "fieldType": "numeric", "mode": "formula"},
-        {"id": 101, "label": "A lookup", "fieldType": "text", "mode": "lookup"},
-        {"id": 102, "label": "class", "fieldType": "text"},
-        {"id": 103, "label": "A-text", "fieldType": "text"},
-        {"id": 104, "label": "日本語", "fieldType": "text"},
-    ]
-    return [field_from_api(item) for item in built]
-
-
-def test_generated_code_is_unchanged() -> None:
-    """Catches accidental changes. To change the output on purpose, set QB_UPDATE_GOLDEN=1."""
-    tables = [
-        (table_info_from_api({"id": "bqtasks", "name": "Tasks"}), schema()),
-        (table_info_from_api({"id": "bqother", "name": "Tasks Fields"}), schema()[:2]),
-    ]
-    source = render(tables)
-    if os.environ.get("QB_UPDATE_GOLDEN") == "1":
-        GOLDEN.write_text(source, encoding="utf-8")
-    assert source == GOLDEN.read_text(encoding="utf-8")
-
-
-def test_reserved_names_stay_frozen() -> None:
-    # Adding or removing a name renames attributes in users' code. See the comment in _codegen.py.
-    joined = " ".join(sorted(_RESERVED_NAMES))
-    expected = "05709a7a07392c75c25e5bdcb5dd9436935279f43cb610a483709ab6e0d1109c"
-    assert hashlib.sha256(joined.encode()).hexdigest() == expected
-
-
-def test_a_table_named_like_an_import_gets_a_safe_name() -> None:
-    assert set(_RESERVED_CLASSES) == {
-        "Any", "ClassVar", "Column", "FileUpload", "Row", "Self", "TypedField", "TypedRecord",
-        "Unset",
-    }  # fmt: skip
-    for words, name in (("Any", "Any_"), ("Self", "Self_"), ("Row", "Row_"), ("Unset", "Unset_")):
-        table = table_info_from_api({"id": "bqtasks", "name": words})
-        assert f"class {name}(TypedRecord):" in render([(table, schema()[:1])])
 
 
 def test_operators() -> None:
@@ -105,20 +52,23 @@ def test_operators() -> None:
     } == OPERATORS  # fmt: skip
 
 
-def test_writable_types() -> None:
-    assert {
+def test_tools_write_only_confirmed_types() -> None:
+    fields = [
+        field_from_api({"id": 6 + index, "label": f"A {kind}", "fieldType": kind})
+        for index, kind in enumerate([*ALL_TYPES, "predecessor"])
+    ]
+    assert {item.type for item in writable_fields(fields)} == {
         "text", "text-multiple-choice", "text-multi-line", "rich-text", "numeric", "currency",
         "rating", "percent", "multitext", "email", "url", "duration", "date", "timestamp",
-        "timeofday", "checkbox", "user", "multiuser", "phone", "file", "predecessor",
-    } == WRITABLE_TYPES  # fmt: skip
+        "timeofday", "checkbox", "phone", "file", "predecessor",
+    }  # fmt: skip
 
 
 def test_built_in_fields_end_at_five() -> None:
     def text(field_id: int) -> Field:
         return field_from_api({"id": field_id, "label": "A", "fieldType": "text"})
 
-    assert not is_writable(text(5))
-    assert is_writable(text(6))
+    assert [item.id for item in writable_fields([text(5), text(6)])] == [6]
 
 
 @pytest.mark.parametrize(
@@ -195,7 +145,6 @@ VALUES: list[Any] = [
     RowError(index=0, messages=()),
     WhereCondition(1, "EX", "v"),
     RetryPolicy(),
-    Column("a", 1, "text", True, "A"),
 ]
 
 
@@ -219,7 +168,6 @@ def test_keyword_only_where_promised() -> None:
     for kind in (FileDownload, WriteResult, RowError, RetryPolicy):
         assert all(item.kw_only for item in dataclasses.fields(kind))
     assert not any(item.kw_only for item in dataclasses.fields(FileUpload))
-    assert not any(item.kw_only for item in dataclasses.fields(Column))
 
 
 def test_file_contents_stay_out_of_reprs() -> None:
@@ -242,7 +190,6 @@ DEFAULTS = [
     ("Report", "run", "page_size", 1000),
     ("Report", "run_page", "limit", 100),
     ("Report", "run_page", "skip", 0),
-    ("TypedTable", "query", "page_size", 1000),
 ]
 
 
@@ -317,44 +264,3 @@ def test_negative_field_ids_sort_descending() -> None:
 
     assert first_sort(-6) == {"fieldId": 6, "order": "DESC"}
     assert first_sort(6) == {"fieldId": 6, "order": "ASC"}
-
-
-def test_codegen_needs_its_arguments(capsys: pytest.CaptureFixture[str]) -> None:
-    for arguments in (["codegen"], ["codegen", "--app", "a"], ["codegen", "--output", "o"]):
-        with pytest.raises(SystemExit) as caught:
-            cli.main(arguments)
-        assert caught.value.code == 2
-    with pytest.raises(SystemExit):
-        cli.main([])
-    assert "required" in capsys.readouterr().err
-
-
-def test_codegen_uses_a_read_only_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    seen: dict[str, Any] = {}
-
-    class Stop(pyquickbase.QuickbaseError):
-        pass
-
-    def from_env(**kwargs: Any) -> Any:
-        seen.update(kwargs)
-        raise Stop("stop here")
-
-    monkeypatch.setattr(cli.Quickbase, "from_env", staticmethod(from_env))
-    code = cli.main(["codegen", "--app", "a", "--output", str(tmp_path / "t.py")])
-    assert code == 1
-    assert isinstance(seen["policy"], pyquickbase.Policy)
-    assert not seen["policy"].bind_offline().allows("insert", "bqtasks", field=6).allowed
-
-
-@pytest.mark.parametrize("wanted", ["Tasks", "bqtasks"])
-def test_codegen_finds_a_table_by_name_or_id(wanted: str) -> None:
-    info = table_info_from_api({"id": "bqtasks", "name": "Tasks"})
-    other = table_info_from_api({"id": "bqother", "name": "Other"})
-    app: Any = types.SimpleNamespace(
-        id="a",
-        tables=lambda: [info, other],
-        table=lambda _: types.SimpleNamespace(fields=lambda: schema()[:1]),
-    )
-    source = cli._tables(app, [wanted])
-    assert "class Tasks(TypedRecord):" in source
-    assert "class Other(TypedRecord):" not in source

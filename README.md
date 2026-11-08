@@ -23,7 +23,6 @@ sync and async clients.
 - Running table reports, with automatic paging
 - Uploading, downloading, and deleting file attachments
 - Running formulas, and creating formula fields
-- `pyquickbase codegen`, which generates typed classes from your tables
 - `qb.request()` for calling any Quickbase endpoint directly
 
 ## Usage

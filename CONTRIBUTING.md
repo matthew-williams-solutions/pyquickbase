@@ -122,14 +122,9 @@ users would notice.
 
 `docs/stability.md` says what 1.x promises, so check it before changing anything public. From 1.0, a
 breaking change needs a major version, and removing something needs a `DeprecationWarning` in a minor
-release first. Generated code must keep working on later 1.x versions, so treat what it relies on as
-public, even when the name is private. `tests/fixtures/generated_tables.py` is an old generated file
-that the tests run against the current code. From 1.0, don't regenerate it to make a test pass, because
-a failure there means you've broken users' files.
+release first.
 
-`tests/test_contract.py` holds the decisions we've promised to keep, such as defaults and generated
-names. To change what `pyquickbase codegen` writes on purpose, run its golden test with
-`QB_UPDATE_GOLDEN=1`, and review the diff.
+`tests/test_contract.py` holds the decisions we've promised to keep, such as defaults.
 
 ## Secrets
 

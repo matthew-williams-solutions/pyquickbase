@@ -36,8 +36,6 @@ tasks.create_field("Priority", "text-multiple-choice", choices=["Low", "High"])
 | `rating` | A rating | `float` or `int` | `float` | `None` | Yes |
 | `duration` | A length of time, in milliseconds | Whole milliseconds as an `int`, or a `timedelta`. A fraction raises `InvalidValueError`, as Quickbase would drop it | `int` | `None` | Yes |
 
-[Generated classes](guides/codegen.md) read these more strictly, such as `currency` as `Decimal`.
-
 **In a query, numbers mean the same as when writing**, though Quickbase reads them differently, so
 `F` converts them: `F("Done") >= 0.5` is 50%, and `F("Budget") > timedelta(hours=8)` or
 `> 28_800_000` is 8 hours. A hand-written string is sent as written, where Quickbase compares a percent

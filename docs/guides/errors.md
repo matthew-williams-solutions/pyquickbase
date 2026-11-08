@@ -83,7 +83,7 @@ These mean the request wasn't sent, though the SDK may have read the table's met
 | `ConfigurationError` | Invalid client settings, or missing environment variables |
 | `QueryError` | A query that can't be sent as written, such as a lowercase operator in a hand-written string |
 | `InvalidValueError` | A row, value, or file request that can't be sent |
-| `SchemaMismatchError` | A generated class no longer matches its table, or an `ensure_` method found a field that isn't what it was asked for |
+| `SchemaMismatchError` | An `ensure_` method found a field that isn't what it was asked for, or the schema changed since a plan was made |
 | `UnknownTableError` | No table with that name or ID in this app, or the client's policy hides it |
 | `UnknownFieldError` | No field with that label or ID in this table, or the token's role or the client's policy hides it |
 | `UnknownReportError` | No report with that name or ID on this table, several with that name, or one the role can't use |

@@ -45,10 +45,6 @@ with Quickbase(realm="acme", token="your_user_token") as qb:
     Typed operations for tool calls, results as plain data, and these docs as
     [llms.txt](llms.txt).
 
--   **[Generated classes](guides/codegen.md)**
-
-    Typed classes for your tables, so a renamed field breaks at type-check time.
-
 </div>
 
 The Quickbase REST API accepts many mistakes without complaint. A lowercase operator acts like

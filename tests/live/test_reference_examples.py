@@ -12,7 +12,6 @@ import inspect
 import io
 import os
 import sys
-import types
 from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
@@ -34,7 +33,6 @@ from pyquickbase import (
     UnknownFieldError,
     UnknownTableError,
 )
-from pyquickbase._codegen import render
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -138,25 +136,13 @@ def check_output(path: Path, printed: str, scratch: Any, tables: tuple[Any, Any]
     assert printed == (expected.read_text(encoding="utf-8") if expected.exists() else "")
 
 
-def add_generated_module(tasks: Any, monkeypatch: pytest.MonkeyPatch) -> Any:
-    """Stand in for the module that `pyquickbase codegen` writes, which examples use."""
-    module = types.ModuleType("myapp.tables")
-    exec(render([(tasks.info(), tasks.fields())]), module.__dict__)
-    monkeypatch.setitem(sys.modules, "myapp", types.ModuleType("myapp"))
-    monkeypatch.setitem(sys.modules, "myapp.tables", module)
-    return module.JobTasks
-
-
-def namespace(
-    qb: Any, scratch: Any, slug: str, tables: tuple[Any, Any], model: Any
-) -> dict[str, Any]:
+def namespace(qb: Any, scratch: Any, tables: tuple[Any, Any]) -> dict[str, Any]:
     app = qb.app(scratch.app_id)
     table_id = tables[0].info().id
     return {
         "qb": qb,
         "app": app,
-        "JobTasks": model,
-        "tasks": app.typed(model) if slug == "typed-table" else app.table(table_id),
+        "tasks": app.table(table_id),
         "projects": app.table(tables[1].info().id),
     }
 
@@ -178,19 +164,17 @@ def with_real_ids(code: str, scratch: Any, tables: tuple[Any, Any]) -> str:
     )
 
 
-def run_sync(path: Path, slug: str, scratch: Any, tables: tuple[Any, Any], model: Any) -> str:
+def run_sync(path: Path, slug: str, scratch: Any, tables: tuple[Any, Any]) -> str:
     code = with_real_ids(build_reference.to_sync(example_code(path, slug)), scratch, tables)
     printed = io.StringIO()
     with Quickbase(realm=scratch.realm, token=scratch.token) as qb:
-        names = namespace(qb, scratch, slug, tables, model)
+        names = namespace(qb, scratch, tables)
         with contextlib.redirect_stdout(printed):
             exec(compile(code, str(path), "exec"), names)
     return printed.getvalue()
 
 
-async def run_async(
-    path: Path, slug: str, scratch: Any, tables: tuple[Any, Any], model: Any
-) -> str:
+async def run_async(path: Path, slug: str, scratch: Any, tables: tuple[Any, Any]) -> str:
     code = compile(
         with_real_ids(example_code(path, slug), scratch, tables),
         str(path),
@@ -199,7 +183,7 @@ async def run_async(
     )
     printed = io.StringIO()
     async with AsyncQuickbase(realm=scratch.realm, token=scratch.token) as qb:
-        names = namespace(qb, scratch, slug, tables, model)
+        names = namespace(qb, scratch, tables)
         with contextlib.redirect_stdout(printed):
             result = eval(code, names)
             if inspect.isawaitable(result):
@@ -217,21 +201,19 @@ def client_env(scratch: Any, monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.parametrize(("slug", "path"), EXAMPLES, ids=EXAMPLE_IDS)
 @pytest.mark.usefixtures("client_env")
 def test_the_sync_example_prints_what_the_page_shows(
-    slug: str, path: Path, scratch: Any, tables: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch
+    slug: str, path: Path, scratch: Any, tables: tuple[Any, Any]
 ) -> None:
     prepare(slug, path.stem, *tables)
-    model = add_generated_module(tables[0], monkeypatch)
-    check_output(path, run_sync(path, slug, scratch, tables, model), scratch, tables)
+    check_output(path, run_sync(path, slug, scratch, tables), scratch, tables)
 
 
 @pytest.mark.parametrize(("slug", "path"), EXAMPLES, ids=EXAMPLE_IDS)
 @pytest.mark.usefixtures("client_env")
 def test_the_async_example_prints_what_the_page_shows(
-    slug: str, path: Path, scratch: Any, tables: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch
+    slug: str, path: Path, scratch: Any, tables: tuple[Any, Any]
 ) -> None:
     prepare(slug, path.stem, *tables)
-    model = add_generated_module(tables[0], monkeypatch)
-    check_output(path, asyncio.run(run_async(path, slug, scratch, tables, model)), scratch, tables)
+    check_output(path, asyncio.run(run_async(path, slug, scratch, tables)), scratch, tables)
 
 
 def test_getting_a_table_waits_until_first_use_to_check_it(scratch: Any) -> None:

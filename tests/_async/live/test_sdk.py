@@ -1,12 +1,8 @@
 """Every public method of the client against a real app, on temporary tables."""
 
-import importlib.util
 import os
-import subprocess
-import sys
 from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -14,7 +10,6 @@ import pytest
 
 import pyquickbase
 from pyquickbase import (
-    UNSET,
     AppInfo,
     AsyncQuickbase,
     F,
@@ -581,115 +576,6 @@ async def test_a_bad_token_is_an_authentication_error(scratch: Any) -> None:
         with pytest.raises(pyquickbase.QuickbaseError) as caught:
             await qb.app(scratch.app_id).tables()
     assert "fake-user-token" not in str(caught.value)
-
-
-def generated_class(scratch: Any, table_id: str, tmp_path: Path) -> Any:
-    """Run the installed command, as a user would, and import what it wrote."""
-    output = tmp_path / "live_tables.py"
-    command = [sys.executable, "-c", "from pyquickbase._cli import main; raise SystemExit(main())"]
-    arguments = ["codegen", "--app", scratch.app_id, "--output", str(output), "--table", table_id]
-    env = {**os.environ, "QB_REALM": scratch.realm, "QB_USER_TOKEN": scratch.token}
-    subprocess.run([*command, *arguments], env=env, check=True, capture_output=True)
-    subprocess.run([*command, *arguments, "--check"], env=env, check=True, capture_output=True)
-    source = output.read_text()
-    assert scratch.token not in source
-    assert scratch.realm not in source
-    name = f"live_tables_{table_id}"
-    spec = importlib.util.spec_from_file_location(name, output)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return next(
-        value
-        for key, value in vars(module).items()
-        if isinstance(value, type)
-        and issubclass(value, pyquickbase.TypedRecord)
-        and value is not pyquickbase.TypedRecord
-        and key != "TypedRecord"
-    )
-
-
-async def test_generated_classes_read_and_write(
-    qb: AsyncQuickbase, scratch: Any, seeded: str, tmp_path: Path
-) -> None:
-    Tasks = generated_class(scratch, seeded, tmp_path)
-    tasks = qb.app(scratch.app_id).typed(Tasks)
-    await tasks.check_schema()
-    found = [
-        task
-        async for task in tasks.query(
-            where=Tasks.fields.amount > 3,
-            order_by=Tasks.fields.amount.desc,
-            page_size=1,
-        )
-    ]
-    assert [task.code for task in found] == ["C5", "C4"]
-    assert found[0].due_date == date(2027, 1, 5)
-    assert found[0].doubled == 10
-    assert found[0].started is None
-    assert found[0].tags == []
-    assert found[0].attachment is None
-    assert "Row" not in repr(found[0])
-    assert await tasks.count(Tasks.fields.code == "C1") == 1
-
-    made = await tasks.insert(
-        [Tasks.new(title="Typed", code="T1", amount=7, due_date=date(2027, 2, 1))]
-    )
-    new_id = made.created_ids[0]
-    assert (await tasks.update([Tasks.change(new_id, title="Typed 2", amount=UNSET)])).updated_ids
-    await tasks.update([Tasks.change(new_id, due_date=None)])
-    assert await tasks.upsert([Tasks.new(code="T1", amount=8)], merge_on=Tasks.fields.code)
-    rows = [t async for t in tasks.query(where=Tasks.fields.code == "T1")]
-    assert len(rows) == 1
-    row = rows[0]
-    assert (row.title, row.amount, row.due_date) == ("Typed 2", 8, None)
-    await tasks.update([Tasks.change(new_id, attachment=FileUpload("t.txt", b"typed"))])
-    assert (await tasks.table.download_file(new_id, "Attachment")).data == b"typed"
-    assert await tasks.delete(Tasks.fields.code == "T1") == 1
-    with pytest.raises(TypeError):
-        Tasks.new(doubled=1)
-
-
-async def test_generated_classes_read_a_page_at_a_time(
-    qb: AsyncQuickbase, scratch: Any, seeded: str, tmp_path: Path
-) -> None:
-    Tasks = generated_class(scratch, seeded, tmp_path)
-    tasks = qb.app(scratch.app_id).typed(Tasks)
-    where = Tasks.fields.amount > 1
-
-    first = await tasks.query_page(where=where, order_by=Tasks.fields.amount.desc, limit=2)
-    assert all(isinstance(task, Tasks) for task in first.records)
-    assert [task.code for task in first.records] == ["C5", "C4"]
-    assert first.records[0].due_date == date(2027, 1, 5)
-    assert (first.total, first.skip, first.has_more, first.next_skip) == (4, 0, True, 2)
-
-    last = await tasks.query_page(
-        where=where, order_by=Tasks.fields.amount.desc, limit=2, skip=first.next_skip
-    )
-    assert [task.code for task in last.records] == ["C3", "C2"]
-    assert (last.skip, last.has_more, last.next_skip) == (2, False, 4)
-
-    # The untyped table takes the same fields, and sorts the same way.
-    untyped = await tasks.table.query_page(where=where, order_by=Tasks.fields.amount, limit=1)
-    assert untyped.records[0]["Code"] == "C2"
-    assert (await tasks.table.first(order_by=Tasks.fields.amount.desc))["Code"] == "C5"
-
-
-async def test_check_schema_notices_what_first_use_doesnt(
-    scratch: Any, qb: AsyncQuickbase, tmp_path: Path
-) -> None:
-    made = scratch.table(("Title", "text"), ("Gone", "text"), ("Changing", "text"))
-    Tasks = generated_class(scratch, made.info().id, tmp_path)
-    tasks = qb.app(scratch.app_id).typed(Tasks)
-    assert await tasks.count() == 0
-    made.delete_fields("Gone")
-    assert await tasks.count() == 0  # Checked once already, so this isn't noticed.
-    with pytest.raises(SchemaMismatchError, match=r"gone \(field \d+\) no longer exists"):
-        await tasks.check_schema()
-    with pytest.raises(SchemaMismatchError):
-        await tasks.count()
 
 
 async def test_setup_methods_create_once_and_read_back_exactly(

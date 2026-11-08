@@ -1,14 +1,12 @@
 """Check what the reading and writing guides say. A failure means the docs are wrong."""
 
-import types
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
 import pytest
 
-from pyquickbase import F, Policy, Quickbase, TypedRecord
-from pyquickbase._codegen import render
+from pyquickbase import F, Policy, Quickbase
 from pyquickbase.errors import (
     BadRequestError,
     InvalidValueError,
@@ -288,23 +286,3 @@ def test_datetimes_with_fractions_of_a_second(scratch: Any) -> None:
         record_id = table.insert([{"Seen": value}]).created_ids[0]
         read = table.get(record_id, select=["Seen"])["Seen"]
         assert read == value.replace(microsecond=0)  # It reads back to the second.
-
-
-def test_a_typed_batch_size_and_a_row_for_another_table(scratch: Any) -> None:
-    table = scratch.table(("Title", "text"))
-    app = scratch.client.app(scratch.app_id)
-    source = render([(table.info(), table.fields(refresh=True))])
-    module = types.ModuleType("generated_for_docs")
-    exec(source, module.__dict__)
-    model = next(
-        item
-        for item in vars(module).values()
-        if isinstance(item, type) and issubclass(item, TypedRecord) and item is not TypedRecord
-    )
-    typed = app.typed(model)
-    made = typed.insert([model.new(title=f"Row {n}") for n in range(3)], batch_size=2)
-    assert len(made.created_ids) == 3
-    other = type("Other", (model,), {"__slots__": (), "__table_id__": "bqother"})
-    with pytest.raises(InvalidValueError):
-        typed.insert([other.new(title="Wrong")])
-    assert table.count() == 3

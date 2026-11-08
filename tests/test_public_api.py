@@ -1,6 +1,5 @@
 """Fail when the public API changes, so a breaking change can't slip into a 1.x release."""
 
-import argparse
 import difflib
 import inspect
 import os
@@ -9,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pyquickbase
-from pyquickbase import _cli, errors
+from pyquickbase import errors
 
 SNAPSHOT = Path(__file__).parent / "fixtures" / "public_api.txt"
 
@@ -44,9 +43,7 @@ SPECIAL_METHODS = frozenset(
 
 # docs/stability.md leaves these constructors out, because the client creates these objects.
 CLIENT_MADE = frozenset(
-    name + kind
-    for name in ("", "Async")
-    for kind in ("App", "RecordIterator", "Report", "Table", "TypedIterator", "TypedTable")
+    name + kind for name in ("", "Async") for kind in ("App", "RecordIterator", "Report", "Table")
 )
 
 
@@ -120,23 +117,6 @@ def class_lines(name: str, item: type) -> list[str]:
     return [f"class {name}({bases})", *(f"    {found[key]}" for key in sorted(found))]
 
 
-def command_lines() -> list[str]:
-    lines = []
-    subparsers = next(
-        action
-        for action in _cli._parser()._actions
-        if isinstance(action, argparse._SubParsersAction)
-    )
-    for command, parser in sorted(subparsers.choices.items()):
-        lines.append(f"command pyquickbase {command}")
-        for action in parser._actions:
-            if action.dest != "help":
-                needed = "required" if action.required else f"default {action.default!r}"
-                kind = type(action).__name__.strip("_")
-                lines.append(f"    {' '.join(action.option_strings)} ({kind}, {needed})")
-    return lines
-
-
 def public_api() -> str:
     names = {name: getattr(pyquickbase, name) for name in pyquickbase.__all__}
     del names["__version__"]
@@ -153,7 +133,7 @@ def public_api() -> str:
             lines.append(f"def {name}{signature(item)}")
         else:
             lines.append(f"value {name} = {clean(repr(item))}")
-    return "\n".join([*lines, *command_lines()]) + "\n"
+    return "\n".join(lines) + "\n"
 
 
 def test_public_api_matches_the_snapshot() -> None:
@@ -179,4 +159,3 @@ def test_snapshot_covers_the_whole_api() -> None:
         if not re.search(rf"^(class|def|value) {name}\b", expected, re.MULTILINE)
     ]
     assert not missing
-    assert "command pyquickbase codegen" in expected

@@ -2,14 +2,12 @@
 """Previews through a client: they read what they need, and never write."""
 
 import json
-from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import Any
 
 import httpx
 import pytest
 
 from pyquickbase import (
-    Column,
     F,
     FileUpload,
     InvalidValueError,
@@ -17,7 +15,6 @@ from pyquickbase import (
     PolicyRefusedError,
     QueryError,
     Quickbase,
-    TypedRecord,
     UnknownFieldError,
     where_from_dict,
 )
@@ -184,39 +181,3 @@ def test_previews_work_where_the_write_would_be_refused() -> None:
         assert (tasks.preview_update([{"Record ID#": 1, "Title": "new"}])).changes
         with pytest.raises(PolicyRefusedError):
             tasks.update([{"Record ID#": 1, "Title": "new"}])
-
-
-@dataclass(frozen=True, slots=True, repr=False)
-class Task(TypedRecord):
-    __table_id__: ClassVar[str] = TASKS
-    __columns__: ClassVar[tuple[Column, ...]] = (
-        Column("id", 3, "recordid", False, "Record ID#"),
-        Column("title", 6, "text", True, "Title"),
-    )
-    id: int
-    title: str
-
-    @classmethod
-    def change(cls, id: int, title: str) -> Any:
-        return cls._row({"id": id, "title": title})
-
-
-def test_typed_tables_can_preview() -> None:
-    fake = Fake({1: {6: "old"}})
-    with client(fake) as qb:
-        tasks = qb.app("bq1234567").typed(Task)
-        preview = tasks.preview_update([Task.change(1, "new")])
-        assert preview.changes[0].fields["Title"].after == "new"
-        page = tasks.preview_delete(F("Status") == "x", limit=1)
-    assert page.total == 1
-    assert page.records[0] == Task(id=1, title="old")
-    assert fake.writes == []
-
-
-def test_a_typed_preview_refuses_a_row_for_another_table() -> None:
-    class Other(Task):
-        __table_id__: ClassVar[str] = "bqother"
-
-    with client(Fake()) as qb:
-        with pytest.raises(InvalidValueError, match="made for table bqother"):
-            qb.app("bq1234567").typed(Task).preview_update([Other.change(1, "x")])

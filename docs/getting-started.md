@@ -70,7 +70,6 @@ and operations. Getting an app or a table sends nothing. They're checked when fi
 flowchart TD
     QB["<b>Quickbase</b><br/>the client"] -- "qb.app(id)" --> App[<b>App</b>]
     App -- "app.table(name)" --> T[<b>Table</b>]
-    App -- "app.typed(Class)" --> TT[<b>TypedTable</b>]
     T --> TO["records, fields,<br/>reports, operations"]
 ```
 

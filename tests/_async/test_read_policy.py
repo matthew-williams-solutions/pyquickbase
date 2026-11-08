@@ -1,8 +1,7 @@
 """A policy's reads, used through a client, so every kind of read reaches the check."""
 
 import json
-from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import Any
 
 import httpx
 import pytest
@@ -10,15 +9,12 @@ import pytest
 from pyquickbase import (
     AsyncQuickbase,
     BoundPolicy,
-    Column,
     Decision,
     F,
     Policy,
     PolicyRefusedError,
     QueryError,
     ReadRequest,
-    SchemaMismatchError,
-    TypedRecord,
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
@@ -346,21 +342,6 @@ async def test_preview_update_of_a_hidden_field_is_refused() -> None:
             await tasks.preview_update([{"Record ID#": 1, "Notes": "x"}])
         preview = await tasks.preview_update([{"Record ID#": 1, "Status": "Done"}])
         assert [change.record_id for change in preview.changes] == [1]
-
-
-@dataclass(frozen=True, slots=True, kw_only=True, repr=False)
-class Tasks(TypedRecord):
-    __table_id__: ClassVar[str] = TASKS
-    __columns__: ClassVar[tuple[Column, ...]] = (
-        Column("id", 3, "recordid", False, "Record ID#"),
-        Column("notes", 9, "text", True, "Notes"),
-    )
-
-
-async def test_a_generated_class_with_a_hidden_field_doesnt_match() -> None:
-    async with client(Fake(), rules()) as qb:
-        with pytest.raises(SchemaMismatchError, match="notes"):
-            await qb.app("bq1234567").typed(Tasks).first()
 
 
 class Log:

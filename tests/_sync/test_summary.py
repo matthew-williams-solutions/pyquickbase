@@ -2,14 +2,12 @@
 """Summaries and summary reports through a client, which page and only read."""
 
 import json
-from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import Any
 
 import httpx
 import pytest
 
 from pyquickbase import (
-    Column,
     F,
     InvalidResponseError,
     Policy,
@@ -17,7 +15,6 @@ from pyquickbase import (
     QueryError,
     Quickbase,
     TooManyRecordsError,
-    TypedRecord,
     UnknownFieldError,
     UnknownReportError,
     UnsupportedReportError,
@@ -247,28 +244,6 @@ def test_bad_arguments_raise_without_reading_records(options: Any, error: Any) -
         with pytest.raises(error):
             qb.app("bq1234567").table("Tasks").summarize(**options)
     assert fake.queries == []
-
-
-@dataclass(frozen=True, slots=True, repr=False)
-class Task(TypedRecord):
-    __table_id__: ClassVar[str] = TASKS
-    __columns__: ClassVar[tuple[Column, ...]] = (
-        Column("id", 3, "recordid", False, "Record ID#"),
-        Column("status", 6, "text", True, "Status"),
-        Column("hours", 7, "numeric", True, "Hours"),
-    )
-    id: int
-    status: str
-    hours: float
-
-
-def test_typed_tables_can_summarize_by_label_or_id() -> None:
-    fake = Fake(total=4)
-    with client(fake) as qb:
-        tasks = qb.app("bq1234567").typed(Task)
-        rows = tasks.summarize(F(6), sum=F("Hours"), where=F("Status") != "x")
-    assert [row.group["Status"] for row in rows] == ["a", "b"]
-    assert rows[0].sum == {"Hours": 4}
 
 
 # Summary and chart reports

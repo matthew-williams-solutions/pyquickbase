@@ -2,11 +2,8 @@
 
 import contextlib
 import json
-import keyword
 import os
 import re
-import sys
-import types
 from datetime import UTC, datetime
 from typing import Any
 
@@ -26,7 +23,6 @@ from pyquickbase import (
     RetryPolicy,
     parse_where,
 )
-from pyquickbase._codegen import _attribute_names, render
 from pyquickbase._config import (
     build_url,
     is_read,
@@ -406,74 +402,3 @@ def test_a_file_name_cant_hold_a_path_or_control_characters(name: str, data: byt
 )
 def test_a_written_value_is_valid_json(value: Any) -> None:
     json.dumps(to_api_value(value), allow_nan=False)
-
-
-LABELS = st.one_of(
-    st.text(min_size=1, max_size=30),
-    st.sampled_from(
-        [
-            "class", "id", "ID", "fields", "new", "change", "from_record", "cls", "self", "_row",
-            "__columns__", "__table_id__", "__class__", "__init__", "mro", "print", "None", "True",
-            '"""', "'''", "\\", '")\nraise SystemExit("hacked', "# coding: latin-1", "\n", "\r\n",
-            "{x}", "%s", "日本語", "😀", "é", "ß", "Ⅷ", "1st", "9", "a" * 200, "Unset", "UNSET",
-            "Row", "dataclass", "ClassVar", "Any", "Self", "_dt", "dt", "date", "datetime", "float",
-        ]
-    ),
-)  # fmt: skip
-
-
-def schema(labels: list[str]) -> list[Any]:
-    built = [{"id": 3, "label": "Record ID#", "fieldType": "recordid"}]
-    kinds = ["text", "date", "numeric", "checkbox", "file", "user", "some-new-type", "timestamp"]
-    built += [
-        {"id": 6 + n, "label": label, "fieldType": kinds[n % len(kinds)]}
-        for n, label in enumerate(labels)
-    ]
-    return [field_from_api(item) for item in built]
-
-
-@given(st.lists(LABELS, max_size=12), LABELS)
-@example(['")\nraise SystemExit("hacked'], '")\nraise SystemExit("hacked')
-@example(["__class__", "__init__", "mro", "_row"], "Tasks")
-@example(["date", "datetime", "float", "str", "dt", "_dt"], "Unset")
-def test_any_labels_generate_a_module_that_runs_and_does_nothing_else(
-    labels: list[str], table_name: str
-) -> None:
-    source = render([(table_info_from_api({"id": "bqtasks", "name": table_name}), schema(labels))])
-    module = types.ModuleType("generated_for_properties")
-    sys.modules[module.__name__] = module
-    before = set(sys.modules)
-    exec(compile(source, module.__name__, "exec"), module.__dict__)
-    assert set(sys.modules) - before <= {"dataclasses", "datetime"}
-    classes = [
-        value
-        for value in vars(module).values()
-        if isinstance(value, type)
-        and hasattr(value, "__columns__")
-        and value.__module__ == module.__name__
-    ]
-    assert len(classes) == 1
-    columns = classes[0].__columns__
-    names = [column.name for column in columns]
-    assert len(set(names)) == len(names)
-    assert all(
-        name.isidentifier() and name.isascii() and not keyword.iskeyword(name) for name in names
-    )
-    assert all(not name.startswith("_") for name in names)
-    assert [column.label for column in columns[1:]] == labels
-    # A row can be built for any writable field, which proves the method's signature is valid.
-    writable = {
-        column.name: None for column in columns if column.writable and column.type != "file"
-    }
-    assert classes[0].new(**writable) == {
-        column.id: None for column in columns if column.name in writable
-    }
-
-
-@given(st.lists(LABELS, max_size=10), LABELS)
-def test_a_new_field_never_takes_an_existing_name(labels: list[str], new_label: str) -> None:
-    fields = schema(labels)
-    before = _attribute_names(fields)
-    extra = field_from_api({"id": 500, "label": new_label, "fieldType": "text"})
-    after = _attribute_names([*fields, extra])
-    assert {key: after[key] for key in before} == before

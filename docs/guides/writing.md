@@ -151,8 +151,6 @@ page = tasks.preview_delete(F("Status") == "Cancelled", select=["Title"], limit=
 print(page.total, [task["Title"] for task in page.records])
 ```
 
-Both work on a typed table too, where `preview_delete()` returns instances of the class.
-
 A preview can't promise what the write will do:
 
 - **It's a snapshot.** A record can change between the preview and the write, as Quickbase has no

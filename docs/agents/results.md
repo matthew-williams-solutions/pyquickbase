@@ -44,9 +44,9 @@ Every result has `"ok": true`, and a key for what it holds:
 
 | You pass | It holds |
 |---|---|
-| A `Page` or `TypedPage`, from `query_page()` | `records`, or `columns` and `rows` with `compact=True`, and `page` |
+| A `Page`, from `query_page()` | `records`, or `columns` and `rows` with `compact=True`, and `page` |
 | A list of records or dictionaries, such as from `query()` or `summary_rows()` | The same, with `page.total` as null, as it isn't known |
-| A `Record`, `TypedRecord`, or None, from `get()` or `first()` | `record`, which is null for None |
+| A `Record` or None, from `get()` or `first()` | `record`, which is null for None |
 | A `WriteResult` | `created_ids`, `updated_ids`, and `unchanged_ids` |
 | A list of `SummaryRow`, from `summarize()` | `groups`, each with `group`, `count`, and the totals it has |
 | An `UpdatePreview` | `changes`, with `before` and `after` for each field, `unchanged_ids`, and `missing_ids` |
@@ -55,8 +55,7 @@ Every result has `"ok": true`, and a key for what it holds:
 | A `delete` operation's result | `deleted_count` |
 | Text, a number, a date, or a bool, such as from `count()` | `value` |
 
-Records are keyed by field label, or by attribute name for a generated class. Values are written the same
-way whatever their field:
+Records are keyed by field label. Values are written the same way whatever their field:
 
 - A date is `2027-01-15`, and a timestamp is in UTC, as `2027-01-15T14:30:00Z`.
 - Every kind of empty value is null. Quickbase returns `""` for an empty text field, null for an empty

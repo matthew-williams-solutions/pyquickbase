@@ -1,10 +1,9 @@
 """Tests for tool_result() and tool_error(), which do no network access."""
 
 import json
-from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal
-from typing import Any, ClassVar, get_args
+from typing import Any, get_args
 
 import pytest
 from hypothesis import given
@@ -15,7 +14,6 @@ from pyquickbase import (
     AppInfo,
     AuthenticationError,
     BadRequestError,
-    Column,
     ConfigurationError,
     Decision,
     Field,
@@ -45,8 +43,6 @@ from pyquickbase import (
     TableInfo,
     ToolErrorCode,
     TooManyRecordsError,
-    TypedPage,
-    TypedRecord,
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
@@ -211,26 +207,6 @@ def test_max_text_shortens_and_says_so() -> None:
     assert "text_truncated" not in tool_result(
         record(Record_ID=1, Title="short"), max_text_chars=10
     )
-
-
-@dataclass(frozen=True, slots=True, kw_only=True, repr=False)
-class Task(TypedRecord):
-    __table_id__: ClassVar[str] = "bqtasks"
-    __columns__: ClassVar[tuple[Column, ...]] = (
-        Column("id", 3, "recordid", False, "Record ID#"),
-        Column("title", 6, "text", True, "Title"),
-        Column("price", 7, "currency", True, "Price", "decimal"),
-    )
-    id: int
-    title: str | None
-    price: Decimal | None
-
-
-def test_generated_classes_use_attribute_names() -> None:
-    task = Task(id=1, title="Pour slab", price=Decimal("12.50"))
-    page = TypedPage(records=(task,), total=1, skip=0)
-    assert tool_result(page)["records"] == [{"id": 1, "title": "Pour slab", "price": 12.5}]
-    assert tool_result(task)["record"]["id"] == 1
 
 
 def test_decimals_are_numbers_only_when_exact() -> None:

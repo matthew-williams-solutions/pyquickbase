@@ -181,10 +181,8 @@ Avoid deleting from the set you're reading, or read it all first.
 
 To count without fetching, use `count()`.
 
-Field objects are `F("Status")`, or `Tasks.fields.status` from a
-[generated class](codegen.md#reading). They name exactly that field, so a leading `-` in one is part of
-the label. To sort a generated class's field descending, use `Tasks.fields.status.desc`. A generated
-class's own `order_by` takes only these fields or their IDs, not labels.
+Field objects such as `F("Status")` name exactly that field, so a leading `-` in one is part of the
+label.
 
 [Try it in the playground](../playground-app/index.html#find-open-tasks), with simulated data.
 
@@ -216,8 +214,6 @@ while True:
 | `next_skip` | The `skip` that fetches the following page |
 
 Skipping past the end returns no records rather than raising an error, with `total` still correct.
-A [generated class](codegen.md#reading-a-page-at-a-time) has its own `query_page()`, which returns
-instances of the class.
 
 [Try it in the playground](../playground-app/index.html#count-and-page), with simulated data.
 

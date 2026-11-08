@@ -196,30 +196,3 @@ may already have applied, so an agent should check the data before trying again.
 
 Repeating an `update()`, or an `upsert()` on a unique field, reports the record as unchanged rather
 than adding another, but repeating an `insert()` can add a duplicate.
-
-## Generated classes
-
-`pyquickbase codegen` gives an agent a typed view of a table, with a class that names each field and
-its type. The command only reads from Quickbase.
-
-```bash
-pyquickbase codegen --app bq1234567 --output src/myapp/tables.py --table Tasks
-```
-
-```python
-from myapp.tables import Tasks
-
-tasks = qb.app("bq1234567").typed(Tasks)
-
-for task in tasks.query(where=Tasks.fields.status == status, max_total=50):
-    print(task.id, task.title)
-```
-
-A type checker catches a wrong name or type, and `Tasks.new()` only accepts fields that can be
-written. `Tasks.fields` handles values as `F` does. If the table has changed, `SchemaMismatchError`
-stops reads and writes.
-
-This isn't an access limit, because `tasks.table` gives the untyped table and `where` still accepts
-a string. The module also holds field labels, which can contain any text, so treat them as data if a
-model reads the file. Generate it with a token that has [the same
-access](../guides/codegen.md#keeping-it-up-to-date) as the code using it.

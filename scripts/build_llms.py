@@ -33,7 +33,6 @@ DESCRIPTIONS = {
     "guides/files.md": "Uploading, downloading, and deleting file attachments",
     "guides/formulas.md": "Running formulas and creating formula fields, and why not to run "
     "formula text you don't control",
-    "guides/codegen.md": "Typed classes for your tables from `pyquickbase codegen`",
     "guides/schema.md": "Creating and changing tables, fields, relationships, lookups, and "
     "summaries, and what each refusal leaves behind",
     "guides/errors.md": "Every exception, and which ones mean a request wasn't sent",

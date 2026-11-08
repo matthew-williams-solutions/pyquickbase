@@ -12,7 +12,6 @@ class App(object)
     def settings_url(self) -> str
     def table(self, name_or_id: str) -> 'Table'
     def tables(self, *, refresh: bool = False) -> list[TableInfo]
-    def typed(self, model: type[~R]) -> 'TypedTable[R]'
     def url(self) -> str
 class AppInfo(object)
     def __eq__(self, other)
@@ -35,7 +34,6 @@ class AsyncApp(object)
     def settings_url(self) -> str
     def table(self, name_or_id: str) -> 'AsyncTable'
     async def tables(self, *, refresh: bool = False) -> list[TableInfo]
-    def typed(self, model: type[~R]) -> 'AsyncTypedTable[R]'
     def url(self) -> str
 class AsyncOperation(object)
     def __init__(self, table: AsyncTable, spec: OperationSpec) -> None
@@ -112,24 +110,6 @@ class AsyncTable(object)
     async def update_info(self, *, name: str | None = None, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> TableInfo
     async def upsert(self, records: Iterable[Mapping[str | int, Any]], *, merge_on: str | int, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     async def url(self) -> str
-class AsyncTypedIterator(Generic)
-    def __aiter__(self) -> Self
-    async def __anext__(self) -> ~R
-class AsyncTypedTable(Generic)
-    async def check_schema(self) -> None
-    async def count(self, where: Expression | str | None = None) -> int
-    async def delete(self, where: Expression | str) -> int
-    async def first(self, *, where: Expression | str | None = None, select: TypedField | Sequence[TypedField] | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None) -> ~R | None
-    async def get(self, record_id: int, *, select: TypedField | Sequence[TypedField] | None = None) -> ~R | None
-    async def insert(self, records: Iterable[Row[~R]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
-    async def preview_delete(self, where: Expression | str, *, order_by: TypedField | int | Sequence[TypedField | int] | None = None, limit: int = 100) -> TypedPage[~R]
-    async def preview_update(self, records: Iterable[Row[~R]]) -> UpdatePreview
-    def query(self, *, where: Expression | str | None = None, select: TypedField | Sequence[TypedField] | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, max_total: int | None = None) -> 'AsyncTypedIterator[R]'
-    async def query_page(self, *, where: Expression | str | None = None, select: TypedField | Sequence[TypedField] | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, limit: int = 100, skip: int = 0) -> TypedPage[~R]
-    async def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records_scanned: int | None = None, page_size: int | None = None) -> list[SummaryRow]
-    property table -> AsyncTable
-    async def update(self, records: Iterable[Row[~R]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
-    async def upsert(self, records: Iterable[Row[~R]], *, merge_on: TypedField, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
 class AuthenticationError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
 class BadRequestError(APIError)
@@ -167,15 +147,6 @@ class BoundPolicy(object)
     def user_emails(self, table_id: str) -> bool
     def visible(self, table_id: str, field_id: int) -> bool
     def with_created(self, table_id: str, name: str) -> 'BoundPolicy'
-class Column(object)
-    def __eq__(self, other)
-    def __init__(self, name: str, id: int, type: str, writable: bool, label: str, read_as: str = '') -> None
-    field id: int
-    field label: str
-    field name: str
-    field read_as: str
-    field type: str
-    field writable: bool
 class ConfigurationError(QuickbaseError, ValueError)
 class ConfirmationError(QuickbaseError)
 class CreateField(object)
@@ -369,7 +340,6 @@ class Operation(object)
     def run(self, arguments: Mapping[str, Any], *, scope: Expression | None = None) -> Any
     property schema -> dict[str, Any]
 value OperationName = Literal['query', 'count', 'summarize', 'insert', 'update', 'delete', 'preview_update', 'preview_delete', 'run_report', 'run_summary_report', 'run_formula', 'download_file', 'delete_file_version']
-value OrderBy = TypedField | int | Sequence[TypedField | int] | None
 class Page(object)
     def __eq__(self, other)
     def __init__(self, *, records: tuple[Record, ...], total: int, skip: int) -> None
@@ -503,8 +473,6 @@ class Role(object)
     field id: int
     field name: str
     field raw: Mapping[str, Any]
-class Row(dict, Generic)
-    def __init__(self, values: Mapping[int, Any] | None = None, *, table_id: str | None = None) -> None
 class RowError(object)
     def __eq__(self, other)
     def __init__(self, *, index: int, messages: tuple[str, ...], reason: Literal['duplicate', 'permission', 'invalid_choice', 'rule', 'other'] = 'other', field_id: int | None = None) -> None
@@ -545,7 +513,6 @@ class SchemaPlan(object)
     property has_changes -> bool
     property warnings -> tuple[str, ...]
 value SchemaVerb = Literal['add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table']
-value Select = TypedField | Sequence[TypedField] | None
 class ServerError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
 class SettingChange(object)
@@ -631,57 +598,9 @@ class TableSelector(object)
 class TooManyRecordsError(QueryError)
     def __init__(self, matched: int, limit: int) -> None
 value ToolErrorCode = Literal['misconfigured', 'needs_confirmation', 'invalid_arguments', 'too_many_records', 'invalid_value', 'read_refused', 'write_refused', 'unknown_table', 'unknown_field', 'unknown_report', 'unsupported_report', 'schema_mismatch', 'partial_write', 'write_failed', 'write_permission_denied', 'authentication', 'permission_denied', 'not_found', 'bad_request', 'rate_limited', 'server_error', 'api_error', 'timeout', 'network_error', 'invalid_response', 'quickbase_error', 'internal']
-class TypedField(F)
-    def __eq__(self, value: object) -> Condition
-    def __ge__(self, value: Any) -> Condition
-    def __gt__(self, value: Any) -> Condition
-    def __init__(self, field: str | int) -> None
-    def __le__(self, value: Any) -> Condition
-    def __lt__(self, value: Any) -> Condition
-    def __ne__(self, value: object) -> Condition
-    def contains(self, value: Any) -> Condition
-    property desc -> int
-    def has(self, value: Any) -> Condition
-    property id -> int
-    def is_in(self, values: Iterable[Any]) -> Expression
-    def not_contains(self, value: Any) -> Condition
-    def not_has(self, value: Any) -> Condition
-    def not_starts_with(self, value: Any) -> Condition
-    def op(self, operator: str, value: Any) -> Condition
-    def starts_with(self, value: Any) -> Condition
-class TypedIterator(Generic)
-    def __iter__(self) -> Self
-    def __next__(self) -> ~R
-class TypedPage(Generic)
-    def __eq__(self, other)
-    def __init__(self, *, records: tuple[~R, ...], total: int, skip: int) -> None
-    property has_more -> bool
-    property next_skip -> int
-    field records: tuple[~R, ...]
-    field skip: int
-    field total: int
-class TypedRecord(object)
-    classmethod def from_record(cls, record: Record, *, only: Collection[int] | None = None) -> Self
-class TypedTable(Generic)
-    def check_schema(self) -> None
-    def count(self, where: Expression | str | None = None) -> int
-    def delete(self, where: Expression | str) -> int
-    def first(self, *, where: Expression | str | None = None, select: TypedField | Sequence[TypedField] | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None) -> ~R | None
-    def get(self, record_id: int, *, select: TypedField | Sequence[TypedField] | None = None) -> ~R | None
-    def insert(self, records: Iterable[Row[~R]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
-    def preview_delete(self, where: Expression | str, *, order_by: TypedField | int | Sequence[TypedField | int] | None = None, limit: int = 100) -> TypedPage[~R]
-    def preview_update(self, records: Iterable[Row[~R]]) -> UpdatePreview
-    def query(self, *, where: Expression | str | None = None, select: TypedField | Sequence[TypedField] | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, max_total: int | None = None) -> 'TypedIterator[R]'
-    def query_page(self, *, where: Expression | str | None = None, select: TypedField | Sequence[TypedField] | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, limit: int = 100, skip: int = 0) -> TypedPage[~R]
-    def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records_scanned: int | None = None, page_size: int | None = None) -> list[SummaryRow]
-    property table -> Table
-    def update(self, records: Iterable[Row[~R]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
-    def upsert(self, records: Iterable[Row[~R]], *, merge_on: TypedField, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
-value UNSET = UNSET
 class UnknownFieldError(QuickbaseError, LookupError)
 class UnknownReportError(QuickbaseError, LookupError)
 class UnknownTableError(QuickbaseError, LookupError)
-class Unset(object)
 class UnsupportedReportError(QuickbaseError)
 class UpdateField(object)
     def __eq__(self, other)
@@ -758,10 +677,3 @@ def tool_error(error: BaseException) -> dict[str, Any]
 def tool_result(value: Any, *, compact: bool = False, max_records: int | None = None, max_text_chars: int | None = None, max_chars: int | None = None) -> dict[str, Any]
 def where_from_dict(data: Mapping[str, Any], *, fields: Iterable[str | int] | Iterable[Field] | None = None) -> Expression
 def where_schema(*, fields: Iterable[str | int] | Iterable[Field] | None = None, field_descriptions: Mapping[str | int, str] | None = None, max_depth: int = 2) -> dict[str, Any]
-command pyquickbase codegen
-    --app (StoreAction, required)
-    --output (StoreAction, required)
-    --table (AppendAction, default [])
-    --token-env (StoreAction, default 'QB_USER_TOKEN')
-    --include-links (StoreTrueAction, default False)
-    --check (StoreTrueAction, default False)

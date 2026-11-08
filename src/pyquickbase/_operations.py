@@ -21,13 +21,11 @@ from decimal import Decimal
 from typing import Any, Literal, cast, get_args
 
 from ._bound import BoundPolicy
-from ._codegen import _WRITE_TYPES  # pyright: ignore[reportPrivateUsage]
 from ._decision import Decision, Named
 from ._models import RECORD_ID_FIELD, Field, FieldIndex, ReportInfo
 from ._query import NO_VALUE, Condition, Expression, FieldRef, Group
 from ._read_request import ReadRequest
 from ._summary import GroupSort, GroupSortKind, Period, PeriodUnit
-from ._typed import is_writable
 from ._where_data import case_hint, normalize_where, where_from_dict, where_schema
 from ._writes import FileUpload
 from .errors import (
@@ -67,9 +65,33 @@ _NUMERIC_TYPES = frozenset({"numeric", "currency", "percent", "rating", "duratio
 _DATE_TYPES = frozenset({"date", "timestamp"})
 _RANGE_TYPES = _NUMERIC_TYPES | _DATE_TYPES | {"timeofday", "recordid"}
 _UNGROUPABLE_TYPES = frozenset({"multitext", "multiuser", "file"})
-# The types a generated class writes, and a file sent as text, but not users, as a model can't be
-# offered them as choices.
-_JSON_WRITE_TYPES = frozenset(_WRITE_TYPES) - {"user", "multiuser"}
+# The field types a tool writes from JSON: those confirmed writable, with a file sent as text.
+# Users are left out, as a model can't be offered them as choices. Unconfirmed types are read-only.
+_JSON_WRITE_TYPES = frozenset(
+    {
+        "text",
+        "text-multiple-choice",
+        "text-multi-line",
+        "rich-text",
+        "numeric",
+        "currency",
+        "rating",
+        "percent",
+        "multitext",
+        "email",
+        "url",
+        "duration",
+        "date",
+        "timestamp",
+        "timeofday",
+        "checkbox",
+        "phone",
+        "file",
+        "predecessor",
+    }
+)
+# Record ID, date created, date modified, record owner, and last modified by.
+_BUILT_IN_FIELDS = 5
 _TEXT_TYPES = frozenset(
     {
         "text",
@@ -1285,7 +1307,11 @@ def _offered_reports(
 
 def writable_fields(fields: Sequence[Field]) -> list[Field]:
     """Fields a tool can write from JSON: writable, and of a type JSON can carry."""
-    return [item for item in fields if is_writable(item) and item.type in _JSON_WRITE_TYPES]
+    return [
+        item
+        for item in fields
+        if item.mode is None and item.id > _BUILT_IN_FIELDS and item.type in _JSON_WRITE_TYPES
+    ]
 
 
 def unavailable(name: OperationName, allowed: Allowed, formula: str | None) -> str | None:

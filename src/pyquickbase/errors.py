@@ -127,8 +127,8 @@ class UnsupportedReportError(QuickbaseError):
 class SchemaMismatchError(QuickbaseError):
     """A table doesn't match what the code expects, so nothing was changed.
 
-    A generated class no longer matches its table, so it needs generating again, or an `ensure_`
-    method found a field that isn't what it was asked for.
+    An `ensure_` method found a field that isn't what it was asked for, or the schema changed since
+    a plan was made.
     """
 
 

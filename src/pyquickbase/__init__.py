@@ -8,8 +8,6 @@ from ._async._resources import (
     AsyncReport,
     AsyncSchemaOperation,
     AsyncTable,
-    AsyncTypedIterator,
-    AsyncTypedTable,
 )
 from ._bound import BoundPolicy, Offers
 from ._decision import Decision, Layer, Named, SchemaVerb, Verb
@@ -77,19 +75,6 @@ from ._sync._resources import (
     Report,
     SchemaOperation,
     Table,
-    TypedIterator,
-    TypedTable,
-)
-from ._typed import (
-    UNSET,
-    Column,
-    OrderBy,
-    Row,
-    Select,
-    TypedField,
-    TypedPage,
-    TypedRecord,
-    Unset,
 )
 from ._version import __version__
 from ._where_data import where_from_dict, where_schema
@@ -124,7 +109,6 @@ from .errors import (
 )
 
 __all__ = [
-    "UNSET",
     "APIError",
     "App",
     "AppInfo",
@@ -135,12 +119,9 @@ __all__ = [
     "AsyncReport",
     "AsyncSchemaOperation",
     "AsyncTable",
-    "AsyncTypedIterator",
-    "AsyncTypedTable",
     "AuthenticationError",
     "BadRequestError",
     "BoundPolicy",
-    "Column",
     "ConfigurationError",
     "ConfirmationError",
     "CreateField",
@@ -174,7 +155,6 @@ __all__ = [
     "Offers",
     "Operation",
     "OperationName",
-    "OrderBy",
     "Page",
     "Period",
     "PeriodUnit",
@@ -199,7 +179,6 @@ __all__ = [
     "RetryPolicy",
     "Risk",
     "Role",
-    "Row",
     "RowError",
     "Rule",
     "SchemaAction",
@@ -211,7 +190,6 @@ __all__ = [
     "SchemaOperationName",
     "SchemaPlan",
     "SchemaVerb",
-    "Select",
     "ServerError",
     "SettingChange",
     "SummaryFunction",
@@ -223,15 +201,9 @@ __all__ = [
     "TableSelector",
     "TooManyRecordsError",
     "ToolErrorCode",
-    "TypedField",
-    "TypedIterator",
-    "TypedPage",
-    "TypedRecord",
-    "TypedTable",
     "UnknownFieldError",
     "UnknownReportError",
     "UnknownTableError",
-    "Unset",
     "UnsupportedReportError",
     "UpdateField",
     "UpdatePreview",

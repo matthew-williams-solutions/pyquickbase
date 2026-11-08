@@ -43,7 +43,6 @@ from ._schema_plan import (
     change_action,
 )
 from ._summary import SummaryRow
-from ._typed import TypedPage, TypedRecord
 from ._writes import RowError, WriteResult
 from .errors import (
     APIError,
@@ -456,14 +455,7 @@ def _value(value: Any, state: _State) -> Any:
 
 
 def _items(record: Any) -> list[tuple[str, Any]]:
-    """A record's values by label, or by attribute name for a generated class."""
-    if isinstance(record, TypedRecord):
-        # A record read with `select` leaves the other attributes unset.
-        return [
-            (column.name, getattr(record, column.name))
-            for column in record.__columns__
-            if hasattr(record, column.name)
-        ]
+    """A record's values by label."""
     if isinstance(record, Mapping):
         found = cast(Mapping[Any, Any], record)
         return [(str(key), found[key]) for key in found]
@@ -714,8 +706,8 @@ def _download(value: FileDownload, state: _State) -> dict[str, Any]:
 
 
 def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, Any]:
-    if isinstance(value, Page | TypedPage):
-        page = cast(Page | TypedPage[Any], value)
+    if isinstance(value, Page):
+        page = value
         found = _paged(
             page.records,
             state,
@@ -743,7 +735,7 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
         return found
     if isinstance(value, GroupPage):
         return _groups(value.rows, state, total=value.total, skip=value.skip)
-    if value is None or isinstance(value, Record | TypedRecord):
+    if value is None or isinstance(value, Record):
         return {"record": None if value is None else _record(value, state)}
     if isinstance(value, WriteResult):
         return _written(value)
@@ -823,9 +815,9 @@ def tool_result(
 
     | Value | Keys |
     |---|---|
-    | `Page` or `TypedPage` | `records`, or `columns` and `rows` with `compact`, and `page` |
+    | `Page` | `records`, or `columns` and `rows` with `compact`, and `page` |
     | A list of records or dictionaries | The same. `page.total` is null, as it isn't known |
-    | `Record`, `TypedRecord`, or None | `record`, which is null for None |
+    | `Record` or None | `record`, which is null for None |
     | `WriteResult` | `created_ids`, `updated_ids`, and `unchanged_ids` |
     | A list of `SummaryRow` | `groups`, each with `group`, `count`, and its totals, and `page` |
     | A `summarize` operation's result | As for a list of `SummaryRow`, sorted and paged as asked |
@@ -861,7 +853,7 @@ def tool_result(
     Values are written the same way whatever their field: a date as `YYYY-MM-DD`, a timestamp in
     UTC as `2026-03-04T05:06:07Z`, a `Decimal` as a number when that's exact and as text otherwise,
     and every kind of empty value, such as `""` or an empty file, as null. Records are keyed by
-    label, or by attribute name for a generated class.
+    label.
 
     Args:
         value: The result to describe.
