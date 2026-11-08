@@ -59,7 +59,8 @@ from pyquickbase import (
     tool_error,
     tool_result,
 )
-from pyquickbase._models import file_from_api
+from pyquickbase._models import FieldsLeftOutPage, file_from_api
+from pyquickbase._output import GroupPage
 
 LABELS = {"Record ID#": 3, "Title": 6, "Due Date": 7, "Started": 8, "Owner": 9, "Spec": 10}
 USER = {"id": "1.ab", "name": "Ann"}
@@ -624,3 +625,98 @@ def test_users_and_files_are_written_with_fixed_keys() -> None:
     assert tool_result([row], compact=True)["rows"] == [
         [1, {"id": "1.a", "name": "A", "email": None}, "b.txt"]
     ]
+
+
+def size(result: dict[str, Any]) -> int:
+    return len(json.dumps(result, ensure_ascii=False, separators=(",", ":"), default=str))
+
+
+def wide(record_id: int, chars: int) -> Record:
+    return Record({3: record_id, 6: "t" * chars}, LABELS)
+
+
+@given(
+    lengths=st.lists(st.integers(min_value=0, max_value=3000), min_size=1, max_size=120),
+    budget=st.integers(min_value=600, max_value=20_000),
+    compact=st.booleans(),
+)
+def test_paging_under_max_chars_reaches_every_record_once(
+    lengths: list[int], budget: int, compact: bool
+) -> None:
+    records = [wide(n + 1, chars) for n, chars in enumerate(lengths)]
+    seen: list[int] = []
+    skip = 0
+    while True:
+        page = Page(records=tuple(records[skip : skip + 50]), total=len(records), skip=skip)
+        found = tool_result(page, compact=compact, max_chars=budget, max_text_chars=2000)
+        returned = found["page"]["returned"]
+        assert returned >= 1
+        ids = (
+            [row[0] for row in found["rows"]]
+            if compact
+            else [r["Record ID#"] for r in found["records"]]
+        )
+        seen.extend(ids)
+        if returned > 1:
+            assert size(found) <= budget
+        if not found["page"]["has_more"]:
+            break
+        assert found["page"]["next_skip"] == skip + returned
+        skip = found["page"]["next_skip"]
+    assert seen == list(range(1, len(records) + 1))
+
+
+def test_without_max_chars_nothing_is_left_out() -> None:
+    page = Page(records=tuple(wide(n, 2000) for n in range(1, 51)), total=50, skip=0)
+    assert tool_result(page)["page"]["returned"] == 50
+
+
+def test_one_record_too_large_on_its_own_has_its_text_cut_to_fit() -> None:
+    page = Page(records=(wide(1, 9000), wide(2, 10)), total=2, skip=0)
+    found = tool_result(page, max_chars=2000)
+    assert found["page"] == {"returned": 1, "total": 2, "skip": 0, "next_skip": 1, "has_more": True}
+    assert found["text_truncated"] is True
+    assert size(found) <= 2000
+
+
+def test_groups_have_a_page_and_are_cut_to_max_chars() -> None:
+    rows = [SummaryRow(group={"Status": f"s{n:04}"}, count=n) for n in range(2000)]
+    found = tool_result(rows, max_chars=4000)
+    assert size(found) <= 4000
+    returned = found["page"]["returned"]
+    assert 1 <= returned < 2000
+    assert found["page"] == {
+        "returned": returned,
+        "total": 2000,
+        "skip": 0,
+        "next_skip": returned,
+        "has_more": True,
+    }
+    assert [group["count"] for group in found["groups"]] == list(range(returned))
+    assert tool_result(rows[:3])["page"]["has_more"] is False
+
+
+def test_a_page_of_groups_says_where_it_starts() -> None:
+    rows = tuple(SummaryRow(group={"Status": f"s{n}"}, count=n) for n in range(5, 8))
+    found = tool_result(GroupPage(rows=rows, total=40, skip=5))
+    assert found["page"] == {
+        "returned": 3,
+        "total": 40,
+        "skip": 5,
+        "next_skip": 8,
+        "has_more": True,
+    }
+    page = GroupPage(rows=rows, total=40, skip=5)
+    assert (len(page), page[0].count, [item.count for item in page]) == (3, 5, [5, 6, 7])
+
+
+def test_a_query_that_left_out_default_fields_says_how_many() -> None:
+    page = FieldsLeftOutPage(records=(wide(1, 5),), total=1, skip=0, fields_left_out=150)
+    found = tool_result(page)["fields_left_out"]
+    assert found["count"] == 150
+    assert "select" in found["hint"]
+
+
+def test_max_chars_must_be_a_positive_whole_number() -> None:
+    with pytest.raises(ValueError, match="max_chars"):
+        tool_result([], max_chars=0)

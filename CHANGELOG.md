@@ -6,8 +6,26 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`tool_result(max_chars=...)`** limits how many characters a result takes as compact JSON, so one
+  call can't fill a model's context. Records and summary groups are included until the next wouldn't
+  fit, and `page.has_more` and `page.next_skip` say where to carry on, so paging still reaches every
+  one. At least one is always included, with its text cut shorter if it's too large on its own.
+- **A `summarize` operation sorts and pages its groups.** `order_by` sorts them by `count`, by a
+  `group` field, or by a `sum`, `avg`, `min`, or `max`, with empty values last, and `limit` and `skip`
+  page through them. A question such as "which five clients have the most projects" no longer returns
+  every client. The summary is still of every matching record.
+- **`operation("query", max_default_fields=...)`** returns only the first of the table's default fields
+  when the model doesn't name any in `select`, and `tool_result()` adds `fields_left_out` with how many
+  it left out and a hint to name them.
+- `TooManyRecordsError`, with `matched` and `limit`, and the tool error code `too_many_records`.
+
 ### Changed
 
+- **Summary groups have a `page` in `tool_result()`,** with `returned`, `total`, `skip`, `next_skip`, and
+  `has_more`, as records do. A `summarize` operation returns its page of groups, which reads as a list
+  of `SummaryRow`, as before.
 - **`summarize()` reads in large pages.** It used to read 1,000 records per request. Now `page_size`
   defaults to `None`, which sizes each page by the fields the summary reads, from 25,000 records for
   one field down to 1,000, so a page takes about 25 MB of memory. Totalling 250,000 records takes
@@ -20,10 +38,6 @@ All notable changes to this project are documented here. The format follows
   the code `too_many_records` with `matched` and `limit`. It was a `QueryError` with the code
   `invalid_arguments`. `TooManyRecordsError` is a `QueryError`, so `except QueryError` still catches
   it, but a tool that checks for `invalid_arguments` needs to check for `too_many_records` too.
-
-### Added
-
-- `TooManyRecordsError`, with `matched` and `limit`, and the tool error code `too_many_records`.
 
 ## [1.0.0rc12] - 2026-11-07
 

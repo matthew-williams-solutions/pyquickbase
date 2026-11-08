@@ -9,7 +9,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, tzinfo
 from decimal import Decimal
-from typing import Any, Literal, get_args
+from typing import Any, Literal, cast, get_args
 
 from ._models import Field, FieldIndex, Record, User
 from ._query import F, FieldRef, FieldRefs, _as_list, _named  # pyright: ignore[reportPrivateUsage]
@@ -126,6 +126,41 @@ def _group_order(value: Any) -> tuple[bool, str, Any]:
     if isinstance(value, int | float):
         return (False, "number", value)
     return (False, type(value).__name__, value)
+
+
+GroupSortKind = Literal["count", "group", "sum", "avg", "min", "max"]
+
+
+@dataclass(frozen=True, slots=True)
+class GroupSort:
+    """One key to sort summary rows by: their count, a group's value, or a calculated value."""
+
+    kind: GroupSortKind
+    label: str | None = None
+    descending: bool = False
+
+    def value(self, row: "SummaryRow") -> Any:
+        if self.kind == "count":
+            return row.count
+        if self.kind == "group":
+            return row.group.get(cast(str, self.label))
+        values: Mapping[str, Any] = getattr(row, self.kind)
+        return values.get(cast(str, self.label))
+
+
+def sort_rows(rows: Sequence["SummaryRow"], keys: Sequence[GroupSort]) -> list["SummaryRow"]:
+    """Sort summary rows by each key in turn, keeping empty values last whichever the direction.
+
+    Rows that tie on every key keep the order they came in, which is by their groups' values.
+    """
+    ordered = list(rows)
+    # A stable sort by each key from the last to the first sorts by all of them.
+    for key in reversed(keys):
+        present = [row for row in ordered if key.value(row) is not None]
+        empty = [row for row in ordered if key.value(row) is None]
+        present.sort(key=lambda row: _group_order(key.value(row)), reverse=key.descending)
+        ordered = present + empty
+    return ordered
 
 
 class _Group:

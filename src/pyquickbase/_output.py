@@ -9,18 +9,20 @@ which don't repeat the values they were given, except for an `APIError`, which k
 wording so a model can fix a request Quickbase refused.
 """
 
+import json
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
-from typing import Any, Literal, cast
+from typing import Any, Literal, cast, overload
 
 from ._confirm import expires_at
 from ._decision import READ_VERBS
 from ._models import (
     DeletePreviewPage,
     Field,
+    FieldsLeftOutPage,
     FileAttachment,
     FileDownload,
     FileVersion,
@@ -119,6 +121,27 @@ class DeletedCount(int):
     __slots__ = ()
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class GroupPage(Sequence[SummaryRow]):
+    """What a `summarize` operation returns: some of a summary's groups, after sorting, with how
+    many there are in all, which `tool_result()` describes as `groups` and `page`. It reads as a
+    list of its rows, as the operation returned before. Private."""
+
+    rows: tuple[SummaryRow, ...]
+    total: int
+    skip: int = 0
+
+    def __len__(self) -> int:
+        return len(self.rows)
+
+    @overload
+    def __getitem__(self, index: int) -> SummaryRow: ...
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[SummaryRow]: ...
+    def __getitem__(self, index: int | slice) -> SummaryRow | Sequence[SummaryRow]:
+        return self.rows[index]
+
+
 # The most specific class wins, so subclasses come before their bases.
 _CODES: tuple[tuple[type[BaseException], ToolErrorCode], ...] = (
     (WritePermissionError, "write_permission_denied"),
@@ -203,6 +226,29 @@ class _State:
     compact: bool
     max_text: int | None
     truncated: bool = False
+    max_chars: int | None = None
+
+
+# Room left in `max_chars` for a result's other keys, such as `ok`, `page`, and `text_truncated`.
+_ENVELOPE_CHARS = 400
+# How short text gets, in turn, to fit one record that's too large on its own.
+_SHORTER_TEXT = (1000, 500, 200, 100, 50)
+
+
+def _size(value: Any) -> int:
+    """How many characters `value` takes as compact JSON, as a server sends it to a model."""
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str))
+
+
+def _fitting(sizes: Sequence[int], budget: int) -> int:
+    """How many items, from the first, fit in `budget` characters. Always at least one."""
+    used = count = 0
+    for size in sizes:
+        if count and used + size + 1 > budget:
+            break
+        used += size + 1
+        count += 1
+    return count
 
 
 def _code(error: BaseException) -> ToolErrorCode:
@@ -425,15 +471,47 @@ def _record(record: Any, state: _State) -> dict[str, Any]:
     return {key: _value(item, state) for key, item in _items(record)}
 
 
-def _records(records: Sequence[Any], state: _State) -> dict[str, Any]:
-    rows = [list(_record(record, state).items()) for record in records]
-    if not state.compact:
+Row = list[tuple[str, Any]]
+
+
+def _shape(rows: Sequence[Row], compact: bool) -> dict[str, Any]:
+    if not compact:
         return {"records": [dict(row) for row in rows]}
     columns = list(dict.fromkeys(key for row in rows for key, _ in row))
     return {
         "columns": columns,
         "rows": [[dict(row).get(column) for column in columns] for row in rows],
     }
+
+
+def _shortened(record: Any, state: _State, budget: int) -> Row:
+    """One record with its text cut shorter in turn until it fits in `budget`, or as short as
+    text gets."""
+    row: Row = list(_record(record, state).items())
+    for limit in _SHORTER_TEXT:
+        if state.max_text is not None and limit >= state.max_text:
+            continue
+        trial = _State(compact=state.compact, max_text=limit)
+        row = list(_record(record, trial).items())
+        state.truncated = state.truncated or trial.truncated
+        if _size(dict(row)) <= budget:
+            break
+    return row
+
+
+def _fit_rows(records: Sequence[Any], rows: list[Row], state: _State, limit: int) -> list[Row]:
+    """The rows, from the first, that fit in `limit` characters, and at least one."""
+    budget = limit - _ENVELOPE_CHARS
+    if state.compact:
+        columns = list(dict.fromkeys(key for row in rows for key, _ in row))
+        budget -= _size(columns)
+        sizes = [_size([dict(row).get(column) for column in columns]) for row in rows]
+    else:
+        sizes = [_size(dict(row)) for row in rows]
+    kept = _fitting(sizes, budget)
+    if kept == 1 and sizes[0] > budget:
+        return [_shortened(records[0], state, budget)]
+    return rows[:kept]
 
 
 def _paged(
@@ -447,15 +525,35 @@ def _paged(
 ) -> dict[str, Any]:
     if max_records is not None and len(records) > max_records:
         records, has_more = records[:max_records], True
-    next_skip = None if skip is None else skip + len(records)
+    rows: list[Row] = [list(_record(record, state).items()) for record in records]
+    if state.max_chars is not None and rows:
+        fitted = _fit_rows(records, rows, state, state.max_chars)
+        has_more = has_more or len(fitted) < len(rows)
+        rows = fitted
+    next_skip = None if skip is None else skip + len(rows)
     page = {
-        "returned": len(records),
+        "returned": len(rows),
         "total": total,
         "skip": skip,
         "next_skip": next_skip,
         "has_more": has_more,
     }
-    return {**_records(records, state), "page": page}
+    return {**_shape(rows, state.compact), "page": page}
+
+
+def _groups(rows: Sequence[SummaryRow], state: _State, *, total: int, skip: int) -> dict[str, Any]:
+    items = [_summary(row, state) for row in rows]
+    if state.max_chars is not None and items:
+        kept = _fitting([_size(item) for item in items], state.max_chars - _ENVELOPE_CHARS)
+        items = items[:kept]
+    page = {
+        "returned": len(items),
+        "total": total,
+        "skip": skip,
+        "next_skip": skip + len(items),
+        "has_more": skip + len(items) < total,
+    }
+    return {"groups": items, "page": page}
 
 
 def _summary(row: SummaryRow, state: _State) -> dict[str, Any]:
@@ -633,7 +731,15 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
                     "Narrow the filter."
                 )
             found.update(_approval(page.confirmation, blockers, ()))
+        if isinstance(page, FieldsLeftOutPage):
+            found["fields_left_out"] = {
+                "count": page.fields_left_out,
+                "hint": "These are the table's first default fields. Name the fields you need "
+                "in select to get others.",
+            }
         return found
+    if isinstance(value, GroupPage):
+        return _groups(value.rows, state, total=value.total, skip=value.skip)
     if value is None or isinstance(value, Record | TypedRecord):
         return {"record": None if value is None else _record(value, state)}
     if isinstance(value, WriteResult):
@@ -673,7 +779,8 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
     if isinstance(value, list | tuple):
         items = cast(Sequence[Any], value)
         if items and all(isinstance(item, SummaryRow) for item in items):
-            return {"groups": [_summary(item, state) for item in items]}
+            rows = cast(Sequence[SummaryRow], items)
+            return _groups(rows, state, total=len(rows), skip=0)
         if items and all(isinstance(item, TableSchema) for item in items):
             schemas = cast(list[TableSchema], items)
             tables = {item.info.id: item.info.name for item in schemas}
@@ -699,6 +806,7 @@ def tool_result(
     compact: bool = False,
     max_records: int | None = None,
     max_text_chars: int | None = None,
+    max_chars: int | None = None,
 ) -> dict[str, Any]:
     """Describe a result for a model, as the result of its tool call.
 
@@ -716,7 +824,8 @@ def tool_result(
     | A list of records or dictionaries | The same. `page.total` is null, as it isn't known |
     | `Record`, `TypedRecord`, or None | `record`, which is null for None |
     | `WriteResult` | `created_ids`, `updated_ids`, and `unchanged_ids` |
-    | A list of `SummaryRow` | `groups`, each with `group`, `count`, and the totals it has |
+    | A list of `SummaryRow` | `groups`, each with `group`, `count`, and its totals, and `page` |
+    | A `summarize` operation's result | As for a list of `SummaryRow`, sorted and paged as asked |
     | `UpdatePreview` | `changes`, `unchanged_ids`, and `missing_ids` |
     | A `preview_update` operation's result | As for an `UpdatePreview`, with the approval keys |
     | A `preview_delete` operation's result | As for a `Page`, with the approval keys |
@@ -736,6 +845,9 @@ def tool_result(
 
     `page` holds `returned`, `total`, `skip`, `next_skip`, and `has_more`, so a model can tell
     whether it has every record, and ask for the next page. An empty list counts as no records.
+    For a summary, `page` counts groups. A `query` operation that left out some of the table's
+    default fields, because it has more than its `max_default_fields`, adds `fields_left_out` with
+    how many and a `hint`.
 
     A preview's approval keys are `blockers`, what would stop the change, `warnings`, what else it
     would do, and, if nothing stops it, the `confirmation` the change needs and the UTC time it
@@ -757,6 +869,12 @@ def tool_result(
             true, so a model knows it doesn't have them all.
         max_text_chars: The most characters to include of each text value. A longer one is cut and
             ends by saying how much was left out, and `text_truncated` is true.
+        max_chars: About the most characters the result may take as compact JSON, so that one
+            call can't fill a model's context. Records and groups are included from the first
+            until the next wouldn't fit, then `page.has_more` is true and `page.next_skip` says
+            where to carry on, so paging still reaches every one. At least one is always included:
+            if it's too large on its own, its text is cut shorter until it fits, down to 50
+            characters a value. Other keys, such as a file's text, aren't limited by it.
 
     Returns:
         The result, as plain data.
@@ -764,13 +882,14 @@ def tool_result(
     Raises:
         TypeError: The value isn't one of these, such as an `AppInfo`, or holds a value of another
             type.
-        ValueError: `max_records` or `max_text_chars` isn't a positive whole number.
+        ValueError: `max_records`, `max_text_chars`, or `max_chars` isn't a positive whole number.
     """
     _limit("max_records", max_records)
     _limit("max_text_chars", max_text_chars)
+    _limit("max_chars", max_chars)
     if not isinstance(compact, bool):  # pyright: ignore[reportUnnecessaryIsInstance]
         raise TypeError("compact takes True or False.")
-    state = _State(compact=compact, max_text=max_text_chars)
+    state = _State(compact=compact, max_text=max_text_chars, max_chars=max_chars)
     found = _describe(value, state, max_records)
     result: dict[str, Any] = {"ok": True, **found}
     if state.truncated:

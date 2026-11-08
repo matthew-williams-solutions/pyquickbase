@@ -155,6 +155,94 @@ async def test_count_summarize_and_delete() -> None:
     assert deleted["where"] == "{9.EX.'Alpha'}AND{7.EX.'Open'}"
 
 
+class Summarized(Fake):
+    """Answers a summary's query with ten records, two of each of five statuses."""
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        if not request.url.path.endswith("/records/query"):
+            return super().__call__(request)
+        body = json.loads(request.content)
+        self.sent.append(("POST /records/query", body))
+        rows = [
+            {"3": {"value": n}, "7": {"value": f"s{n % 5}"}, "8": {"value": n}} for n in range(10)
+        ]
+        if body["options"]["top"] == 1:
+            rows = rows[:1]
+        return httpx.Response(
+            200,
+            json={
+                "fields": [{"id": f, "label": f"F{f}", "type": "text"} for f in (3, 7, 8)],
+                "data": rows,
+                "metadata": {"totalRecords": 10, "numRecords": len(rows), "skip": 0},
+            },
+        )
+
+
+async def test_summary_groups_sort_and_page() -> None:
+    async with client(Summarized()) as qb:
+        summarize = await qb.app("bq1234567").table("Tasks").operation("summarize")
+        found = await summarize.run(
+            {
+                "group_by": ["Status"],
+                "sum": ["Hours"],
+                "order_by": [{"by": "sum", "field": "Hours", "direction": "desc"}],
+                "limit": 2,
+                "skip": 1,
+            }
+        )
+    assert [(row.group["Status"], row.sum["Hours"]) for row in found] == [("s3", 11), ("s2", 9)]
+    result = tool_result(found)
+    assert result["page"] == {
+        "returned": 2,
+        "total": 5,
+        "skip": 1,
+        "next_skip": 3,
+        "has_more": True,
+    }
+
+
+@pytest.mark.parametrize(
+    ("order_by", "message"),
+    [
+        ([{"by": "sum", "field": "Hours"}], "must be a field this summary has in sum"),
+        ([{"by": "group", "field": "Hours"}], "must be a field this summary has in group_by"),
+        ([{"by": "count", "field": "Hours"}], "takes no field"),
+        ([{"by": "median"}], "by must be one of"),
+        ([{"by": "count", "direction": "down"}], "direction must be asc or desc"),
+        ([], "list of 1 to 5"),
+    ],
+)
+async def test_summary_sorts_it_cant_use_are_refused(order_by: Any, message: str) -> None:
+    fake = Summarized()
+    async with client(fake) as qb:
+        summarize = await qb.app("bq1234567").table("Tasks").operation("summarize")
+        with pytest.raises(QueryError, match=message):
+            await summarize.run({"group_by": ["Status"], "order_by": order_by})
+    assert fake.requests("POST /records/query") == []
+
+
+async def test_a_query_without_select_returns_only_the_first_default_fields() -> None:
+    fake = Fake()
+    async with client(fake) as qb:
+        search = await qb.app("bq1234567").table("Tasks").operation("query", max_default_fields=2)
+        page = await search.run({})
+        named = await search.run({"select": ["Title", "Status", "Hours"]})
+    first, second = fake.requests("POST /records/query")
+    assert first["select"] == [3, 6]
+    assert tool_result(page)["fields_left_out"]["count"] == 2
+    assert second["select"] == [3, 6, 7, 8]
+    assert "fields_left_out" not in tool_result(named)
+
+
+async def test_max_default_fields_is_only_for_query() -> None:
+    async with client(Fake()) as qb:
+        tasks = qb.app("bq1234567").table("Tasks")
+        with pytest.raises(ConfigurationError, match="only for query"):
+            await tasks.operation("count", max_default_fields=2)
+        with pytest.raises(ConfigurationError, match="positive whole number"):
+            await tasks.operation("query", max_default_fields=0)
+
+
 async def test_insert_and_update() -> None:
     fake = Fake()
     async with client(fake) as qb:

@@ -55,9 +55,9 @@ Only the last step changes anything:
 
 | Operation | The model sends | Runs | Returns |
 |---|---|---|---|
-| `query` | `where`, `select`, `order_by`, `limit`, `skip` | `query_page()` | `Page` |
+| `query` | `where`, `select`, `order_by`, `limit`, `skip`. Without `select`, the table's default fields, or only the first `max_default_fields` of them | `query_page()` | `Page`, which `tool_result()` shows with `fields_left_out` when it left some out |
 | `count` | `where` | `count()` | An `int`, which `tool_result()` shows as `count` |
-| `summarize` | `where`, `group_by`, `sum`, `avg`, `min`, `max`. `total`, `average`, `minimum`, and `maximum` are read too | `summarize()` | A list of `SummaryRow` |
+| `summarize` | `where`, `group_by`, `sum`, `avg`, `min`, `max`. `total`, `average`, `minimum`, and `maximum` are read too. `order_by` sorts the groups, by `count`, a `group` field, or a calculated value, and `limit` and `skip` page through them | `summarize()`, then sorts and pages its groups | The page of `SummaryRow`, which reads as a list, and which `tool_result()` shows with `page` |
 | `insert` | `records` | `insert()` | `WriteResult` |
 | `update` | `records`, each with `Record ID#` | `update()` | `WriteResult` |
 | `delete` | `where`, which is required. It's refused if it matches more than `max_records_per_call` | `delete()` | An `int`, which `tool_result()` shows as `deleted_count` |
