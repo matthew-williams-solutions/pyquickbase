@@ -51,8 +51,8 @@ def clean(text: str) -> str:
     """Remove what changes with the module layout or the run, rather than with the API."""
     text = re.sub(r"\bpyquickbase(\.\w+)*\.(?=[A-Za-z])", "", text)
     text = re.sub(r"\b(?:typing|collections\.abc)\.", "", text)
-    # Before Python 3.14, `R | None` with a TypeVar prints as `Optional[~R]`. They mean the same.
-    text = re.sub(r"\bOptional\[([^\[\]]+)\]", r"\1 | None", text)
+    # Before Python 3.14, `X | None` prints as `Optional[X]` when X is a TypeVar or a Literal.
+    text = re.sub(r"\bOptional\[((?:[^\[\]]|\[[^\[\]]*\])+)\]", r"\1 | None", text)
     text = pipes(text)
     return re.sub(r" at 0x[0-9a-fA-F]+", "", text)
 
