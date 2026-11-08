@@ -644,6 +644,14 @@ class DeletePreviewPage(Page):
     """For `require_preview`: what the delete needs to run, or None if it would be refused."""
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FieldsLeftOutPage(Page):
+    """What a `query` operation found when it returned only some of the default fields, because
+    the table has more than its `max_default_fields`, so `tool_result()` can say so. Private."""
+
+    fields_left_out: int
+
+
 def require_summary_report(report: ReportInfo) -> None:
     """Refuse reports whose rows are records, or that Quickbase can't run through the API."""
     if report.type not in ("summary", "chart"):

@@ -92,7 +92,7 @@ class AsyncTable(object)
     async def info(self) -> TableInfo
     async def insert(self, records: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     async def new_record_url(self) -> str
-    async def operation(self, name: Literal['query', 'count', 'summarize', 'insert', 'update', 'delete', 'preview_update', 'preview_delete', 'run_report', 'run_summary_report', 'run_formula', 'download_file', 'delete_file_version'], *, fields: Sequence[str | int] | None = None, field_descriptions: Mapping[str | int, str] | None = None, reports: Sequence[str] | None = None, report_descriptions: Mapping[str, str] | None = None, formula: str | None = None, max_records_per_call: int | None = None, max_records_per_write: int = 100, scope: Expression | None = None, require_preview: bool = False) -> 'AsyncOperation'
+    async def operation(self, name: Literal['query', 'count', 'summarize', 'insert', 'update', 'delete', 'preview_update', 'preview_delete', 'run_report', 'run_summary_report', 'run_formula', 'download_file', 'delete_file_version'], *, fields: Sequence[str | int] | None = None, field_descriptions: Mapping[str | int, str] | None = None, reports: Sequence[str] | None = None, report_descriptions: Mapping[str, str] | None = None, formula: str | None = None, max_records_per_call: int | None = None, max_records_per_write: int = 100, scope: Expression | None = None, require_preview: bool = False, max_default_fields: int | None = None) -> 'AsyncOperation'
     async def preview_delete(self, where: Expression | str, *, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, limit: int = 100) -> Page
     async def preview_update(self, records: Iterable[Mapping[str | int, Any]]) -> UpdatePreview
     def query(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, page_size: int = 1000, max_total: int | None = None) -> AsyncRecordIterator
@@ -589,7 +589,7 @@ class Table(object)
     def info(self) -> TableInfo
     def insert(self, records: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     def new_record_url(self) -> str
-    def operation(self, name: Literal['query', 'count', 'summarize', 'insert', 'update', 'delete', 'preview_update', 'preview_delete', 'run_report', 'run_summary_report', 'run_formula', 'download_file', 'delete_file_version'], *, fields: Sequence[str | int] | None = None, field_descriptions: Mapping[str | int, str] | None = None, reports: Sequence[str] | None = None, report_descriptions: Mapping[str, str] | None = None, formula: str | None = None, max_records_per_call: int | None = None, max_records_per_write: int = 100, scope: Expression | None = None, require_preview: bool = False) -> 'Operation'
+    def operation(self, name: Literal['query', 'count', 'summarize', 'insert', 'update', 'delete', 'preview_update', 'preview_delete', 'run_report', 'run_summary_report', 'run_formula', 'download_file', 'delete_file_version'], *, fields: Sequence[str | int] | None = None, field_descriptions: Mapping[str | int, str] | None = None, reports: Sequence[str] | None = None, report_descriptions: Mapping[str, str] | None = None, formula: str | None = None, max_records_per_call: int | None = None, max_records_per_write: int = 100, scope: Expression | None = None, require_preview: bool = False, max_default_fields: int | None = None) -> 'Operation'
     def preview_delete(self, where: Expression | str, *, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, limit: int = 100) -> Page
     def preview_update(self, records: Iterable[Mapping[str | int, Any]]) -> UpdatePreview
     def query(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, page_size: int = 1000, max_total: int | None = None) -> RecordIterator
@@ -755,7 +755,7 @@ value limit = <pyquickbase._policy._Limit object>
 def parse_where(where: str, fields: Iterable[Field]) -> list[WhereCondition]
 value tables = <pyquickbase._policy._Tables object>
 def tool_error(error: BaseException) -> dict[str, Any]
-def tool_result(value: Any, *, compact: bool = False, max_records: int | None = None, max_text_chars: int | None = None) -> dict[str, Any]
+def tool_result(value: Any, *, compact: bool = False, max_records: int | None = None, max_text_chars: int | None = None, max_chars: int | None = None) -> dict[str, Any]
 def where_from_dict(data: Mapping[str, Any], *, fields: Iterable[str | int] | Iterable[Field] | None = None) -> Expression
 def where_schema(*, fields: Iterable[str | int] | Iterable[Field] | None = None, field_descriptions: Mapping[str | int, str] | None = None, max_depth: int = 2) -> dict[str, Any]
 command pyquickbase codegen

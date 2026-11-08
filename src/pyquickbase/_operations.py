@@ -26,7 +26,7 @@ from ._decision import Decision, Named
 from ._models import RECORD_ID_FIELD, Field, FieldIndex, ReportInfo
 from ._query import NO_VALUE, Condition, Expression, FieldRef, Group
 from ._read_request import ReadRequest
-from ._summary import Period, PeriodUnit
+from ._summary import GroupSort, GroupSortKind, Period, PeriodUnit
 from ._typed import is_writable
 from ._where_data import case_hint, normalize_where, where_from_dict, where_schema
 from ._writes import FileUpload
@@ -422,6 +422,8 @@ class Context:
     scope_labels: frozenset[str] = frozenset()
     """The labels of the fields the scope uses, which a write can't set."""
     require_preview: bool = False
+    max_default_fields: int | None = None
+    """For `query`: the most default fields to return when `select` is left out."""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -438,6 +440,12 @@ class Call:
     report_id: str | None = None
     record_ids: tuple[int, ...] = ()
     most: int | None = None
+    # A summary's groups: how to sort them, and which of them to return.
+    group_sort: tuple[GroupSort, ...] = ()
+    group_limit: int | None = None
+    group_skip: int = 0
+    # How many default fields a query left out, because there are more than max_default_fields.
+    fields_left_out: int = 0
 
 
 # Parts of a schema, each with the check that reads it back.
@@ -752,6 +760,35 @@ def _summary(ctx: Context) -> dict[str, Any]:
     ):
         if offered[name]:
             parts[name] = _array_of(_labels(offered[name]), f"Fields to {what}.")
+    parts["order_by"] = {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": _MAX_SORT_FIELDS,
+        "items": {
+            "type": "object",
+            "properties": {
+                "by": {"enum": list(get_args(GroupSortKind))},
+                "field": {"type": "string"},
+                "direction": {"enum": ["asc", "desc"]},
+            },
+            "required": ["by"],
+            "additionalProperties": False,
+        },
+        "description": 'How to sort the groups, first to last: by "count", by "group" and a '
+        'group_by field, or by "sum", "avg", "min", or "max" and a field it calculates. Empty '
+        "values sort last. Without this, groups are in order of their values. For the most or "
+        'the top groups, sort by count or a total, "desc", and set limit.',
+    }
+    parts["limit"] = {
+        "type": "integer",
+        "minimum": 1,
+        "description": "The most groups to return. Every matching record is still summarized.",
+    }
+    parts["skip"] = {
+        "type": "integer",
+        "minimum": 0,
+        "description": "How many groups to pass over first. Use the last result's page.next_skip.",
+    }
     return parts
 
 
@@ -777,6 +814,41 @@ def _read_summary(ctx: Context, arguments: Mapping[str, Any]) -> dict[str, Any]:
         if key in arguments:
             found[key] = _field_names(arguments[key], key, offered[key])
     return found
+
+
+def _group_sort(value: Any, summary: Mapping[str, Any]) -> tuple[GroupSort, ...]:
+    """Read a summary's `order_by`, checking each field is one the summary groups or calculates."""
+    if not isinstance(value, list) or not value or len(value) > _MAX_SORT_FIELDS:  # pyright: ignore[reportUnknownArgumentType]
+        raise QueryError(f"order_by must be a list of 1 to {_MAX_SORT_FIELDS} sorts.")
+    groups = [
+        str(item.field if isinstance(item, Period) else item)
+        for item in cast(list[Any], summary.get("group_by", []))
+    ]
+    found: list[GroupSort] = []
+    for index, item in enumerate(cast(list[Any], value)):
+        path = f"order_by[{index}]"
+        if not isinstance(item, Mapping) or not set(item) <= {"by", "field", "direction"}:  # pyright: ignore[reportUnknownArgumentType]
+            raise QueryError(f'{path} must be {{"by": ..., "field": ..., "direction": ...}}.')
+        entry = cast(Mapping[str, Any], item)
+        kind = entry.get("by")
+        if kind not in get_args(GroupSortKind):
+            kinds = ", ".join(get_args(GroupSortKind))
+            raise QueryError(f"{path}.by must be one of: {kinds}.")
+        direction = entry.get("direction", "asc")
+        if direction not in ("asc", "desc"):
+            raise QueryError(f"{path}.direction must be asc or desc.")
+        label = entry.get("field")
+        if kind == "count":
+            if label is not None:
+                raise QueryError(f"{path} sorts by count, which takes no field.")
+        else:
+            offered: list[str] = groups if kind == "group" else list(summary.get(str(kind), []))
+            if label not in offered:
+                what = "group_by" if kind == "group" else kind
+                hint = case_hint(label, offered)
+                raise QueryError(f"{path}.field must be a field this summary has in {what}.{hint}")
+        found.append(GroupSort(cast(GroupSortKind, kind), label, direction == "desc"))
+    return tuple(found)
 
 
 # The operations.
@@ -817,11 +889,17 @@ def _plan_query(ctx: Context, arguments: Mapping[str, Any], scope: Expression | 
         "limit": _read_limit(ctx, arguments),
         "skip": _whole(arguments.get("skip", 0), "skip", minimum=0),
     }
+    left_out = 0
     if "select" in arguments:
         found["select"] = _field_names(arguments["select"], "select", ctx.allowed.readable)
+    elif ctx.max_default_fields is not None:
+        defaults = [item for item in ctx.allowed.readable if item.appears_by_default]
+        if len(defaults) > ctx.max_default_fields:
+            found["select"] = _labels(defaults[: ctx.max_default_fields])
+            left_out = len(defaults) - ctx.max_default_fields
     if "order_by" in arguments:
         found["order_by"] = _sort(arguments["order_by"], ctx.allowed.sortable)
-    return Call(method="query_page", arguments=found)
+    return Call(method="query_page", arguments=found, fields_left_out=left_out)
 
 
 def _plan_where(method: str, *, required: bool, capped: bool = False) -> Plan:
@@ -835,7 +913,15 @@ def _plan_where(method: str, *, required: bool, capped: bool = False) -> Plan:
 def _plan_summarize(ctx: Context, arguments: Mapping[str, Any], scope: Expression | None) -> Call:
     found = _read_summary(ctx, arguments)
     found["where"] = _read_where(ctx, arguments.get("where"), scope, required=False)
-    return Call(method="summarize", arguments=found)
+    order = _group_sort(arguments["order_by"], found) if "order_by" in arguments else ()
+    limit = arguments.get("limit")
+    return Call(
+        method="summarize",
+        arguments=found,
+        group_sort=order,
+        group_limit=None if limit is None else _whole(limit, "limit", minimum=1),
+        group_skip=_whole(arguments.get("skip", 0), "skip", minimum=0),
+    )
 
 
 def _plan_records(method: str, *, update: bool, group: str) -> Plan:
@@ -1220,10 +1306,16 @@ def make_spec(
     scope_text: str = "",
     scope_labels: frozenset[str] = frozenset(),
     require_preview: bool = False,
+    max_default_fields: int | None = None,
 ) -> OperationSpec:
     kind = _KINDS[name]
     if require_preview and name not in ("update", "delete"):
         raise ConfigurationError("require_preview is only for update and delete.")
+    if max_default_fields is not None:
+        if name != "query":
+            raise ConfigurationError("max_default_fields is only for query.")
+        if type(max_default_fields) is not int or max_default_fields < 1:
+            raise ConfigurationError("max_default_fields must be a positive whole number.")
     if formula is not None and name != "run_formula":
         raise ConfigurationError("formula is only for run_formula.")
     if formula is not None and (not isinstance(formula, str) or not formula.strip()):  # pyright: ignore[reportUnnecessaryIsInstance]
@@ -1247,6 +1339,7 @@ def make_spec(
         scope_text=scope_text,
         scope_labels=scope_labels,
         require_preview=require_preview,
+        max_default_fields=max_default_fields,
     )
     properties, required = kind.properties(context), kind.required
     if require_preview:

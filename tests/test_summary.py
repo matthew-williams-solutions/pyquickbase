@@ -19,7 +19,7 @@ from pyquickbase import (
     User,
 )
 from pyquickbase._models import Record, field_from_api
-from pyquickbase._summary import Summary
+from pyquickbase._summary import GroupSort, Summary, sort_rows
 
 SPEC = (
     (3, "Record ID#", "recordid"),
@@ -404,3 +404,36 @@ def test_long_text_makes_pages_smaller_but_never_below_a_thousand() -> None:
         ),
     ]
     assert plan(sum=[f"N{n}" for n in range(80)], fields=wide).page_size() == 1_000
+
+
+def row(status: Any, count: int, hours: float | None = None) -> SummaryRow:
+    return SummaryRow(
+        group={"Status": status}, count=count, sum={"Hours": hours} if hours is not None else {}
+    )
+
+
+def statuses(rows: list[SummaryRow]) -> list[Any]:
+    return [item.group["Status"] for item in rows]
+
+
+def test_groups_sort_by_count_with_ties_in_their_first_order() -> None:
+    rows = [row("a", 2), row("b", 5), row("c", 2), row(None, 9)]
+    assert statuses(sort_rows(rows, [GroupSort("count", descending=True)])) == [None, "b", "a", "c"]
+    assert statuses(sort_rows(rows, [GroupSort("count")])) == ["a", "c", "b", None]
+
+
+def test_empty_values_sort_last_in_either_direction() -> None:
+    rows = [row(None, 1), row("b", 1), row("a", 1)]
+    assert statuses(sort_rows(rows, [GroupSort("group", "Status")])) == ["a", "b", None]
+    assert statuses(sort_rows(rows, [GroupSort("group", "Status", True)])) == ["b", "a", None]
+
+
+def test_groups_sort_by_a_total_then_another_key() -> None:
+    rows = [row("a", 1, 10), row("b", 3, 30), row("c", 2, 30), row("d", 1)]
+    keys = [GroupSort("sum", "Hours", True), GroupSort("count", descending=True)]
+    assert statuses(sort_rows(rows, keys)) == ["b", "c", "a", "d"]
+
+
+def test_no_keys_keep_the_order() -> None:
+    rows = [row("b", 1), row("a", 2)]
+    assert sort_rows(rows, []) == rows

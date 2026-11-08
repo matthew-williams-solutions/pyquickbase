@@ -84,6 +84,11 @@ Results cost tokens, so return as little as the model needs:
   record is a list of values in `rows`, rather than repeating every label on every record. A file value
   becomes the latest file's name. For 50 records of three short fields, it's about half the size. The
   saving is larger when labels are long and values short.
+- **Pass `max_chars`** so that one call can't fill the model's context, however wide the table or long
+  its text. Records and summary groups are included from the first until the next wouldn't fit, then
+  `page.has_more` is true and `page.next_skip` says where to carry on, so paging still reaches every one.
+  At least one is always included, with its text cut shorter if it's too large on its own. 32,000, about
+  8,000 tokens, suits most tools.
 - **Pass `max_records`** to cut a list your code already has. `page.has_more` is then true, so the model
   knows it doesn't have them all.
 - **Pass `max_text_chars`** to shorten long text, such as notes. A shortened value ends by saying how many
@@ -170,7 +175,7 @@ bug's details, and any values in them, don't reach the model. Log it yourself be
 |---|---|---|
 | `tool_result()` got something it can't describe, such as an `AppInfo`, a dictionary, or a set | `TypeError` | Nothing was returned |
 | A record holds a value of a type JSON can't hold, such as `bytes` | `TypeError` | Nothing was returned |
-| `max_records` or `max_text_chars` isn't a positive whole number | `ValueError` | Nothing was returned |
+| `max_records`, `max_text_chars`, or `max_chars` isn't a positive whole number | `ValueError` | Nothing was returned |
 
 ### What these don't do
 

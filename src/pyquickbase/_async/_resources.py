@@ -34,6 +34,7 @@ from .._models import (
     DeletePreviewPage,
     Field,
     FieldIndex,
+    FieldsLeftOutPage,
     FileDownload,
     FormulaResult,
     Page,
@@ -73,7 +74,7 @@ from .._operations import (
     scope_rows,
     unavailable,
 )
-from .._output import Count, DeletedCount
+from .._output import Count, DeletedCount, GroupPage
 from .._policy import Policy, PolicyRule
 from .._preview import (
     ConfirmedUpdatePreview,
@@ -101,7 +102,7 @@ from .._schema_plan import (
     quickbase_function,
     summary_function,
 )
-from .._summary import Summary, SummaryGroups, SummaryRow
+from .._summary import Summary, SummaryGroups, SummaryRow, sort_rows
 from .._typed import (
     OrderBy,
     R,
@@ -2172,6 +2173,7 @@ class AsyncTable:
         max_records_per_write: int = DEFAULT_MAX_ROWS,
         scope: Expression | None = None,
         require_preview: bool = False,
+        max_default_fields: int | None = None,
     ) -> "AsyncOperation":
         """Make one operation on this table into a tool for a model, with its JSON Schema.
 
@@ -2218,6 +2220,9 @@ class AsyncTable:
                 within 15 minutes, so a model can't skip the preview. A delete is also refused if
                 how many records match has changed since. Make the preview with the same
                 client and `scope`.
+            max_default_fields: For `query`: the most of the table's default fields to return
+                when the model doesn't name any in `select`. A table with more returns its first
+                ones, and `tool_result()` says how many it left out. Defaults to every one.
 
         Returns:
             An `Operation`, with its `schema` and `run()`.
@@ -2283,6 +2288,7 @@ class AsyncTable:
             scope_text=scope_text,
             scope_labels=scope_labels,
             require_preview=require_preview,
+            max_default_fields=max_default_fields,
         )
         return AsyncOperation(self, spec)
 
@@ -2637,6 +2643,20 @@ class AsyncOperation:
         result = await getattr(table, call.method)(**call.arguments)
         if call.method == "count":
             return Count(result)
+        if call.method == "summarize":
+            rows = sort_rows(result, call.group_sort)
+            end = None if call.group_limit is None else call.group_skip + call.group_limit
+            return GroupPage(
+                rows=tuple(rows[call.group_skip : end]), total=len(rows), skip=call.group_skip
+            )
+        if call.method == "query_page" and call.fields_left_out:
+            page = cast(Page, result)
+            return FieldsLeftOutPage(
+                records=page.records,
+                total=page.total,
+                skip=page.skip,
+                fields_left_out=call.fields_left_out,
+            )
         if call.method == "delete":
             return DeletedCount(result)
         if call.method == "preview_delete":
