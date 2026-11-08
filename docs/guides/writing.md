@@ -234,12 +234,10 @@ trying again, so you don't write the same rows twice.
 
 ```mermaid
 flowchart TD
-    I["insert(2,500 records)"] --> B1["<b>Batch 1</b><br/>records 1 to 1,000<br/>Written"]
-    B1 --> B2["<b>Batch 2</b><br/>records 1,001 to 2,000<br/>Written"]
-    B2 --> R["<b>Batch 3 is refused</b><br/>a 429 after retries,<br/>or a 403<br/>Not written"]
-    B2 --> T["<b>Batch 3 times out,<br/>or gets a 5xx</b><br/>Not retried<br/>May be written"]
-    R --> E["<b>WriteError</b><br/>error.result lists<br/>batches 1 and 2<br/>__cause__ is<br/>batch 3's error"]
-    T --> E
+    I["insert(2,500 rows)"] --> B1["<b>Batch 1</b> is written<br/>rows 1 to 1,000"]
+    B1 --> B2["<b>Batch 2</b> is written<br/>rows 1,001 to 2,000"]
+    B2 --> B3["<b>Batch 3 fails</b><br/>Refused: not written<br/>Timed out: may be written"]
+    B3 --> E["<b>WriteError</b><br/>error.result holds<br/>batches 1 and 2"]
 ```
 
 A write that times out, or gets a 502, 503, or 504, isn't retried, because Quickbase may already have

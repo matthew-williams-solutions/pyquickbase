@@ -12,6 +12,15 @@
 | `link`, `unlink` | Making or deleting a relationship | **Both tables**, as Quickbase adds a link field and an "Add" record formula to the parent. `unlink` also needs `delete_field` wherever its lookups and summaries are |
 | `change_table`, `delete_table` | Renaming the table, or deleting it and its records | The table |
 
+For a relationship, the grant goes where the new field appears:
+
+```mermaid
+flowchart TD
+    P["<b>Projects</b>, the parent<br/>Grant <code>summary</code> here, and<br/>read on the child's field"]
+    C["<b>Tasks</b>, the child<br/>Grant <code>lookup</code> here, and<br/>read on the parent's field"]
+    P -- "<code>link</code> and <code>unlink</code><br/>are granted on both" --- C
+```
+
 A formula can't make a link or rich text (`url` or `rich-text`), as that acts as whoever clicks it.
 
 **Creating a table gives the client a new policy,** with the table in its `created` list, so that

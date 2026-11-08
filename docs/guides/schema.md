@@ -285,10 +285,9 @@ fields, and link it to another.
 
 ```mermaid
 flowchart TD
-    P["preview_schema_changes()<br/>with no blockers"] --> A["apply_schema_changes(plan)<br/>plans them again"]
-    A --> X["<b>Changed or blocked</b><br/>SchemaMismatchError,<br/>or InvalidValueError<br/>Nothing changed"]
-    A --> G["<b>Makes each ready<br/>change, in order</b><br/>Returns<br/>SchemaChangeResult"]
-    G --> E["<b>If one fails</b><br/>SchemaChangeError,<br/>listing what was made"]
+    A["apply_schema_changes(plan)"] --> C["<b>Checks the plan again</b><br/>If the app changed, or a<br/>change is now blocked:<br/>an error, nothing made"]
+    C --> M["<b>Makes each change,<br/>in order</b><br/>SchemaChangeResult"]
+    M --> F["<b>If one fails</b><br/>SchemaChangeError, with<br/>what was made"]
 ```
 
 **Applying is checked again.** `apply_schema_changes()` plans the same changes again first. If the tables and

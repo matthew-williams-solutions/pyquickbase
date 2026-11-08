@@ -1,9 +1,6 @@
 # Policies
 
-A client takes one `policy`, which says what it may read and change. Every request is checked
-before it's sent, including through `qb.request()`. A refused one raises `PolicyRefusedError`, and
-nothing is sent, though a table method may read the table's metadata first. What the policy hides is
-left out of every response, so a hidden table or field acts as if the token couldn't see it.
+A client takes one `policy`, which says what it may read and change.
 
 | Policy | What the client can do | Use it for |
 |---|---|---|
@@ -17,8 +14,19 @@ so that Quickbase enforces the limit too.
 
 ## How a policy decides
 
-Every request a client sends is checked before anything reaches Quickbase. A refused one raises
-`PolicyRefusedError`, nothing is sent, and `error.decision.layer` says which check refused it:
+A policy works on both sides of each request, including one sent through `qb.request()`:
+
+```mermaid
+flowchart TD
+    R["<b>Your request</b>"] --> C["<b>Checked before sending</b><br/>against every rule"]
+    C -- refused --> X["<b>PolicyRefusedError</b><br/>nothing sent"]
+    C -- allowed --> Q["<b>Quickbase</b><br/>applies the token's role"]
+    Q --> T["<b>Trimmed on return</b><br/>hidden tables and fields<br/>left out"]
+```
+
+A table method may read the table's metadata before its own request is checked. A hidden table or
+field looks as if it doesn't exist. When a request is refused, `error.decision.layer` says which check
+refused it:
 
 | `layer` | Refused because |
 |---|---|
@@ -27,8 +35,9 @@ Every request a client sends is checked before anything reaches Quickbase. A ref
 | `derived` | A formula, lookup, or summary would read something the client can't |
 
 A confirmation that `require_preview` asks for isn't part of the policy. A missing or mismatched one
-raises `ConfirmationError`. What the policy hides is also left out of every response, so a hidden table or
-field looks as if it doesn't exist.
+raises `ConfirmationError`.
+
+## Binding a policy
 
 1. **Write a `Policy`** of rules, by table name and field label.
 2. **Bind it to the app** once. Binding looks up every name, reports every problem at once, and
@@ -37,10 +46,9 @@ field looks as if it doesn't exist.
 
 ```mermaid
 flowchart TD
-    P["<b>Policy</b><br/>by name and label"] -- "bind(app)" --> B["<b>BoundPolicy</b><br/>by ID"]
-    B -- "policy=" --> C[Client]
-    B -- "to_json()" --> J[JSON]
-    J -- "from_json(), in<br/>another process" --> B2["<b>BoundPolicy</b>"]
+    P["<b>Policy</b><br/>tables and fields<br/>by name"] -- "bind(app)" --> B["<b>BoundPolicy</b><br/>tables and fields<br/>by ID"]
+    B -- "policy=" --> C["<b>Client</b>"]
+    B -- "to_json(), then<br/>from_json()" --> O["<b>Another process</b>"]
 ```
 
 A bound policy holds tables and fields by ID, so renaming one doesn't change what a rule means. A

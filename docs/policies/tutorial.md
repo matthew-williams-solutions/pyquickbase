@@ -91,6 +91,19 @@ with Quickbase.from_env() as setup:
 print(bound.row_limit(setup.app("bq1234567").table("Tasks").info().id))
 ```
 
+The agent now sees the `Tasks` table like this:
+
+```mermaid
+flowchart TD
+    subgraph T["Tasks where Project is Roof"]
+        U["<b>Read and update</b><br/>Status, Notes"]
+        R["<b>Read only</b><br/>Title, Due Date, Project"]
+        H["<b>Hidden</b><br/>Amount, Code"]
+    end
+    classDef hidden fill:#e5393526,stroke:#e53935
+    class H hidden
+```
+
 ## 5. Use it
 
 Give the bound policy to the agent's client. A refused request raises `PolicyRefusedError` before

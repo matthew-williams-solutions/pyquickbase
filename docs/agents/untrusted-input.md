@@ -77,11 +77,10 @@ The model only supplies part of the filter. Your code fixes the rest, and a poli
 
 ```mermaid
 flowchart TD
-    J["<b>From the model</b><br/>its JSON"] --> W["where_from_dict()"]
-    W --> AND((AND))
-    S["<b>From your code</b><br/>the scope, such as<br/>the user's project"] --> AND
-    AND --> Q["tasks.query(where=...)"]
-    Q --> L["<b>From the policy</b><br/>limit.rows(), ANDed<br/>on when it's sent"]
+    M["<b>Model</b><br/>its filter"] --> AND((AND))
+    S["<b>Your code</b><br/>the scope"] --> AND
+    P["<b>Policy</b><br/>limit.rows()"] --> AND
+    AND --> Q["The query sent<br/>to Quickbase"]
 ```
 
 Return a `QueryError` or `UnknownFieldError` to the model as the tool's result, with

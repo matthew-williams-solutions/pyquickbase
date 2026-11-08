@@ -37,15 +37,15 @@ sequenceDiagram
     participant P as Person
     participant M as Model
     participant S as pyquickbase
-    M->>S: preview_update<br/>(arguments)
+    M->>S: preview_update
     S-->>M: The changes, and<br/>a confirmation
     M->>P: The changes
     P-->>M: Approve
     Note over P,M: pyquickbase<br/>can't see this
-    M->>S: update(arguments,<br/>confirmation)
-    alt Same arguments,<br/>client, and policy,<br/>in 15 minutes
-        S-->>M: created_ids,<br/>updated_ids
-    else Anything differs,<br/>or it's expired
+    M->>S: update, with the<br/>confirmation
+    alt Same call, within<br/>15 minutes
+        S-->>M: Written
+    else Changed or expired
         S-->>M: needs_confirmation,<br/>nothing written
     end
 ```

@@ -25,7 +25,7 @@ flowchart TD
         T["Total Cost<br/>summary"]
     end
     D --> L --> T
-    classDef pay fill:#fde2e2,stroke:#c0392b,color:#000
+    classDef pay fill:#e5393526,stroke:#e53935
     class H,D,L,T pay
 ```
 
