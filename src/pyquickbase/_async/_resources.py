@@ -4,7 +4,7 @@ import difflib
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import replace
 from functools import partial
-from typing import Any, Self, TypeVar, cast, get_args
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast, get_args
 
 from .._bound import BoundPolicy, Snapshot, bind_snapshot
 from .._confirm import ConfirmationKind, schema_binding
@@ -19,6 +19,7 @@ from .._derived import (
     check_readable,
     limited_where,
 )
+from .._frames import DataFrame, require_library, rows_or_frame, to_pandas, to_polars
 from .._links import (
     app_url,
     field_url,
@@ -30,11 +31,14 @@ from .._links import (
 )
 from .._models import (
     RECORD_ID_FIELD,
+    AppEvent,
     AppInfo,
+    DeletePreview,
     DeletePreviewPage,
     Field,
     FieldIndex,
     FieldsLeftOutPage,
+    FieldUsage,
     FileDownload,
     FormulaResult,
     Page,
@@ -44,8 +48,11 @@ from .._models import (
     Role,
     TableInfo,
     TableSchema,
+    app_event_from_api,
     app_info_from_api,
+    extend,
     field_from_api,
+    field_usage_from_api,
     file_download_from_response,
     find_report,
     formula_result_from_api,
@@ -106,7 +113,6 @@ from .._summary import Summary, SummaryGroups, SummaryRow, sort_rows
 from .._write_request import UNSAFE_FORMULA_TYPES
 from .._writes import (
     FIELD_SETTINGS,
-    RowInput,
     WriteResult,
     build_rows,
     custom_key_refusal,
@@ -124,6 +130,7 @@ from .._writes import (
     write_failure,
 )
 from ..errors import (
+    APIError,
     ConfigurationError,
     InvalidResponseError,
     InvalidValueError,
@@ -141,6 +148,10 @@ from ..errors import (
 from ._planner import AsyncPlanner, apply_checked, apply_plan
 from ._transport import AsyncTransport
 
+if TYPE_CHECKING:
+    import pandas
+    import polars
+
 T = TypeVar("T")
 DEFAULT_BATCH_SIZE = 1000
 
@@ -155,6 +166,25 @@ def _require_timeout(timeout: float | None) -> None:
         isinstance(timeout, bool) or not isinstance(timeout, int | float) or not timeout > 0  # pyright: ignore[reportUnnecessaryIsInstance]
     ):
         raise InvalidValueError("timeout must be a positive number of seconds.")
+
+
+def _app_key(app_id: str) -> str:
+    """Where the client's cache keeps an app's details."""
+    return f"app:{app_id}"
+
+
+def require_app_name(name: str, action: str) -> str:
+    """Refuse an empty app name before anything is sent."""
+    if not isinstance(name, str) or not name.strip():  # pyright: ignore[reportUnnecessaryIsInstance]
+        raise InvalidValueError(f"An app needs a name to {action} it.")
+    return name
+
+
+def app_from_payload(transport: AsyncTransport, cache: SchemaCache, payload: Any) -> "AsyncApp":
+    """The `App` for one Quickbase just made, with its details cached."""
+    info = parse(app_info_from_api, payload, "app")
+    cache.set(_app_key(info.id), info)
+    return AsyncApp(transport, cache, info.id)
 
 
 class AsyncApp:
@@ -197,13 +227,12 @@ class AsyncApp:
             AuthenticationError: Quickbase doesn't recognize the app ID. It answers with a 401
                 here, rather than a 404.
         """
-        key = f"app:{self._id}"
-        cached = self._cache.get(key)
+        cached = self._cache.get(_app_key(self._id))
         if cached is not None:
             return cached
         payload = await self._transport.request("GET", f"/apps/{self._id}")
         info = parse(app_info_from_api, payload, "app")
-        self._cache.set(key, info)
+        self._cache.set(_app_key(self._id), info)
         return info
 
     async def tables(self, *, refresh: bool = False) -> list[TableInfo]:
@@ -256,6 +285,22 @@ class AsyncApp:
         roles = parse(lambda rows: tuple(role_from_api(row) for row in rows), payload, "roles")
         self._cache.set(key, roles)
         return list(roles)
+
+    async def events(self) -> list[AppEvent]:
+        """List the app's webhooks, Quickbase actions, notifications, subscriptions, reminders,
+        and the automations that records trigger.
+
+        Quickbase leaves out scheduled automations, and doesn't say which changes set each one
+        off. With a policy, only events on tables it shows are listed, without their owners.
+
+        Returns:
+            An `AppEvent` for each, active or not.
+
+        Raises:
+            PermissionDeniedError: The token isn't an administrator's.
+        """
+        payload = await self._transport.request("GET", f"/apps/{self._id}/events")
+        return parse(lambda rows: [app_event_from_api(row) for row in rows], payload, "events")
 
     async def ensure_table(
         self,
@@ -331,6 +376,71 @@ class AsyncApp:
         table_id = parse(lambda data: table_info_from_api(data).id, payload, "table")
         self._transport.table_created(table_id, name)
         return self.table(table_id)
+
+    async def copy(
+        self,
+        name: str,
+        *,
+        description: str | None = None,
+        keep_data: bool = False,
+        keep_files: bool = False,
+        keep_users: bool = False,
+        assign_token: bool = True,
+    ) -> "AsyncApp":
+        """Copy this app, with the same tables, fields, reports, and forms, and return the copy.
+
+        Args:
+            name: The copy's name. Quickbase allows several apps with the same name.
+            description: The copy's description.
+            keep_data: Copy the records too.
+            keep_files: With `keep_data`, copy file attachments too.
+            keep_users: Give the copy's users the roles they have here. Otherwise the roles are
+                copied without anyone in them.
+            assign_token: Let this client's token reach the copy, which a token limited to some
+                apps can't otherwise do.
+
+        Returns:
+            An `App` for the copy.
+
+        Raises:
+            InvalidValueError: `name` is empty. Nothing was sent.
+            PermissionDeniedError: The token's user can't copy this app.
+            PolicyRefusedError: The client has a policy, which covers one app. Nothing was sent.
+        """
+        body = {
+            "name": require_app_name(name, "copy"),
+            **({} if description is None else {"description": description}),
+            "properties": {
+                "keepData": keep_data,
+                "excludeFiles": not keep_files,
+                "usersAndRoles": keep_users,
+                "assignUserToken": assign_token,
+            },
+        }
+        payload = await self._transport.request("POST", f"/apps/{self._id}/copy", json=body)
+        return app_from_payload(self._transport, self._cache, payload)
+
+    async def drop(self, *, confirm: str) -> None:
+        """Delete this app, with all its tables and records. Quickbase can't undo this.
+
+        Args:
+            confirm: The app's exact name, so a wrong variable can't delete the wrong app.
+
+        Raises:
+            InvalidValueError: `confirm` isn't the app's exact name. Nothing was sent.
+            PermissionDeniedError: The token's user can't delete this app.
+            PolicyRefusedError: The client has a policy, which covers one app. Nothing was sent.
+        """
+        path = f"/apps/{self._id}"
+        self._transport.check_write("DELETE", path, json={"name": confirm})
+        info = await self.info()
+        if confirm != info.name:
+            raise InvalidValueError(
+                f"Not deleting app {info.name!r}: confirm must be its exact name."
+            )
+        await self._transport.request("DELETE", path, json={"name": info.name})
+        # Everything cached could belong to this app, and none of it is worth sorting out.
+        self._cache.clear()
 
     async def preview_schema_changes(self, changes: Sequence[SchemaChange]) -> SchemaPlan:
         """Work out what schema changes would do, without making them.
@@ -522,9 +632,39 @@ class AsyncRecordIterator:
         self._skip: int = 0
         self._yielded: int = 0
         self._done = False
+        self._columns: tuple[str, ...] = ()
 
     def __aiter__(self) -> Self:
         return self
+
+    async def _rest(self) -> list[Record]:
+        """Fetch every remaining record."""
+        records: list[Record] = []
+        async for record in self:
+            records.append(record)
+        return records
+
+    async def to_pandas(self) -> "pandas.DataFrame":
+        """Fetch the remaining records into a pandas DataFrame, with a column for each field.
+
+        A user field holds the user's email, or their ID if the client's policy hides emails, and
+        a file field holds the latest version's file name. Needs `pyquickbase[pandas]`.
+
+        Returns:
+            A DataFrame, which has the columns even when nothing matched.
+        """
+        require_library("pandas", "to_pandas()")
+        return to_pandas(await self._rest(), self._columns)
+
+    async def to_polars(self) -> "polars.DataFrame":
+        """Fetch the remaining records into a polars DataFrame. See `to_pandas()`. Needs
+        `pyquickbase[polars]`.
+
+        Returns:
+            A DataFrame, which has the columns even when nothing matched.
+        """
+        require_library("polars", "to_polars()")
+        return to_polars(await self._rest(), self._columns)
 
     async def __anext__(self) -> Record:
         while True:
@@ -553,6 +693,7 @@ class AsyncRecordIterator:
                 f"Quickbase returned records from {page.skip} when asked to skip {self._skip}."
             )
         self._buffer = iter(page.records)
+        self._columns = self._columns or page.columns
         self._skip = page.next_skip
         self._done = not page.has_more
 
@@ -1070,7 +1211,7 @@ class AsyncTable:
 
     async def insert(
         self,
-        records: Iterable[RowInput],
+        records: "Iterable[Mapping[str | int, Any]] | DataFrame",
         *,
         batch_size: int = DEFAULT_BATCH_SIZE,
         timeout: float | None = None,
@@ -1083,7 +1224,8 @@ class AsyncTable:
         Args:
             records: The records to create, as `{label or ID: value}` dictionaries. A value of
                 `None` leaves the field empty, but a row needs at least one real value, because
-                Quickbase can silently skip a row without one.
+                Quickbase can silently skip a row without one. A pandas or polars DataFrame works
+                too, with a column for each field, where a missing value leaves the field empty.
             batch_size: The most records to send in one request.
             timeout: Seconds to allow for each step of each request, instead of the client's
                 `timeout`, such as for a large file. It applies with your own `http_client` too.
@@ -1100,7 +1242,7 @@ class AsyncTable:
         """
         _require_positive("batch_size", batch_size)
         _require_timeout(timeout)
-        given = list(records)
+        given = list(rows_or_frame(records))
         built = await self._with_fields(lambda fields: build_rows(given, FieldIndex(fields)))
         key_field_id = (await self.info()).key_field_id
         if key_field_id not in (None, RECORD_ID_FIELD):
@@ -1111,7 +1253,7 @@ class AsyncTable:
 
     async def update(
         self,
-        records: Iterable[RowInput],
+        records: "Iterable[Mapping[str | int, Any]] | DataFrame",
         *,
         batch_size: int = DEFAULT_BATCH_SIZE,
         timeout: float | None = None,
@@ -1123,6 +1265,8 @@ class AsyncTable:
         Args:
             records: The changes, as `{label or ID: value}` dictionaries that each set `Record ID#`.
                 Fields left out of a row keep their values, and a value of `None` clears the field.
+                A pandas or polars DataFrame works too, with a column for each field, where a
+                missing value clears the field.
             batch_size: The most records to send in one request.
             timeout: Seconds to allow for each step of each request, instead of the client's
                 `timeout`, such as for a large file. It applies with your own `http_client` too.
@@ -1140,14 +1284,14 @@ class AsyncTable:
         """
         _require_positive("batch_size", batch_size)
         _require_timeout(timeout)
-        given = list(records)
+        given = list(rows_or_frame(records))
         built = await self._with_fields(lambda fields: build_rows(given, FieldIndex(fields)))
         require_field(built, RECORD_ID_FIELD, "so update() can't tell which record to change")
         return await self._write(built, RECORD_ID_FIELD, batch_size, timeout)
 
     async def upsert(
         self,
-        records: Iterable[RowInput],
+        records: "Iterable[Mapping[str | int, Any]] | DataFrame",
         *,
         merge_on: FieldRef,
         batch_size: int = DEFAULT_BATCH_SIZE,
@@ -1157,7 +1301,9 @@ class AsyncTable:
 
         Args:
             records: The records, as `{label or ID: value}` dictionaries that each set `merge_on`.
-                Fields left out of a row keep their values on a record that already exists.
+                Fields left out of a row keep their values on a record that already exists. A
+                pandas or polars DataFrame works too, with a column for each field, where a
+                missing value leaves the field empty.
             merge_on: The field that identifies a record, by label or ID. Quickbase requires it to
                 be marked as unique.
             batch_size: The most records to send in one request.
@@ -1179,7 +1325,7 @@ class AsyncTable:
         """
         _require_positive("batch_size", batch_size)
         _require_timeout(timeout)
-        given = list(records)
+        given = list(rows_or_frame(records))
 
         def build(fields: list[Field]) -> tuple[list[dict[str, Any]], int]:
             index = FieldIndex(fields)
@@ -1338,7 +1484,7 @@ class AsyncTable:
         select: FieldRefs | None = None,
         order_by: FieldRefs | None = None,
         limit: int = 100,
-    ) -> Page:
+    ) -> DeletePreview:
         """Show what `delete()` would delete with the same `where`, without deleting anything.
 
         This only reads, so it works on a read-only client. Records can change before a delete, so
@@ -1352,7 +1498,8 @@ class AsyncTable:
             limit: The most records to return. `total` still counts every match.
 
         Returns:
-            A `Page`, whose `total` is how many records would be deleted.
+            A `DeletePreview`: a page whose `total` is how many records would be deleted, and
+            whose `events` are what deleting them may set off.
 
         Raises:
             QueryError: `where` can't be sent as written, or is None. Nothing was queried.
@@ -1360,9 +1507,12 @@ class AsyncTable:
         """
         if where is None:  # pyright: ignore[reportUnnecessaryComparison]
             raise QueryError("preview_delete() needs where, as delete() does.")
-        return await self.query_page(where=where, select=select, order_by=order_by, limit=limit)
+        page = await self.query_page(where=where, select=select, order_by=order_by, limit=limit)
+        return extend(page, DeletePreview, events=await self._change_events())
 
-    async def preview_update(self, records: Iterable[RowInput]) -> UpdatePreview:
+    async def preview_update(
+        self, records: "Iterable[Mapping[str | int, Any]] | DataFrame"
+    ) -> UpdatePreview:
         """Show what `update()` would change with the same records, without changing anything.
 
         This only reads, so it works on a read-only client. Records can change before an update, so
@@ -1372,19 +1522,20 @@ class AsyncTable:
         Args:
             records: The records you'd pass to `update()`. If a record is in several of them, a
                 later one wins. `Record ID#` must be a positive integer here, even as a string
-                works in `update()`.
+                works in `update()`. A pandas or polars DataFrame works too, as for `update()`.
 
         Returns:
-            An `UpdatePreview`, with `changes`, `unchanged_ids`, and `missing_ids`. A value counts
-            as a change whenever the comparison isn't certain, so `update()` may report a listed
-            record as unchanged. A file upload is always a change.
+            An `UpdatePreview`, with `changes`, `unchanged_ids`, `missing_ids`, and the `events`
+            the update may set off. A value counts as a change whenever the comparison isn't
+            certain, so `update()` may report a listed record as unchanged. A file upload is
+            always a change.
 
         Raises:
             InvalidValueError: A row can't be sent, such as one without `Record ID#`. Nothing was
                 read.
             UnknownFieldError: A row names a field the table doesn't have. Nothing was read.
         """
-        given = list(records)
+        given = list(rows_or_frame(records))
         built = await self._with_fields(lambda fields: build_rows(given, FieldIndex(fields)))
         require_field(built, RECORD_ID_FIELD, "so preview_update() can't tell which record")
         merged = merge_rows(built)
@@ -1396,7 +1547,71 @@ class AsyncTable:
                 where=F(RECORD_ID_FIELD).is_in(ids), select=select, limit=len(ids)
             )
             current.update({record.id: record for record in page.records})
-        return build_update_preview(merged, current, FieldIndex(await self.fields()))
+        preview = build_update_preview(merged, current, FieldIndex(await self.fields()))
+        return replace(preview, events=await self._change_events())
+
+    async def events(self) -> list[AppEvent]:
+        """List the webhooks, Quickbase actions, notifications, subscriptions, reminders, and
+        record-triggered automations that watch this table. See `App.events()`.
+
+        Returns:
+            An `AppEvent` for each, active or not.
+
+        Raises:
+            PermissionDeniedError: The token isn't an administrator's.
+        """
+        table_id = (await self.info()).id
+        return [item for item in await self._app.events() if item.table_id == table_id]
+
+    async def _change_events(self) -> tuple[AppEvent, ...] | None:
+        """The active events on this table that changing records may set off, for a preview, or
+        None if they can't be read, which shouldn't stop the preview."""
+        try:
+            found = await self.events()
+        except (APIError, InvalidResponseError, PolicyRefusedError):
+            return None
+        return tuple(item for item in found if item.active and item.runs_on_changes)
+
+    async def field_usage(
+        self, fields: FieldRef | Sequence[FieldRef] | None = None
+    ) -> list[FieldUsage]:
+        """Say where fields are used, such as in reports, forms, formulas, and pipelines.
+
+        These are the counts on each field's Usage page in Quickbase, which help to judge what
+        deleting or changing a field would break.
+
+        Args:
+            fields: One field or a list of them, by label or ID. Defaults to every field.
+
+        Returns:
+            A `FieldUsage` for each field, in the order asked for, or the table's order.
+
+        Raises:
+            UnknownFieldError: A field doesn't exist. Nothing was read.
+            PermissionDeniedError: The token isn't an administrator's.
+        """
+        table_id = (await self.info()).id
+        if fields is None:
+            wanted = [item.id for item in await self.fields()]
+            # One request usually covers the table. Ask for any it left out one by one, which
+            # also covers a table larger than one response.
+            found = {item.field_id: item for item in await self._usage(table_id)}
+        else:
+            refs = [fields] if isinstance(fields, str | int) else list(fields)
+            wanted = await self.resolve_field_ids(refs)
+            found = {}
+        for field_id in wanted:
+            if field_id not in found:
+                for item in await self._usage(table_id, field_id):
+                    found[item.field_id] = item
+        return [found[field_id] for field_id in wanted if field_id in found]
+
+    async def _usage(self, table_id: str, field_id: int | None = None) -> list[FieldUsage]:
+        path = "/fields/usage" if field_id is None else f"/fields/usage/{field_id}"
+        payload = await self._transport.request("GET", path, params={"tableId": table_id})
+        return parse(
+            lambda rows: [field_usage_from_api(row) for row in rows], payload, "field usage"
+        )
 
     async def run_formula(self, formula: str, *, record_id: int | None = None) -> FormulaResult:
         """Run a formula against this table, without saving it.
@@ -2617,10 +2832,9 @@ class AsyncOperation:
             return await getattr(table, call.method)(call.arguments["rows"])
         if call.method == "preview_update":
             preview = await table.preview_update(call.arguments["rows"])
-            return ConfirmedUpdatePreview(
-                changes=preview.changes,
-                unchanged_ids=preview.unchanged_ids,
-                missing_ids=preview.missing_ids,
+            return extend(
+                preview,
+                ConfirmedUpdatePreview,
                 confirmation=await self._confirmation("update", arguments, scope, None),
             )
         result = await getattr(table, call.method)(**call.arguments)
@@ -2633,27 +2847,19 @@ class AsyncOperation:
                 rows=tuple(rows[call.group_skip : end]), total=len(rows), skip=call.group_skip
             )
         if call.method == "query_page" and call.fields_left_out:
-            page = cast(Page, result)
-            return FieldsLeftOutPage(
-                records=page.records,
-                total=page.total,
-                skip=page.skip,
-                fields_left_out=call.fields_left_out,
+            return extend(
+                cast(Page, result), FieldsLeftOutPage, fields_left_out=call.fields_left_out
             )
         if call.method == "delete":
             return DeletedCount(result)
         if call.method == "preview_delete":
-            page = cast(Page, result)
+            preview = cast(DeletePreview, result)
             limit = self._spec.context.limit
             confirmation = None
-            if page.total <= limit:
-                confirmation = await self._confirmation("delete", arguments, scope, page.total)
-            return DeletePreviewPage(
-                records=page.records,
-                total=page.total,
-                skip=page.skip,
-                max_deletable=limit,
-                confirmation=confirmation,
+            if preview.total <= limit:
+                confirmation = await self._confirmation("delete", arguments, scope, preview.total)
+            return extend(
+                preview, DeletePreviewPage, max_deletable=limit, confirmation=confirmation
             )
         return result
 

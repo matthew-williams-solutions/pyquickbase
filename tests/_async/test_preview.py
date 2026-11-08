@@ -28,13 +28,24 @@ FIELDS = [
     {"id": 13, "label": "Attachment", "fieldType": "file"},
 ]
 RESPONSE_FIELDS = [{"id": f["id"], "label": f["label"], "type": f["fieldType"]} for f in FIELDS]
+OWNER = {"id": "1.a", "name": "Ann", "email": "ann@example.com"}
+EVENTS = [
+    {"type": "webhook", "name": "Notify CRM", "isActive": True, "tableId": TASKS, "owner": OWNER},
+    {"type": "automation", "isActive": True, "tableId": TASKS, "url": "https://x/a/1"},
+    {"type": "email-notification", "name": "Old", "isActive": False, "tableId": TASKS},
+    {"type": "reminder", "name": "Due soon", "isActive": True, "tableId": TASKS},
+    {"type": "qb-action", "name": "Elsewhere", "isActive": True, "tableId": "bqother"},
+]
 
 
 class Fake:
     """Serves records, and records every query, and any write that gets through."""
 
-    def __init__(self, records: dict[int, dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self, records: dict[int, dict[str, Any]] | None = None, *, events: Any = EVENTS
+    ) -> None:
         self.records = records or {}
+        self.events = events
         self.queries: list[dict[str, Any]] = []
         self.writes: list[str] = []
 
@@ -44,6 +55,10 @@ class Fake:
             return httpx.Response(200, json=[{"id": TASKS, "name": "Tasks", "keyFieldId": 3}])
         if path == "/fields":
             return httpx.Response(200, json=FIELDS)
+        if path == "/apps/bq1234567/events":
+            if self.events is None:
+                return httpx.Response(403, json={"message": "Access denied"})
+            return httpx.Response(200, json=self.events)
         if path == "/records/query":
             body = json.loads(request.content)
             self.queries.append(body)
@@ -94,6 +109,10 @@ async def test_an_update_preview_compares_without_writing() -> None:
     assert preview.changes[0].fields["Title"].after == "new"
     assert preview.unchanged_ids == (2,)
     assert preview.missing_ids == (3,)
+    assert [(item.type, item.name) for item in preview.events or ()] == [
+        ("webhook", "Notify CRM"),
+        ("automation", None),
+    ]
     assert fake.writes == []
     assert fake.queries[0]["select"][0] == 3
     assert 6 in fake.queries[0]["select"]
@@ -154,8 +173,40 @@ async def test_a_delete_preview_counts_every_match_without_deleting() -> None:
         page = await tasks.preview_delete(F("Status") == "Done", select=["Title"], limit=2)
     assert page.total == 3
     assert len(page.records) == 2
+    assert page.columns == ("Record ID#", "Title", "Status", "Attachment")
+    assert [item.type for item in page.events or ()] == ["webhook", "automation"]
     assert fake.queries[0]["where"] == "{7.EX.'Done'}"
     assert fake.writes == []
+
+
+async def test_events_a_policy_shows_leave_out_owners() -> None:
+    async with client(Fake(), policy=Policy.read_only()) as qb:
+        events = await qb.app("bq1234567").events()
+    assert len(events) == len(EVENTS)
+    assert all(item.owner is None for item in events)
+    async with client(Fake()) as qb:
+        events = await qb.app("bq1234567").events()
+    assert events[0].owner is not None
+    assert events[0].owner.email == "ann@example.com"
+
+
+async def test_a_table_lists_only_its_own_events() -> None:
+    async with client(Fake()) as qb:
+        events = await qb.app("bq1234567").table("Tasks").events()
+    assert [item.name for item in events] == ["Notify CRM", None, "Old", "Due soon"]
+    assert [item.runs_on_changes for item in events] == [True, True, True, False]
+
+
+@pytest.mark.parametrize("events", [None, {"unexpected": True}])
+async def test_a_preview_still_works_when_events_cant_be_read(events: Any) -> None:
+    fake = Fake({1: {6: "old"}}, events=events)
+    async with client(fake) as qb:
+        tasks = qb.app("bq1234567").table("Tasks")
+        update = await tasks.preview_update([{"Record ID#": 1, "Title": "new"}])
+        delete = await tasks.preview_delete(F("Title") == "old")
+    assert update.events is None
+    assert delete.events is None
+    assert delete.total == 1
 
 
 async def test_a_delete_preview_takes_a_filter_from_data() -> None:

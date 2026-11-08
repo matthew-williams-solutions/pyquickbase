@@ -30,6 +30,9 @@ WriteAction = Literal[
     "create_relationship",
     "update_relationship",
     "delete_relationship",
+    "create_app",
+    "copy_app",
+    "delete_app",
     "other",
 ]
 """What a write does. See `WriteRequest`."""
@@ -49,6 +52,8 @@ UNSAFE_FORMULA_TYPES = frozenset({"url", "rich-text"})
 
 _FILE_PATH = re.compile(r"/files/([A-Za-z0-9]+)/[0-9]+/([0-9]+)/[0-9]+")
 _TABLE_PATH = re.compile(r"/tables/([A-Za-z0-9]+)")
+_APP_PATH = re.compile(r"/apps/([A-Za-z0-9]+)")
+_APP_COPY_PATH = re.compile(r"/apps/([A-Za-z0-9]+)/copy")
 _FIELD_PATH = re.compile(r"/fields/([1-9][0-9]*)")
 _RELATIONSHIP_PATH = re.compile(r"/tables/([A-Za-z0-9]+)/relationship(?:/([1-9][0-9]*))?")
 _FIELD_KEY = re.compile(r"[1-9][0-9]*")
@@ -81,7 +86,8 @@ class WriteRequest:
             for anything but `insert`, `update`, and `upsert`, as a delete by filter can't know.
         method: The HTTP method.
         path: The request's path, without its query parameters.
-        app_id: For `create_table` and `update_table`, the app.
+        app_id: For `create_table` and `update_table`, the app, and for `copy_app` and
+            `delete_app`, the app copied or deleted.
         parent_table_id: For a relationship, the parent table. Only `create_relationship` says
             which it is, so through `request()` it's `None` for the others.
         field_type: For `create_field`, the new field's type, such as `text`.
@@ -188,8 +194,34 @@ def describe_write(
             method=method,
             path=path,
         )
+    app = _describe_app(method, path)
+    if app is not None:
+        return app
     schema = _describe_schema(method, path, body, params or {}, parent_table_id)
     return _other(method, path) if schema is None else schema
+
+
+def _describe_app(method: str, path: str) -> WriteRequest | None:
+    """Describe creating, copying, or deleting an app, or return None if it isn't one."""
+    action: WriteAction
+    app_id = None
+    if method == "POST" and path == "/apps":
+        action = "create_app"
+    elif method == "POST" and (found := _APP_COPY_PATH.fullmatch(path)):
+        action, app_id = "copy_app", found[1]
+    elif method == "DELETE" and (found := _APP_PATH.fullmatch(path)):
+        action, app_id = "delete_app", found[1]
+    else:
+        return None
+    return WriteRequest(
+        action=action,
+        table_id=None,
+        field_ids=None,
+        row_count=None,
+        method=method,
+        path=path,
+        app_id=app_id,
+    )
 
 
 def is_schema_write(method: str, path: str, body: Any, params: Mapping[str, Any] | None) -> bool:

@@ -98,6 +98,27 @@ result = tasks.upsert([{"Code": "A1", "Title": "Frame walls"}], merge_on="Code")
 print(result.created_ids, result.updated_ids)
 ```
 
+## Writing a DataFrame
+
+`insert()`, `update()`, `upsert()`, and `preview_update()` also take a pandas or polars DataFrame, with a
+column named after each field, by label or ID. Each row is one record.
+
+```python
+import pandas as pd
+
+frame = pd.DataFrame({"Title": ["Order chairs", "Book venue"], "Status": ["Open", "Open"]})
+result = tasks.insert(frame)
+print(result.created_ids)
+```
+
+- A missing value, such as `NaN`, `NaT`, or `None`, leaves the field empty in `insert()`, and clears it
+  in `update()` and `upsert()`. Drop the column to leave a field as it is.
+- The index isn't written. Use `reset_index()` to make it a column.
+- A timestamp needs a timezone, as any `datetime` does, so convert a naive column with
+  `tz_localize()` first.
+- Rows are checked as dictionaries are, so a column that isn't a field raises `UnknownFieldError` and
+  nothing is written.
+
 ## Deleting records
 
 `where` is required, and it's checked before sending. This matters more here than anywhere else:
@@ -135,6 +156,7 @@ print(preview.unchanged_ids, preview.missing_ids)
 | `changes` | The records that would change, each with `{field label: FieldChange}`, which has `before` and `after` |
 | `unchanged_ids` | The records that already hold these values |
 | `missing_ids` | The records that don't exist, or that the token can't see |
+| `events` | Active webhooks, Quickbase actions, email notifications, and automations on the table, which the update may set off |
 
 An empty field reads as `None` in both `before` and `after`. A file field shows the file's name, and leaves
 out its contents and who uploaded it. If a record is in several rows, a later row wins, as it would in
@@ -149,6 +171,19 @@ from pyquickbase import F
 
 page = tasks.preview_delete(F("Status") == "Cancelled", select=["Title"], limit=25)
 print(page.total, [task["Title"] for task in page.records])
+```
+
+Both previews list the table's active webhooks, Quickbase actions, email notifications, and
+record-triggered automations in `events`, because changing records may set them off. Quickbase doesn't
+say which changes set each one off, so some may not run. `events` is `None` when they couldn't be read,
+such as when the token isn't an app administrator's.
+
+```python
+from pyquickbase import F
+
+preview = tasks.preview_delete(F("Status") == "Cancelled")
+for event in preview.events or ():
+    print(event.type, event.name or event.url)
 ```
 
 A preview can't promise what the write will do:

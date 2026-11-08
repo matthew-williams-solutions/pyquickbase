@@ -20,6 +20,8 @@ from typing import Any, Literal, cast, overload
 from ._confirm import expires_at
 from ._decision import READ_VERBS
 from ._models import (
+    AppEvent,
+    DeletePreview,
     DeletePreviewPage,
     Field,
     FieldsLeftOutPage,
@@ -575,6 +577,27 @@ def _approval(
     return found
 
 
+def _events(events: Sequence[AppEvent] | None) -> dict[str, Any]:
+    """What a change may set off, for a preview, with null when it couldn't be read."""
+    if events is None:
+        return {"events": None}
+    return {
+        "events": [
+            {"type": item.type, "name": item.name, **({"url": item.url} if item.url else {})}
+            for item in events
+        ]
+    }
+
+
+def _event_warnings(events: Sequence[AppEvent] | None) -> list[str]:
+    if not events:
+        return []
+    return [
+        f"The table has {len(events)} active webhooks, Quickbase actions, notifications, or "
+        "automations, listed in events, which this change may set off."
+    ]
+
+
 def _preview(preview: UpdatePreview, state: _State) -> dict[str, Any]:
     return {
         "changes": [
@@ -592,6 +615,7 @@ def _preview(preview: UpdatePreview, state: _State) -> dict[str, Any]:
         ],
         "unchanged_ids": list(preview.unchanged_ids),
         "missing_ids": list(preview.missing_ids),
+        **_events(preview.events),
     }
 
 
@@ -716,6 +740,8 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
             skip=page.skip,
             has_more=page.has_more,
         )
+        if isinstance(page, DeletePreview):
+            found.update(_events(page.events))
         if isinstance(page, DeletePreviewPage):
             blockers: list[str] = []
             if page.total > page.max_deletable:
@@ -725,7 +751,7 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
                     "deleting with this filter would be refused, and nothing would be deleted. "
                     "Narrow the filter."
                 )
-            found.update(_approval(page.confirmation, blockers, ()))
+            found.update(_approval(page.confirmation, blockers, _event_warnings(page.events)))
         if isinstance(page, FieldsLeftOutPage):
             found["fields_left_out"] = {
                 "count": page.fields_left_out,
@@ -742,7 +768,7 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
     if isinstance(value, UpdatePreview):
         found = _preview(value, state)
         if isinstance(value, ConfirmedUpdatePreview):
-            warnings: list[str] = []
+            warnings = _event_warnings(value.events)
             if value.missing_ids:
                 warnings.append(
                     f"Records {list(value.missing_ids)} don't exist, or this tool can't see them, "

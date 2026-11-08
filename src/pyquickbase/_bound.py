@@ -22,11 +22,13 @@ from ._policy import FieldSelector, Grant, Policy, PolicyRule, Rule
 from ._query import compile_where, where_field_ids
 from ._read_request import (
     COLUMN_KEYS,
+    EVENT_KEYS,
     FIELD_KEYS,
     FIELD_PROPERTIES,
     FILE_PATH,
     REPORT_KEYS,
     TABLE_KEYS,
+    USAGE_FIELD_KEYS,
     ReadRequest,
     pick,
     shows_only,
@@ -547,7 +549,8 @@ class BoundPolicy:
         if self._open_reads:
             # Policy.read_only() reads whatever the token can, as a client without one would.
             return Decision(allowed=True, verb="read", rule="Policy.read_only()", reason="Allowed")
-        if action == "tables":
+        if action in ("tables", "app_events"):
+            # Both are trimmed to the tables the policy shows.
             return Decision(allowed=True, verb="read", reason="Allowed")
         if action in ("app", "roles", "other"):
             if self._open_reads:
@@ -569,7 +572,7 @@ class BoundPolicy:
             )
         if action == "formula":
             return self._all([("run_formula", table_id, None)])
-        if action in ("fields", "relationships", "reports"):
+        if action in ("fields", "relationships", "reports", "field_usage"):
             if self.table_visible(table_id):
                 return Decision(
                     allowed=True, verb="read", table=self._named_table(table_id), reason="Allowed"
@@ -651,6 +654,16 @@ class BoundPolicy:
 
     def _decide_write(self, request: WriteRequest) -> Decision:
         action, table_id, ids = request.action, request.table_id, request.field_ids
+        if action in ("create_app", "copy_app", "delete_app"):
+            return self._decision(
+                _Verdict(
+                    False,
+                    reason="A policy covers one app's tables, so it can't create, copy, or delete "
+                    "an app. Use a client without a policy",
+                ),
+                "update",
+                None,
+            )
         if action == "other":
             return self._decision(
                 _Verdict(False, reason="Only record, file, and schema writes can be allowed"),
@@ -1279,6 +1292,26 @@ class BoundPolicy:
                 self._trim_field(table_id, item, readable)
                 for item in payload
                 if self.visible(table_id, item["id"])
+            ]
+        if action == "field_usage":
+            return [
+                {
+                    "field": pick(item["field"], USAGE_FIELD_KEYS),
+                    "usage": {
+                        kind: {"count": use["count"]}
+                        for kind, use in item["usage"].items()
+                        if isinstance(use, Mapping)
+                    },
+                }
+                for item in payload
+                if self.visible(table_id, item["field"]["id"])
+            ]
+        if action == "app_events":
+            # Owners are people, and the SDK doesn't need them to say what may run.
+            return [
+                pick(item, EVENT_KEYS)
+                for item in payload
+                if isinstance(item.get("tableId"), str) and self.table_visible(item["tableId"])
             ]
         if action == "reports":
             return [

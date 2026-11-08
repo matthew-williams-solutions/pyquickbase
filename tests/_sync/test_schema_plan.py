@@ -339,6 +339,29 @@ def test_a_deletion_follows_formulas_to_what_uses_them() -> None:  # F22, F15
     assert 'Summaries on Projects stop working, through "Double": "Total Double".' in warnings
 
 
+def test_deleting_a_field_says_where_quickbase_uses_it() -> None:
+    fake = FakeApp()
+    fake.usage[(TASKS, 8)] = {"reports": 2, "forms": 1, "tableRules": 1}
+    with client(fake) as qb:
+        app = qb.app(APP)
+        used = app.preview_schema_changes([DeleteField(table="Tasks", field="Code")])
+        unused = app.preview_schema_changes([DeleteField(table="Tasks", field="Status")])
+    assert (
+        "Quickbase lists it in 2 reports, 1 form and 1 table rule, which lose it or stop working."
+        in used.changes[0].warnings
+    )
+    assert not any("Quickbase lists it" in item for item in unused.changes[0].warnings)
+
+
+def test_a_plan_still_works_when_usage_cant_be_read() -> None:
+    fake = FakeApp()
+    fake.fail = "GET /fields/usage"
+    with client(fake) as qb:
+        plan = qb.app(APP).preview_schema_changes([DeleteField(table="Tasks", field="Code")])
+    assert plan.changes[0].status == "ready"
+    assert "Quickbase didn't say where else it's used" in plan.changes[0].warnings[-1]
+
+
 def test_a_summary_can_filter_its_child_records() -> None:
     fake = FakeApp()
     change = CreateSummaryField(

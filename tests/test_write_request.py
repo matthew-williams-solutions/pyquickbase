@@ -132,7 +132,10 @@ def test_deleting_a_file_version() -> None:
 @pytest.mark.parametrize(
     ("method", "path"),
     [
-        ("POST", "/apps"),
+        ("POST", "/apps/bqapp"),
+        ("GET", "/apps"),
+        ("DELETE", "/apps"),
+        ("POST", "/apps/bqapp/copy/"),
         ("PUT", "/fields"),
         ("POST", "/fields/06"),
         ("POST", "/tables/bqtasks/relationships"),
@@ -225,3 +228,16 @@ EXTRA = st.dictionaries(st.sampled_from(["mergeFieldId", "fieldsToReturn"]), JSO
 @given(st.sampled_from(["POST", "DELETE", "PUT"]), st.sampled_from(["/records", "/x"]), JSON_VALUES)
 def test_any_body_can_be_described(method: str, path: str, body: Any) -> None:
     assert describe_write(method, path, body).method == method
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "action", "app_id"),
+    [
+        ("POST", "/apps", "create_app", None),
+        ("POST", "/apps/bqapp/copy", "copy_app", "bqapp"),
+        ("DELETE", "/apps/bqapp", "delete_app", "bqapp"),
+    ],
+)
+def test_making_and_deleting_apps(method: str, path: str, action: str, app_id: str | None) -> None:
+    request = describe_write(method, path, {"name": "x"})
+    assert (request.action, request.app_id, request.table_id) == (action, app_id, None)

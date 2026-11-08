@@ -26,15 +26,17 @@ OVERVIEW = "reference/index.md"
 DESCRIPTIONS = {
     "index.md": "What the SDK is, why to use it, and how to install it",
     "getting-started.md": "Install it, read some records, and write one",
-    "guides/reading.md": "Tables, fields, queries with `F`, paging, record values, reports, and "
-    "what each refusal raises",
-    "guides/writing.md": "Inserts, updates, upserts, deletes, rows that fail, and what each "
-    "refusal leaves behind",
+    "guides/reading.md": "Tables, fields, queries with `F`, paging, record values, reports, "
+    "DataFrames, and what each refusal raises",
+    "guides/writing.md": "Inserts, updates, upserts, deletes, DataFrames, previews, rows that "
+    "fail, and what each refusal leaves behind",
     "guides/files.md": "Uploading, downloading, and deleting file attachments",
     "guides/formulas.md": "Running formulas and creating formula fields, and why not to run "
     "formula text you don't control",
     "guides/schema.md": "Creating and changing tables, fields, relationships, lookups, and "
-    "summaries, and what each refusal leaves behind",
+    "summaries, where fields are used, and what each refusal leaves behind",
+    "guides/apps.md": "Creating, copying, and deleting apps, and the webhooks and automations "
+    "that run in one",
     "guides/errors.md": "Every exception, and which ones mean a request wasn't sent",
     "guides/clients.md": "Sync or async, tokens, retries, proxies, and other settings",
     "agents/index.md": "Limiting what an agent can do, and why the token is the real boundary",

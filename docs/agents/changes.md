@@ -82,6 +82,11 @@ def preview_delete_tasks(project: str, where: dict) -> dict:
 The delete preview's `page.total` is how many tasks the delete would remove. Add `tool_error()` as in
 [Returning results to a model](results.md#returning-results-to-a-model) to return a refusal too.
 
+Both previews' results also have `events`: the table's active webhooks, Quickbase actions, email
+notifications, and automations, which the change may set off, with a warning when there are any. Show
+these to the person too, as a change can send email or reach other systems. `events` is `null` when the
+token can't read them, which needs an app administrator.
+
 The values in a preview are record data, so treat them as [untrusted](results.md#reading-results), and only return
 fields the model should see. A preview isn't a guarantee, as records can change before the write, and
 [it doesn't check](../guides/writing.md#previewing-a-write) whether Quickbase will accept it. Compare a delete's

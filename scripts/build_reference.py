@@ -43,6 +43,7 @@ TITLES: dict[str, dict[str, str]] = {
         "from_env": "Create a client from the environment",
         "close": "Close a client",
         "app": "Get an app",
+        "create_app": "Create an app",
         "realm": "The client's realm",
         "policy": "The client's policy",
         "clear_schema_cache": "Clear the metadata cache",
@@ -53,6 +54,7 @@ TITLES: dict[str, dict[str, str]] = {
         "info": "Get the app's details",
         "tables": "List tables",
         "roles": "List roles",
+        "events": "List webhooks and automations",
         "table": "Get a table",
         "url": "Link to the app",
         "settings_url": "Link to the app's settings",
@@ -61,6 +63,8 @@ TITLES: dict[str, dict[str, str]] = {
         "preview_schema_changes": "Preview schema changes",
         "apply_schema_changes": "Apply schema changes",
         "operation": "Make a schema tool for a model",
+        "copy": "Copy the app",
+        "drop": "Delete the app",
     },
     "report": {
         "run": "Run a report",
@@ -142,6 +146,15 @@ TITLES: dict[str, dict[str, str]] = {
         "tables.created": "Select created tables",
         "Rule.decide": "Refuse a request",
     },
+    "metadata": {
+        "FieldUsage.describe": "Describe a field's uses in words",
+    },
+    "records": {
+        "RecordIterator.to_pandas": "Fetch records into pandas",
+        "RecordIterator.to_polars": "Fetch records into polars",
+        "Page.to_pandas": "Turn a page into pandas",
+        "Page.to_polars": "Turn a page into polars",
+    },
     "retries": {
         "RetryPolicy.backoff": "Get the backoff delay",
         "RetryPolicy.rate_limit_delay": "Get the wait after a 429",
@@ -169,6 +182,8 @@ TITLES: dict[str, dict[str, str]] = {
         "fields": "List fields",
         "relationships": "List relationships",
         "reports": "List reports",
+        "events": "List webhooks and automations",
+        "field_usage": "See where fields are used",
         "report": "Get a report",
         "resolve_field_ids": "Turn field labels into IDs",
         "download_file": "Download a file",
@@ -287,6 +302,12 @@ NO_EXAMPLE = {
 NOT_RUN_LIVE = {
     "report/summary_rows": "A summary report can only be built in the Quickbase interface. "
     "tests/_async/live/test_sdk.py tests this method.",
+    "quickbase/create_app": "It makes a lasting app. tests/_async/live/test_apps.py tests this "
+    "method, and deletes what it makes.",
+    "app/copy": "It makes a lasting app. tests/_async/live/test_apps.py tests this method, and "
+    "deletes what it makes.",
+    "app/drop": "It would delete the test app. tests/_async/live/test_apps.py tests this method "
+    "on a copy.",
 }
 
 
@@ -350,6 +371,7 @@ _FILES = ("File attachments", "../guides/files.md")
 _FORMULAS = ("Formulas", "../guides/formulas.md")
 _AGENTS = ("Using pyquickbase from an AI agent", "../agents/index.md")
 _ERRORS = ("Handling errors", "../guides/errors.md")
+_APPS = ("Working with apps", "../guides/apps.md")
 _LINKS = "Link to the Quickbase interface"
 
 _TABLE_LINE = 'tasks = qb.app("bq1234567").table("Job Tasks")'
@@ -383,6 +405,7 @@ RESOURCES = (
                 _CLIENTS,
                 ("app", "realm", "policy", "clear_schema_cache", "request"),
             ),
+            Group("Create an app", "create-an-app", _APPS, ("create_app",)),
         ),
     ),
     Resource(
@@ -402,7 +425,7 @@ RESOURCES = (
                 "Look up the app's details",
                 "app-details",
                 _READING,
-                ("id", "info", "tables", "roles"),
+                ("id", "info", "tables", "roles", "events"),
             ),
             Group("Get a table", "get-a-table", _READING, ("table",)),
             Group(_LINKS, "links", _AGENTS, ("url", "settings_url")),
@@ -414,6 +437,7 @@ RESOURCES = (
                 ("preview_schema_changes", "apply_schema_changes"),
             ),
             Group("Give a model the schema", "operations", _AGENTS, ("operation",)),
+            Group("Copy or delete the app", "copy-or-delete", _APPS, ("copy", "drop")),
         ),
     ),
     Resource(
@@ -451,7 +475,16 @@ RESOURCES = (
                 "Look up the table's details",
                 "table-details",
                 _READING,
-                ("info", "fields", "relationships", "reports", "report", "resolve_field_ids"),
+                (
+                    "info",
+                    "fields",
+                    "field_usage",
+                    "relationships",
+                    "reports",
+                    "report",
+                    "events",
+                    "resolve_field_ids",
+                ),
             ),
             Group("Work with files", "files", _FILES, ("download_file", "delete_file_version")),
             Group("Offer an operation to a model", "operations", _AGENTS, ("operation",)),
@@ -605,7 +638,7 @@ SYMBOL_PAGES = (
                 "Previews of writes",
                 "previews",
                 _WRITING,
-                ("UpdatePreview", "RecordChange", "FieldChange"),
+                ("UpdatePreview", "DeletePreview", "RecordChange", "FieldChange"),
             ),
             Group(
                 "Summaries",
@@ -623,7 +656,7 @@ SYMBOL_PAGES = (
         f"{_SYMBOL_NOTE} {_PROJECTS}",
         *_setup(_TABLE_LINE),
         (
-            Group("Apps", "apps", _READING, ("AppInfo", "Role")),
+            Group("Apps", "apps", _READING, ("AppInfo", "Role", "AppEvent")),
             Group(
                 "Tables and reports", "tables-and-reports", _READING, ("TableInfo", "ReportInfo")
             ),
@@ -631,7 +664,7 @@ SYMBOL_PAGES = (
                 "Fields and relationships",
                 "fields",
                 _SCHEMA,
-                ("Field", "Relationship", "TableSchema"),
+                ("Field", "FieldUsage", "Relationship", "TableSchema"),
             ),
         ),
     ),

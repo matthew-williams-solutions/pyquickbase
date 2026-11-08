@@ -8,6 +8,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **DataFrames.** `to_pandas()` and `to_polars()` on `query()`, a report's `run()`, and any `Page`
+  fetch records into a DataFrame, with a column for each field, which a query with no matches still
+  has. `insert()`, `update()`, `upsert()`, and `preview_update()` take a pandas or polars DataFrame
+  as their rows, where a missing value leaves a field empty. Install `pyquickbase[pandas]` or
+  `pyquickbase[polars]`. Neither library is loaded unless you use it.
+- **`Table.field_usage()`** says where fields are used, such as in reports, forms, and pipelines, as a
+  `FieldUsage` for each, from the counts on each field's Usage page. A plan that deletes a field
+  lists these uses in its warnings.
+- **`App.events()` and `Table.events()`** list webhooks, Quickbase actions, notifications,
+  subscriptions, reminders, and record-triggered automations, as `AppEvent`s. Both previews of
+  writes list the active ones on the table in `events`, since changing records may set them off, and
+  `tool_result()` includes them, with a warning, in a preview operation's result.
+- **`Quickbase.create_app()`, `App.copy()`, and `App.drop()`** create, copy, and delete apps. `drop()`
+  needs the app's exact name. A client with a policy refuses all three, as a policy covers one app.
+- `Page.columns`, the labels of the fields a page returned, in order.
+
 - **`tool_result(max_chars=...)`** limits how many characters a result takes as compact JSON, so one
   call can't fill a model's context. Records and summary groups are included until the next wouldn't
   fit, and `page.has_more` and `page.next_skip` say where to carry on, so paging still reaches every
@@ -22,6 +38,10 @@ All notable changes to this project are documented here. The format follows
 - `TooManyRecordsError`, with `matched` and `limit`, and the tool error code `too_many_records`.
 
 ### Changed
+
+- **`preview_delete()` returns a `DeletePreview`,** a `Page` with `events`.
+- `ReadAction` adds `field_usage` and `app_events`, and `WriteAction` adds `create_app`, `copy_app`,
+  and `delete_app`. A custom rule that tested for `other` on these requests no longer sees them.
 
 - **Summary groups have a `page` in `tool_result()`,** with `returned`, `total`, `skip`, `next_skip`, and
   `has_more`, as records do. A `summarize` operation returns its page of groups, which reads as a list

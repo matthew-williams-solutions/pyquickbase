@@ -12,7 +12,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from ._models import RECORD_ID_FIELD, Field, FieldIndex, FileAttachment, Record, User
+from ._models import RECORD_ID_FIELD, AppEvent, Field, FieldIndex, FileAttachment, Record, User
 from ._writes import FILE_FIELD_TYPE, require_id
 
 # Records to read in one query. Quickbase's limit on a query's length isn't confirmed.
@@ -61,11 +61,15 @@ class UpdatePreview:
         unchanged_ids: The records that already hold these values.
         missing_ids: The records that don't exist, or that the token can't see. `update()` would
             report these as failed rows.
+        events: The active webhooks, Quickbase actions, email notifications, and automations on
+            the table, which the update may set off. Quickbase doesn't say which changes set each
+            one off, so some may not run. None if they couldn't be read.
     """
 
     changes: tuple[RecordChange, ...] = ()
     unchanged_ids: tuple[int, ...] = ()
     missing_ids: tuple[int, ...] = ()
+    events: tuple[AppEvent, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

@@ -173,7 +173,9 @@ def test_other_writes_and_unknown_tables_are_refused() -> None:
         allow.delete(TASKS),
         allow.delete_file(TASKS),
     )
-    assert "Only record, file, and schema" in refusal(policy, describe_write("POST", "/apps", {}))
+    assert "Only record, file, and schema" in refusal(
+        policy, describe_write("POST", f"/apps/{APP}", {})
+    )
     assert "table can't be determined" in refusal(
         policy, describe_write("POST", "/records", {"data": [row(6)]})
     )
@@ -473,7 +475,6 @@ def test_files_need_download_even_when_the_field_is_read() -> None:
         ("POST", "/formula/run", {"formula": "1", "from": TASKS}, "running a formula on"),
         ("GET", "/apps/bqapp", None, "not the app's details"),
         ("GET", "/apps/bqapp/roles", None, "not the app's roles"),
-        ("GET", "/apps/bqapp/events", None, "Only records"),
     ],
 )
 def test_formulas_and_app_metadata_are_refused(
@@ -484,6 +485,32 @@ def test_formulas_and_app_metadata_are_refused(
     assert match in refusal(reads(fields=fields.all()), found)
     # Policy.read_only() reads everything, as policy=Policy.read_only() did.
     assert allows(Policy.read_only().bind_offline(), found)
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [("POST", "/apps"), ("POST", f"/apps/{APP}/copy"), ("DELETE", f"/apps/{APP}")],
+)
+def test_no_policy_makes_copies_or_deletes_apps(method: str, path: str) -> None:
+    request = describe_write(method, path, {"name": "x"})
+    policy = bind(allow.schema(TASKS, "add_field"), allow.create_tables())
+    assert "can't create, copy, or delete an app" in refusal(policy, request)
+    assert "can't create, copy, or delete an app" in refusal(
+        Policy.read_only().bind_offline(), request
+    )
+
+
+def test_field_usage_is_read_like_fields() -> None:
+    usage = describe_read("GET", "/fields/usage", {"tableId": TASKS}, None)
+    assert usage is not None
+    assert allows(reads(), usage)
+    assert "Nothing in the table is allowed" in refusal(bind(allow.read(NOTES, [6])), usage)
+
+
+def test_app_events_are_read_and_trimmed_to_shown_tables() -> None:
+    events = describe_read("GET", f"/apps/{APP}/events", None, None)
+    assert events is not None
+    assert allows(reads(), events)
 
 
 def test_a_delete_is_held_to_the_filter_rules() -> None:
@@ -673,6 +700,36 @@ def test_fields_keep_visible_ones_without_formulas_or_permissions() -> None:
         "properties": {"choices": ["a"]},
     }
     assert [item["appearsByDefault"] for item in found] == [True, True, False, False, False]
+
+
+def test_field_usage_keeps_visible_fields_and_only_counts() -> None:
+    request = describe_read("GET", "/fields/usage", {"tableId": TASKS}, None)
+    payload = [
+        {
+            "field": {"id": 6, "name": "Title", "type": "Text", "secret": "x"},
+            "usage": {"reports": {"count": 2, "names": ["Open"]}, "forms": {"count": 0}},
+        },
+        {"field": {"id": 9, "name": "Notes", "type": "Text"}, "usage": {"forms": {"count": 1}}},
+    ]
+    assert trim(reads(), request, payload) == [
+        {
+            "field": {"id": 6, "name": "Title", "type": "Text"},
+            "usage": {"reports": {"count": 2}, "forms": {"count": 0}},
+        }
+    ]
+
+
+def test_app_events_keep_shown_tables_without_owners() -> None:
+    request = describe_read("GET", f"/apps/{APP}/events", None, None)
+    owner = {"id": "1.a", "name": "Ann", "email": "ann@example.com"}
+    payload = [
+        {"type": "webhook", "name": "Sync", "isActive": True, "tableId": TASKS, "owner": owner},
+        {"type": "webhook", "name": "Payroll", "isActive": True, "tableId": "bqsecret"},
+        {"type": "automation", "isActive": True, "url": "https://x"},
+    ]
+    assert trim(reads(), request, payload) == [
+        {"type": "webhook", "name": "Sync", "isActive": True, "tableId": TASKS}
+    ]
 
 
 def test_reports_keep_listed_ones_without_their_filters() -> None:

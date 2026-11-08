@@ -2,8 +2,11 @@ class APIError(QuickbaseError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
 class App(object)
     def apply_schema_changes(self, plan: SchemaPlan) -> SchemaChangeResult
+    def copy(self, name: str, *, description: str | None = None, keep_data: bool = False, keep_files: bool = False, keep_users: bool = False, assign_token: bool = True) -> 'App'
     def create_table(self, name: str, *, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> 'Table'
+    def drop(self, *, confirm: str) -> None
     def ensure_table(self, name: str, *, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> 'Table'
+    def events(self) -> list[AppEvent]
     property id -> str
     def info(self) -> AppInfo
     def operation(self, name: Literal['describe_schema', 'preview_schema_changes', 'apply_schema_changes'], *, max_changes: int = 20) -> 'SchemaOperation'
@@ -13,6 +16,17 @@ class App(object)
     def table(self, name_or_id: str) -> 'Table'
     def tables(self, *, refresh: bool = False) -> list[TableInfo]
     def url(self) -> str
+class AppEvent(object)
+    def __eq__(self, other)
+    def __init__(self, *, type: str, name: str | None, active: bool, table_id: str | None, url: str | None, owner: User | None, raw: Mapping[str, Any]) -> None
+    field active: bool
+    field name: str | None
+    field owner: User | None
+    field raw: Mapping[str, Any]
+    property runs_on_changes -> bool
+    field table_id: str | None
+    field type: str
+    field url: str | None
 class AppInfo(object)
     def __eq__(self, other)
     def __init__(self, *, id: str, name: str, description: str, time_zone: str | None, date_format: str | None, raw: Mapping[str, Any]) -> None
@@ -24,8 +38,11 @@ class AppInfo(object)
     field time_zone: str | None
 class AsyncApp(object)
     async def apply_schema_changes(self, plan: SchemaPlan) -> SchemaChangeResult
+    async def copy(self, name: str, *, description: str | None = None, keep_data: bool = False, keep_files: bool = False, keep_users: bool = False, assign_token: bool = True) -> 'AsyncApp'
     async def create_table(self, name: str, *, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> 'AsyncTable'
+    async def drop(self, *, confirm: str) -> None
     async def ensure_table(self, name: str, *, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> 'AsyncTable'
+    async def events(self) -> list[AppEvent]
     property id -> str
     async def info(self) -> AppInfo
     async def operation(self, name: Literal['describe_schema', 'preview_schema_changes', 'apply_schema_changes'], *, max_changes: int = 20) -> 'AsyncSchemaOperation'
@@ -47,6 +64,7 @@ class AsyncQuickbase(object)
     async def aclose(self) -> None
     def app(self, app_id: str) -> AsyncApp
     def clear_schema_cache(self) -> None
+    async def create_app(self, name: str, *, description: str | None = None, assign_token: bool = True) -> AsyncApp
     classmethod def from_env(cls, *, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.AsyncClient | None = None, schema_ttl: float = 300.0, policy: Policy | BoundPolicy | None = None, confirmation_key: bytes | None = None, token_env: str = 'QB_USER_TOKEN') -> Self
     property policy -> BoundPolicy | None
     property realm -> str
@@ -54,6 +72,8 @@ class AsyncQuickbase(object)
 class AsyncRecordIterator(object)
     def __aiter__(self) -> Self
     async def __anext__(self) -> Record
+    async def to_pandas(self) -> 'pandas.DataFrame'
+    async def to_polars(self) -> 'polars.DataFrame'
 class AsyncReport(object)
     async def info(self) -> ReportInfo
     def run(self, *, page_size: int = 1000, max_total: int | None = None) -> AsyncRecordIterator
@@ -81,18 +101,20 @@ class AsyncTable(object)
     async def ensure_lookup_field(self, relationship: Relationship, parent_field: str | int, *, label: str | None = None) -> Field
     async def ensure_relationship(self, parent: 'AsyncTable', *, foreign_key: str) -> Relationship
     async def ensure_summary_field(self, relationship: Relationship, child_field: str | int, label: str, *, function: str = 'sum', where: Expression | str | None = None) -> Field
+    async def events(self) -> list[AppEvent]
     async def field_url(self, field: str | int) -> str
+    async def field_usage(self, fields: str | int | Sequence[str | int] | None = None) -> list[FieldUsage]
     async def fields(self, *, refresh: bool = False) -> list[Field]
     async def fields_url(self) -> str
     async def first(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None) -> Record | None
     async def form_url(self, form_id: int) -> str
     async def get(self, record_id: int, *, select: str | int | F | Sequence[str | int | F] | None = None) -> Record | None
     async def info(self) -> TableInfo
-    async def insert(self, records: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
+    async def insert(self, records: 'Iterable[Mapping[str | int, Any]] | DataFrame', *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     async def new_record_url(self) -> str
     async def operation(self, name: Literal['query', 'count', 'summarize', 'insert', 'update', 'delete', 'preview_update', 'preview_delete', 'run_report', 'run_summary_report', 'run_formula', 'download_file', 'delete_file_version'], *, fields: Sequence[str | int] | None = None, field_descriptions: Mapping[str | int, str] | None = None, reports: Sequence[str] | None = None, report_descriptions: Mapping[str, str] | None = None, formula: str | None = None, max_records_per_call: int | None = None, max_records_per_write: int = 100, scope: Expression | None = None, require_preview: bool = False, max_default_fields: int | None = None) -> 'AsyncOperation'
-    async def preview_delete(self, where: Expression | str, *, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, limit: int = 100) -> Page
-    async def preview_update(self, records: Iterable[Mapping[str | int, Any]]) -> UpdatePreview
+    async def preview_delete(self, where: Expression | str, *, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, limit: int = 100) -> DeletePreview
+    async def preview_update(self, records: 'Iterable[Mapping[str | int, Any]] | DataFrame') -> UpdatePreview
     def query(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, page_size: int = 1000, max_total: int | None = None) -> AsyncRecordIterator
     async def query_page(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, limit: int = 100, skip: int = 0) -> Page
     async def record_url(self, record_id: int, *, edit: bool = False) -> str
@@ -105,10 +127,10 @@ class AsyncTable(object)
     async def run_formula(self, formula: str, *, record_id: int | None = None) -> FormulaResult
     async def settings_url(self) -> str
     async def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records_scanned: int | None = None, page_size: int | None = None) -> list[SummaryRow]
-    async def update(self, records: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
+    async def update(self, records: 'Iterable[Mapping[str | int, Any]] | DataFrame', *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     async def update_field(self, field: str | int, *, label: str | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None) -> Field
     async def update_info(self, *, name: str | None = None, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> TableInfo
-    async def upsert(self, records: Iterable[Mapping[str | int, Any]], *, merge_on: str | int, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
+    async def upsert(self, records: 'Iterable[Mapping[str | int, Any]] | DataFrame', *, merge_on: str | int, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     async def url(self) -> str
 class AuthenticationError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None) -> None
@@ -207,6 +229,18 @@ class DeleteField(object)
     def __init__(self, *, table: str, field: str | int) -> None
     field field: str | int
     field table: str
+class DeletePreview(Page)
+    def __eq__(self, other)
+    def __init__(self, *, records: tuple[Record, ...], total: int, skip: int, columns: tuple[str, ...] = (), events: tuple[AppEvent, ...] | None = None) -> None
+    field columns: tuple[str, ...]
+    field events: tuple[AppEvent, ...] | None
+    property has_more -> bool
+    property next_skip -> int
+    field records: tuple[Record, ...]
+    field skip: int
+    def to_pandas(self) -> 'pandas.DataFrame'
+    def to_polars(self) -> 'polars.DataFrame'
+    field total: int
 class DeleteRelationship(object)
     def __eq__(self, other)
     def __init__(self, *, child_table: str, foreign_key: str) -> None
@@ -273,6 +307,15 @@ class FieldSelector(object)
     def __init__(self, kind: Literal['all', 'new', 'classed', 'labeled_like', 'named'], values: tuple[str | int, ...] = ()) -> None
     field kind: Literal['all', 'new', 'classed', 'labeled_like', 'named']
     field values: tuple[str | int, ...]
+class FieldUsage(object)
+    def __eq__(self, other)
+    def __init__(self, *, field_id: int, label: str, counts: Mapping[str, int], raw: Mapping[str, Any]) -> None
+    field counts: Mapping[str, int]
+    def describe(self) -> str
+    field field_id: int
+    field label: str
+    field raw: Mapping[str, Any]
+    property total -> int
 class FileAttachment(object)
     def __eq__(self, other)
     def __init__(self, *, url: str, versions: tuple[FileVersion, ...]) -> None
@@ -342,11 +385,14 @@ class Operation(object)
 value OperationName = Literal['query', 'count', 'summarize', 'insert', 'update', 'delete', 'preview_update', 'preview_delete', 'run_report', 'run_summary_report', 'run_formula', 'download_file', 'delete_file_version']
 class Page(object)
     def __eq__(self, other)
-    def __init__(self, *, records: tuple[Record, ...], total: int, skip: int) -> None
+    def __init__(self, *, records: tuple[Record, ...], total: int, skip: int, columns: tuple[str, ...] = ()) -> None
+    field columns: tuple[str, ...]
     property has_more -> bool
     property next_skip -> int
     field records: tuple[Record, ...]
     field skip: int
+    def to_pandas(self) -> 'pandas.DataFrame'
+    def to_polars(self) -> 'polars.DataFrame'
     field total: int
 class Period(object)
     def __eq__(self, other)
@@ -394,6 +440,7 @@ class Quickbase(object)
     def app(self, app_id: str) -> App
     def clear_schema_cache(self) -> None
     def close(self) -> None
+    def create_app(self, name: str, *, description: str | None = None, assign_token: bool = True) -> App
     classmethod def from_env(cls, *, base_url: str = 'https://api.quickbase.com/v1', retry: RetryPolicy | None = None, timeout: float = 30.0, user_agent: str | None = None, http_client: httpx.Client | None = None, schema_ttl: float = 300.0, policy: Policy | BoundPolicy | None = None, confirmation_key: bytes | None = None, token_env: str = 'QB_USER_TOKEN') -> Self
     property policy -> BoundPolicy | None
     property realm -> str
@@ -401,11 +448,11 @@ class Quickbase(object)
 class QuickbaseError(Exception)
 class RateLimitError(APIError)
     def __init__(self, summary: str, *, retry_after: float | None = None, **kwargs: object) -> None
-value ReadAction = Literal['query', 'summarize', 'delete', 'report', 'summary_report', 'file', 'formula', 'tables', 'fields', 'relationships', 'reports', 'app', 'roles', 'other']
+value ReadAction = Literal['query', 'summarize', 'delete', 'report', 'summary_report', 'file', 'formula', 'tables', 'fields', 'relationships', 'reports', 'app', 'roles', 'field_usage', 'app_events', 'other']
 class ReadRequest(object)
     def __eq__(self, other)
-    def __init__(self, *, action: Literal['query', 'summarize', 'delete', 'report', 'summary_report', 'file', 'formula', 'tables', 'fields', 'relationships', 'reports', 'app', 'roles', 'other'], table_id: str | None = None, field_ids: frozenset[int] | None = None, filter_field_ids: frozenset[int] | None = None, sort_field_ids: frozenset[int] | None = None, limit: int | None = None, skip: int | None = None, report_id: str | None = None, method: str, path: str) -> None
-    field action: Literal['query', 'summarize', 'delete', 'report', 'summary_report', 'file', 'formula', 'tables', 'fields', 'relationships', 'reports', 'app', 'roles', 'other']
+    def __init__(self, *, action: Literal['query', 'summarize', 'delete', 'report', 'summary_report', 'file', 'formula', 'tables', 'fields', 'relationships', 'reports', 'app', 'roles', 'field_usage', 'app_events', 'other'], table_id: str | None = None, field_ids: frozenset[int] | None = None, filter_field_ids: frozenset[int] | None = None, sort_field_ids: frozenset[int] | None = None, limit: int | None = None, skip: int | None = None, report_id: str | None = None, method: str, path: str) -> None
+    field action: Literal['query', 'summarize', 'delete', 'report', 'summary_report', 'file', 'formula', 'tables', 'fields', 'relationships', 'reports', 'app', 'roles', 'field_usage', 'app_events', 'other']
     field field_ids: frozenset[int] | None
     field filter_field_ids: frozenset[int] | None
     field limit: int | None
@@ -429,6 +476,8 @@ class RecordChange(object)
 class RecordIterator(object)
     def __iter__(self) -> Self
     def __next__(self) -> Record
+    def to_pandas(self) -> 'pandas.DataFrame'
+    def to_polars(self) -> 'polars.DataFrame'
 class Relationship(object)
     def __eq__(self, other)
     def __init__(self, *, id: int, parent_table_id: str, child_table_id: str, foreign_key_field_id: int | None, lookup_field_ids: tuple[int, ...], summary_field_ids: tuple[int, ...] = (), is_cross_app: bool, raw: Mapping[str, Any]) -> None
@@ -547,18 +596,20 @@ class Table(object)
     def ensure_lookup_field(self, relationship: Relationship, parent_field: str | int, *, label: str | None = None) -> Field
     def ensure_relationship(self, parent: 'Table', *, foreign_key: str) -> Relationship
     def ensure_summary_field(self, relationship: Relationship, child_field: str | int, label: str, *, function: str = 'sum', where: Expression | str | None = None) -> Field
+    def events(self) -> list[AppEvent]
     def field_url(self, field: str | int) -> str
+    def field_usage(self, fields: str | int | Sequence[str | int] | None = None) -> list[FieldUsage]
     def fields(self, *, refresh: bool = False) -> list[Field]
     def fields_url(self) -> str
     def first(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None) -> Record | None
     def form_url(self, form_id: int) -> str
     def get(self, record_id: int, *, select: str | int | F | Sequence[str | int | F] | None = None) -> Record | None
     def info(self) -> TableInfo
-    def insert(self, records: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
+    def insert(self, records: 'Iterable[Mapping[str | int, Any]] | DataFrame', *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     def new_record_url(self) -> str
     def operation(self, name: Literal['query', 'count', 'summarize', 'insert', 'update', 'delete', 'preview_update', 'preview_delete', 'run_report', 'run_summary_report', 'run_formula', 'download_file', 'delete_file_version'], *, fields: Sequence[str | int] | None = None, field_descriptions: Mapping[str | int, str] | None = None, reports: Sequence[str] | None = None, report_descriptions: Mapping[str, str] | None = None, formula: str | None = None, max_records_per_call: int | None = None, max_records_per_write: int = 100, scope: Expression | None = None, require_preview: bool = False, max_default_fields: int | None = None) -> 'Operation'
-    def preview_delete(self, where: Expression | str, *, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, limit: int = 100) -> Page
-    def preview_update(self, records: Iterable[Mapping[str | int, Any]]) -> UpdatePreview
+    def preview_delete(self, where: Expression | str, *, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, limit: int = 100) -> DeletePreview
+    def preview_update(self, records: 'Iterable[Mapping[str | int, Any]] | DataFrame') -> UpdatePreview
     def query(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, page_size: int = 1000, max_total: int | None = None) -> RecordIterator
     def query_page(self, *, where: Expression | str | None = None, select: str | int | F | Sequence[str | int | F] | None = None, order_by: str | int | F | Sequence[str | int | F] | None = None, limit: int = 100, skip: int = 0) -> Page
     def record_url(self, record_id: int, *, edit: bool = False) -> str
@@ -571,10 +622,10 @@ class Table(object)
     def run_formula(self, formula: str, *, record_id: int | None = None) -> FormulaResult
     def settings_url(self) -> str
     def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records_scanned: int | None = None, page_size: int | None = None) -> list[SummaryRow]
-    def update(self, records: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
+    def update(self, records: 'Iterable[Mapping[str | int, Any]] | DataFrame', *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     def update_field(self, field: str | int, *, label: str | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None) -> Field
     def update_info(self, *, name: str | None = None, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> TableInfo
-    def upsert(self, records: Iterable[Mapping[str | int, Any]], *, merge_on: str | int, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
+    def upsert(self, records: 'Iterable[Mapping[str | int, Any]] | DataFrame', *, merge_on: str | int, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     def url(self) -> str
 class TableInfo(object)
     def __eq__(self, other)
@@ -615,8 +666,9 @@ class UpdateField(object)
     field unique: bool | None
 class UpdatePreview(object)
     def __eq__(self, other)
-    def __init__(self, *, changes: tuple[RecordChange, ...] = (), unchanged_ids: tuple[int, ...] = (), missing_ids: tuple[int, ...] = ()) -> None
+    def __init__(self, *, changes: tuple[RecordChange, ...] = (), unchanged_ids: tuple[int, ...] = (), missing_ids: tuple[int, ...] = (), events: tuple[AppEvent, ...] | None = None) -> None
     field changes: tuple[RecordChange, ...]
+    field events: tuple[AppEvent, ...] | None
     field missing_ids: tuple[int, ...]
     field unchanged_ids: tuple[int, ...]
 class UpdateTable(object)
@@ -641,15 +693,15 @@ class WhereCondition(object)
     field field_id: int
     field operator: str
     field value: str
-value WriteAction = Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'update_relationship', 'delete_relationship', 'other']
+value WriteAction = Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'update_relationship', 'delete_relationship', 'create_app', 'copy_app', 'delete_app', 'other']
 class WriteError(QuickbaseError)
     def __init__(self, summary: str, *, result: Any = None) -> None
 class WritePermissionError(WriteError, PermissionDeniedError)
     def __init__(self, summary: str, *, result: Any = None, status_code: int = 403, **kwargs: Any) -> None
 class WriteRequest(object)
     def __eq__(self, other)
-    def __init__(self, *, action: Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'update_relationship', 'delete_relationship', 'other'], table_id: str | None, field_ids: frozenset[int] | None, row_count: int | None, method: str, path: str, app_id: str | None = None, parent_table_id: str | None = None, field_type: str | None = None, derived: frozenset[Literal['formula', 'lookup', 'summary']] = frozenset()) -> None
-    field action: Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'update_relationship', 'delete_relationship', 'other']
+    def __init__(self, *, action: Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'update_relationship', 'delete_relationship', 'create_app', 'copy_app', 'delete_app', 'other'], table_id: str | None, field_ids: frozenset[int] | None, row_count: int | None, method: str, path: str, app_id: str | None = None, parent_table_id: str | None = None, field_type: str | None = None, derived: frozenset[Literal['formula', 'lookup', 'summary']] = frozenset()) -> None
+    field action: Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'update_relationship', 'delete_relationship', 'create_app', 'copy_app', 'delete_app', 'other']
     field app_id: str | None
     field derived: frozenset[Literal['formula', 'lookup', 'summary']]
     field field_ids: frozenset[int] | None

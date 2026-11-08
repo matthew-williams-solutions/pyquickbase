@@ -15,6 +15,7 @@ from pyquickbase._config import (
     validate_base_url,
     validate_token,
 )
+from pyquickbase._models import field_usage_from_api
 from pyquickbase._retry import parse_retry_after
 
 
@@ -146,3 +147,20 @@ def test_public_exports_exist() -> None:
     assert not [
         name for name in pyquickbase.__all__ if name.startswith("_") and name != "__version__"
     ]
+
+
+def test_field_usage_reads_kinds_quickbase_adds_later() -> None:
+    usage = field_usage_from_api(
+        {
+            "field": {"id": 6, "name": "Title", "type": "text"},
+            "usage": {
+                "documentTemplates": {"count": 1},
+                "customWidgets": {"count": 2},
+                "reports": {"count": 0},
+                "notes": "not a count",
+            },
+        }
+    )
+    assert dict(usage.counts) == {"document_templates": 1, "custom_widgets": 2}
+    assert usage.describe() == "2 custom widgets and 1 document template"
+    assert usage.total == 3

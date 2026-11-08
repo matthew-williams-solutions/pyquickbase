@@ -47,6 +47,7 @@ from .._schema_plan import (
     summary_function,
 )
 from ..errors import (
+    APIError,
     InvalidValueError,
     PolicyRefusedError,
     QueryError,
@@ -756,6 +757,7 @@ class AsyncPlanner:
                     "or its lookups and summaries stop working."
                 )
         warnings += await self._dependents(table, target)
+        warnings += await self._usage(table, target)
         blockers: list[str] = []
         if table.id is not None and target.id is not None:
             blockers = self._allowed(
@@ -768,6 +770,19 @@ class AsyncPlanner:
             blockers=[*blockers, *lost], affected=records, link=await self._link(table),
             effects=effects,
         )  # fmt: skip
+
+    async def _usage(self, table: _Table, target: _Field) -> list[str]:
+        """Where Quickbase says a field about to be deleted is used, such as in reports."""
+        if table.handle is None or target.id is None:
+            return []
+        try:
+            found = await table.handle.field_usage(target.id)
+        except (APIError, PolicyRefusedError):
+            return ["Quickbase didn't say where else it's used, such as in reports and forms."]
+        used = [item for item in found if item.total]
+        if not used:
+            return []
+        return [f"Quickbase lists it in {used[0].describe()}, which lose it or stop working."]
 
     async def _dependents(self, table: _Table, target: _Field) -> list[str]:
         """The fields that use one about to be deleted, which stop working without it, and the

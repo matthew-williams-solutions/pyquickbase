@@ -12,8 +12,11 @@ from ._async._resources import (
 from ._bound import BoundPolicy, Offers
 from ._decision import Decision, Layer, Named, SchemaVerb, Verb
 from ._models import (
+    AppEvent,
     AppInfo,
+    DeletePreview,
     Field,
+    FieldUsage,
     FileAttachment,
     FileDownload,
     FileVersion,
@@ -111,6 +114,7 @@ from .errors import (
 __all__ = [
     "APIError",
     "App",
+    "AppEvent",
     "AppInfo",
     "AsyncApp",
     "AsyncOperation",
@@ -131,6 +135,7 @@ __all__ = [
     "CreateTable",
     "Decision",
     "DeleteField",
+    "DeletePreview",
     "DeleteRelationship",
     "DeleteTable",
     "DerivedKind",
@@ -141,6 +146,7 @@ __all__ = [
     "FieldRef",
     "FieldRefs",
     "FieldSelector",
+    "FieldUsage",
     "FileAttachment",
     "FileDownload",
     "FileUpload",

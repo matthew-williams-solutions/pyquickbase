@@ -50,6 +50,16 @@ Nothing here should break anyone.
   sections must exist first, so `docs/reference/errors.md` or a new errors page needs a stable
   anchor for each error, and a test that every error's anchor exists.
 
+## Apps, events, and DataFrames
+
+- `AppEvent` parsing is only tested against the published example. The test apps have no webhooks,
+  actions, notifications, or automations, and the API can't make one, so confirm the shape on an app
+  that has each kind, including whether an automation ever has a `name`.
+- A run killed during `tests/_async/live/test_apps.py` leaves an app named `ZZ Live App ...`, which
+  only the interface can delete, as Quickbase has no API that lists apps.
+- `field_usage()` asks again, field by field, for any field a response leaves out. A table larger
+  than one response is untested, so it isn't known whether Quickbase ever leaves fields out.
+
 ## Demo app
 
 The Quickbase demo app and its Python code page, which is kept outside this repo. Do these before anyone

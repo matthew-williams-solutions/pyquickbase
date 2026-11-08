@@ -60,6 +60,7 @@ nav:
       - File attachments: guides/files.md
       - Formulas: guides/formulas.md
       - Changing the schema: guides/schema.md
+      - Working with apps: guides/apps.md
       - Handling errors: guides/errors.md
       - Configuring clients: guides/clients.md
   - AI agents:

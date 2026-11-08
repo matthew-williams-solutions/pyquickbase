@@ -217,6 +217,28 @@ Skipping past the end returns no records rather than raising an error, with `tot
 
 [Try it in the playground](../playground-app/index.html#count-and-page), with simulated data.
 
+## DataFrames
+
+`to_pandas()` and `to_polars()` fetch what a query matches into a DataFrame, with a column for each
+field it returns. They're on `query()`, a report's `run()`, and any page. Install the library you use
+with the SDK's extra, such as `pip install 'pyquickbase[pandas]'` or `pip install 'pyquickbase[polars]'`.
+
+```python
+from pyquickbase import F
+
+frame = tasks.query(where=F("Status") == "Open", select=["Title", "Due Date"]).to_pandas()
+print(frame.columns.tolist())  # ['Record ID#', 'Title', 'Due Date']
+```
+
+- Dates, timestamps, numbers, and lists keep their types, so a timestamp column is timezone-aware.
+- A user field holds the user's email, or their ID if the client's policy hides emails, and a file field
+  holds the latest version's file name. Use `query()` for the `User` and `FileAttachment` objects.
+- A query with no matches still gives a DataFrame with its columns.
+- It reads every page first, so set `max_total` on a large table.
+
+To write a DataFrame back, pass it to `insert()`, `update()`, or `upsert()`, as
+[Writing records](writing.md#writing-a-dataframe) shows.
+
 ## Reading values
 
 Read values by label or ID. `dict(record)` gives you `{label: value}`.

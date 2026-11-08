@@ -35,6 +35,8 @@ ReadAction = Literal[
     "reports",
     "app",
     "roles",
+    "field_usage",
+    "app_events",
     "other",
 ]
 """What a read does. See `ReadRequest`."""
@@ -45,6 +47,8 @@ FILE_PATH = re.compile(rf"/files/{_TABLE_ID}/[0-9]+/([0-9]+)/[0-9]+")
 _APP = re.compile(rf"/apps/{_TABLE_ID}")
 _ROLES = re.compile(rf"/apps/{_TABLE_ID}/roles")
 _RELATIONSHIPS = re.compile(rf"/tables/{_TABLE_ID}/relationships")
+_APP_EVENTS = re.compile(rf"/apps/{_TABLE_ID}/events")
+_FIELD_USAGE = re.compile(r"/fields/usage(?:/([1-9][0-9]*))?")
 _QUERY_KEYS = frozenset({"from", "select", "where", "sortBy", "options"})
 _OPTION_KEYS = frozenset({"top", "skip", "compareWithAppLocalTime"})
 _SORT_ORDERS = frozenset({"ASC", "DESC"})
@@ -77,6 +81,8 @@ FIELD_PROPERTIES = (
 COLUMN_KEYS = ("id", "label", "type")
 FILE_VERSION_KEYS = ("versionNumber", "fileName", "uploaded")
 USER_KEYS = ("id", "name")
+USAGE_FIELD_KEYS = ("id", "name", "type")
+EVENT_KEYS = ("type", "name", "isActive", "tableId", "url")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -93,12 +99,15 @@ class ReadRequest:
             because the number deleted shows how many matched. `report` runs a table report, and
             `summary_report` a summary or chart report. `file` downloads a file, and `formula`
             runs one. `tables`, `fields`, `relationships`, `reports`, `app`, and `roles` read
-            metadata. `other` is anything else, including a report run through `request()`,
-            which doesn't say what kind of report it is. A change to tables, fields, or
-            relationships isn't a read.
-        table_id: The table it reads, or None for `tables`, `app`, `roles`, and `other`.
-        field_ids: The fields it returns. For `file`, the file field. None for a report, whose
-            columns are chosen in Quickbase, and for metadata.
+            metadata. `field_usage` reads where fields are used, and `app_events` the app's
+            webhooks, notifications, and automations. `other` is anything else, including a
+            report run through `request()`, which doesn't say what kind of report it is. A
+            change to tables, fields, or relationships isn't a read.
+        table_id: The table it reads, or None for `tables`, `app`, `roles`, `app_events`, and
+            `other`.
+        field_ids: The fields it returns. For `file`, the file field, and for `field_usage`, the
+            one field it asks about. None for a report, whose columns are chosen in Quickbase,
+            and for other metadata.
         filter_field_ids: The fields its filter uses, which is empty without one. None if the
             filter can't be read, and for a report, whose filter is its own.
         sort_field_ids: The fields it sorts by. None if it doesn't say, as the table's default
@@ -212,6 +221,19 @@ def _describe_get(path: str, params: Mapping[str, Any] | None) -> ReadRequest:
             method="GET",
             path=path,
         )
+    if match := _FIELD_USAGE.fullmatch(path):
+        found = _params(params, ("tableId",) if match[1] else ("tableId", "skip", "top"))
+        if found is None or not isinstance(found.get("tableId"), str):
+            return other
+        return ReadRequest(
+            action="field_usage",
+            table_id=found["tableId"],
+            field_ids=frozenset({int(match[1])}) if match[1] else None,
+            method="GET",
+            path=path,
+        )
+    if _APP_EVENTS.fullmatch(path) and not params:
+        return ReadRequest(action="app_events", method="GET", path=path)
     if _ROLES.fullmatch(path):
         return ReadRequest(action="roles", method="GET", path=path)
     if _APP.fullmatch(path):

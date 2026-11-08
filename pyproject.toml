@@ -24,6 +24,10 @@ dependencies = [
     "httpx>=0.28,<1",
 ]
 
+[project.optional-dependencies]
+pandas = ["pandas>=2.2.2"]
+polars = ["polars>=1.0"]
+
 [project.urls]
 Documentation = "https://matthew-williams-solutions.github.io/pyquickbase/"
 Repository = "https://github.com/matthew-williams-solutions/pyquickbase"
@@ -34,6 +38,9 @@ Changelog = "https://github.com/matthew-williams-solutions/pyquickbase/blob/main
 dev = [
     "hypothesis>=6.100",
     "jsonschema>=4.23",
+    "pandas>=2.2.2",
+    "pandas-stubs>=2.2.2.240603",
+    "polars>=1.0",
     "pyright>=1.1.390",
     "pytest>=8.3",
     "pytest-cov>=6.0",

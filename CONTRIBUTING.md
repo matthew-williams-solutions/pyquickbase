@@ -42,6 +42,10 @@ cleanup yourself:
 uv run scripts/clean_live_tables.py --dry-run   # then without --dry-run
 ```
 
+`tests/_async/live/test_apps.py` also creates, copies, and deletes apps named `ZZ Live App ...`, and
+skips if the token's user can't create apps. Quickbase has no API that lists apps, so delete one a
+killed run left behind in the Quickbase interface.
+
 Tests about reaching across apps also need `QB_SECOND_APP_ID`, another sandbox app the same token can
 reach, and skip without it. The same rules apply to that app.
 

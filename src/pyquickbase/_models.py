@@ -5,9 +5,10 @@ import difflib
 import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
+from dataclasses import fields as dataclass_fields
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 from urllib.parse import unquote
 
 from .errors import (
@@ -17,11 +18,21 @@ from .errors import (
     UnsupportedReportError,
 )
 
+if TYPE_CHECKING:
+    import pandas
+    import polars
+
 RECORD_ID_FIELD = 3
 _DISPOSITION_NAME = re.compile(r"filename\*=utf-8''([^;]+)", re.IGNORECASE)
 
 
 T = TypeVar("T")
+D = TypeVar("D")
+
+
+def extend(base: Any, cls: Callable[..., D], **extra: Any) -> D:
+    """Make a subclass of a dataclass from one of its base class's instances, with more fields."""
+    return cls(**{item.name: getattr(base, item.name) for item in dataclass_fields(base)}, **extra)
 
 
 def parse(parser: Callable[[Any], T], payload: Any, what: str) -> T:
@@ -197,6 +208,81 @@ def field_from_api(data: Mapping[str, Any]) -> Field:
         summary_query=properties.get("summaryQuery") or None,
         raw=data,
     )
+
+
+_USAGE_NOUNS: Mapping[str, str] = {
+    "actions": "Quickbase action",
+    "app_home_pages": "app home page",
+    "custom_emails": "custom email",
+    "dashboards": "dashboard",
+    "default_reports": "default report",
+    "document_templates": "document template",
+    "exact_forms": "exact form",
+    "fields": "field",
+    "forms": "form",
+    "notifications": "notification",
+    "personal_reports": "personal report",
+    "pipelines": "pipeline",
+    "relationships": "relationship",
+    "reminders": "reminder",
+    "reports": "report",
+    "roles": "role",
+    "table_imports": "saved import",
+    "table_rules": "table rule",
+    "webhooks": "webhook",
+}
+_CAMEL_HUMP = re.compile(r"(?<!^)(?=[A-Z])")
+
+
+def _usage_noun(kind: str, count: int) -> str:
+    """A kind of use in words, such as `report` or `reports`, including a kind added later."""
+    noun = _USAGE_NOUNS.get(kind) or kind.replace("_", " ").removesuffix("s")
+    return noun if count == 1 else f"{noun}s"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FieldUsage:
+    """Where a field is used in its app, as counted on the field's Usage page in Quickbase.
+
+    Quickbase counts a field in the reports it makes for every table, so most fields have a few
+    uses. Counts can take a few seconds to include a change.
+
+    Attributes:
+        field_id: The field's ID.
+        label: The field's label.
+        counts: How many of each kind of thing use it, such as `{"reports": 2, "forms": 1}`,
+            leaving out the kinds that don't. A kind Quickbase adds later is included too.
+        raw: Everything Quickbase returned, for anything not listed here.
+    """
+
+    field_id: int
+    label: str
+    counts: Mapping[str, int]
+    raw: Mapping[str, Any] = field(repr=False, compare=False)
+
+    @property
+    def total(self) -> int:
+        """How many things use the field in all."""
+        return sum(self.counts.values())
+
+    def describe(self) -> str:
+        """The uses in words, most first, such as `2 reports and 1 form`, or `nothing`."""
+        uses = sorted(self.counts.items(), key=lambda item: -item[1])
+        parts = [f"{count} {_usage_noun(kind, count)}" for kind, count in uses]
+        if len(parts) < 2:
+            return parts[0] if parts else "nothing"
+        return f"{', '.join(parts[:-1])} and {parts[-1]}"
+
+
+def field_usage_from_api(data: Mapping[str, Any]) -> FieldUsage:
+    info: Mapping[str, Any] = data["field"]
+    usage: Mapping[str, Any] = data["usage"]
+    counts = {
+        _CAMEL_HUMP.sub("_", key).lower(): int(cast(Mapping[str, Any], value)["count"])
+        for key, value in usage.items()
+        if isinstance(value, Mapping) and cast(Mapping[str, Any], value).get("count")
+    }
+    return FieldUsage(field_id=int(info["id"]), label=info["name"], counts=counts, raw=data)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -436,6 +522,58 @@ def user_from_api(data: Mapping[str, Any]) -> User:
     )
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AppEvent:
+    """Something in an app that runs when records change or on a schedule, such as a webhook.
+
+    Quickbase lists webhooks, Quickbase actions, email notifications, subscriptions, reminders,
+    and automations that records trigger. It leaves out scheduled automations, and doesn't say
+    which changes set each one off.
+
+    Attributes:
+        type: `webhook`, `qb-action`, `email-notification`, `subscription`, `reminder`, or
+            `automation`.
+        name: Its name. Quickbase doesn't name automations, so it's None for those.
+        active: Whether it's switched on.
+        table_id: The table it watches, if Quickbase said.
+        url: For an automation, a link to it in Quickbase.
+        owner: Who owns it, or None if the client's policy leaves it out.
+        raw: Everything Quickbase returned, for anything not listed here.
+    """
+
+    type: str
+    name: str | None
+    active: bool
+    table_id: str | None
+    url: str | None
+    owner: User | None
+    raw: Mapping[str, Any] = field(repr=False, compare=False)
+
+    @property
+    def runs_on_changes(self) -> bool:
+        """Whether a change to records can set it off. Subscriptions and reminders run on a
+        schedule instead."""
+        return self.type not in _SCHEDULED_EVENTS
+
+
+_SCHEDULED_EVENTS = frozenset({"subscription", "reminder"})
+
+
+def app_event_from_api(data: Mapping[str, Any]) -> AppEvent:
+    owner = data.get("owner")
+    if not isinstance(owner, Mapping) or "id" not in owner:
+        owner = None
+    return AppEvent(
+        type=data["type"],
+        name=data.get("name") or None,
+        active=bool(data.get("isActive")),
+        table_id=data.get("tableId") or None,
+        url=data.get("url") or None,
+        owner=None if owner is None else user_from_api(cast(Mapping[str, Any], owner)),
+        raw=data,
+    )
+
+
 def _uploaded(value: Any) -> datetime | None:
     try:
         return datetime.fromisoformat(value) if isinstance(value, str) and value else None
@@ -617,11 +755,13 @@ class Page:
         records: The `Record` objects on this page.
         total: How many records match, not just the ones on this page.
         skip: How many matching records came before this page.
+        columns: The labels of the fields it returned, in order, even when it has no records.
     """
 
     records: tuple[Record, ...]
     total: int
     skip: int
+    columns: tuple[str, ...] = ()
 
     @property
     def has_more(self) -> bool:
@@ -633,9 +773,50 @@ class Page:
         """The `skip` that fetches the following page."""
         return self.skip + len(self.records)
 
+    def to_pandas(self) -> "pandas.DataFrame":
+        """This page's records as a pandas DataFrame, with a column for each field returned.
+
+        A user field holds the user's email, or their ID if the client's policy hides emails, and
+        a file field holds the latest version's file name. Needs `pyquickbase[pandas]`.
+
+        Returns:
+            A DataFrame, which has the columns even when the page has no records.
+        """
+        from ._frames import to_pandas
+
+        return to_pandas(self.records, self.columns)
+
+    def to_polars(self) -> "polars.DataFrame":
+        """This page's records as a polars DataFrame. See `to_pandas()`. Needs
+        `pyquickbase[polars]`.
+
+        Returns:
+            A DataFrame, which has the columns even when the page has no records.
+        """
+        from ._frames import to_polars
+
+        return to_polars(self.records, self.columns)
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class DeletePreviewPage(Page):
+class DeletePreview(Page):
+    """What `delete()` would delete: a page of the matching records, and what may run.
+
+    Attributes:
+        records: The first records that would be deleted.
+        total: How many records would be deleted.
+        skip: How many matching records came before this page.
+        columns: The labels of the fields it returned, in order.
+        events: The active webhooks, Quickbase actions, email notifications, and automations on
+            the table, which deleting records may set off. Quickbase doesn't say which changes set
+            each one off, so some may not run. None if they couldn't be read.
+    """
+
+    events: tuple[AppEvent, ...] | None = None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DeletePreviewPage(DeletePreview):
     """What a `preview_delete` operation found, with the most its delete may match, so
     `tool_result()` can say when a delete with the same filter would be refused. Private."""
 
@@ -697,4 +878,9 @@ def page_from_api(data: Mapping[str, Any]) -> Page:
         for row in data["data"]
     )
     metadata = data["metadata"]
-    return Page(records=records, total=metadata["totalRecords"], skip=metadata["skip"])
+    return Page(
+        records=records,
+        total=metadata["totalRecords"],
+        skip=metadata["skip"],
+        columns=tuple(labels),
+    )

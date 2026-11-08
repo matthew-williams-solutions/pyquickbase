@@ -46,6 +46,8 @@ class FakeApp:
              "foreignKeyField": {"id": 9, "label": "Project"}},
         ]  # fmt: skip
         self.counts: dict[str, int] = {}
+        # Where each field is used, as Quickbase counts it, by table and field ID.
+        self.usage: dict[tuple[str, int], dict[str, int]] = {}
         self.wheres: list[str] = []
         self.fail: str | None = None
         self.next_id = 100
@@ -85,6 +87,20 @@ class FakeApp:
             return httpx.Response(200, json=list(self.tables.values()))
         if (method, path) == ("GET", "/fields"):
             return httpx.Response(200, json=self.fields[table])
+        if method == "GET" and path.startswith("/fields/usage"):
+            wanted = path.removeprefix("/fields/usage").strip("/")
+            rows = [
+                {
+                    "field": {"id": item["id"], "name": item["label"], "type": item["fieldType"]},
+                    "usage": {
+                        kind: {"count": count}
+                        for kind, count in self.usage.get((table, item["id"]), {}).items()
+                    },
+                }
+                for item in self.fields[table]
+                if not wanted or item["id"] == int(wanted)
+            ]
+            return httpx.Response(200, json=rows)
         if method == "GET" and path.endswith("/relationships"):
             child = path.split("/")[2]
             rows = [item for item in self.relationships if item["childTableId"] == child]

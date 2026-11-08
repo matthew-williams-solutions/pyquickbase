@@ -24,7 +24,7 @@ from .._policy import Policy
 from .._retry import RetryPolicy
 from .._schema import SchemaCache
 from ..errors import ConfigurationError
-from ._resources import App
+from ._resources import App, app_from_payload, require_app_name
 from ._transport import Transport
 
 DEFAULT_SCHEMA_TTL = 300.0
@@ -158,6 +158,33 @@ class Quickbase:
         if not _APP_ID.fullmatch(app_id):
             raise ConfigurationError("An app ID contains only letters and numbers.")
         return App(self._transport, self._schema, app_id)
+
+    def create_app(
+        self, name: str, *, description: str | None = None, assign_token: bool = True
+    ) -> App:
+        """Create an empty app and return it. Use `app.copy()` to start from another app.
+
+        Args:
+            name: The app's name. Quickbase allows several apps with the same name.
+            description: The app's description.
+            assign_token: Let this client's token reach the app, which a token limited to some
+                apps can't otherwise do.
+
+        Returns:
+            An `App` for the new app.
+
+        Raises:
+            InvalidValueError: `name` is empty. Nothing was sent.
+            PermissionDeniedError: The token's user can't create apps in this realm.
+            PolicyRefusedError: The client has a policy, which covers one app. Nothing was sent.
+        """
+        body = {
+            "name": require_app_name(name, "create"),
+            "assignToken": assign_token,
+            **({} if description is None else {"description": description}),
+        }
+        payload = self._transport.request("POST", "/apps", json=body)
+        return app_from_payload(self._transport, self._schema, payload)
 
     def clear_schema_cache(self) -> None:
         """Forget cached metadata, for example after changing a table's fields.

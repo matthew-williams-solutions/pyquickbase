@@ -158,7 +158,14 @@ def test_a_report_with_a_body_or_other_parameters_is_other() -> None:
         ("GET", "/tables", {}, "other", None),
         ("GET", "/fields", {"tableId": TASKS, "x": 1}, "other", None),
         ("GET", "/fields/6", {"tableId": TASKS}, "other", None),
-        ("GET", "/apps/bqapp/events", None, "other", None),
+        ("GET", "/apps/bqapp/events", None, "app_events", None),
+        ("GET", "/apps/bqapp/events", {"x": 1}, "other", None),
+        ("GET", "/fields/usage", {"tableId": TASKS}, "field_usage", TASKS),
+        ("GET", "/fields/usage", {"tableId": TASKS, "skip": 0, "top": 5}, "field_usage", TASKS),
+        ("GET", "/fields/usage/6", {"tableId": TASKS}, "field_usage", TASKS),
+        ("GET", "/fields/usage/6", {"tableId": TASKS, "top": 5}, "other", None),
+        ("GET", "/fields/usage/06", {"tableId": TASKS}, "other", None),
+        ("GET", "/fields/usage", {}, "other", None),
         ("GET", f"/tables/{TASKS}", {"appId": "bqapp"}, "other", None),
         ("POST", "/formula/run", None, "formula", None),
         ("POST", "/fields", None, "other", None),
@@ -206,3 +213,12 @@ def test_a_delete_lists_its_filter_fields() -> None:
 def test_a_request_holds_no_values() -> None:
     request = query(select=[3], where="{7.EX.'s3cret'}", options={"top": 1, "skip": 0})
     assert "s3cret" not in repr(request)
+
+
+def test_usage_of_one_field_names_the_field() -> None:
+    found = describe_read("GET", "/fields/usage/6", {"tableId": TASKS}, None)
+    assert found is not None
+    assert found.field_ids == {6}
+    every = describe_read("GET", "/fields/usage", {"tableId": TASKS}, None)
+    assert every is not None
+    assert every.field_ids is None

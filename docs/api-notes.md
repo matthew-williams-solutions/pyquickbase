@@ -530,6 +530,24 @@ A `datetime` field reports its type as `timestamp`.
 | Field IDs | Assigned in order, and address subfields use up IDs |
 | `GET /tables/{id}` | Returned an error without its `appId`, so use `GET /tables?appId=` |
 
+## Apps, field usage, and events
+
+Tested on 2026-11-08 against the Integration Tests app and temporary apps the test made and deleted.
+
+| Behavior | Result |
+|---|---|
+| `POST /apps` with `assignToken: true` | 200, and the same token can read the new app at once |
+| `POST /apps/{id}/copy` | 200 with the copy's details and `ancestorId`. `keepData: true` copies the records, and without it the tables are empty |
+| `DELETE /apps/{id}` with `{"name": ...}` | 200, `{"deletedAppId": ...}` |
+| Listing apps | No endpoint, so an app left behind can only be found in the interface |
+| `GET /fields/usage` on a table of 10 fields | **Every field, built-in ones included, in one response**, as `{"field": {"id", "name", "type"}, "usage": {kind: {"count": n}}}`. `type` is lower case, such as `text` |
+| Kinds of use | `actions`, `appHomePages`, `customEmails`, `dashboards`, `defaultReports`, `documentTemplates`, `exactForms`, `fields`, `forms`, `notifications`, `personalReports`, `pipelines`, `relationships`, `reminders`, `reports`, `roles`, `tableImports`, `tableRules`, `webhooks`. `customEmails` and `documentTemplates` aren't in the published spec |
+| A new text field's usage | `reports: 2` and `defaultReports: 1` at once, and `forms: 1` a few seconds later, so **counts lag a change by a few seconds** |
+| `GET /fields/usage` with `top` and `skip` | Pages as expected, but **a `skip` past the last field returns 500** |
+| `GET /fields/usage/{id}` | A list with one entry |
+| `GET /fields/usage` and `GET /apps/{id}/events` with a restricted user's token | **403**, `Insufficient permissions`, so both need an app administrator |
+| `GET /apps/{id}/events` on an app with none | 200, `[]` |
+
 ## Interface links
 
 These are the current Quickbase interface's addresses, which the SDK's `*_url()` methods build. The interface isn't part of the API, so Quickbase

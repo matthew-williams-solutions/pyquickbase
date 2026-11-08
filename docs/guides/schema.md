@@ -245,6 +245,20 @@ exist, it raises `UnknownFieldError` and deletes nothing.
 
 `drop()` deletes the table and all its records, so it requires the table's exact name.
 
+Before deleting a field, `field_usage()` shows where Quickbase uses it, as its Usage page does: in
+reports, forms, formulas, pipelines, notifications, and more.
+
+```python
+for usage in tasks.field_usage(["Old Field", "Older Field"]):
+    print(usage.label, usage.describe())  # Old Field 2 reports and 1 default report
+```
+
+`describe()` puts the counts in words, `counts` holds them by kind, such as `{"reports": 2}`, and
+`total` adds them up. Leave out the fields to get every field in the table. Quickbase counts a field in
+the reports it makes for every table, so a new field already has a few uses. Only an app
+administrator's token can read these, as with the Usage page. A
+[plan](#planning-changes-before-making-them) that deletes a field lists these uses in its warnings.
+
 ## Planning changes before making them
 
 `preview_schema_changes()` checks a list of changes against the app as it is, and says what each would do without

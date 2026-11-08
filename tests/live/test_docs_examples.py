@@ -25,6 +25,9 @@ SKIPPED = {
     "movements.insert(": "Needs a table the page doesn't set up, with a role that can only add",
     'token_env="QB_SERVICE_TOKEN"': "Needs a second token in the environment",
     'report("Hours by Project")': "Needs a report built in the UI. test_sdk.py tests this method",
+    'qb.create_app("Field Jobs"': "Makes a lasting app. test_apps.py tests this method",
+    '.copy("Jobs (staging)"': "Makes a lasting app. test_apps.py tests this method",
+    'staging.drop(confirm="Jobs (staging)")': "Deletes an app. test_apps.py tests this method",
 }
 
 # These change a table's fields, or need a field that's unique, so they get their own table.

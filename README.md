@@ -19,10 +19,13 @@ sync and async clients.
 - Specific exceptions that include Quickbase's error message and request ID
 - Tokens kept out of `repr`s, exceptions, and logs, and never sent to other hosts or over plain HTTP
 - Creating, updating, and deleting records, with errors reported for each failed row
-- Creating and changing tables, fields, and relationships
+- Creating and changing tables, fields, and relationships, and seeing where a field is used before
+  deleting it
+- Creating, copying, and deleting apps, and listing the webhooks and automations a write may set off
 - Running table reports, with automatic paging
 - Uploading, downloading, and deleting file attachments
 - Running formulas, and creating formula fields
+- Reading records into pandas or polars DataFrames, and writing DataFrames back
 - `qb.request()` for calling any Quickbase endpoint directly
 
 ## Usage

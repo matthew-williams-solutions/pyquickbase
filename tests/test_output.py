@@ -11,11 +11,13 @@ from hypothesis import strategies as st
 
 from pyquickbase import (
     APIError,
+    AppEvent,
     AppInfo,
     AuthenticationError,
     BadRequestError,
     ConfigurationError,
     Decision,
+    DeletePreview,
     Field,
     FieldChange,
     FileDownload,
@@ -257,7 +259,25 @@ def test_previews() -> None:
         "changes": [{"record_id": 1, "fields": {"Status": {"before": "Open", "after": "Done"}}}],
         "unchanged_ids": [2],
         "missing_ids": [9],
+        "events": None,
     }
+
+
+def test_previews_list_what_may_run() -> None:
+    hook = AppEvent(
+        type="webhook", name="Sync", active=True, table_id="t", url=None, owner=None, raw={}
+    )
+    flow = AppEvent(
+        type="automation", name=None, active=True, table_id="t", url="https://x", owner=None,
+        raw={},
+    )  # fmt: skip
+    preview = UpdatePreview(events=(hook, flow))
+    assert tool_result(preview)["events"] == [
+        {"type": "webhook", "name": "Sync"},
+        {"type": "automation", "name": None, "url": "https://x"},
+    ]
+    page = DeletePreview(records=(), total=0, skip=0, events=())
+    assert tool_result(page)["events"] == []
 
 
 def test_formula_results() -> None:
