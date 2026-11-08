@@ -11,7 +11,7 @@ import httpx
 import openpyxl
 import pytest
 
-from pyquickbase import InvalidValueError, Quickbase, allow
+from pyquickbase import FileTooLargeError, InvalidValueError, Quickbase, allow
 from tests.policy_helpers import bind
 
 TASKS = "bqtasks"
@@ -132,3 +132,33 @@ def test_an_export_of_nothing_still_has_a_header() -> None:
         tasks = qb.app("bq1234567").table("Tasks")
         assert tasks.query(select=["Title"]).to_csv(out) == 0
     assert out.getvalue().strip() == "Record ID#,Title"
+
+
+def test_a_file_over_max_rows_is_refused() -> None:
+    with client(Fake()) as qb:
+        tasks = qb.app("bq1234567").table("Tasks")
+        text = "Title\nA\nB\nC\n"
+        assert len(tasks.rows_from_file(io.StringIO(text), max_rows=3)) == 3
+        with pytest.raises(FileTooLargeError) as caught:
+            tasks.rows_from_file(io.StringIO(text), max_rows=2)
+    assert (caught.value.limit, caught.value.unit) == (2, "rows")
+
+
+@pytest.mark.parametrize("limit", [0, -1, True, 1.5])
+def test_a_limit_that_makes_no_sense_is_refused(limit: Any) -> None:
+    fake = Fake()
+    with client(fake) as qb:
+        tasks = qb.app("bq1234567").table("Tasks")
+        with pytest.raises(InvalidValueError, match="max_rows"):
+            tasks.rows_from_file(io.StringIO("Title\nA\n"), max_rows=limit)
+
+
+def test_an_export_larger_than_a_batch_keeps_every_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("pyquickbase._sync._resources.WRITE_BATCH", 2)
+    path = tmp_path / "tasks.csv"
+    with client(Fake()) as qb:
+        written = qb.app("bq1234567").table("Tasks").query(select=["Title"]).to_csv(path)
+    assert written == 5
+    assert len(path.read_text(encoding="utf-8-sig").splitlines()) == 6

@@ -18,6 +18,7 @@ PACKAGES = [
 ]
 HEADER = "# Generated from the async code by scripts/generate_sync.py. Do not edit.\n"
 SUBSTITUTIONS = [
+    (r"\bawait anyio\.to_thread\.run_sync\(work, \*args\)", "work(*args)"),
     (r"^pytestmark = pytest\.mark\.anyio\n", ""),
     (r"\basync (def|with|for)\b", r"\1"),
     (r"\bawait ", ""),

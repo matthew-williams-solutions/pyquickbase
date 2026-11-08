@@ -1,8 +1,8 @@
 """Send one logical request: auth, headers, retries, and error mapping."""
 
 import secrets
-from collections.abc import Mapping
-from typing import Any, cast
+from collections.abc import Callable, Mapping
+from typing import Any, TypeVar, cast
 
 import anyio
 import httpx
@@ -22,6 +22,13 @@ _NOT_SENT = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
 _READ_FAILURES = (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)
 # A gateway or overloaded server, which only a read is safe to send again.
 _READ_RETRY_STATUSES = frozenset({502, 503, 504})
+
+_T = TypeVar("_T")
+
+
+async def run_blocking(work: Callable[..., _T], *args: Any) -> _T:
+    """Run file work, which the async client does on a worker thread, to keep its loop free."""
+    return await anyio.to_thread.run_sync(work, *args)
 
 
 class AsyncTransport:

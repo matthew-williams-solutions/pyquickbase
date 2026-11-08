@@ -15,6 +15,12 @@ All notable changes to this project are documented here. The format follows
   and column. `insert()`, `update()`, `upsert()`, and `preview_update()` take it, and refuse it,
   writing nothing, while it has errors. CSV text that a spreadsheet would run as a formula is
   written with a leading `'`, and Excel text is always text. Excel needs `pyquickbase[excel]`.
+- **`rows_from_file(max_rows=...)` and `max_unzipped_bytes=...`** limit what a file may hold, for a
+  file you didn't make. Reading stops at `max_rows`, and an Excel file that would unpack to more than
+  `max_unzipped_bytes`, 1 GB by default, isn't opened. Both raise `FileTooLargeError`, an
+  `InvalidValueError`, with `limit` and `unit`.
+- **The async client works with files on a worker thread.** `rows_from_file()`, `to_csv()`, and
+  `to_excel()` on a query or report no longer stop the event loop while they parse or save a file.
 
 - **More statistics in `summarize()`:** `median`, `std_dev` (sample standard deviation), and
   `distinct_count`, beside `sum`, `avg`, `min`, and `max`. Each is exact, worked out from `Decimal`

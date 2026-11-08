@@ -142,8 +142,30 @@ To match on another unique field instead, use `upsert()` with `merge_on`.
   be told.
 - **`.xls`**, Excel's older format, isn't supported. Save it as `.xlsx` or `.csv`.
 
-The whole file is read into memory, in the calling thread. For a very large import, split the file, or
-read it in chunks with `pandas.read_csv(chunksize=...)` and pass each DataFrame to the write.
+The whole file is read into memory, on a worker thread with the async client, so a large file doesn't
+stop the event loop. For a very large import, split the file, or read it in chunks with
+`pandas.read_csv(chunksize=...)` and pass each DataFrame to the write.
+
+### Files you didn't make
+
+Set limits on a file someone else gave you. `max_rows` stops reading once the file has more rows with
+values than that, so a file with millions of rows is never held in memory. `max_unzipped_bytes` limits
+what an Excel file may unpack to, as it's a zip, and a small file can unpack to something huge. It
+defaults to 1 GB. Both raise `FileTooLargeError`, an `InvalidValueError`, with the `limit` it went over
+and its `unit`.
+
+```python
+from pathlib import Path
+
+from pyquickbase import FileTooLargeError
+
+Path("upload.csv").write_text("Title\nOrder chairs\nBook venue\n")
+
+try:
+    rows = tasks.rows_from_file("upload.csv", max_rows=1, max_unzipped_bytes=200_000_000)
+except FileTooLargeError as error:
+    print(f"Over the limit of {error.limit} {error.unit}")
+```
 
 ## Writes that would have lost data
 

@@ -1,6 +1,6 @@
 """Exceptions raised by pyquickbase. Everything here derives from `QuickbaseError`."""
 
-from typing import Any
+from typing import Any, Literal
 
 
 class QuickbaseError(Exception):
@@ -79,6 +79,28 @@ class ConfirmationError(QuickbaseError):
 
 class InvalidValueError(QuickbaseError, ValueError):
     """A write can't be sent as written, so it wasn't sent to Quickbase."""
+
+
+class FileTooLargeError(InvalidValueError):
+    """A file is over a limit on how much of it may be read, so reading stopped.
+
+    Attributes:
+        limit: The limit it went over.
+        unit: What `limit` counts: `rows`, for `max_rows`, or `bytes`, for `max_unzipped_bytes`.
+    """
+
+    def __init__(self, limit: int, unit: Literal["rows", "bytes"]) -> None:
+        what = (
+            f"has more than {limit} rows, the most max_rows allows"
+            if unit == "rows"
+            else f"unpacks to more than {limit} bytes, the most max_unzipped_bytes allows"
+        )
+        super().__init__(f"The file {what}. Split it, or raise the limit.")
+        self.limit = limit
+        self.unit = unit
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (type(self), (self.limit, self.unit))
 
 
 class WriteError(QuickbaseError):

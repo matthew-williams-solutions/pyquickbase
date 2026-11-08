@@ -13,6 +13,7 @@ import difflib
 import io
 import os
 import re
+import zipfile
 from collections.abc import Generator, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -24,7 +25,7 @@ from typing import IO, Any, Literal, TypeAlias, cast
 from ._frames import rows_or_frame
 from ._models import Field, FileAttachment, Record, User
 from ._optional import require_library
-from .errors import InvalidValueError
+from .errors import FileTooLargeError, InvalidValueError
 
 FileFormat = Literal["csv", "xlsx"]
 """A file's format: `csv`, which includes tab-separated files, or `xlsx`, Excel's."""
@@ -56,6 +57,12 @@ _EXCEL_SUFFIXES = frozenset({".xlsx", ".xlsm"})
 _TAB_SUFFIXES = frozenset({".tsv", ".tab"})
 # How many errors a refusal lists before it only counts the rest.
 _ERRORS_SHOWN = 5
+
+DEFAULT_MAX_UNZIPPED_BYTES = 1_000_000_000
+"""How large a workbook may unpack to. It's a zip, so a small file can unpack to something huge."""
+
+WRITE_BATCH = 500
+"""How many records an async export hands to a worker thread at a time."""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -401,8 +408,14 @@ def read_rows(
     tz: tzinfo = UTC,
     date_format: str | None = None,
     datetime_format: str | None = None,
+    max_rows: int | None = None,
 ) -> FileRows:
-    """Convert a file's rows, the header first, for a table's fields."""
+    """Convert a file's rows, the header first, for a table's fields.
+
+    Raises:
+        FileTooLargeError: The file has more rows with values than `max_rows`. Reading stops
+            there, so a file with millions of rows is never held in memory.
+    """
     rows = iter(cells)
     headers = _headers(next(rows, None))
     planned, skipped = _plan_columns(headers, fields, columns, skip_read_only)
@@ -410,9 +423,13 @@ def read_rows(
     found: list[Mapping[str, Any]] = []
     numbers: list[int] = []
     errors: list[FileRowError] = []
+    with_values = 0
     for number, row in enumerate(rows, start=2):
         if all(cell is None or (isinstance(cell, str) and not cell.strip()) for cell in row):
             continue
+        with_values += 1
+        if max_rows is not None and with_values > max_rows:
+            raise FileTooLargeError(max_rows, "rows")
         extra = row[len(headers) :]
         if any(cell is not None and _text(cell) for cell in extra):
             errors.append(
@@ -481,8 +498,13 @@ def file_cells(
     sheet: str | None,
     encoding: str,
     delimiter: str | None,
+    max_unzipped_bytes: int | None = DEFAULT_MAX_UNZIPPED_BYTES,
 ) -> Iterator[Sequence[Any]]:
-    """A file's rows, as cells."""
+    """A file's rows, as cells.
+
+    Raises:
+        FileTooLargeError: A workbook unpacks to more than `max_unzipped_bytes`.
+    """
     if file_kind == "csv":
         if sheet is not None:
             raise InvalidValueError("sheet is only for Excel files.")
@@ -490,6 +512,8 @@ def file_cells(
             yield from csv.reader(handle, delimiter=_delimiter(source, delimiter))
         return
     openpyxl = require_library("openpyxl", "Reading an Excel file")
+    if max_unzipped_bytes is not None:
+        _check_unpacked_size(source, max_unzipped_bytes)
     book = openpyxl.load_workbook(source, read_only=True, data_only=True)
     try:
         if sheet is None:
@@ -501,6 +525,25 @@ def file_cells(
         yield from page.iter_rows(values_only=True)
     finally:
         book.close()
+
+
+def _check_unpacked_size(source: Any, limit: int) -> None:
+    """Refuse a workbook that would unpack to too much. A zip's reader stops at the size each
+    entry declares, so the declared sizes are all that can be read."""
+    start = source.tell() if hasattr(source, "tell") else None
+    with zipfile.ZipFile(source) as archive:
+        unpacked = sum(info.file_size for info in archive.infolist())
+    if start is not None:
+        source.seek(start)
+    if unpacked > limit:
+        raise FileTooLargeError(limit, "bytes")
+
+
+def check_read_limits(max_rows: int | None, max_unzipped_bytes: int | None) -> None:
+    """Refuse limits that make no sense, before anything is read."""
+    for name, value in (("max_rows", max_rows), ("max_unzipped_bytes", max_unzipped_bytes)):
+        if value is not None and (type(value) is not int or value < 1):
+            raise InvalidValueError(f"{name} must be a positive whole number, or None.")
 
 
 # Writing
@@ -545,20 +588,49 @@ class RecordWriter:
         self._sheet: Any = None
         self._csv: Any = None
         self._handle: Any = None
+        self._owns_handle = False
 
-    @contextmanager
-    def open(self, *, sheet: str = "Records", encoding: str = "utf-8") -> Generator["RecordWriter"]:
+    def begin(self, *, sheet: str = "Records", encoding: str = "utf-8") -> None:
+        """Open the destination, or make the workbook."""
         if self._kind == "csv":
-            with _opened(self._destination, "w", encoding) as handle:
-                self._csv = csv.writer(handle)
-                yield self
+            destination = self._destination
+            if hasattr(destination, "write"):
+                self._handle = destination
+            else:
+                self._handle = open(destination, "w", encoding=encoding, newline="")  # noqa: SIM115
+                self._owns_handle = True
+            self._csv = csv.writer(self._handle)
             return
         openpyxl = require_library("openpyxl", "Writing an Excel file")
         self._book = openpyxl.Workbook(write_only=True)
         self._sheet = self._book.create_sheet(sheet)
         self._sheet.freeze_panes = "A2"
-        yield self
-        self._book.save(self._destination)
+
+    def finish(self) -> None:
+        """Save the workbook, or close the CSV file."""
+        if self._book is not None:
+            self._book.save(self._destination)
+        self.close()
+
+    def close(self) -> None:
+        """Close a file this writer opened. An open file that was given is the caller's."""
+        if self._owns_handle:
+            self._handle.close()
+            self._owns_handle = False
+
+    @contextmanager
+    def open(self, *, sheet: str = "Records", encoding: str = "utf-8") -> Generator["RecordWriter"]:
+        self.begin(sheet=sheet, encoding=encoding)
+        try:
+            yield self
+        except BaseException:
+            self.close()
+            raise
+        self.finish()
+
+    def add_all(self, records: Iterable[Record], columns: Sequence[str]) -> None:
+        for record in records:
+            self.add(record, columns)
 
     def add(self, record: Record, columns: Sequence[str]) -> None:
         if self._header is None:

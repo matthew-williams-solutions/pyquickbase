@@ -2,6 +2,8 @@
 
 import csv
 import io
+import pickle
+import zipfile
 from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -13,6 +15,7 @@ import pytest
 from pyquickbase import (
     FileAttachment,
     FileRows,
+    FileTooLargeError,
     FileVersion,
     InvalidValueError,
     Page,
@@ -20,7 +23,7 @@ from pyquickbase import (
     User,
 )
 from pyquickbase._models import FieldIndex, field_from_api
-from pyquickbase._tabular import file_cells, file_format, given_rows, read_rows
+from pyquickbase._tabular import RecordWriter, file_cells, file_format, given_rows, read_rows
 from pyquickbase._writes import build_rows
 
 SPEC = (
@@ -417,3 +420,95 @@ def test_plain_numbers_as_text_still_work(value: str) -> None:
 def test_a_user_without_an_id_is_refused(label: str, value: Any) -> None:
     with pytest.raises(InvalidValueError, match="without an id"):
         build_rows([{label: value}], FieldIndex(FIELDS))
+
+
+def bomb(size: int) -> io.BytesIO:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("big.bin", b"\0" * size)
+    buffer.seek(0)
+    return buffer
+
+
+def test_a_workbook_that_unpacks_too_large_is_never_opened() -> None:
+    with pytest.raises(FileTooLargeError) as caught:
+        list(
+            file_cells(
+                bomb(1000),
+                "xlsx",
+                sheet=None,
+                encoding="utf-8",
+                delimiter=None,
+                max_unzipped_bytes=999,
+            )
+        )
+    assert (caught.value.limit, caught.value.unit) == (999, "bytes")
+
+
+def test_checking_a_workbook_leaves_it_readable() -> None:
+    book = openpyxl.Workbook()
+    book.active.append(["Title"])  # type: ignore[union-attr]
+    book.active.append(["A"])  # type: ignore[union-attr]
+    buffer = io.BytesIO()
+    book.save(buffer)
+    buffer.seek(0)
+    rows = list(file_cells(buffer, "xlsx", sheet=None, encoding="utf-8", delimiter=None))
+    assert [list(row) for row in rows] == [["Title"], ["A"]]
+
+
+def test_blank_rows_dont_count_towards_max_rows() -> None:
+    fields = [field_from_api({"id": 6, "label": "Title", "fieldType": "text"})]
+    found = read_rows(iter([["Title"], ["A"], [""], [None], ["B"]]), fields, max_rows=2)
+    assert len(found) == 2
+
+
+def test_file_too_large_error_survives_pickling() -> None:
+    error = pickle.loads(pickle.dumps(FileTooLargeError(5, "rows")))
+    assert (error.limit, error.unit) == (5, "rows")
+    assert isinstance(error, InvalidValueError)
+
+
+def test_a_failed_export_closes_the_file_it_opened(tmp_path: Path) -> None:
+    writer = RecordWriter(tmp_path / "a.csv", "csv", spreadsheet_safe=True)
+    with pytest.raises(RuntimeError), writer.open():
+        raise RuntimeError
+    assert writer._handle.closed
+
+
+def test_an_export_leaves_a_file_it_was_given_open() -> None:
+    given = io.StringIO()
+    writer = RecordWriter(given, "csv", spreadsheet_safe=True)
+    with writer.open():
+        pass
+    assert not given.closed
+
+
+@pytest.mark.anyio
+async def test_the_async_client_parses_on_a_worker_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import threading
+
+    import httpx
+
+    from pyquickbase import AsyncQuickbase
+
+    used: list[threading.Thread] = []
+    real = read_rows
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        used.append(threading.current_thread())
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr("pyquickbase._async._resources.read_rows", spy)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/tables"):
+            return httpx.Response(200, json=[{"id": "bqt", "name": "T", "keyFieldId": 3}])
+        return httpx.Response(200, json=[{"id": 6, "label": "Title", "fieldType": "text"}])
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    async with AsyncQuickbase(realm="acme", token="t", http_client=http) as qb:
+        rows = await qb.app("bq1234567").table("T").rows_from_file(io.StringIO("Title\nA\n"))
+    assert len(rows) == 1
+    assert used[0] is not threading.current_thread()

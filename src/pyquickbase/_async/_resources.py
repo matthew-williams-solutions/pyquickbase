@@ -113,11 +113,14 @@ from .._schema_plan import (
 )
 from .._summary import StatisticName, Summary, SummaryGroups, SummaryRow, sort_rows
 from .._tabular import (
+    DEFAULT_MAX_UNZIPPED_BYTES,
+    WRITE_BATCH,
     ColumnMap,
     FileFormat,
     FileLike,
     FileRows,
     RecordWriter,
+    check_read_limits,
     file_cells,
     file_format,
     given_rows,
@@ -159,7 +162,7 @@ from ..errors import (
     WriteError,
 )
 from ._planner import AsyncPlanner, apply_checked, apply_plan
-from ._transport import AsyncTransport
+from ._transport import AsyncTransport, run_blocking
 
 if TYPE_CHECKING:
     import pandas
@@ -709,10 +712,20 @@ class AsyncRecordIterator:
         encoding: str = "utf-8-sig",
     ) -> int:
         writer = RecordWriter(destination, file_kind, spreadsheet_safe=spreadsheet_safe)
-        with writer.open(sheet=sheet, encoding=encoding):
+        await run_blocking(partial(writer.begin, sheet=sheet, encoding=encoding))
+        try:
+            batch: list[Record] = []
             async for record in self:
-                writer.add(record, self._columns)
-            writer.header(self._columns)
+                batch.append(record)
+                if len(batch) == WRITE_BATCH:
+                    await run_blocking(writer.add_all, batch, self._columns)
+                    batch = []
+            await run_blocking(writer.add_all, batch, self._columns)
+            await run_blocking(writer.header, self._columns)
+            await run_blocking(writer.finish)
+        except BaseException:
+            writer.close()
+            raise
         return writer.written
 
     async def to_pandas(self) -> "pandas.DataFrame":
@@ -1659,6 +1672,8 @@ class AsyncTable:
         datetime_format: str | None = None,
         encoding: str = "utf-8-sig",
         delimiter: str | None = None,
+        max_rows: int | None = None,
+        max_unzipped_bytes: int | None = DEFAULT_MAX_UNZIPPED_BYTES,
     ) -> FileRows:
         """Read a CSV or Excel file's rows, converting each value for its field, to write them.
 
@@ -1668,8 +1683,8 @@ class AsyncTable:
         with its row and column, and nothing is written while there are any. Quickbase would
         otherwise empty a number field given text it can't read, without an error.
 
-        It reads the whole file, in the calling thread, and contacts Quickbase only for the
-        table's fields.
+        It reads the whole file into memory, and contacts Quickbase only for the table's fields.
+        The async client reads it on a worker thread, so a large file doesn't stop the event loop.
 
         ```python
         rows = await tasks.rows_from_file("tasks.csv")
@@ -1697,27 +1712,45 @@ class AsyncTable:
                 byte order mark, as Excel writes it.
             delimiter: What separates a CSV's values. Defaults to a tab for a `.tsv` or `.tab`
                 path, and a comma otherwise.
+            max_rows: The most rows with values to read, or None for no limit. Set this for a
+                file you didn't make, as reading stops at the limit. Blank rows don't count.
+            max_unzipped_bytes: The most an Excel file may unpack to, or None for no limit. It's
+                a zip, so a small file can unpack to something huge.
 
         Returns:
             A `FileRows`, with the `rows` to write, each one's row number, and every error.
 
         Raises:
+            FileTooLargeError: The file is over `max_rows` or `max_unzipped_bytes`.
             InvalidValueError: The file can't be read as a table: it has no header row, names a
                 column twice, has a column that isn't a field, or writes a field that can't be
                 written. Fix these before anything else.
         """
+        check_read_limits(max_rows, max_unzipped_bytes)
         file_kind = file_format(source, format)
         fields = await self.fields()
-        cells = file_cells(source, file_kind, sheet=sheet, encoding=encoding, delimiter=delimiter)
-        return read_rows(
-            cells,
-            fields,
-            columns=columns,
-            skip_read_only=skip_read_only,
-            tz=tz,
-            date_format=date_format,
-            datetime_format=datetime_format,
-        )
+
+        def parse() -> FileRows:
+            cells = file_cells(
+                source,
+                file_kind,
+                sheet=sheet,
+                encoding=encoding,
+                delimiter=delimiter,
+                max_unzipped_bytes=max_unzipped_bytes,
+            )
+            return read_rows(
+                cells,
+                fields,
+                columns=columns,
+                skip_read_only=skip_read_only,
+                tz=tz,
+                date_format=date_format,
+                datetime_format=datetime_format,
+                max_rows=max_rows,
+            )
+
+        return await run_blocking(parse)
 
     async def events(self) -> list[AppEvent]:
         """List the webhooks, Quickbase actions, notifications, subscriptions, reminders, and

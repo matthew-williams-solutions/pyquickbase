@@ -834,6 +834,7 @@ SYMBOL_PAGES = (
                     "TooManyRecordsError",
                     "ConfirmationError",
                     "InvalidValueError",
+                    "FileTooLargeError",
                     "PolicyRefusedError",
                 ),
             ),
