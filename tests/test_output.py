@@ -44,6 +44,7 @@ from pyquickbase import (
     SummaryRow,
     TableInfo,
     ToolErrorCode,
+    TooManyRecordsError,
     TypedPage,
     TypedRecord,
     UnknownFieldError,
@@ -384,6 +385,7 @@ def written(**ids: Any) -> WriteResult:
         (RequestTimeoutError("x"), "timeout", "unknown", True),
         (NetworkError("x"), "network_error", "unknown", True),
         (InvalidResponseError("x"), "invalid_response", "unknown", False),
+        (TooManyRecordsError(11, 10), "too_many_records", "no", False),
         (QuickbaseError("x"), "quickbase_error", "no", False),
         (WriteError("x", result=written()), "write_failed", "no", False),
         (WritePermissionError("x", result=written()), "write_permission_denied", "no", False),
@@ -409,6 +411,13 @@ def test_every_code_is_documented_and_has_a_hint() -> None:
     from pyquickbase._output import _HINTS  # pyright: ignore[reportPrivateUsage]
 
     assert set(_HINTS) == set(get_args(ToolErrorCode))
+
+
+def test_too_many_records_says_how_many_matched_and_the_limit() -> None:
+    found = tool_error(TooManyRecordsError(83460, 10000))["error"]
+    assert (found["matched"], found["limit"]) == (83460, 10000)
+    assert "83460 records match" in found["message"]
+    assert "Counting alone works at any size" in found["hint"]
 
 
 def test_other_exceptions_say_nothing_about_themselves() -> None:

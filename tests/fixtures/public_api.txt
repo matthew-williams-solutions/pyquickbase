@@ -106,7 +106,7 @@ class AsyncTable(object)
     async def resolve_field_ids(self, fields: Sequence[str | int]) -> list[int]
     async def run_formula(self, formula: str, *, record_id: int | None = None) -> FormulaResult
     async def settings_url(self) -> str
-    async def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records_scanned: int | None = None, page_size: int = 1000) -> list[SummaryRow]
+    async def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records_scanned: int | None = None, page_size: int | None = None) -> list[SummaryRow]
     async def update(self, records: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     async def update_field(self, field: str | int, *, label: str | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None) -> Field
     async def update_info(self, *, name: str | None = None, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> TableInfo
@@ -126,7 +126,7 @@ class AsyncTypedTable(Generic)
     async def preview_update(self, records: Iterable[Row[~R]]) -> UpdatePreview
     def query(self, *, where: Expression | str | None = None, select: TypedField | Sequence[TypedField] | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, max_total: int | None = None) -> 'AsyncTypedIterator[R]'
     async def query_page(self, *, where: Expression | str | None = None, select: TypedField | Sequence[TypedField] | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, limit: int = 100, skip: int = 0) -> TypedPage[~R]
-    async def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records_scanned: int | None = None, page_size: int = 1000) -> list[SummaryRow]
+    async def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records_scanned: int | None = None, page_size: int | None = None) -> list[SummaryRow]
     property table -> AsyncTable
     async def update(self, records: Iterable[Row[~R]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     async def upsert(self, records: Iterable[Row[~R]], *, merge_on: TypedField, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
@@ -603,7 +603,7 @@ class Table(object)
     def resolve_field_ids(self, fields: Sequence[str | int]) -> list[int]
     def run_formula(self, formula: str, *, record_id: int | None = None) -> FormulaResult
     def settings_url(self) -> str
-    def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records_scanned: int | None = None, page_size: int = 1000) -> list[SummaryRow]
+    def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records_scanned: int | None = None, page_size: int | None = None) -> list[SummaryRow]
     def update(self, records: Iterable[Mapping[str | int, Any]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     def update_field(self, field: str | int, *, label: str | None = None, required: bool | None = None, unique: bool | None = None, properties: Mapping[str, Any] | None = None, formula: str | None = None, help_text: str | None = None, bold: bool | None = None, no_wrap: bool | None = None, find_enabled: bool | None = None, appears_by_default: bool | None = None) -> Field
     def update_info(self, *, name: str | None = None, description: str | None = None, single_record_name: str | None = None, plural_record_name: str | None = None) -> TableInfo
@@ -628,7 +628,9 @@ class TableSelector(object)
     def __init__(self, kind: Literal['all', 'created', 'named'], values: tuple[str, ...] = ()) -> None
     field kind: Literal['all', 'created', 'named']
     field values: tuple[str, ...]
-value ToolErrorCode = Literal['misconfigured', 'needs_confirmation', 'invalid_arguments', 'invalid_value', 'read_refused', 'write_refused', 'unknown_table', 'unknown_field', 'unknown_report', 'unsupported_report', 'schema_mismatch', 'partial_write', 'write_failed', 'write_permission_denied', 'authentication', 'permission_denied', 'not_found', 'bad_request', 'rate_limited', 'server_error', 'api_error', 'timeout', 'network_error', 'invalid_response', 'quickbase_error', 'internal']
+class TooManyRecordsError(QueryError)
+    def __init__(self, matched: int, limit: int) -> None
+value ToolErrorCode = Literal['misconfigured', 'needs_confirmation', 'invalid_arguments', 'too_many_records', 'invalid_value', 'read_refused', 'write_refused', 'unknown_table', 'unknown_field', 'unknown_report', 'unsupported_report', 'schema_mismatch', 'partial_write', 'write_failed', 'write_permission_denied', 'authentication', 'permission_denied', 'not_found', 'bad_request', 'rate_limited', 'server_error', 'api_error', 'timeout', 'network_error', 'invalid_response', 'quickbase_error', 'internal']
 class TypedField(F)
     def __eq__(self, value: object) -> Condition
     def __ge__(self, value: Any) -> Condition
@@ -671,7 +673,7 @@ class TypedTable(Generic)
     def preview_update(self, records: Iterable[Row[~R]]) -> UpdatePreview
     def query(self, *, where: Expression | str | None = None, select: TypedField | Sequence[TypedField] | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, page_size: int = 1000, max_total: int | None = None) -> 'TypedIterator[R]'
     def query_page(self, *, where: Expression | str | None = None, select: TypedField | Sequence[TypedField] | None = None, order_by: TypedField | int | Sequence[TypedField | int] | None = None, limit: int = 100, skip: int = 0) -> TypedPage[~R]
-    def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records_scanned: int | None = None, page_size: int = 1000) -> list[SummaryRow]
+    def summarize(self, group_by: str | int | F | Period | Sequence[str | int | F | Period] | None = None, *, where: Expression | str | None = None, sum: str | int | F | Sequence[str | int | F] | None = None, avg: str | int | F | Sequence[str | int | F] | None = None, min: str | int | F | Sequence[str | int | F] | None = None, max: str | int | F | Sequence[str | int | F] | None = None, max_records_scanned: int | None = None, page_size: int | None = None) -> list[SummaryRow]
     property table -> Table
     def update(self, records: Iterable[Row[~R]], *, batch_size: int = 1000, timeout: float | None = None) -> WriteResult
     def upsert(self, records: Iterable[Row[~R]], *, merge_on: TypedField, batch_size: int = 1000, timeout: float | None = None) -> WriteResult

@@ -15,6 +15,7 @@ from pyquickbase import (
     Policy,
     PolicyRefusedError,
     QueryError,
+    TooManyRecordsError,
     TypedRecord,
     UnknownFieldError,
     UnknownReportError,
@@ -161,8 +162,55 @@ async def test_max_records_refuses_without_reading_records() -> None:
 async def test_max_records_allows_exactly_that_many() -> None:
     fake = Fake(total=10)
     async with client(fake) as qb:
-        rows = await qb.app("bq1234567").table("Tasks").summarize(max_records_scanned=10)
-    assert rows[0].count == 10
+        rows = await qb.app("bq1234567").table("Tasks").summarize("Status", max_records_scanned=10)
+    assert sum(row.count for row in rows) == 10
+
+
+async def test_too_many_records_is_a_query_error_that_says_how_many() -> None:
+    fake = Fake(total=11)
+    async with client(fake) as qb:
+        tasks = qb.app("bq1234567").table("Tasks")
+        with pytest.raises(TooManyRecordsError) as caught:
+            await tasks.summarize(sum="Hours", max_records_scanned=10)
+    assert isinstance(caught.value, QueryError)
+    assert (caught.value.matched, caught.value.limit) == (11, 10)
+    assert len(fake.queries) == 1
+
+
+async def test_a_count_asks_how_many_match_and_reads_no_records() -> None:
+    fake = Fake(total=250_000)
+    async with client(fake) as qb:
+        tasks = qb.app("bq1234567").table("Tasks")
+        rows = await tasks.summarize(where=F("Status") == "a", max_records_scanned=10)
+    assert [(row.group, row.count) for row in rows] == [({}, 250_000)]
+    [query] = fake.queries
+    assert (query["select"], query["options"]["top"], query["where"]) == ([3], 1, "{6.EX.'a'}")
+
+
+async def test_a_count_isnt_limited_by_the_read_rules_limit() -> None:
+    fake = Fake(total=50)
+    rules = bind(allow.read(TASKS, max_records_scanned=10), tables={TASKS: ("Tasks", FIELDS)})
+    async with client(fake, policy=rules) as qb:
+        rows = await qb.app("bq1234567").table("Tasks").summarize()
+    assert rows[0].count == 50
+    assert len(fake.queries) == 1
+
+
+async def test_a_count_matches_the_groups_it_would_add_up_to() -> None:
+    fake = Fake(total=25)
+    async with client(fake) as qb:
+        tasks = qb.app("bq1234567").table("Tasks")
+        [counted] = await tasks.summarize()
+        grouped = await tasks.summarize("Status", page_size=4)
+    assert counted.count == sum(row.count for row in grouped) == 25
+
+
+async def test_pages_are_sized_by_the_fields_a_summary_reads() -> None:
+    fake = Fake(total=40_000)
+    async with client(fake) as qb:
+        await qb.app("bq1234567").table("Tasks").summarize("Status", sum="Hours")
+    assert [query["options"]["top"] for query in fake.queries] == [16_666] * 3
+    assert [query["options"]["skip"] for query in fake.queries] == [0, 16_666, 33_332]
 
 
 class Growing(Fake):

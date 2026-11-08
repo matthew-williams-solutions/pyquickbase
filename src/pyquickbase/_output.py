@@ -62,6 +62,7 @@ from .errors import (
     SchemaChangeError,
     SchemaMismatchError,
     ServerError,
+    TooManyRecordsError,
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
@@ -74,6 +75,7 @@ ToolErrorCode = Literal[
     "misconfigured",
     "needs_confirmation",
     "invalid_arguments",
+    "too_many_records",
     "invalid_value",
     "read_refused",
     "write_refused",
@@ -123,6 +125,7 @@ _CODES: tuple[tuple[type[BaseException], ToolErrorCode], ...] = (
     (WriteError, "write_failed"),
     (ConfigurationError, "misconfigured"),
     (ConfirmationError, "needs_confirmation"),
+    (TooManyRecordsError, "too_many_records"),
     (QueryError, "invalid_arguments"),
     (InvalidValueError, "invalid_value"),
     (UnknownTableError, "unknown_table"),
@@ -147,6 +150,10 @@ _HINTS: dict[ToolErrorCode, str] = {
     "needs_confirmation": "Preview or plan the same change again, show the user the result, and "
     "send its confirmation once they approve.",
     "invalid_arguments": "Fix the filter or arguments as the message says, then try again.",
+    "too_many_records": "This summary would read more records than it may. Counting alone "
+    "works at any size. To total or average them, ask the user to narrow the question, such as to "
+    "a shorter date range. Splitting it into several summaries takes a call for each part, and "
+    "the parts must not overlap or miss records.",
     "invalid_value": "Fix the values as the message says, then try again.",
     "read_refused": "This tool may not read that. Ask for less, as the message says, or tell "
     "the user.",
@@ -278,6 +285,8 @@ def tool_error(error: BaseException) -> dict[str, Any]:
     - A `WriteError` adds `written`, with the IDs that were created, updated, and left unchanged,
       and `failed_rows`, with each row's `index`, `reason`, `field_id`, and Quickbase's `messages`.
     - An `APIError` adds `status`, the HTTP status.
+    - A `TooManyRecordsError` adds `matched`, how many records match, and `limit`, the most the
+      summary may read.
 
     An exception from outside the SDK gets the code `internal` and a message that says nothing
     about it, so a bug's details and any values in it don't reach the model. Log it yourself.
@@ -304,6 +313,9 @@ def tool_error(error: BaseException) -> dict[str, Any]:
         found["retry_after"] = error.retry_after
     if isinstance(error, APIError) and error.status_code:
         found["status"] = error.status_code
+    if isinstance(error, TooManyRecordsError):
+        found["matched"] = error.matched
+        found["limit"] = error.limit
     if isinstance(error, WriteError) and isinstance(error.result, WriteResult):
         found["written"] = _written(error.result)
         found["failed_rows"] = [_row_error(item) for item in error.result.errors]

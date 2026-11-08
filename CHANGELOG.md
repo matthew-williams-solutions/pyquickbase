@@ -6,6 +6,25 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **`summarize()` reads in large pages.** It used to read 1,000 records per request. Now `page_size`
+  defaults to `None`, which sizes each page by the fields the summary reads, from 25,000 records for
+  one field down to 1,000, so a page takes about 25 MB of memory. Totalling 250,000 records takes
+  about 11 requests instead of 250. Passing a `page_size` still uses it.
+- **A summary that only counts reads no records.** With no `group_by`, `sum`, `avg`, `min`, or `max`,
+  `summarize()` asks Quickbase how many records match, in one request, at any size. It used to read
+  every matching record, with the table's default fields. `max_records_scanned`, the argument and
+  the read rule's, no longer limits it, as it reads nothing.
+- **A summary over `max_records_scanned` raises `TooManyRecordsError`,** and `tool_error()` gives it
+  the code `too_many_records` with `matched` and `limit`. It was a `QueryError` with the code
+  `invalid_arguments`. `TooManyRecordsError` is a `QueryError`, so `except QueryError` still catches
+  it, but a tool that checks for `invalid_arguments` needs to check for `too_many_records` too.
+
+### Added
+
+- `TooManyRecordsError`, with `matched` and `limit`, and the tool error code `too_many_records`.
+
 ## [1.0.0rc12] - 2026-11-07
 
 This candidate replaces the permission classes with one `Policy`, and adds schema changes that are

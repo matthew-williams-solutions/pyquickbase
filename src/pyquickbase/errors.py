@@ -47,6 +47,30 @@ class QueryError(QuickbaseError, ValueError):
     """A query can't be sent as written, so it wasn't sent to Quickbase."""
 
 
+class TooManyRecordsError(QueryError):
+    """More records match a summary than its `max_records_scanned` lets it read. None were read.
+
+    A summary that only counts reads no records, so this is raised only for one that groups,
+    totals, averages, or finds the lowest or highest value.
+
+    Attributes:
+        matched: How many records match.
+        limit: The most records the summary may read.
+    """
+
+    def __init__(self, matched: int, limit: int) -> None:
+        super().__init__(
+            f"{matched} records match, which is more than max_records_scanned of {limit}, the "
+            "most this summary may read. Counting alone works at any size. To group, total, or "
+            "average them, narrow the filter or raise the limit."
+        )
+        self.matched = matched
+        self.limit = limit
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (type(self), (self.matched, self.limit))
+
+
 class ConfirmationError(QuickbaseError):
     """A change needs the confirmation its preview or plan returned, and this one is missing,
     expired, or for something else. Nothing was changed. Preview or plan again, and show the

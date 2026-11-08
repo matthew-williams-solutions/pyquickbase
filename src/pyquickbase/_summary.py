@@ -23,6 +23,15 @@ _DATE_TYPES = frozenset({"date", "timestamp"})
 _RANGE_TYPES = _NUMERIC_TYPES | _DATE_TYPES | {"timeofday", "recordid"}
 # A record can hold several of these at once, so it wouldn't belong to one group.
 _UNGROUPABLE_TYPES = frozenset({"multitext", "multiuser", "file"})
+# A page of records is held in memory while it's added up, at about 0.5 MB per 1,000 records for
+# each field read. So a page holds about 50,000 field values, about 25 MB, however many fields a
+# summary needs. Long text counts as several fields. Fewer requests matter more than smaller pages:
+# Quickbase answers a large page nearly as fast as a small one, and limits requests per token.
+_PAGE_FIELD_VALUES = 50_000
+_MIN_PAGE_SIZE = 1_000
+_MAX_PAGE_SIZE = 25_000
+_LONG_TEXT_TYPES = frozenset({"text-multi-line", "rich-text"})
+_LONG_TEXT_WEIGHT = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,6 +216,21 @@ class Summary:
                     f"{item.type}."
                 )
         return items
+
+    @property
+    def counts_only(self) -> bool:
+        """Whether this summary only counts, so it needs no records, only how many match."""
+        return not self._groups and not self._summed and not self._ranged_fields
+
+    def page_size(self) -> int:
+        """How many records to read per request: fewer when more fields are read."""
+        read = {item.id: item for item, _ in self._groups}
+        read.update(self._summed)
+        read.update(self._ranged_fields)
+        weight = 1 + sum(  # Record ID# comes with every record.
+            _LONG_TEXT_WEIGHT if item.type in _LONG_TEXT_TYPES else 1 for item in read.values()
+        )
+        return max(_MIN_PAGE_SIZE, min(_MAX_PAGE_SIZE, _PAGE_FIELD_VALUES // weight))
 
     @property
     def select(self) -> list[int]:
