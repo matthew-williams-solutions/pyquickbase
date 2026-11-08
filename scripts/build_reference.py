@@ -18,7 +18,7 @@ import dataclasses
 import inspect
 import re
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, get_overloads
 
 import build_llms
 
@@ -76,6 +76,76 @@ TITLES: dict[str, dict[str, str]] = {
         "schema": "The arguments' JSON Schema",
         "name": "The operation's name",
         "run": "Run a schema operation",
+    },
+    # Pages of public names: a function, or a method of an object, has a title. An object, error, or
+    # type keeps its name, as that's how it appears in signatures and tracebacks.
+    "queries": {
+        "F.contains": "Match text that contains",
+        "F.not_contains": "Match text that doesn't contain",
+        "F.starts_with": "Match text that starts with",
+        "F.not_starts_with": "Match text that doesn't start with",
+        "F.has": "Match one of a field's values",
+        "F.not_has": "Match none of a field's values",
+        "F.is_in": "Match any of several values",
+        "F.op": "Use any operator",
+        "where_from_dict": "Build a condition from JSON",
+        "where_schema": "Describe conditions as JSON Schema",
+        "parse_where": "Check a hand-written condition",
+    },
+    "limits": {
+        "Policy.read_only": "Make a read-only policy",
+        "Policy.bind": "Bind to an app",
+        "Policy.bind_offline": "Bind without an app",
+        "BoundPolicy.classes_of": "Get a field's classes",
+        "BoundPolicy.decide": "Decide a request",
+        "BoundPolicy.allows": "Check what's allowed",
+        "BoundPolicy.explain": "Explain what's allowed",
+        "BoundPolicy.max_records": "Get a table's record limit",
+        "BoundPolicy.row_limit": "Get a table's row limit",
+        "BoundPolicy.offers": "Get what an operation may offer",
+        "BoundPolicy.to_json": "Save a bound policy",
+        "BoundPolicy.from_json": "Load a bound policy",
+        "Decision.message": "Get the refusal's message",
+        "allow.filter": "Allow filtering",
+        "allow.sort": "Allow sorting",
+        "allow.insert": "Allow creating records",
+        "allow.update": "Allow updating records",
+        "allow.download": "Allow downloading files",
+        "allow.delete_file": "Allow deleting file versions",
+        "allow.schema": "Allow schema changes",
+        "allow.create_tables": "Allow creating tables",
+        "allow.read": "Allow reading",
+        "allow.delete": "Allow deleting records",
+        "allow.report": "Allow running reports",
+        "deny.filter": "Deny filtering",
+        "deny.sort": "Deny sorting",
+        "deny.insert": "Deny creating records",
+        "deny.update": "Deny updating records",
+        "deny.download": "Deny downloading files",
+        "deny.delete_file": "Deny deleting file versions",
+        "deny.schema": "Deny schema changes",
+        "deny.create_tables": "Deny creating tables",
+        "deny.read": "Deny reading",
+        "deny.delete": "Deny deleting records",
+        "deny.report": "Deny running reports",
+        "deny.all": "Deny everything",
+        "limit.rows": "Limit the rows",
+        "fields.all": "Select every field",
+        "fields.new": "Select new fields",
+        "fields.classed": "Select fields by class",
+        "fields.labeled_like": "Select fields by label",
+        "tables.all": "Select every table",
+        "tables.created": "Select created tables",
+        "Rule.decide": "Refuse a request",
+        "RetryPolicy.backoff": "Get the backoff delay",
+        "RetryPolicy.rate_limit_delay": "Get the wait after a 429",
+    },
+    "tools": {
+        "tool_result": "Return a result to a model",
+        "tool_error": "Return an error to a model",
+    },
+    "generated": {
+        "TypedRecord.from_record": "Build from a record",
     },
     "typed-table": {
         "query": "Query records",
@@ -960,7 +1030,9 @@ def _entries(lines: list[str], owner: str) -> list[tuple[str, str]]:
 
 
 def _clean_annotation(annotation: Any) -> str:
-    return build_llms.clean_types(inspect.formatannotation(annotation))
+    """Write a type for the docs. A string annotation is written as the type it names."""
+    text = annotation if isinstance(annotation, str) else inspect.formatannotation(annotation)
+    return build_llms.clean_types(text)
 
 
 def _annotation(parameter: inspect.Parameter) -> str:
@@ -994,12 +1066,27 @@ def _parameters(
 
 
 def _return_type(function: Any, owner_class: str) -> str:
+    """The return type, or nothing for an overloaded function, whose signatures show each one."""
+    if get_overloads(function):
+        return ""
     text = _clean_annotation(inspect.signature(function).return_annotation)
     return owner_class if text == "Self" else text
 
 
 def _signature(name: str, function: Any, returns: str) -> str:
-    """Write a signature on one line if it fits in the column, or else one parameter per line."""
+    """Write a signature on one line if it fits in the column, or else one parameter per line.
+
+    An overloaded function shows each overload, as the one that runs only says `Any`.
+    """
+    if overloads := get_overloads(function):
+        return "\n".join(
+            _one_signature(name, item, _clean_annotation(inspect.signature(item).return_annotation))
+            for item in overloads
+        )
+    return _one_signature(name, function, returns)
+
+
+def _one_signature(name: str, function: Any, returns: str) -> str:
     parameters = _own_parameters(function)
     items: list[str] = []
     for index, parameter in enumerate(parameters):
@@ -1588,13 +1675,17 @@ def _two_column_method(method: Method, methods: dict[str, Method], title: str) -
     """Write a method as two columns: what it does on the left, and its code on the right."""
     code = [f"```python\n{method.signature}\n```", ""]
     code += _example_lines(method.sync_code, method.async_code, method.output)
+    text = [f"### {title} {{#{method.anchor}}}", "", *_describe(method, methods, two_columns=True)]
+    return _row(text, code)
+
+
+def _row(text: list[str], code: list[str]) -> list[str]:
+    """Write one entry as two columns: what it is on the left, and its code on the right."""
     return [
         '<div class="ref-method" markdown>',
         '<div class="ref-text" markdown>',
         "",
-        f"### {title} {{#{method.anchor}}}",
-        "",
-        *_describe(method, methods, two_columns=True),
+        *text,
         "</div>",
         '<div class="ref-code" markdown>',
         "",
@@ -1605,43 +1696,39 @@ def _two_column_method(method: Method, methods: dict[str, Method], title: str) -
     ]
 
 
+def _two_column_header(page: Resource | SymbolPage, methods: dict[str, Method]) -> list[str]:
+    """Write the front matter, title, and introduction, with the setup code beside it."""
+    header = _page_header(page, methods)
+    split = header.index(f"# {page.name}") + 2
+    intro = [line for line in header[split:] if not line.startswith(("===", "    "))]
+    setup = _tabs(page.setup, page.async_setup) if page.setup else []
+    row = _row(intro, setup)
+    row[0] = '<div class="ref-method ref-intro" markdown>'
+    return ["---", "toc_in_nav: true", "hide:", "  - toc", "---", "", *header[:split], *row]
+
+
+def _check_titles(slug: str, called: list[str]) -> dict[str, str]:
+    """Return a page's titles, stopping the build if what's called and what's titled differ."""
+    titles = TITLES.get(slug, {})
+    untitled = [name for name in called if name not in titles]
+    unknown = sorted(set(titles) - set(called))
+    if untitled or unknown:
+        raise SystemExit(
+            f"TITLES[{slug!r}] needs a title for {untitled or 'nothing'}, "
+            f"and has titles for names not called on the page: {unknown or 'none'}"
+        )
+    return titles
+
+
 def build_page(resource: Resource, methods: dict[str, Method]) -> str:
     """Return a class's page for the site, in two columns, with its contents in the left sidebar.
 
     Each method's heading is its title from `TITLES`, and each method's "Returns" links to what it
     returns, so there's no table of return types.
     """
-    titles = TITLES.get(resource.slug, {})
     members = [name for group in resource.groups for name in group.members]
-    untitled = [name for name in members if name not in titles]
-    unknown = sorted(set(titles) - set(members))
-    if untitled or unknown:
-        raise SystemExit(
-            f"TITLES[{resource.slug!r}] needs a title for {untitled or 'nothing'}, "
-            f"and has titles for methods not on the page: {unknown or 'none'}"
-        )
-    header = _page_header(resource, methods)
-    split = header.index(f"# {resource.name}") + 2
-    lines = [
-        "---",
-        "toc_in_nav: true",
-        "hide:",
-        "  - toc",
-        "---",
-        "",
-        *header[:split],
-        '<div class="ref-method ref-intro" markdown>',
-        '<div class="ref-text" markdown>',
-        "",
-        *[line for line in header[split:] if not line.startswith(("===", "    "))],
-        "</div>",
-        '<div class="ref-code" markdown>',
-        "",
-        *(_tabs(resource.setup, resource.async_setup) if resource.setup else []),
-        "</div>",
-        "</div>",
-        "",
-    ]
+    titles = _check_titles(resource.slug, members)
+    lines = _two_column_header(resource, methods)
     for group in resource.groups:
         lines += [f"## {group.title} {{#{group.anchor}}}", "", *_guide_line(group)]
         for name in group.members:
@@ -1649,19 +1736,54 @@ def build_page(resource: Resource, methods: dict[str, Method]) -> str:
     return "\n".join(lines)
 
 
+def _is_called(name: str, symbol: Symbol) -> bool:
+    """Whether a public name is a function, so it's titled by what it does."""
+    return bool(symbol.signature) and not name[0].isupper()
+
+
+def _symbol_text(symbol: Symbol) -> list[str]:
+    """Write what a public name is, for the left column: everything but its code."""
+    doc = symbol.doc
+    none: dict[str, Method] = {}
+    lines = _prose_lines(doc, none)
+    if symbol.bases:
+        linked = ", ".join(_public_link(base) for base in symbol.bases)
+        lines += [f"**Inherits from** {linked}", ""]
+    if symbol.parameters:
+        lines += ["**Parameters**", "", *_shown_parameters(symbol.parameters, none)]
+    if symbol.attributes:
+        lines += ["**Attributes**", "", *_attribute_lines(symbol.attributes, none)]
+    return lines + _return_lines(symbol.returns, doc, none) + _raises_lines(doc, none)
+
+
 def build_symbol_page(page: SymbolPage, symbols: dict[str, Symbol]) -> str:
-    """Return a page of several public names for the site."""
-    lines = _page_header(page, {})
+    """Return a page of several public names for the site, laid out like a class's page.
+
+    Each name is a row, with its signature and example beside it, and each of its methods is a row
+    below it. A function or method is headed by its title, and anything else by its name.
+    """
+    called = [
+        *(name for name, symbol in symbols.items() if _is_called(name, symbol)),
+        *(method.heading.removesuffix("()") for s in symbols.values() for method in s.methods),
+    ]
+    titles = _check_titles(page.slug, called)
+    lines = _two_column_header(page, {})
     for group in page.groups:
         lines += [f"## {group.title} {{#{group.anchor}}}", "", *_guide_line(group)]
         for name in group.members:
             symbol = symbols[name]
+            code = [f"```python\n{symbol.signature}\n```", ""] if symbol.signature else []
             if symbol.sync_code:
-                example = _example_lines(symbol.sync_code, symbol.async_code, symbol.output)
-            else:
-                example = [f"```python\n{symbol.definition}\n```", ""] if symbol.definition else []
-            body = _describe_symbol(symbol, anchors=True, example=example)
-            lines += [f"### `{name}` {{#{name}}}", "", *body]
+                code += _example_lines(symbol.sync_code, symbol.async_code, symbol.output)
+            elif symbol.definition:
+                code += [f"```python\n{symbol.definition}\n```", ""]
+            heading = titles[name] if _is_called(name, symbol) else f"`{name}`"
+            lines += _row([f"### {heading} {{#{name}}}", "", *_symbol_text(symbol)], code)
+            for method in symbol.methods:
+                title = titles[method.heading.removesuffix("()")]
+                text = [f"#### {title} {{#{method.anchor}}}", ""]
+                text += _describe(method, {}, two_columns=True)
+                lines += _row(text, [f"```python\n{method.signature}\n```", ""])
     return "\n".join(lines)
 
 

@@ -4,7 +4,7 @@ A `Policy` is only a description, by label. `Policy.bind()` resolves it against 
 the `BoundPolicy` it returns, in `_bound.py`, makes every decision. See docs/policies/.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Coroutine, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Protocol, overload, runtime_checkable
 
@@ -767,10 +767,10 @@ class Policy:
         return False
 
     @overload
-    def bind(self, app: "AsyncApp") -> "Any": ...
+    def bind(self, app: "AsyncApp") -> "Coroutine[Any, Any, BoundPolicy]": ...
     @overload
     def bind(self, app: "App") -> "BoundPolicy": ...
-    def bind(self, app: Any) -> Any:
+    def bind(self, app: "App | AsyncApp") -> Any:
         """Resolve every table, field, and class against an app, once.
 
         Every problem is reported at once. With an `AsyncApp`, this returns an awaitable. It reads

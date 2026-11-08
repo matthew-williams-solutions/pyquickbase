@@ -74,8 +74,16 @@ def test_examples_fit_on_a_phone(name: str, member: str) -> None:
 
 @pytest.mark.parametrize(("page", "name"), EVERY_SYMBOL, ids=ids(EVERY_SYMBOL))
 def test_every_name_is_on_both_versions_of_its_page(page: str, name: str) -> None:
-    assert f"### `{name}` {{#{name}}}" in PAGES[page]
+    titles = build_reference.TITLES.get(SYMBOL_PAGES[page].slug, {})
+    heading = titles.get(name, f"`{name}`")
+    assert f"### {heading} {{#{name}}}" in PAGES[page]
     assert f"### `{name}`" in MARKDOWN[page]
+
+
+@pytest.mark.parametrize(("page", "name"), EVERY_SYMBOL, ids=ids(EVERY_SYMBOL))
+def test_only_what_is_called_has_a_title(page: str, name: str) -> None:
+    titled = name in build_reference.TITLES.get(SYMBOL_PAGES[page].slug, {})
+    assert titled == build_reference._is_called(name, SYMBOLS[page][name])
 
 
 @pytest.mark.parametrize(("page", "name"), EVERY_SYMBOL, ids=ids(EVERY_SYMBOL))

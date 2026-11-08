@@ -39,6 +39,12 @@ All notable changes to this project are documented here. The format follows
   `invalid_arguments`. `TooManyRecordsError` is a `QueryError`, so `except QueryError` still catches
   it, but a tool that checks for `invalid_arguments` needs to check for `too_many_records` too.
 
+### Fixed
+
+- **`Policy.bind()` is typed for the async client.** Binding with an `AsyncApp` returned `Any`, so a
+  type checker didn't see the `BoundPolicy` after `await`. It now returns a coroutine of one, and
+  `app` is typed `App | AsyncApp`.
+
 ## [1.0.0rc12] - 2026-11-07
 
 This candidate replaces the permission classes with one `Policy`, and adds schema changes that are

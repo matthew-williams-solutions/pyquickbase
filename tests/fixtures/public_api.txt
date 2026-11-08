@@ -402,7 +402,7 @@ class PlannedChange(object)
     field warnings: tuple[str, ...]
 class Policy(object)
     def __init__(self, *, app: str | None = None, classes: Mapping[str, Sequence[str | tuple[str, str | int] | FieldSelector]] | None = None, rules: Sequence[PolicyRule | Rule] = (), new_fields: Literal['read', 'hidden'] | str = 'read') -> None
-    def bind(self, app: Any) -> Any
+    def bind(self, app: 'App | AsyncApp') -> Any
     def bind_offline(self) -> 'BoundPolicy'
     property needs_app -> bool
     classmethod def read_only(cls) -> 'Policy'
