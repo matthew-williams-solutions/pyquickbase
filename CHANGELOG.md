@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **CSV and Excel files.** `to_csv()` and `to_excel()` on `query()`, a report's `run()`, and any
+  `Page` write records as they're fetched, with a header row. `Table.rows_from_file()` reads a CSV,
+  tab-separated, or Excel file into a `FileRows`, converting each value by its field's type, such as
+  `1,234.5`, `45%`, `yes`, or a user's email, and listing every value it can't convert with its row
+  and column. `insert()`, `update()`, `upsert()`, and `preview_update()` take it, and refuse it,
+  writing nothing, while it has errors. CSV text that a spreadsheet would run as a formula is
+  written with a leading `'`, and Excel text is always text. Excel needs `pyquickbase[excel]`.
+
 - **More statistics in `summarize()`:** `median`, `std_dev` (sample standard deviation), and
   `distinct_count`, beside `sum`, `avg`, `min`, and `max`. Each is exact, worked out from `Decimal`
   values, and the `summarize` operation offers them to models, with aliases such as `stdev`.
@@ -46,6 +54,11 @@ All notable changes to this project are documented here. The format follows
 - `TooManyRecordsError`, with `matched` and `limit`, and the tool error code `too_many_records`.
 
 ### Changed
+
+- **Writes refuse two values Quickbase loses without an error:** text that isn't a plain number for
+  a number field, such as `"1,234.5"`, which Quickbase leaves empty, and a user written as
+  `{"email": ...}`, which it ignores. Both raise `InvalidValueError`. Plain numbers as text, such as
+  `"0.45"`, still work.
 
 - Every statistic is defined once, in `_summary.STATISTICS`, which the summary, the operation's
   schema, group sorting, and `tool_result()` read, so adding one changes one place.

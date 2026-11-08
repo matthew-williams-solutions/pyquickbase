@@ -22,6 +22,8 @@ if TYPE_CHECKING:
     import pandas
     import polars
 
+    from ._tabular import FileLike
+
 RECORD_ID_FIELD = 3
 _DISPOSITION_NAME = re.compile(r"filename\*=utf-8''([^;]+)", re.IGNORECASE)
 
@@ -772,6 +774,54 @@ class Page:
     def next_skip(self) -> int:
         """The `skip` that fetches the following page."""
         return self.skip + len(self.records)
+
+    def to_csv(
+        self,
+        destination: "FileLike",
+        *,
+        spreadsheet_safe: bool = True,
+        encoding: str = "utf-8-sig",
+    ) -> int:
+        """Write this page's records to a CSV file, with a header row. See
+        `RecordIterator.to_csv()`.
+
+        Args:
+            destination: A path, or a file open for writing text.
+            spreadsheet_safe: Write text that a spreadsheet would run as a formula with a
+                leading `'`.
+            encoding: The text encoding for a path.
+
+        Returns:
+            How many records were written.
+        """
+        from ._tabular import write_records
+
+        return write_records(
+            self.records,
+            self.columns,
+            destination,
+            "csv",
+            spreadsheet_safe=spreadsheet_safe,
+            sheet="Records",
+            encoding=encoding,
+        )
+
+    def to_excel(self, destination: "FileLike", *, sheet: str = "Records") -> int:
+        """Write this page's records to an Excel file, with a header row. See
+        `RecordIterator.to_excel()`. Needs `pyquickbase[excel]`.
+
+        Args:
+            destination: A path, or a file open for writing bytes.
+            sheet: The worksheet's name.
+
+        Returns:
+            How many records were written.
+        """
+        from ._tabular import write_records
+
+        return write_records(
+            self.records, self.columns, destination, "xlsx", spreadsheet_safe=False, sheet=sheet
+        )
 
     def to_pandas(self) -> "pandas.DataFrame":
         """This page's records as a pandas DataFrame, with a column for each field returned.

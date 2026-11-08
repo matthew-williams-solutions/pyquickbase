@@ -12,7 +12,7 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from unicodedata import category
 
 from ._models import Field, FieldIndex, User
@@ -206,7 +206,30 @@ def _cell_value(item: Field, value: Any, row: int) -> Any:
         raise InvalidValueError(f"Row {row} sends a file to {item.label!r}, not a file field.")
     if item.type == "duration":
         return duration_value(value, item.label)
+    _refuse_silent_loss(item, value, row)
     return to_api_value(value)
+
+
+_NUMBER_TYPES = frozenset({"numeric", "currency", "percent", "rating"})
+_PLAIN_NUMBER = re.compile(r"\s*[+-]?(?:\d+(?:\.\d*)?|\.\d+)\s*")
+
+
+def _refuse_silent_loss(item: Field, value: Any, row: int) -> None:
+    """Refuse values that Quickbase accepts, and then loses without an error."""
+    unreadable = isinstance(value, str) and value and not _PLAIN_NUMBER.fullmatch(value)
+    if item.type in _NUMBER_TYPES and unreadable:
+        raise InvalidValueError(
+            f"Row {row} sets {item.label!r}, a {item.type} field, to text that isn't a plain "
+            "number, such as 1234.5. Quickbase would leave the field empty without an error. "
+            "Write a number, or use rows_from_file() to convert text such as 1,234.5."
+        )
+    if item.type in ("user", "multiuser"):
+        items = cast(list[Any], value) if isinstance(value, list) else [value]
+        if any(isinstance(entry, Mapping) and "id" not in entry for entry in items):
+            raise InvalidValueError(
+                f"Row {row} sets {item.label!r} to a user without an id. Quickbase would leave the "
+                'field unchanged without an error. Write {"id": ...}, a User, or an email address.'
+            )
 
 
 def build_rows(rows: Iterable[RowInput], fields: FieldIndex) -> list[dict[str, dict[str, Any]]]:

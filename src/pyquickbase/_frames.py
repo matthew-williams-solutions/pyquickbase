@@ -5,14 +5,13 @@ a DataFrame passed in is recognized only if its library is already imported, so 
 uses DataFrames never loads them.
 """
 
-import importlib
 import math
 import sys
 from collections.abc import Iterable, Mapping, Sequence
-from types import ModuleType
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 from ._models import FileAttachment, Record, User
+from ._optional import require_library
 from .errors import InvalidValueError
 
 if TYPE_CHECKING:
@@ -21,18 +20,6 @@ if TYPE_CHECKING:
 
 DataFrame: TypeAlias = "pandas.DataFrame | polars.DataFrame"
 """A pandas or polars DataFrame, which `insert()`, `update()`, and `upsert()` take as rows."""
-
-_EXTRAS = {"pandas": "pandas", "polars": "polars"}
-
-
-def require_library(name: str, caller: str) -> ModuleType:
-    try:
-        return importlib.import_module(name)
-    except ModuleNotFoundError:
-        raise ModuleNotFoundError(
-            f"{caller} needs {name}. Install it with: pip install 'pyquickbase[{_EXTRAS[name]}]'",
-            name=name,
-        ) from None
 
 
 def _cell(value: Any) -> Any:

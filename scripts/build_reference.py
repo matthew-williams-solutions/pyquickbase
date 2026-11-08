@@ -152,6 +152,11 @@ TITLES: dict[str, dict[str, str]] = {
     "records": {
         "RecordIterator.to_pandas": "Fetch records into pandas",
         "RecordIterator.to_polars": "Fetch records into polars",
+        "RecordIterator.to_csv": "Write records to a CSV file",
+        "RecordIterator.to_excel": "Write records to an Excel file",
+        "Page.to_csv": "Write a page to a CSV file",
+        "Page.to_excel": "Write a page to an Excel file",
+        "FileRows.raise_for_errors": "Refuse a file with errors",
         "Page.to_pandas": "Turn a page into pandas",
         "Page.to_polars": "Turn a page into polars",
         "SummaryRow.statistic": "Get one statistic's values",
@@ -185,6 +190,7 @@ TITLES: dict[str, dict[str, str]] = {
         "reports": "List reports",
         "events": "List webhooks and automations",
         "field_usage": "See where fields are used",
+        "rows_from_file": "Read rows from a CSV or Excel file",
         "report": "Get a report",
         "resolve_field_ids": "Turn field labels into IDs",
         "download_file": "Download a file",
@@ -264,6 +270,9 @@ ALIASES = {
     "FieldRefs": "One or more fields, by label, ID, or `F`, as `select` and `order_by` take them.",
     "PeriodUnit": "How much time each group of a `Period` covers.",
     "StatisticName": "A value `summarize()` works out from one field's values in each group.",
+    "FileFormat": "A file's format: `csv`, including tab-separated files, or `xlsx`.",
+    "FileLike": "A path, or an open file: text for CSV, and binary for Excel.",
+    "ColumnMap": "Which field each file column goes in, by label or ID, or None to skip it.",
     "SummaryGroups": "What `Table.summarize()` can group by.",
     "WriteAction": "What kind of write a `WriteRequest` is.",
     "SchemaChange": (
@@ -374,6 +383,7 @@ _FORMULAS = ("Formulas", "../guides/formulas.md")
 _AGENTS = ("Using pyquickbase from an AI agent", "../agents/index.md")
 _ERRORS = ("Handling errors", "../guides/errors.md")
 _APPS = ("Working with apps", "../guides/apps.md")
+_SPREADSHEETS = ("CSV and Excel files", "../guides/spreadsheets.md")
 _LINKS = "Link to the Quickbase interface"
 
 _TABLE_LINE = 'tasks = qb.app("bq1234567").table("Job Tasks")'
@@ -487,6 +497,9 @@ RESOURCES = (
                     "events",
                     "resolve_field_ids",
                 ),
+            ),
+            Group(
+                "Import a CSV or Excel file", "import-a-file", _SPREADSHEETS, ("rows_from_file",)
             ),
             Group("Work with files", "files", _FILES, ("download_file", "delete_file_version")),
             Group("Offer an operation to a model", "operations", _AGENTS, ("operation",)),
@@ -634,6 +647,12 @@ SYMBOL_PAGES = (
                 "files",
                 _FILES,
                 ("FileUpload", "FileDownload", "FileAttachment", "FileVersion"),
+            ),
+            Group(
+                "CSV and Excel files",
+                "spreadsheets",
+                _SPREADSHEETS,
+                ("FileRows", "FileRowError", "FileFormat", "FileLike", "ColumnMap"),
             ),
             Group("Formula results", "formula-results", _FORMULAS, ("FormulaResult",)),
             Group(

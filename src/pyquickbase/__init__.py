@@ -86,6 +86,7 @@ from ._sync._resources import (
     SchemaOperation,
     Table,
 )
+from ._tabular import ColumnMap, FileFormat, FileLike, FileRowError, FileRows
 from ._version import __version__
 from ._where_data import where_from_dict, where_schema
 from ._write_request import DerivedKind, WriteAction, WriteRequest
@@ -133,6 +134,7 @@ __all__ = [
     "AuthenticationError",
     "BadRequestError",
     "BoundPolicy",
+    "ColumnMap",
     "ConfigurationError",
     "ConfirmationError",
     "CreateField",
@@ -156,6 +158,10 @@ __all__ = [
     "FieldUsage",
     "FileAttachment",
     "FileDownload",
+    "FileFormat",
+    "FileLike",
+    "FileRowError",
+    "FileRows",
     "FileUpload",
     "FileVersion",
     "FormulaResult",

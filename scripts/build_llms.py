@@ -31,6 +31,8 @@ DESCRIPTIONS = {
     "guides/writing.md": "Inserts, updates, upserts, deletes, DataFrames, previews, rows that "
     "fail, and what each refusal leaves behind",
     "guides/files.md": "Uploading, downloading, and deleting file attachments",
+    "guides/spreadsheets.md": "Exporting records to CSV and Excel, and importing a file's rows "
+    "with each value checked",
     "guides/formulas.md": "Running formulas and creating formula fields, and why not to run "
     "formula text you don't control",
     "guides/schema.md": "Creating and changing tables, fields, relationships, lookups, and "

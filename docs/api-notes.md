@@ -548,6 +548,19 @@ Tested on 2026-11-08 against the Integration Tests app and temporary apps the te
 | `GET /fields/usage` and `GET /apps/{id}/events` with a restricted user's token | **403**, `Insufficient permissions`, so both need an app administrator |
 | `GET /apps/{id}/events` on an app with none | 200, `[]` |
 
+## Values written as text
+
+Tested on 2026-11-08 on a temporary table.
+
+| Value | Result |
+|---|---|
+| A `user` field set to an email address, in any case | Sets that user |
+| A `user` field set to a user ID, or `{"id": email}` | Sets that user |
+| **A `user` field set to `{"email": email}`** | **200, and the field is unchanged** |
+| A `multiuser` field set to a list of emails, or one email as text | Sets those users |
+| A `percent` field set to `"0.45"` | Reads as `0.45` |
+| **A `percent` field set to `"1,234.5"` or `"45%"`** | **200, and the field is emptied** |
+
 ## Interface links
 
 These are the current Quickbase interface's addresses, which the SDK's `*_url()` methods build. The interface isn't part of the API, so Quickbase

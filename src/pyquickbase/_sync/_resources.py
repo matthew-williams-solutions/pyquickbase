@@ -4,6 +4,7 @@
 import difflib
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import replace
+from datetime import UTC, tzinfo
 from functools import partial
 from typing import TYPE_CHECKING, Any, Self, TypeVar, cast, get_args
 
@@ -20,7 +21,7 @@ from .._derived import (
     check_readable,
     limited_where,
 )
-from .._frames import DataFrame, require_library, rows_or_frame, to_pandas, to_polars
+from .._frames import DataFrame, to_pandas, to_polars
 from .._links import (
     app_url,
     field_url,
@@ -82,6 +83,7 @@ from .._operations import (
     scope_rows,
     unavailable,
 )
+from .._optional import require_library
 from .._output import Count, DeletedCount, GroupPage
 from .._policy import Policy, PolicyRule
 from .._preview import (
@@ -111,6 +113,17 @@ from .._schema_plan import (
     summary_function,
 )
 from .._summary import StatisticName, Summary, SummaryGroups, SummaryRow, sort_rows
+from .._tabular import (
+    ColumnMap,
+    FileFormat,
+    FileLike,
+    FileRows,
+    RecordWriter,
+    file_cells,
+    file_format,
+    given_rows,
+    read_rows,
+)
 from .._write_request import UNSAFE_FORMULA_TYPES
 from .._writes import (
     FIELD_SETTINGS,
@@ -642,6 +655,62 @@ class RecordIterator:
         for record in self:
             records.append(record)
         return records
+
+    def to_csv(
+        self, destination: FileLike, *, spreadsheet_safe: bool = True, encoding: str = "utf-8-sig"
+    ) -> int:
+        """Write the remaining records to a CSV file as they're fetched, with a header row.
+
+        Dates and timestamps are ISO 8601, with a timestamp's offset. A user is their email, or
+        their ID if the client's policy hides emails, a file is its latest version's name, and a
+        list's values are separated by `;`. `rows_from_file()` reads the file back.
+
+        Args:
+            destination: A path, or a file open for writing text.
+            spreadsheet_safe: Write text that a spreadsheet would run as a formula, which starts
+                with `=`, `+`, `-`, or `@`, with a leading `'`, so opening the file can't run it.
+                `rows_from_file()` removes it again.
+            encoding: The text encoding for a path. The default writes a byte order mark, which
+                Excel needs to read UTF-8.
+
+        Returns:
+            How many records were written.
+        """
+        return self._write(destination, "csv", spreadsheet_safe=spreadsheet_safe, encoding=encoding)
+
+    def to_excel(self, destination: FileLike, *, sheet: str = "Records") -> int:
+        """Write the remaining records to an Excel file, with a header row. Needs
+        `pyquickbase[excel]`.
+
+        Dates and numbers are Excel's own, and a timestamp is written in UTC, as Excel has no time
+        zones. Text is always text, so a value starting with `=` is never a formula. Values are
+        written as for `to_csv()`.
+
+        Args:
+            destination: A path, or a file open for writing bytes.
+            sheet: The worksheet's name.
+
+        Returns:
+            How many records were written.
+        """
+        require_library("openpyxl", "to_excel()")
+        return self._write(destination, "xlsx", sheet=sheet)
+
+    def _write(
+        self,
+        destination: FileLike,
+        file_kind: FileFormat,
+        *,
+        spreadsheet_safe: bool = True,
+        sheet: str = "Records",
+        encoding: str = "utf-8-sig",
+    ) -> int:
+        writer = RecordWriter(destination, file_kind, spreadsheet_safe=spreadsheet_safe)
+        with writer.open(sheet=sheet, encoding=encoding):
+            for record in self:
+                writer.add(record, self._columns)
+            writer.header(self._columns)
+        return writer.written
 
     def to_pandas(self) -> "pandas.DataFrame":
         """Fetch the remaining records into a pandas DataFrame, with a column for each field.
@@ -1208,7 +1277,7 @@ class Table:
 
     def insert(
         self,
-        records: "Iterable[Mapping[str | int, Any]] | DataFrame",
+        records: "Iterable[Mapping[str | int, Any]] | DataFrame | FileRows",
         *,
         batch_size: int = DEFAULT_BATCH_SIZE,
         timeout: float | None = None,
@@ -1222,7 +1291,8 @@ class Table:
             records: The records to create, as `{label or ID: value}` dictionaries. A value of
                 `None` leaves the field empty, but a row needs at least one real value, because
                 Quickbase can silently skip a row without one. A pandas or polars DataFrame works
-                too, with a column for each field, where a missing value leaves the field empty.
+                too, with a column for each field, where a missing value leaves the field empty,
+                and so does a file's rows from `rows_from_file()`.
             batch_size: The most records to send in one request.
             timeout: Seconds to allow for each step of each request, instead of the client's
                 `timeout`, such as for a large file. It applies with your own `http_client` too.
@@ -1239,7 +1309,7 @@ class Table:
         """
         _require_positive("batch_size", batch_size)
         _require_timeout(timeout)
-        given = list(rows_or_frame(records))
+        given = given_rows(records)
         built = self._with_fields(lambda fields: build_rows(given, FieldIndex(fields)))
         key_field_id = (self.info()).key_field_id
         if key_field_id not in (None, RECORD_ID_FIELD):
@@ -1250,7 +1320,7 @@ class Table:
 
     def update(
         self,
-        records: "Iterable[Mapping[str | int, Any]] | DataFrame",
+        records: "Iterable[Mapping[str | int, Any]] | DataFrame | FileRows",
         *,
         batch_size: int = DEFAULT_BATCH_SIZE,
         timeout: float | None = None,
@@ -1263,7 +1333,7 @@ class Table:
             records: The changes, as `{label or ID: value}` dictionaries that each set `Record ID#`.
                 Fields left out of a row keep their values, and a value of `None` clears the field.
                 A pandas or polars DataFrame works too, with a column for each field, where a
-                missing value clears the field.
+                missing value clears the field, and so does a file's rows from `rows_from_file()`.
             batch_size: The most records to send in one request.
             timeout: Seconds to allow for each step of each request, instead of the client's
                 `timeout`, such as for a large file. It applies with your own `http_client` too.
@@ -1281,14 +1351,14 @@ class Table:
         """
         _require_positive("batch_size", batch_size)
         _require_timeout(timeout)
-        given = list(rows_or_frame(records))
+        given = given_rows(records)
         built = self._with_fields(lambda fields: build_rows(given, FieldIndex(fields)))
         require_field(built, RECORD_ID_FIELD, "so update() can't tell which record to change")
         return self._write(built, RECORD_ID_FIELD, batch_size, timeout)
 
     def upsert(
         self,
-        records: "Iterable[Mapping[str | int, Any]] | DataFrame",
+        records: "Iterable[Mapping[str | int, Any]] | DataFrame | FileRows",
         *,
         merge_on: FieldRef,
         batch_size: int = DEFAULT_BATCH_SIZE,
@@ -1300,7 +1370,8 @@ class Table:
             records: The records, as `{label or ID: value}` dictionaries that each set `merge_on`.
                 Fields left out of a row keep their values on a record that already exists. A
                 pandas or polars DataFrame works too, with a column for each field, where a
-                missing value leaves the field empty.
+                missing value leaves the field empty, and so does a file's rows from
+                `rows_from_file()`.
             merge_on: The field that identifies a record, by label or ID. Quickbase requires it to
                 be marked as unique.
             batch_size: The most records to send in one request.
@@ -1322,7 +1393,7 @@ class Table:
         """
         _require_positive("batch_size", batch_size)
         _require_timeout(timeout)
-        given = list(rows_or_frame(records))
+        given = given_rows(records)
 
         def build(fields: list[Field]) -> tuple[list[dict[str, Any]], int]:
             index = FieldIndex(fields)
@@ -1531,7 +1602,7 @@ class Table:
         return extend(page, DeletePreview, events=self._change_events())
 
     def preview_update(
-        self, records: "Iterable[Mapping[str | int, Any]] | DataFrame"
+        self, records: "Iterable[Mapping[str | int, Any]] | DataFrame | FileRows"
     ) -> UpdatePreview:
         """Show what `update()` would change with the same records, without changing anything.
 
@@ -1542,7 +1613,7 @@ class Table:
         Args:
             records: The records you'd pass to `update()`. If a record is in several of them, a
                 later one wins. `Record ID#` must be a positive integer here, even as a string
-                works in `update()`. A pandas or polars DataFrame works too, as for `update()`.
+                works in `update()`. A DataFrame or a file's rows work too, as for `update()`.
 
         Returns:
             An `UpdatePreview`, with `changes`, `unchanged_ids`, `missing_ids`, and the `events`
@@ -1555,7 +1626,7 @@ class Table:
                 read.
             UnknownFieldError: A row names a field the table doesn't have. Nothing was read.
         """
-        given = list(rows_or_frame(records))
+        given = given_rows(records)
         built = self._with_fields(lambda fields: build_rows(given, FieldIndex(fields)))
         require_field(built, RECORD_ID_FIELD, "so preview_update() can't tell which record")
         merged = merge_rows(built)
@@ -1569,6 +1640,79 @@ class Table:
             current.update({record.id: record for record in page.records})
         preview = build_update_preview(merged, current, FieldIndex(self.fields()))
         return replace(preview, events=self._change_events())
+
+    def rows_from_file(
+        self,
+        source: FileLike,
+        *,
+        columns: ColumnMap | None = None,
+        skip_read_only: bool = False,
+        format: FileFormat | None = None,
+        sheet: str | None = None,
+        tz: tzinfo = UTC,
+        date_format: str | None = None,
+        datetime_format: str | None = None,
+        encoding: str = "utf-8-sig",
+        delimiter: str | None = None,
+    ) -> FileRows:
+        """Read a CSV or Excel file's rows, converting each value for its field, to write them.
+
+        The first row names each column's field, by label. Each value is converted by its field's
+        type, from text such as `1,234.5`, `45%` for a percent, `yes`, `2027-01-15`, or a user's
+        email, or from Excel's own dates and numbers. A value that can't be converted is an error
+        with its row and column, and nothing is written while there are any. Quickbase would
+        otherwise empty a number field given text it can't read, without an error.
+
+        It reads the whole file, in the calling thread, and contacts Quickbase only for the
+        table's fields.
+
+        ```python
+        rows = tasks.rows_from_file("tasks.csv")
+        for error in rows.errors:
+            print(error)
+        tasks.insert(rows)
+        ```
+
+        Args:
+            source: A path, or an open file: text for CSV, and binary for Excel.
+            columns: Which field each column goes in, by label or ID, or None to skip a column,
+                such as `{"Task": "Title", "Notes": None}`. Other columns go in the field with
+                their exact name.
+            skip_read_only: Skip columns for fields that can't be written, such as formulas and
+                Date Created, instead of raising an error, as a file from `to_csv()` has them.
+            format: `csv` or `xlsx`. By default it's `xlsx` for an `.xlsx` or `.xlsm` path or a
+                binary file, and `csv` otherwise.
+            sheet: For Excel, the worksheet's name. Defaults to the first.
+            tz: The time zone of a timestamp without one, such as one from Excel.
+            date_format: How dates are written, for `datetime.strptime()`, such as `%m/%d/%Y`.
+                Defaults to ISO 8601, `2027-01-15`.
+            datetime_format: How timestamps are written, as for `date_format`. Defaults to ISO
+                8601.
+            encoding: A CSV path's text encoding. The default also reads UTF-8 that starts with a
+                byte order mark, as Excel writes it.
+            delimiter: What separates a CSV's values. Defaults to a tab for a `.tsv` or `.tab`
+                path, and a comma otherwise.
+
+        Returns:
+            A `FileRows`, with the `rows` to write, each one's row number, and every error.
+
+        Raises:
+            InvalidValueError: The file can't be read as a table: it has no header row, names a
+                column twice, has a column that isn't a field, or writes a field that can't be
+                written. Fix these before anything else.
+        """
+        file_kind = file_format(source, format)
+        fields = self.fields()
+        cells = file_cells(source, file_kind, sheet=sheet, encoding=encoding, delimiter=delimiter)
+        return read_rows(
+            cells,
+            fields,
+            columns=columns,
+            skip_read_only=skip_read_only,
+            tz=tz,
+            date_format=date_format,
+            datetime_format=datetime_format,
+        )
 
     def events(self) -> list[AppEvent]:
         """List the webhooks, Quickbase actions, notifications, subscriptions, reminders, and

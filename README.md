@@ -26,6 +26,7 @@ sync and async clients.
 - Uploading, downloading, and deleting file attachments
 - Running formulas, and creating formula fields
 - Reading records into pandas or polars DataFrames, and writing DataFrames back
+- Exporting records to CSV and Excel, and importing files with every value checked first
 - `qb.request()` for calling any Quickbase endpoint directly
 
 ## Usage

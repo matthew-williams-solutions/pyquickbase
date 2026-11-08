@@ -10,7 +10,7 @@ import pandas as pd
 import polars as pl
 import pytest
 
-import pyquickbase._frames
+import pyquickbase._optional
 from pyquickbase import (
     FileAttachment,
     FileVersion,
@@ -81,7 +81,7 @@ def test_a_missing_library_says_how_to_install_it(monkeypatch: pytest.MonkeyPatc
     def missing(name: str) -> Any:
         raise ModuleNotFoundError(name=name)
 
-    monkeypatch.setattr(pyquickbase._frames.importlib, "import_module", missing)
+    monkeypatch.setattr(pyquickbase._optional.importlib, "import_module", missing)
     with pytest.raises(ModuleNotFoundError, match=r"pip install 'pyquickbase\[polars\]'"):
         page(FULL).to_polars()
 

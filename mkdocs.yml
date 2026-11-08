@@ -58,6 +58,7 @@ nav:
       - Reading records: guides/reading.md
       - Writing records: guides/writing.md
       - File attachments: guides/files.md
+      - CSV and Excel files: guides/spreadsheets.md
       - Formulas: guides/formulas.md
       - Changing the schema: guides/schema.md
       - Working with apps: guides/apps.md
