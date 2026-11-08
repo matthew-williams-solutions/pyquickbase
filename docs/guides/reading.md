@@ -303,20 +303,25 @@ print(tasks.summarize(group_by=by_week))
 
 ### Large tables
 
-`summarize()` reads every matching record, so it makes one request per 1,000 records. A report built in the UI
-does the calculating in Quickbase, and is faster on a large table. See
-[Reading summary and chart reports](#reading-summary-and-chart-reports).
+A summary that only counts, with no `group_by`, `sum`, `avg`, `min`, or `max`, asks Quickbase how many records match,
+in one request, and reads none, so it takes the same time at any size.
 
-To refuse a scan larger than you expect, set `max_records_scanned`. If more records match, it raises `QueryError` without
-reading them. It never returns a total from only part of the data.
+Any other summary reads every matching record, in pages of up to 25,000. A page holds fewer records when the summary
+reads more fields, so that it takes about 25 MB of memory however wide it is. Totalling one field of 250,000 records by
+month takes about 11 requests and 6 seconds. A report built in the UI does the calculating in Quickbase, and is faster
+still. See [Reading summary and chart reports](#reading-summary-and-chart-reports).
+
+To refuse a scan larger than you expect, set `max_records_scanned`. If more records match, it raises
+`TooManyRecordsError`, a `QueryError`, without reading them, and its `matched` and `limit` say by how much. A count isn't
+limited by it, as it reads no records. It never returns a total from only part of the data.
 
 ```python
-from pyquickbase import QueryError
+from pyquickbase import TooManyRecordsError
 
 try:
     rows = tasks.summarize(group_by="Status", max_records_scanned=50_000)
-except QueryError as error:
-    print(error)
+except TooManyRecordsError as error:
+    print(error.matched, error.limit)
 ```
 
 Records can change between pages, so on a table in use, the result may not match any one moment.
@@ -406,7 +411,7 @@ These all raise before the query is sent, though the SDK may read table metadata
 | The table has no such report, or several with that name | `UnknownReportError` |
 | `run()` on a summary, chart, or ask-the-user report, or `summary_rows()` on a table or ask-the-user report, or one with two columns of the same label | `UnsupportedReportError` |
 | `summarize()` with a field it can't use, such as text in `sum`, or a multi-select field in `group_by` | `QueryError` |
-| `summarize()` finds more records than `max_records_scanned` | `QueryError`, and no records are read |
+| `summarize()` finds more records than `max_records_scanned` | `TooManyRecordsError`, a `QueryError`, and no records are read |
 | `summarize()` finds a value that isn't what its field's type says | `InvalidResponseError`, and there's no partial result |
 
 See [Handling errors](errors.md) for failures that come from Quickbase, such as a refused token.

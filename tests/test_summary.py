@@ -364,3 +364,43 @@ def test_period_labels_sort_like_their_dates(day: date) -> None:
         labels = [row.group["Due"] for row in rows]
         assert labels == sorted(labels)
         assert len(labels) <= 2
+
+
+def plan(group_by: Any = None, fields: Any = FIELDS, **options: Any) -> Summary:
+    found = dict.fromkeys(("sum", "avg", "min", "max"))
+    found.update(options)
+    return Summary(fields, group_by=group_by, **found)
+
+
+def test_only_counting_needs_no_records() -> None:
+    assert plan().counts_only
+    assert not plan("Status").counts_only
+    assert not plan(sum="Hours").counts_only
+    assert not plan(min="Due").counts_only
+
+
+@pytest.mark.parametrize(
+    ("group_by", "options", "size"),
+    [
+        ("Status", {}, 25_000),
+        ("Status", {"sum": "Hours"}, 16_666),
+        (["Status", "Due"], {"sum": "Hours", "avg": "Price"}, 10_000),
+        # A field used twice is read once.
+        ("Status", {"sum": "Hours", "avg": "Hours", "max": "Hours"}, 16_666),
+    ],
+)
+def test_pages_shrink_as_more_fields_are_read(group_by: Any, options: Any, size: int) -> None:
+    assert plan(group_by, **options).page_size() == size
+
+
+def test_long_text_makes_pages_smaller_but_never_below_a_thousand() -> None:
+    notes = [*FIELDS, field_from_api({"id": 20, "label": "Notes", "fieldType": "text-multi-line"})]
+    assert plan("Notes", fields=notes).page_size() == 10_000
+    wide = [
+        *FIELDS,
+        *(
+            field_from_api({"id": 100 + n, "label": f"N{n}", "fieldType": "numeric"})
+            for n in range(80)
+        ),
+    ]
+    assert plan(sum=[f"N{n}" for n in range(80)], fields=wide).page_size() == 1_000

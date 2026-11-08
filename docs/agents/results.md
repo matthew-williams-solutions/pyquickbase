@@ -135,6 +135,7 @@ reading the message. Check these in order, and act on the first that applies:
 | `data_changed` is `unknown` | Check what was written, then send only what's missing |
 | `data_changed` is `partly`, or `code` is `write_failed` | Fix `failed_rows`, and send only those. For a schema change, preview it again |
 | `code` is `needs_confirmation` | Preview again, show the person, then confirm |
+| `code` is `too_many_records` | Count without totals, which works at any size, or ask the user to narrow the question |
 | `code` is `invalid_arguments`, `invalid_value`, `unknown_table`, `unknown_field`, `unknown_report`, `unsupported_report`, `not_found`, `bad_request`, or `read_refused` | Fix the call, and try again |
 | Anything else | Stop, and tell the user |
 
@@ -145,6 +146,7 @@ The order matters: a `write_permission_denied` can be `partly`, and an `internal
 |---|---|---|---|
 | `needs_confirmation` | A change without the confirmation from its preview or plan, or with one that's expired or for something else | `no` | No |
 | `invalid_arguments`, `invalid_value` | A filter, argument, or value that can't be sent | `no` | No |
+| `too_many_records` | A summary that would read more records than its `max_records_scanned`, with `matched` and `limit` | `no` | No |
 | `unknown_table`, `unknown_field`, `unknown_report` | A name that doesn't exist, or that the token or the read rules hide | `no` | No |
 | `unsupported_report` | A report that can't be read that way | `no` | No |
 | `read_refused`, `write_refused` | The client's limits refused it, and it wasn't sent | `no` | No |
@@ -243,4 +245,5 @@ def task_totals(project: str, where: dict | None = None) -> dict:
 ```
 
 `tool_result()` writes dates in `min` and `max` as text, as it does everywhere. A `max_records_scanned`
-that's exceeded is an `invalid_arguments`, whose message says how many records matched.
+that's exceeded is a `too_many_records`, with `matched` and `limit`. A summary that only counts reads no
+records, so it's never refused this way.

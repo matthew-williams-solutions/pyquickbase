@@ -146,6 +146,7 @@ from ..errors import (
     QueryError,
     QuickbaseError,
     SchemaMismatchError,
+    TooManyRecordsError,
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
@@ -1256,13 +1257,15 @@ class Table:
         min: FieldRefs | None = None,
         max: FieldRefs | None = None,
         max_records_scanned: int | None = None,
-        page_size: int = 1000,
+        page_size: int | None = None,
     ) -> list[SummaryRow]:
         """Count and total records, overall or per group, without a saved report.
 
-        This reads every matching record, so it makes one request per `page_size` records. Records
-        can change between pages, so on a table in use, the result may not match any one moment. A
-        field's values are added exactly, and returned as `float`.
+        A summary that only counts, with no `group_by`, `sum`, `avg`, `min`, or `max`, asks
+        Quickbase how many records match, in one request, and reads none. Any other summary reads
+        every matching record, in pages of up to 25,000. Records can change between pages, so on a
+        table in use, the result may not match any one moment. A field's values are added
+        exactly, and returned as `float`.
 
         Args:
             group_by: The fields to group by, and `Period` for dates. Without this, the result is
@@ -1272,11 +1275,13 @@ class Table:
             avg: Numeric fields to average. Empty values are skipped.
             min: Numeric, date, timestamp, or time of day fields to find the lowest of.
             max: Numeric, date, timestamp, or time of day fields to find the highest of.
-            max_records_scanned: Raise `QueryError` if more records match than this, without
-                reading them.
-                It never returns a partial result. An agent's tool should always set this. A
-                client's policy can set a limit of its own, `max_records_scanned`.
-            page_size: Records to request per call to Quickbase.
+            max_records_scanned: Raise `TooManyRecordsError` if more records match than this,
+                without reading them. A summary that only counts reads no records, so this doesn't
+                limit it. It never returns a partial result. An agent's tool should always set
+                this. A client's policy can set a limit of its own, `max_records_scanned`.
+            page_size: Records to request per call to Quickbase. By default it's set by the fields
+                the summary reads, from 25,000 for one field down to 1,000, so that a page takes
+                about 25 MB of memory however wide it is.
 
         Returns:
             A `SummaryRow` for each group, sorted by the group's values with empty ones last. If
@@ -1284,14 +1289,17 @@ class Table:
             0.
 
         Raises:
-            QueryError: An argument can't be used, such as a text field in `sum`, or more records
-                match than `max_records_scanned`. No records were read.
+            TooManyRecordsError: More records match than `max_records_scanned`. No records were
+                read. It's a `QueryError`.
+            QueryError: An argument can't be used, such as a text field in `sum`. No records were
+                read.
             UnknownFieldError: The table has no such field. No records were read.
             PolicyRefusedError: More records match than the client's policy allows summarizing,
                 or it doesn't allow a field. No records were read.
             InvalidResponseError: A value isn't what its field's type says it should be.
         """
-        _require_positive("page_size", page_size)
+        if page_size is not None:
+            _require_positive("page_size", page_size)
         if max_records_scanned is not None:
             _require_positive("max_records_scanned", max_records_scanned)
         summary = self._with_fields(
@@ -1304,14 +1312,14 @@ class Table:
                 max=max,
             )
         )
+        if summary.counts_only:
+            # Quickbase says how many records match, so counting needs none of them.
+            return [SummaryRow(count=self.count(where))]
         allowed = self._transport.summary_limit((self.info()).id)
         if max_records_scanned is not None or allowed is not None:
             found = self.count(where)
             if max_records_scanned is not None and found > max_records_scanned:
-                raise QueryError(
-                    f"{found} records match, which is more than max_records_scanned of "
-                    f"{max_records_scanned}. Narrow the filter, or raise the limit."
-                )
+                raise TooManyRecordsError(found, max_records_scanned)
             if allowed is not None and found > allowed:
                 raise self._summary_refusal(
                     f"{found} records match, and this client's policy allows summarizing at most "
@@ -1320,7 +1328,7 @@ class Table:
         records = RecordIterator(
             lambda: self._query_body(where, summary.select, None),
             self._fetch_summary_page,
-            page_size,
+            summary.page_size() if page_size is None else page_size,
             allowed,
         )
         for record in records:
@@ -3092,7 +3100,7 @@ class TypedTable(Generic[R]):
         min: FieldRefs | None = None,
         max: FieldRefs | None = None,
         max_records_scanned: int | None = None,
-        page_size: int = 1000,
+        page_size: int | None = None,
     ) -> list[SummaryRow]:
         """Count and total records, overall or per group. See `Table.summarize`.
 
@@ -3107,16 +3115,18 @@ class TypedTable(Generic[R]):
             avg: Numeric fields to average.
             min: Numeric, date, timestamp, or time of day fields to find the lowest of.
             max: Numeric, date, timestamp, or time of day fields to find the highest of.
-            max_records_scanned: Raise `QueryError` if more records match than this, without
-                reading them.
-            page_size: Records to request per call to Quickbase.
+            max_records_scanned: Raise `TooManyRecordsError` if more records match than this,
+                without reading them. A summary that only counts isn't limited by it.
+            page_size: Records to request per call to Quickbase. By default it's set by the fields
+                the summary reads.
 
         Returns:
             A `SummaryRow` for each group.
 
         Raises:
             SchemaMismatchError: The class no longer matches the table.
-            QueryError: An argument can't be used, or more records match than `max_records_scanned`.
+            TooManyRecordsError: More records match than `max_records_scanned`.
+            QueryError: An argument can't be used.
         """
         self._check_once()
         return self._table.summarize(

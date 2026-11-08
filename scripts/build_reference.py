@@ -635,6 +635,7 @@ SYMBOL_PAGES = (
                 (
                     "ConfigurationError",
                     "QueryError",
+                    "TooManyRecordsError",
                     "ConfirmationError",
                     "InvalidValueError",
                     "PolicyRefusedError",

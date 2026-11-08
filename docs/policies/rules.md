@@ -60,7 +60,8 @@ Things to know:
 - **`Record ID#` is readable wherever anything is,** because the SDK uses it to page through records.
 - **`max_paging_depth` limits each query, not the client.** A query needs a `limit` of at most this, and
   it's refused rather than cut short. Where several rules read a table, the highest applies. It
-  defaults to 100, and `max_records_scanned` to 10,000.
+  defaults to 100, and `max_records_scanned` to 10,000. A summary that only counts reads no records,
+  so `max_records_scanned` doesn't limit it.
 - **A field you may filter or sort by reveals something about its values,** even if it isn't
   returned, because a model can see which records match and in which order.
 - **A report's own filter and sort can use any field,** and someone can change them in the Quickbase

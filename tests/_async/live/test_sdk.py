@@ -30,6 +30,7 @@ from pyquickbase import (
     RetryPolicy,
     SchemaMismatchError,
     TableInfo,
+    TooManyRecordsError,
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
@@ -1017,9 +1018,12 @@ async def test_summarize_matches_the_records(qb: AsyncQuickbase, scratch: Any, s
     )
     assert (filtered[0].count, filtered[0].sum) == (3, {"Amount": 19})
 
-    with pytest.raises(QueryError, match="max_records_scanned"):
-        await table.summarize(max_records_scanned=6)
-    assert (await table.summarize(max_records_scanned=7))[0].count == 7
+    # A count reads no records, so max_records_scanned doesn't limit it. Anything else it does.
+    assert (await table.summarize(max_records_scanned=1))[0].count == 7
+    with pytest.raises(TooManyRecordsError) as caught:
+        await table.summarize(sum="Amount", max_records_scanned=6)
+    assert (caught.value.matched, caught.value.limit) == (7, 6)
+    assert (await table.summarize(sum="Amount", max_records_scanned=7))[0].count == 7
 
 
 async def test_summary_and_chart_reports_read_as_rows(qb: AsyncQuickbase, scratch: Any) -> None:
