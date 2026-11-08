@@ -244,9 +244,19 @@ def _without_title(text: str, page: str) -> str:
     return text[: title.start()] + text[title.end() :]
 
 
+def _page_source(path: str) -> str:
+    """Return a nav page's Markdown. The overview is generated, so it may not be written yet."""
+    if path == OVERVIEW:
+        # build_reference.py uses this module's helpers, so it can only be imported once they exist.
+        import build_reference
+
+        return build_reference.build_overview()
+    return (DOCS / path).read_text(encoding="utf-8")
+
+
 def convert_page(page: Page, site_url: str) -> str:
     """Return one nav page as plain Markdown."""
-    text = _resolve_snippets((DOCS / page.path).read_text(encoding="utf-8"))
+    text = _resolve_snippets(_page_source(page.path))
     text = _without_title(text, page.path)
     text = convert_blocks(text)
     text = demote_headings(rewrite_links(text, page.path, site_url)).strip()

@@ -254,3 +254,12 @@ def test_a_page_without_a_description_stops_the_build() -> None:
 )
 def test_a_union_is_written_with_pipes(text: str, expected: str) -> None:
     assert build_llms.clean_types(text) == expected
+
+
+def test_the_overview_needs_no_generated_files(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """CI builds llms.txt before the reference, so the overview can't be read from disk."""
+    monkeypatch.setattr(build_llms, "DOCS", tmp_path)
+    page = build_llms.Page("Overview", build_llms.OVERVIEW, "Reference")
+    assert "Every public name" in build_llms.convert_page(page, SITE)
