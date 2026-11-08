@@ -28,6 +28,11 @@ ROOT = Path(__file__).resolve().parent.parent
 OUTPUT = ROOT / "docs" / "reference"
 EXAMPLES = ROOT / "docs_src" / "reference"
 CONSTRUCTOR = "__init__"
+# A prototype of a layout like Stripe's, on these pages only: each method's code beside it, and the
+# page's contents in the left sidebar.
+TWO_COLUMN_PAGES = {"table"}
+# Beyond this many parameters, a two-column page folds the rest away.
+MAX_SHOWN_PARAMETERS = 3
 # Methods that the async client names differently.
 ASYNC_NAMES = {"close": "aclose"}
 
@@ -1325,15 +1330,44 @@ def _prose_lines(doc: Docstring, methods: dict[str, Method]) -> list[str]:
     return lines
 
 
-def _describe(method: Method, methods: dict[str, Method]) -> list[str]:
-    """Write a method's description, parameters, return value, and errors as Markdown."""
+def _shown_parameters(
+    parameters: list[Parameter], methods: dict[str, Method]
+) -> list[str]:
+    """Write the first few parameters, and fold the rest away when there are many."""
+    if len(parameters) <= MAX_SHOWN_PARAMETERS + 1:
+        return _parameter_lines(parameters, methods)
+    shown, folded = parameters[:MAX_SHOWN_PARAMETERS], parameters[MAX_SHOWN_PARAMETERS:]
+    names = ", ".join(f"<code>{parameter.name}</code>" for parameter in folded)
+    return [
+        *_parameter_lines(shown, methods),
+        '<details class="ref-more" markdown>',
+        f"<summary>{len(folded)} more: {names}</summary>",
+        "",
+        *_parameter_lines(folded, methods),
+        "</details>",
+        "",
+    ]
+
+
+def _describe(
+    method: Method, methods: dict[str, Method], *, two_columns: bool = False
+) -> list[str]:
+    """Write a method's description, parameters, return value, and errors as Markdown.
+
+    With `two_columns`, the signature is left out, as it goes beside the description with the
+    example, and long parameter lists are folded.
+    """
     doc = method.doc
     lines = _prose_lines(doc, methods)
     if method.name in ASYNC_NAMES:
         lines += [f"The async client calls this `{ASYNC_NAMES[method.name]}()`.", ""]
-    lines += [f"```python\n{method.signature}\n```", ""]
+    if not two_columns:
+        lines += [f"```python\n{method.signature}\n```", ""]
     if method.parameters:
-        lines += ["**Parameters**", "", *_parameter_lines(method.parameters, methods)]
+        listed = (_shown_parameters if two_columns else _parameter_lines)(
+            method.parameters, methods
+        )
+        lines += ["**Parameters**", "", *listed]
     if not method.is_property:
         lines += _return_lines(method.returns, doc, methods)
     return lines + _raises_lines(doc, methods)
@@ -1445,8 +1479,65 @@ def _page_header(page: Resource | SymbolPage, methods: dict[str, Method]) -> lis
     return lines + (_tabs(page.setup, page.async_setup) if page.setup else [])
 
 
+def _two_column_method(method: Method, methods: dict[str, Method]) -> list[str]:
+    """Write a method as two columns: what it does on the left, and its code on the right."""
+    code = [f"```python\n{method.signature}\n```", ""]
+    code += _example_lines(method.sync_code, method.async_code, method.output)
+    return [
+        '<div class="ref-method" markdown>',
+        '<div class="ref-text" markdown>',
+        "",
+        f"### `{method.heading}` {{#{method.anchor}}}",
+        "",
+        *_describe(method, methods, two_columns=True),
+        "</div>",
+        '<div class="ref-code" markdown>',
+        "",
+        *code,
+        "</div>",
+        "</div>",
+        "",
+    ]
+
+
+def _two_column_page(resource: Resource, methods: dict[str, Method]) -> str:
+    """Return a class's page laid out in two columns, with its contents in the left sidebar."""
+    header = _page_header(resource, methods)
+    split = header.index(f"# {resource.name}") + 2
+    lines = [
+        "---",
+        "toc_in_nav: true",
+        "hide:",
+        "  - toc",
+        "---",
+        "",
+        *header[:split],
+        '<div class="ref-method ref-intro" markdown>',
+        '<div class="ref-text" markdown>',
+        "",
+        *[line for line in header[split:] if not line.startswith(("===", "    "))],
+        "</div>",
+        '<div class="ref-code" markdown>',
+        "",
+        *(_tabs(resource.setup, resource.async_setup) if resource.setup else []),
+        "</div>",
+        "</div>",
+        "",
+        "## What the methods return {#returns}",
+        "",
+        *_return_table(methods),
+    ]
+    for group in resource.groups:
+        lines += [f"## {group.title} {{#{group.anchor}}}", "", *_guide_line(group)]
+        for name in group.members:
+            lines += _two_column_method(methods[name], methods)
+    return "\n".join(lines)
+
+
 def build_page(resource: Resource, methods: dict[str, Method]) -> str:
     """Return a class's page for the site, with a tab for each client in every example."""
+    if resource.slug in TWO_COLUMN_PAGES:
+        return _two_column_page(resource, methods)
     lines = [
         *_page_header(resource, methods),
         "## What the methods return {#returns}",
