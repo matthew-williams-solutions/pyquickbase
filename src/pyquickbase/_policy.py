@@ -8,7 +8,7 @@ from collections.abc import Coroutine, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Protocol, overload, runtime_checkable
 
-from ._decision import SCHEMA_VERBS, VERBS, Decision, SchemaVerb
+from ._decision import APP_VERBS, SCHEMA_VERBS, VERBS, Decision, SchemaVerb
 from ._query import NO_VALUE, Condition, Expression, Group
 from .errors import ConfigurationError
 
@@ -521,6 +521,24 @@ class _AllowOnly(_Allow):
             "report", table, (Grant(frozenset({"report"})),), args, {"reports": listed}
         )
 
+    def code_pages(self, *, write: bool = False) -> PolicyRule:
+        """Reading the app's code pages, and with `write`, creating and replacing them.
+
+        Allowing writes is different from every other grant. A code page runs in the viewer's
+        browser, with the viewer's permissions. A policy controls what this client may do. It
+        doesn't control what a page does once someone opens it. Allowing page writes lets the
+        writer run code as anyone who views that page, including an administrator, who could
+        change roles or read fields this policy hides.
+
+        Args:
+            write: Also allow creating and replacing pages.
+        """
+        if not isinstance(write, bool):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise ConfigurationError("write takes True or False.")
+        verbs = {"read_code_pages", *({"write_code_pages"} if write else ())}
+        written = {"write": True} if write else {}
+        return self._rule("code_pages", None, (Grant(frozenset(verbs)),), (), None, written)
+
 
 class _Deny(_Allow):
     """The rules that refuse. A deny always wins over an allow."""
@@ -556,6 +574,11 @@ class _Deny(_Allow):
         """
         return self._rule("report", tables, (Grant(frozenset({"report"})),), (tables,))
 
+    def code_pages(self) -> PolicyRule:
+        """Refuse reading and writing the app's code pages."""
+        verbs = frozenset({"read_code_pages", "write_code_pages"})
+        return self._rule("code_pages", None, (Grant(verbs),), ())
+
     def all(self, selector: FieldSelector | TablesArg) -> PolicyRule:
         """Refuse everything on some fields, in every table, or on some tables.
 
@@ -568,7 +591,7 @@ class _Deny(_Allow):
             selector: A `fields` selector, which hides those fields everywhere, or tables by name
                 or ID, or a `tables` selector.
         """
-        everything = frozenset(VERBS) - {"create_tables"}
+        everything = frozenset(VERBS) - APP_VERBS
         if isinstance(selector, FieldSelector):
             if selector.kind == "named":
                 raise ConfigurationError(

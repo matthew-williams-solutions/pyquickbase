@@ -169,6 +169,26 @@ A plan's `tool_result()` has `plan.changes`, each with its `summary`, `risk`, `s
 the confirmation once they approve. It makes sure a plan happened, not that a person saw it, so ask
 your client to show each change for approval too.
 
+## Code pages from an agent
+
+`app.operation()` makes four tools for an app's code pages. They need a client whose policy has
+`allow.code_pages()`, or `allow.code_pages(write=True)` for the two that write.
+
+| Operation | The model sends | Returns |
+|---|---|---|
+| `list_code_pages` | Nothing | A list of `CodePageInfo` |
+| `read_code_page` | `page`, by name or ID | `CodePageContent` |
+| `preview_code_page_change` | `page`, `text` | `CodePagePreview`, with a diff and a `confirmation` |
+| `apply_code_page_change` | `page`, `text`, `confirmation` | `CodePageWrite`, with what the page held before |
+
+A write only runs with the confirmation its preview returned, for exactly that page and text, within 15 minutes, while
+the page is as it was. Show the person the preview before they approve it.
+
+!!! danger "A page runs with the viewer's permissions"
+    A code page runs in the browser of whoever opens it, with that person's permissions, so the policy doesn't limit
+    what it does once someone opens it. An agent that can write pages can run code as anyone who views one, including an
+    administrator. Treat page writes as the most trusted thing you give a model.
+
 ## Writes
 
 Quickbase writes the rows it can and reports the rest, so a failed write can still have changed

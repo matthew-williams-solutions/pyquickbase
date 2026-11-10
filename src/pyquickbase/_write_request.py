@@ -33,6 +33,7 @@ WriteAction = Literal[
     "create_app",
     "copy_app",
     "delete_app",
+    "write_code_page",
     "other",
 ]
 """What a write does. See `WriteRequest`."""
@@ -76,7 +77,8 @@ class WriteRequest:
             `create_table`, `update_table`, `delete_table`, `create_field`, `update_field`,
             `delete_field`, `create_relationship`, `update_relationship`, and
             `delete_relationship` change the schema. `update_relationship` adds lookup or summary
-            fields. `other` is any other write.
+            fields. `write_code_page` creates or replaces a code page, which only
+            `allow.code_pages(write=True)` permits. `other` is any other write.
         table_id: The table it writes to. For a relationship, the child table.
         field_ids: The fields whose values it sets, or for `update_field` and `delete_field`, the
             fields it changes or deletes. For `update`, this leaves out `Record ID#`, which only
@@ -86,8 +88,8 @@ class WriteRequest:
             for anything but `insert`, `update`, and `upsert`, as a delete by filter can't know.
         method: The HTTP method.
         path: The request's path, without its query parameters.
-        app_id: For `create_table` and `update_table`, the app, and for `copy_app` and
-            `delete_app`, the app copied or deleted.
+        app_id: For `create_table` and `update_table`, the app, for `copy_app` and
+            `delete_app`, the app copied or deleted, and for `write_code_page`, the app.
         parent_table_id: For a relationship, the parent table. Only `create_relationship` says
             which it is, so through `request()` it's `None` for the others.
         field_type: For `create_field`, the new field's type, such as `text`.

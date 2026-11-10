@@ -12,10 +12,14 @@ import pytest
 from pyquickbase import (
     AsyncQuickbase,
     AuthenticationError,
+    BadRequestError,
+    CodePageChangedError,
+    ConfirmationError,
     NotFoundError,
     PermissionDeniedError,
     Policy,
     PolicyRefusedError,
+    allow,
 )
 from pyquickbase._xml import ROLE_INFO, roles_from_xml
 
@@ -116,3 +120,140 @@ async def test_xml_a_read_only_client_is_refused(scratch: Any) -> None:
             await qb.apps()
         with pytest.raises(PolicyRefusedError):
             await qb.app(scratch.app_id).members()
+
+
+# The live tests reuse this one page, as Quickbase's API can't delete one.
+PAGE = "pyquickbase-live-test.html"
+RESTING_TEXT = (
+    "<!doctype html>\n<title>pyquickbase live test page</title>\n"
+    "<p>Used by pyquickbase's live tests. Safe to overwrite.</p>\n"
+)
+
+
+@pytest.fixture
+async def page(qb: AsyncQuickbase, scratch: Any) -> AsyncIterator[Any]:
+    found = qb.app(scratch.app_id).code_page(PAGE)
+    try:
+        yield found
+    finally:
+        await found.write(RESTING_TEXT)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "plain",
+        "",
+        "one\ntwo\nthree\n",
+        "no newline at the end\nsecond",
+        "\nstarts with a line break",
+        "blank\n\n\nlines\n",
+        "ünïcode 日本語 🎉\n",
+        "]]> & <b>markup</b> <BR/>\n",
+        "tabs\tand trailing spaces   \n",
+        "windows\r\nline\r\nendings\r\n",
+        "old mac\rline\r",
+    ],
+    ids=[
+        "plain",
+        "empty",
+        "lines",
+        "no-final-newline",
+        "leading-newline",
+        "blank-lines",
+        "non-ascii",
+        "markup",
+        "tabs",
+        "crlf",
+        "cr",
+    ],
+)
+async def test_xml_code_page_round_trip(page: Any, text: str) -> None:
+    written = await page.write(text)
+    expected = text.replace("\r\n", "\n").replace("\r", "\n")
+    assert (await page.read()).text == expected
+    assert written.page.text == expected
+    assert written.page.id is not None
+
+
+async def test_xml_code_page_write_reports_what_it_replaced(page: Any) -> None:
+    await page.write("first\n")
+    written = await page.write("second\n")
+    assert written.previous.text == "first\n"
+    assert written.created is False
+
+
+async def test_xml_code_page_a_stale_hash_writes_nothing(page: Any) -> None:
+    await page.write("kept\n")
+    with pytest.raises(CodePageChangedError):
+        await page.write("lost\n", expected_sha256="0" * 64)
+    assert (await page.read()).text == "kept\n"
+
+
+async def test_xml_code_page_preview_doesnt_write(page: Any) -> None:
+    await page.write("before\n")
+    preview = await page.preview_write("after\n")
+    assert "-before" in preview.diff
+    assert "+after" in preview.diff
+    assert (await page.read()).text == "before\n"
+
+
+async def test_xml_code_page_list_finds_the_test_page(qb: AsyncQuickbase, scratch: Any) -> None:
+    found = {item.name: item for item in await qb.app(scratch.app_id).code_pages()}
+    assert found[PAGE].type == "Text"
+    assert found[PAGE].id > 0
+    home = [item for item in found.values() if item.type == "Home Page"]
+    assert home
+    with pytest.raises(BadRequestError):
+        await qb.app(scratch.app_id).code_page(home[0].id).read()
+
+
+async def test_xml_code_page_by_id_is_the_same_page(
+    page: Any, qb: AsyncQuickbase, scratch: Any
+) -> None:
+    await page.write("by id\n")
+    page_id = next(
+        item.id for item in await qb.app(scratch.app_id).code_pages() if item.name == PAGE
+    )
+    found = await qb.app(scratch.app_id).code_page(page_id).read()
+    assert found.text == "by id\n"
+
+
+async def test_xml_code_page_missing(qb: AsyncQuickbase, scratch: Any) -> None:
+    with pytest.raises(NotFoundError):
+        await qb.app(scratch.app_id).code_page("pyquickbase-no-such-page.html").read()
+    with pytest.raises(NotFoundError):
+        await qb.app(scratch.app_id).code_page(999999).write("x")
+
+
+async def test_xml_code_page_restricted_reads_but_cant_write(
+    restricted: AsyncQuickbase, scratch: Any
+) -> None:
+    found = restricted.app(scratch.app_id).code_page(PAGE)
+    await found.read()
+    with pytest.raises(PermissionDeniedError) as raised:
+        await found.write("should not land\n")
+    assert raised.value.quickbase_code == 3
+
+
+async def test_xml_code_page_operations_require_a_confirmation(page: Any, scratch: Any) -> None:
+    token = os.environ["QB_USER_TOKEN"]
+    policy = Policy(rules=[allow.code_pages(write=True)])
+    async with AsyncQuickbase(realm=scratch.realm, token=token, policy=policy) as qb:
+        app = qb.app(scratch.app_id)
+        preview = await app.operation("preview_code_page_change")
+        apply = await app.operation("apply_code_page_change")
+        shown = await preview.run({"page": PAGE, "text": "from a model\n"})
+        with pytest.raises(ConfirmationError):
+            await apply.run({"page": PAGE, "text": "from a model\n"})
+        await apply.run(
+            {"page": PAGE, "text": "from a model\n", "confirmation": shown.confirmation}
+        )
+    assert (await page.read()).text == "from a model\n"
+
+
+async def test_xml_code_page_a_policy_without_the_grant_is_refused(scratch: Any) -> None:
+    token = os.environ["QB_USER_TOKEN"]
+    async with AsyncQuickbase(realm=scratch.realm, token=token, policy=Policy.read_only()) as qb:
+        with pytest.raises(PolicyRefusedError):
+            await qb.app(scratch.app_id).code_page(PAGE).read()

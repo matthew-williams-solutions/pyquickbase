@@ -402,3 +402,15 @@ def test_a_file_name_cant_hold_a_path_or_control_characters(name: str, data: byt
 )
 def test_a_written_value_is_valid_json(value: Any) -> None:
     json.dumps(to_api_value(value), allow_nan=False)
+
+
+@given(
+    st.text(
+        alphabet=st.characters(exclude_categories=("Cs", "Cc", "Cn"), include_characters="\t\n")
+    )
+)
+def test_any_page_text_survives_the_builder_and_the_parser(text: str) -> None:
+    from pyquickbase._xml import build_body, parse_xml
+
+    body = parse_xml(build_body({"pagebody": text}))
+    assert body.text_of("pagebody") == (text or None)

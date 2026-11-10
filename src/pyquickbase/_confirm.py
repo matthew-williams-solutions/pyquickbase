@@ -6,7 +6,8 @@ nothing made it. With `require_preview`, an `update` or `delete` operation only 
 `CONFIRMATION_SECONDS`. A delete's confirmation also holds how many records matched, so a delete is
 refused if that has changed since. An `apply_schema_changes` operation always needs the
 confirmation `preview_schema_changes` returned, which holds a fingerprint of the schema the plan was
-checked against.
+checked against. An `apply_code_page_change` operation always needs the confirmation
+`preview_code_page_change` returned, which holds the hash of the page as it was previewed.
 
 A confirmation is signed with the client's key, so nothing is stored and a confirmation can't be
 made up. Each client makes a random key, so a confirmation only works with operations from the
@@ -28,13 +29,19 @@ from .errors import ConfirmationError
 CONFIRMATION_SECONDS = 900
 """How long a preview's confirmation lasts: 15 minutes."""
 
-ConfirmationKind = Literal["update", "delete", "schema"]
+ConfirmationKind = Literal["update", "delete", "schema", "code_page"]
 _PREVIEWS: dict[str, str] = {
     "update": "preview_update",
     "delete": "preview_delete",
     "schema": "preview_schema_changes",
+    "code_page": "preview_code_page_change",
 }
-_NOUNS: dict[str, str] = {"update": "preview", "delete": "preview", "schema": "plan"}
+_NOUNS: dict[str, str] = {
+    "update": "preview",
+    "delete": "preview",
+    "schema": "plan",
+    "code_page": "preview",
+}
 
 
 def _canonical(value: Any) -> Any:
@@ -104,6 +111,24 @@ def schema_binding(
     }
 
 
+def code_page_binding(
+    app_id: str,
+    page: str | int,
+    proposed_sha256: str,
+    previous_sha256: str | None,
+    policy_hash: str | None = None,
+) -> dict[str, Any]:
+    """What a code page change's confirmation holds: the app, the page, the new text's hash, the
+    page's hash when it was previewed, and the client's policy."""
+    return {
+        "app": app_id,
+        "page": page,
+        "proposed": proposed_sha256,
+        "previous": previous_sha256,
+        "policy": policy_hash,
+    }
+
+
 def expires_at(token: str) -> int | None:
     """When a confirmation stops working, in seconds since the epoch, or None if it isn't one."""
     parts = token.split(".")
@@ -157,6 +182,7 @@ def check(
         changed = {
             "delete": " the records that match have changed since,",
             "schema": " the schema has changed since,",
+            "code_page": " the page has changed since,",
         }.get(kind, "")
         raise ConfirmationError(
             f"The confirmation doesn't match: these arguments differ from the {noun}'s,{changed} "

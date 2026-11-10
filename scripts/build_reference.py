@@ -58,6 +58,8 @@ TITLES: dict[str, dict[str, str]] = {
         "tables": "List tables",
         "roles": "List roles",
         "members": "List members",
+        "code_pages": "List code pages",
+        "code_page": "Get a code page",
         "member_roles": "List a member's roles",
         "events": "List webhooks and automations",
         "table": "Get a table",
@@ -82,6 +84,17 @@ TITLES: dict[str, dict[str, str]] = {
         "schema": "The arguments' JSON Schema",
         "name": "The operation's name",
         "run": "Run an operation",
+    },
+    "code-page": {
+        "read": "Read the page",
+        "preview_write": "Preview a change",
+        "write": "Write the page",
+        "url": "Link to the page",
+    },
+    "code-page-operation": {
+        "schema": "The arguments' JSON Schema",
+        "name": "The operation's name",
+        "run": "Run a code page operation",
     },
     "schema-operation": {
         "schema": "The arguments' JSON Schema",
@@ -130,6 +143,7 @@ TITLES: dict[str, dict[str, str]] = {
         "allow.read": "Allow reading",
         "allow.delete": "Allow deleting records",
         "allow.report": "Allow running reports",
+        "allow.code_pages": "Allow code pages",
         "deny.filter": "Deny filtering",
         "deny.sort": "Deny sorting",
         "deny.insert": "Deny creating records",
@@ -141,6 +155,7 @@ TITLES: dict[str, dict[str, str]] = {
         "deny.read": "Deny reading",
         "deny.delete": "Deny deleting records",
         "deny.report": "Deny running reports",
+        "deny.code_pages": "Deny code pages",
         "deny.all": "Deny everything",
         "limit.rows": "Limit the rows",
         "fields.all": "Select every field",
@@ -263,6 +278,7 @@ INTERNAL_METHODS = {
     "BoundPolicy.offers_for",
     "BoundPolicy.schema_tables",
     "BoundPolicy.can_create_tables",
+    "BoundPolicy.can_use_code_pages",
     "BoundPolicy.with_created",
     "BoundPolicy.created_offers",
     "BoundPolicy.trim",
@@ -291,6 +307,7 @@ ALIASES = {
     "Risk": "How much a planned change can lose: `additive` only adds, `modifying` changes what's "
     "there, and `destructive` deletes data or fields.",
     "SchemaOperationName": "What `App.operation()` can offer a model.",
+    "CodePageOperationName": "What `App.operation()` can offer a model for code pages.",
     "DerivedKind": "A field whose values come from other fields: a `formula`, a `lookup` of a "
     "parent's field, or a `summary` of a child's. `WriteRequest.derived` lists the ones a write "
     "makes or changes.",
@@ -389,11 +406,19 @@ _FORMULAS = ("Formulas", "../guides/formulas.md")
 _AGENTS = ("Using pyquickbase from an AI agent", "../agents/index.md")
 _ERRORS = ("Handling errors", "../guides/errors.md")
 _APPS = ("Working with apps", "../guides/apps.md")
+_CODE_PAGES = ("Code pages", "../guides/code-pages.md")
 _SPREADSHEETS = ("CSV and Excel files", "../guides/spreadsheets.md")
 _LINKS = "Link to the Quickbase interface"
 
 _TABLE_LINE = 'tasks = qb.app("bq1234567").table("Job Tasks")'
 _PLAN_LINES = '\n    plan = await app.operation("preview_schema_changes")'
+_PAGE_LINE = 'page = qb.app("bq1234567").code_page(\n        "pyquickbase-live-test.html"\n    )'
+_READ_PAGE_LINES = '\n    tool = await app.operation("read_code_page")'
+_CODE_PAGE_WARNING_TEXT = (
+    "A code page runs in the browser of whoever opens it, with that person's permissions. A "
+    "client's policy controls what the client may do, and has no say in what a page does once "
+    "someone opens it."
+)
 _SEARCH_LINES = (
     '\n    search = await tasks.operation(\n        "query", fields=["Title", "Status"]\n    )'
 )
@@ -447,6 +472,7 @@ RESOURCES = (
                 ("id", "info", "tables", "roles", "events"),
             ),
             Group("See who has access", "who-has-access", _APPS, ("members", "member_roles")),
+            Group("Work with code pages", "code-pages", _CODE_PAGES, ("code_pages", "code_page")),
             Group("Get a table", "get-a-table", _READING, ("table",)),
             Group(_LINKS, "links", _AGENTS, ("url", "settings_url")),
             Group("Create tables", "create-tables", _SCHEMA, ("ensure_table", "create_table")),
@@ -568,6 +594,23 @@ RESOURCES = (
         ),
     ),
     Resource(
+        "CodePage",
+        "code-page",
+        pyquickbase.CodePage,
+        pyquickbase.AsyncCodePage,
+        "A `CodePage` reads, previews, and writes one of an app's code pages. Get one from "
+        f"`App.code_page()`, by name or ID. {_CODE_PAGE_WARNING_TEXT}",
+        "The examples below use `page`, made as shown here, for a page the live tests keep. "
+        f"{_LIVE_TEST} `AsyncCodePage` has the same methods, which you `await`, but `url()` is "
+        "called without it.",
+        *_setup(_PAGE_LINE),
+        (
+            Group("Read a page", "read-a-page", _CODE_PAGES, ("read",)),
+            Group("Change a page", "change-a-page", _CODE_PAGES, ("preview_write", "write")),
+            Group(_LINKS, "links", _CODE_PAGES, ("url",)),
+        ),
+    ),
+    Resource(
         "Operation",
         "operation",
         pyquickbase.Operation,
@@ -578,6 +621,24 @@ RESOURCES = (
         f"The examples below use `search`, made as shown here. {_JOB_TASKS} {_LIVE_TEST}",
         _setup(_TABLE_LINE)[0] + _SEARCH_LINES.replace("await ", ""),
         _setup(_TABLE_LINE)[1] + _SEARCH_LINES,
+        (
+            Group("Describe it to a model", "describe-it", _AGENTS, ("schema", "name")),
+            Group("Run it", "run-it", _AGENTS, ("run",)),
+        ),
+    ),
+    Resource(
+        "CodePageOperation",
+        "code-page-operation",
+        pyquickbase.CodePageOperation,
+        pyquickbase.AsyncCodePageOperation,
+        "A `CodePageOperation` is one code page operation offered to a model as a tool: "
+        "`list_code_pages`, `read_code_page`, `preview_code_page_change`, or "
+        "`apply_code_page_change`. Get one from `App.operation()`. `apply_code_page_change` only "
+        "runs with the confirmation `preview_code_page_change` returned for the same page and "
+        f"text, while the page is as it was. {_CODE_PAGE_WARNING_TEXT}",
+        f"The examples below use `tool`, made as shown here. {_LIVE_TEST}",
+        _setup('app = qb.app("bq1234567")')[0] + _READ_PAGE_LINES.replace("await ", ""),
+        _setup('app = qb.app("bq1234567")')[1] + _READ_PAGE_LINES,
         (
             Group("Describe it to a model", "describe-it", _AGENTS, ("schema", "name")),
             Group("Run it", "run-it", _AGENTS, ("run",)),
@@ -694,6 +755,12 @@ SYMBOL_PAGES = (
         (
             Group("Apps", "apps", _APPS, ("AppSummary", "AppInfo", "Role", "AppEvent")),
             Group("People", "people", _APPS, ("UserProfile", "AppMember", "MemberRole")),
+            Group(
+                "Code pages",
+                "code-pages",
+                _CODE_PAGES,
+                ("CodePageInfo", "CodePageContent", "CodePagePreview", "CodePageWrite"),
+            ),
             Group(
                 "Tables and reports", "tables-and-reports", _READING, ("TableInfo", "ReportInfo")
             ),
@@ -820,7 +887,12 @@ SYMBOL_PAGES = (
         (
             Group("Results", "results", _AGENTS, ("tool_result",)),
             Group("Errors", "errors", _AGENTS, ("tool_error", "ToolErrorCode")),
-            Group("Operations", "operations", _AGENTS, ("OperationName", "SchemaOperationName")),
+            Group(
+                "Operations",
+                "operations",
+                _AGENTS,
+                ("OperationName", "SchemaOperationName", "CodePageOperationName"),
+            ),
         ),
     ),
     SymbolPage(
@@ -857,6 +929,7 @@ SYMBOL_PAGES = (
                     "UnknownReportError",
                     "UnsupportedReportError",
                     "SchemaMismatchError",
+                    "CodePageChangedError",
                 ),
             ),
             Group(
@@ -913,6 +986,7 @@ SECTIONS = (
             ("app", "An app's details, its tables, and schema changes with a plan"),
             ("table", "Read and write records and files, and change a table's fields"),
             ("report", "Run reports built in the Quickbase interface"),
+            ("code-page", "Read, preview, and write an app's code pages"),
         ),
     ),
     Section(
@@ -952,6 +1026,7 @@ SECTIONS = (
         "Operations and results for a model's tool calls.",
         (
             ("operation", "One table operation offered to a model"),
+            ("code-page-operation", "One code page operation offered to a model"),
             ("tools", "Results and errors as plain data for a tool call"),
         ),
     ),
@@ -982,6 +1057,8 @@ def _name_links() -> dict[str, str]:
     links["AsyncReport"] = links["Report"]
     links["AsyncOperation"] = links["Operation"]
     links["AsyncSchemaOperation"] = links["SchemaOperation"]
+    links["AsyncCodePage"] = links["CodePage"]
+    links["AsyncCodePageOperation"] = links["CodePageOperation"]
     links["AsyncRecordIterator"] = links["RecordIterator"]
     return links
 

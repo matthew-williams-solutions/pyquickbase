@@ -1,7 +1,7 @@
 """Apps, field usage, events, and DataFrames against a real app, on temporary tables and apps.
 
-The app test makes its own apps, named `ZZ Live App ...`, and deletes exactly those. Find one left by
-a run that was killed with `client.apps()`, and delete it in the interface.
+The app test makes its own apps, named `ZZ Live App ...`, and deletes exactly those. Find one left
+by a run that was killed with `client.apps()`, and delete it in the interface.
 """
 
 import os

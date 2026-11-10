@@ -22,6 +22,11 @@ def app_url(realm: str, app_id: str, *, settings: bool = False) -> str:
     return f"https://{realm}/nav/app/{_segment(app_id)}/action/{action}"
 
 
+def code_page_url(realm: str, app_id: str, page: str | int) -> str:
+    query = {"a": "dbpage", ("pageID" if isinstance(page, int) else "pagename"): page}
+    return f"https://{realm}/db/{_segment(app_id)}?{urlencode(query)}"
+
+
 def _require_bool(name: str, value: bool) -> None:
     if not isinstance(value, bool):  # pyright: ignore[reportUnnecessaryIsInstance]
         raise TypeError(f"{name} takes True or False.")

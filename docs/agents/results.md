@@ -157,7 +157,7 @@ The order matters: a `write_permission_denied` can be `partly`, and an `internal
 | `write_failed` | Every row of a write failed | `no` | No |
 | `partial_write` | Some rows were written and some weren't, or a later batch failed | `partly`, or `unknown` if the failed batch may have been written | No |
 | `write_permission_denied` | The token's role refused a write | `no`, or `partly` if earlier rows were written | No |
-| `bad_request`, `not_found`, `permission_denied`, `authentication`, `api_error`, `unsupported_operation` | Quickbase answered with an error | `no` | No |
+| `bad_request`, `not_found`, `permission_denied`, `authentication`, `api_error`, `unsupported_operation`, `code_page_changed` | Quickbase answered with an error | `no` | No |
 | `rate_limited` | Quickbase is limiting requests, and the retries ran out | `no` | Yes |
 | `server_error`, `timeout`, `network_error` | Quickbase failed, or didn't answer | `unknown` | Yes |
 | `invalid_response` | Quickbase's answer couldn't be read | `unknown` | No |

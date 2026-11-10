@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar, cast
 
-from ._decision import FIELD_VERBS, Decision, Layer, Named, Verb
+from ._decision import APP_VERBS, CODE_PAGE_WARNING, FIELD_VERBS, Decision, Layer, Named, Verb
 from ._formula import field_id_reference, formula_parts, unsafe_functions
 from ._models import RECORD_ID_FIELD, Field, FieldIndex, Relationship, ReportInfo, TableInfo
 from ._policy import FieldSelector, Grant, Policy, PolicyRule, Rule
@@ -149,6 +149,8 @@ class Offers(Generic[T]):
         max_records_per_delete: The most records one delete may remove, or None for no limit.
         user_emails: Whether user values keep email addresses.
         row_limit: The condition every query is limited to, or None.
+        can_read_code_pages: Whether it may list and read the app's code pages.
+        can_write_code_pages: Whether it may create and replace them.
     """
 
     table: Named
@@ -168,6 +170,8 @@ class Offers(Generic[T]):
     max_records_per_delete: int | None = None
     user_emails: bool = False
     row_limit: str | None = None
+    can_read_code_pages: bool = False
+    can_write_code_pages: bool = False
 
 
 def _query(table_id: str, **kwargs: Any) -> ReadRequest:
@@ -451,18 +455,22 @@ class BoundPolicy:
             return f"add allow.schema({table}, {json.dumps(verb)}, fields=[{label}])"
         return f"add {label} to an allow.{verb}({table}, ...) rule"
 
-    def _app_check(self, app_id: str | None) -> _Verdict:
+    def _app_check(self, app_id: str | None, verb: str = "create_tables") -> _Verdict:
         if not self._offline and app_id != self.app_id:
             return _Verdict(False, reason=f"The policy is bound to app {self.app_id}")
         for effect in ("deny", "allow"):
             for rule in self._rules:
-                if rule.effect == effect and rule.app:
+                if (
+                    rule.effect == effect
+                    and rule.app
+                    and any(verb in grant.verbs for grant in rule.grants)
+                ):
                     return _Verdict(
                         effect == "allow",
                         rule.text,
                         "" if effect == "allow" else "A deny rule covers it",
                     )
-        return _Verdict(False, reason="No rule allows it", hint="add allow.create_tables()")
+        return _Verdict(False, reason="No rule allows it", hint=_APP_HINTS[verb])
 
     def _decision(
         self,
@@ -553,6 +561,9 @@ class BoundPolicy:
         if action in REFUSED_READS:
             reason = f"{REFUSED_READS[action]}. Use a client without a policy"
             return self._decision(_Verdict(False, reason=reason), "read", None)
+        if action == "code_pages":
+            verdict = self._app_check(request.app_id, "read_code_pages")
+            return self._decision(verdict, "read_code_pages", request.app_id)
         if self._open_reads:
             # Policy.read_only() reads whatever the token can, as a client without one would.
             return Decision(allowed=True, verb="read", rule="Policy.read_only()", reason="Allowed")
@@ -670,6 +681,16 @@ class BoundPolicy:
                 ),
                 "update",
                 None,
+            )
+        if action == "write_code_page":
+            verdict = self._app_check(request.app_id, "write_code_pages")
+            reason = CODE_PAGE_WARNING
+            if verdict.reason:
+                reason = f"{verdict.reason}. {reason}"
+            return self._decision(
+                _Verdict(verdict.allowed, verdict.rule, reason, verdict.hint),
+                "write_code_pages",
+                request.app_id,
             )
         if action == "other":
             return self._decision(
@@ -825,10 +846,10 @@ class BoundPolicy:
             ConfigurationError: The policy doesn't know the table.
             UnknownFieldError: The policy doesn't know a field.
         """
+        if verb in APP_VERBS:
+            return self._decision(self._app_check(table, verb), verb, table)
         table_id = self._table_id(table)
         wanted = [*([] if field is None else [field]), *fields]
-        if verb == "create_tables":
-            return self._decision(self._app_check(table_id), verb, table_id)
         if verb in FIELD_VERBS and wanted:
             ids = [self._field_id(table_id, item) for item in wanted]
             return self._all([(verb, table_id, item) for item in ids])
@@ -892,11 +913,11 @@ class BoundPolicy:
             lines.append(f"Reason: {decision.reason}.")
         if decision.hint and not decision.allowed:
             lines.append(f"To allow it: {decision.hint}.")
-        table_id = self._table_id(table)
+        table_id = table if verb in APP_VERBS else self._table_id(table)
         covering = [
             rule.text
             for rule in self._rules
-            if (rule.app and verb == "create_tables")
+            if (rule.app and verb in APP_VERBS and any(verb in g.verbs for g in rule.grants))
             or (self._rule_has_table(rule, table_id) and any(verb in g.verbs for g in rule.grants))
         ]
         if table_id in self._rows:
@@ -1226,6 +1247,8 @@ class BoundPolicy:
             max_records_per_delete=self.max_delete(table_id),
             user_emails=self.user_emails(table_id),
             row_limit=self.row_limit(table_id),
+            can_read_code_pages=self.can_use_code_pages("read_code_pages"),
+            can_write_code_pages=self.can_use_code_pages("write_code_pages"),
         )
 
     def _schema_ok(self, verb: str, table_id: str) -> bool:
@@ -1252,6 +1275,10 @@ class BoundPolicy:
 
     def can_create_tables(self, app_id: str) -> bool:
         return self._app_check(app_id).allowed
+
+    def can_use_code_pages(self, verb: str) -> bool:
+        """Whether a code page verb is allowed in the app this policy is bound to."""
+        return self._app_check(self.app_id, verb).allowed
 
     def with_created(self, table_id: str, name: str) -> "BoundPolicy":
         """A copy that knows a table this client just created."""
@@ -1539,6 +1566,11 @@ class BoundPolicy:
         return f"BoundPolicy(app_id={self.app_id!r}, rules={rules}, hash={digest!r})"
 
 
+_APP_HINTS = {
+    "create_tables": "add allow.create_tables()",
+    "read_code_pages": "add allow.code_pages()",
+    "write_code_pages": "add allow.code_pages(write=True)",
+}
 _SCHEMA_TABLE_VERBS = (
     "add_field",
     "change_field",

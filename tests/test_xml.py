@@ -16,12 +16,16 @@ from pyquickbase import (
     ServerError,
     UnsupportedOperationError,
 )
+from pyquickbase._code_pages import build_preview, check_ref, content, normalize_text, text_sha256
 from pyquickbase._config import DEFAULT_BASE_URL
+from pyquickbase._links import code_page_url
 from pyquickbase._xml import (
     GRANTED_APPS,
     MAX_RESPONSE_BYTES,
     Element,
     build_body,
+    page_text_from_xml,
+    pages_from_xml,
     parse_xml,
     read_envelope,
     retry_status,
@@ -192,3 +196,88 @@ def test_a_custom_base_url_is_refused(base_url: str) -> None:
 def test_a_target_that_isnt_an_id_is_refused(target: str) -> None:
     with pytest.raises(ConfigurationError):
         target_url("acme.quickbase.com", DEFAULT_BASE_URL, target)
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ("<pagebody>plain text</pagebody>", "plain text"),
+        ("<pagebody></pagebody>", ""),
+        ("<pagebody>\r\nline1<BR/>\nline2<BR/>\n\r\n\t</pagebody>", "line1\nline2\n"),
+        ("<pagebody>\r\nline1<BR/>\nline2\r\n\t</pagebody>", "line1\nline2"),
+        ("<pagebody>\r\n<BR/>\n\r\n\t</pagebody>", "\n"),
+        ("<pagebody>\r\na<BR/>\n<BR/>\nb\r\n\t</pagebody>", "a\n\nb"),
+        ("<pagebody>\r\n&lt;BR/&gt;<BR/>\nb\t  \r\n\t</pagebody>", "<BR/>\nb\t  "),
+    ],
+)
+def test_page_text_is_rebuilt_from_how_quickbase_returns_it(body: str, expected: str) -> None:
+    root = parse_xml(envelope("API_GetDBPage", body))
+    assert page_text_from_xml(root) == expected
+
+
+def test_a_real_page_response_reads_back() -> None:
+    # A real response from 2026-11-09, with its text replaced.
+    body = (
+        "<pagebody>\n&lt;!doctype html&gt;<BR/>\n&lt;title&gt;A page&lt;/title&gt;<BR/>\n"
+        "&lt;p&gt;It&#039;s used in tests.&lt;/p&gt;<BR/>\n\n\t</pagebody>"
+    )
+    root = parse_xml(envelope("API_GetDBPage", body))
+    assert page_text_from_xml(root) == (
+        "<!doctype html>\n<title>A page</title>\n<p>It's used in tests.</p>\n"
+    )
+
+
+def test_pages_are_listed_with_their_types() -> None:
+    body = (
+        '<pages><page id="6" type="Text">report.html</page>'
+        '<page id="1" type="Home Page">Dashboard</page></pages>'
+    )
+    assert [(p.id, p.name, p.type) for p in pages_from_xml(parse_xml(envelope("X", body)))] == [
+        (6, "report.html", "Text"),
+        (1, "Dashboard", "Home Page"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("given", "expected"),
+    [("a\r\nb", "a\nb"), ("a\rb", "a\nb"), ("a\nb", "a\nb"), ("a\r\n\r\nb", "a\n\nb")],
+)
+def test_line_endings_are_normalized(given: str, expected: str) -> None:
+    assert normalize_text(given) == expected
+
+
+def test_the_same_text_hashes_the_same_whatever_its_line_endings() -> None:
+    assert content(page_id=1, name=None, text="a\r\nb").sha256 == text_sha256("a\nb")
+
+
+def test_a_pages_repr_hides_its_text() -> None:
+    page = content(page_id=1, name="a.html", text="secret words")
+    assert "secret" not in repr(page)
+    assert "length=12" in repr(page)
+    preview = build_preview("a.html", page, "other secret")
+    assert "secret" not in repr(preview)
+
+
+def test_a_preview_says_what_changes() -> None:
+    page = content(page_id=1, name="a.html", text="one\ntwo\n")
+    preview = build_preview("a.html", page, "one\nthree\n")
+    assert "-two" in preview.diff
+    assert "+three" in preview.diff
+    assert not preview.unchanged
+    assert build_preview("a.html", page, "one\ntwo\n").unchanged
+    assert not build_preview("new.html", None, "").unchanged
+
+
+@pytest.mark.parametrize("ref", ["", "  ", 0, -1, True, None, 1.5, ["a"]])
+def test_a_page_needs_a_name_or_id(ref: object) -> None:
+    with pytest.raises(InvalidValueError):
+        check_ref(ref)
+
+
+def test_code_page_links_are_escaped() -> None:
+    assert code_page_url("acme.quickbase.com", "bq1", "a b.html") == (
+        "https://acme.quickbase.com/db/bq1?a=dbpage&pagename=a+b.html"
+    )
+    assert code_page_url("acme.quickbase.com", "bq1", 6) == (
+        "https://acme.quickbase.com/db/bq1?a=dbpage&pageID=6"
+    )

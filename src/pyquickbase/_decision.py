@@ -25,6 +25,8 @@ Verb = Literal[
     "change_table",
     "delete_table",
     "create_tables",
+    "read_code_pages",
+    "write_code_pages",
 ]
 """What a policy grants or refuses. See `allow`."""
 
@@ -47,13 +49,24 @@ Layer = Literal["policy", "rows", "derived"]
 
 VERBS: tuple[str, ...] = get_args(Verb)
 SCHEMA_VERBS: tuple[str, ...] = get_args(SchemaVerb)
-READ_VERBS = frozenset({"read", "filter", "sort", "download", "report", "run_formula"})
+APP_VERBS = frozenset({"create_tables", "read_code_pages", "write_code_pages"})
+"""The verbs granted on a whole app, rather than on tables or fields."""
+READ_VERBS = frozenset(
+    {"read", "filter", "sort", "download", "report", "run_formula", "read_code_pages"}
+)
 """The verbs that only read, so that a refusal can say which kind it was."""
 FIELD_VERBS = frozenset(
     {"read", "filter", "sort", "insert", "update", "download", "delete_file", "change_field"}
     | {"delete_field"}
 )
 """The verbs that apply to one field. The others apply to a whole table, or to the app."""
+
+
+CODE_PAGE_WARNING = (
+    "A code page runs in the browser of whoever opens it, with that person's permissions, so "
+    "writing one can run code as anyone who views it, including an administrator. A client's "
+    "policy doesn't limit what a page does once it's opened"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +108,8 @@ _VERB_TEXT: dict[str, str] = {
     "change_table": "changing",
     "delete_table": "deleting",
     "create_tables": "creating tables in",
+    "read_code_pages": "reading code pages in",
+    "write_code_pages": "writing code pages in",
 }
 
 
@@ -132,8 +147,8 @@ class Decision:
         verb = _VERB_TEXT.get(self.verb, self.verb)
         names = ", ".join(str(item) for item in self.fields)
         table = "" if self.table is None else str(self.table)
-        if self.verb == "create_tables":
-            return f"{verb} app {table}" if table else "creating tables"
+        if self.verb in APP_VERBS:
+            return f"{verb} app {table}" if table else verb.removesuffix(" in")
         if names and table:
             return f"{verb} {names} in {table}"
         return f"{verb} {names or table or 'this request'}"

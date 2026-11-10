@@ -3,6 +3,8 @@
 from ._async._client import AsyncQuickbase
 from ._async._resources import (
     AsyncApp,
+    AsyncCodePage,
+    AsyncCodePageOperation,
     AsyncOperation,
     AsyncRecordIterator,
     AsyncReport,
@@ -10,12 +12,17 @@ from ._async._resources import (
     AsyncTable,
 )
 from ._bound import BoundPolicy, Offers
+from ._code_pages import CodePageOperationName
 from ._decision import Decision, Layer, Named, SchemaVerb, Verb
 from ._models import (
     AppEvent,
     AppInfo,
     AppMember,
     AppSummary,
+    CodePageContent,
+    CodePageInfo,
+    CodePagePreview,
+    CodePageWrite,
     DeletePreview,
     Field,
     FieldUsage,
@@ -84,6 +91,8 @@ from ._summary import (
 from ._sync._client import Quickbase
 from ._sync._resources import (
     App,
+    CodePage,
+    CodePageOperation,
     Operation,
     RecordIterator,
     Report,
@@ -99,6 +108,7 @@ from .errors import (
     APIError,
     AuthenticationError,
     BadRequestError,
+    CodePageChangedError,
     ConfigurationError,
     ConfirmationError,
     FileTooLargeError,
@@ -133,6 +143,8 @@ __all__ = [
     "AppMember",
     "AppSummary",
     "AsyncApp",
+    "AsyncCodePage",
+    "AsyncCodePageOperation",
     "AsyncOperation",
     "AsyncQuickbase",
     "AsyncRecordIterator",
@@ -142,6 +154,14 @@ __all__ = [
     "AuthenticationError",
     "BadRequestError",
     "BoundPolicy",
+    "CodePage",
+    "CodePageChangedError",
+    "CodePageContent",
+    "CodePageInfo",
+    "CodePageOperation",
+    "CodePageOperationName",
+    "CodePagePreview",
+    "CodePageWrite",
     "ColumnMap",
     "ConfigurationError",
     "ConfirmationError",

@@ -69,6 +69,9 @@ Only the last step changes anything:
 | `download_file` | `record_id`, `field`, `version` | `download_file()` | `FileDownload` |
 | `delete_file_version` | `record_id`, `field`, `version` | `delete_file_version()` | None |
 
+`app.operation()` also offers `list_code_pages`, `read_code_page`, `preview_code_page_change`, and
+`apply_code_page_change`, as [Previews and schema changes](changes.md#code-pages-from-an-agent) explains.
+
 `where` is the format of [`where_from_dict()`](untrusted-input.md#filters-from-a-model). `order_by` is a list of
 `{"field": ..., "direction": "asc" or "desc"}`, and `group_by` takes labels, or
 `{"field": ..., "unit": "month"}` to group a date. Whatever `run()` returns, `tool_result()` takes.

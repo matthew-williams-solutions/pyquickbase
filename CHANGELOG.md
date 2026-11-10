@@ -13,6 +13,12 @@ All notable changes to this project are documented here. The format follows
 - `app.members()` lists who holds a role in an app, with names and last access, and `app.member_roles()` lists one
   user's roles.
 - `UnsupportedOperationError`, and `APIError.quickbase_code`.
+- Code pages: `app.code_pages()`, `app.code_page()`, and `CodePage.read()`, `preview_write()`, `write()`, and `url()`.
+  `CodePageWrite.previous` holds what a write replaced, and `CodePageChangedError` refuses a stale write.
+- `allow.code_pages()` and `deny.code_pages()`, with `Offers.can_read_code_pages` and `can_write_code_pages`. A code
+  page runs with the viewer's permissions, which a policy doesn't limit, as the docs now say plainly.
+- `app.operation()` offers `list_code_pages`, `read_code_page`, `preview_code_page_change`, and
+  `apply_code_page_change`.
 
 ### Changed
 

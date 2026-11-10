@@ -20,7 +20,15 @@ import httpx
 
 from ._config import DEFAULT_BASE_URL, LOOPBACK_HOSTS
 from ._links import app_url
-from ._models import AppMember, AppSummary, MemberRole, Role, UserProfile, role_from_api
+from ._models import (
+    AppMember,
+    AppSummary,
+    CodePageInfo,
+    MemberRole,
+    Role,
+    UserProfile,
+    role_from_api,
+)
 from ._read_request import ReadAction, ReadRequest
 from ._response import MAX_DETAIL_CHARS, UNAUTHORIZED_HINT, error_from_response
 from ._write_request import WriteAction, WriteRequest
@@ -102,6 +110,21 @@ APP_SCHEMA = _read("API_GetSchema", "app", "app")
 USER_ROLE = _read("API_GetUserRole", "app", "member_roles")
 USER_ROLES = _read("API_UserRoles", "app", "members")
 
+LIST_PAGES = _read("API_ListDBPages", "app", "code_pages")
+READ_PAGE = _read(
+    "API_GetDBPage",
+    "app",
+    "code_pages",
+    notes={23: "Only code pages can be read and written this way, and this is a home page."},
+)
+WRITE_PAGE = XmlCall(
+    action="API_AddReplaceDBPage",
+    target="app",
+    read=False,
+    safe_to_repeat=True,
+    policy_action="write_code_page",
+)
+
 XML_CALLS: tuple[XmlCall, ...] = (
     GRANTED_APPS,
     CURRENT_USER,
@@ -110,6 +133,9 @@ XML_CALLS: tuple[XmlCall, ...] = (
     APP_SCHEMA,
     USER_ROLE,
     USER_ROLES,
+    LIST_PAGES,
+    READ_PAGE,
+    WRITE_PAGE,
 )
 """Everything the SDK can send in the XML format."""
 
@@ -466,6 +492,36 @@ def _from_millis(value: str | None) -> datetime | None:
     if value is None or not value.strip().isdigit() or int(value) == 0:
         return None
     return datetime.fromtimestamp(int(value) / 1000, UTC)
+
+
+def pages_from_xml(root: Element) -> list[CodePageInfo]:
+    pages = root.find("pages")
+    if pages is None:
+        raise InvalidResponseError("Quickbase's response has no pages.")
+    return [
+        CodePageInfo(id=int(item.attributes["id"]), name=item.text, type=item.attributes["type"])
+        for item in pages.find_all("page")
+    ]
+
+
+def page_text_from_xml(root: Element) -> str:
+    """A page's text, rebuilt from how Quickbase returns it.
+
+    Without a line break it's plain text. With any, each break is a `<BR/>` and a newline, and the
+    text starts with a newline and ends with a newline and a tab. A `<BR/>` that's part of the page
+    is escaped, so it can't be confused with one of these.
+    """
+    body = root.find("pagebody")
+    if body is None:
+        raise InvalidResponseError("Quickbase's response has no page.")
+    if not body.children:
+        return body.text
+    joined = body.text + "".join(item.tail for item in body.children)
+    return joined.removeprefix("\n").removesuffix("\n\t")
+
+
+def page_id_from_xml(root: Element) -> int:
+    return int(_required(root, "pageID"))
 
 
 def member_roles_from_xml(root: Element) -> list[MemberRole]:

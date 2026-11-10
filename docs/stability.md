@@ -36,8 +36,8 @@ minor release.
 - The wording of error messages and `repr`s, so don't parse them.
 - Quickbase's own behavior, including any change it makes to its responses, and the contents of `raw`
   attributes. This includes its XML API, which `apps()`, `current_user()`, `find_user()`, `members()`,
-  `member_roles()`, and the fallbacks in `roles()` and `info()` depend on. If Quickbase retires a call, the method
-  behind it raises `UnsupportedOperationError`.
+  `member_roles()`, code pages, and the fallbacks in `roles()` and `info()` depend on. If Quickbase retires a call,
+  the method behind it raises `UnsupportedOperationError`.
 - Which metadata keys a policy keeps, as Quickbase's responses aren't covered either.
 
 ## Minor and patch releases

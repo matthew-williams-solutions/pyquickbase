@@ -5,10 +5,19 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, tzinfo
 from functools import partial
-from typing import TYPE_CHECKING, Any, Self, TypeVar, cast, get_args
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast, get_args, overload
 
 from .._bound import BoundPolicy, Snapshot, bind_snapshot
-from .._confirm import ConfirmationKind, schema_binding
+from .._code_pages import (
+    CodePageOperationName,
+    build_preview,
+    check_ref,
+    check_text,
+    content,
+    operation_schema,
+    text_sha256,
+)
+from .._confirm import ConfirmationKind, code_page_binding, schema_binding
 from .._confirm import binding as confirmation_binding
 from .._confirm import check as check_confirmation
 from .._confirm import issue as issue_confirmation
@@ -23,6 +32,7 @@ from .._derived import (
 from .._frames import DataFrame, to_pandas, to_polars
 from .._links import (
     app_url,
+    code_page_url,
     field_url,
     form_url,
     record_url,
@@ -35,6 +45,10 @@ from .._models import (
     AppEvent,
     AppInfo,
     AppMember,
+    CodePageContent,
+    CodePageInfo,
+    CodePagePreview,
+    CodePageWrite,
     DeletePreview,
     DeletePreviewPage,
     Field,
@@ -149,19 +163,27 @@ from .._writes import (
 )
 from .._xml import (
     APP_SCHEMA,
+    LIST_PAGES,
+    READ_PAGE,
     ROLE_INFO,
     USER_ROLE,
     USER_ROLES,
+    WRITE_PAGE,
     app_info_dict,
     member_roles_from_xml,
     members_from_xml,
+    page_id_from_xml,
+    page_text_from_xml,
+    pages_from_xml,
     roles_from_xml,
 )
 from ..errors import (
     APIError,
+    CodePageChangedError,
     ConfigurationError,
     InvalidResponseError,
     InvalidValueError,
+    NotFoundError,
     PermissionDeniedError,
     PolicyRefusedError,
     QueryError,
@@ -374,6 +396,39 @@ class AsyncApp:
         root = await self._transport.xml.call(USER_ROLE, self._id, fields)
         return parse(member_roles_from_xml, root, "member roles")
 
+    async def code_pages(self) -> list[CodePageInfo]:
+        """List the app's pages: its code pages and its home pages.
+
+        Quickbase doesn't document the call behind this, so it's the method most likely to stop
+        working. `code_page()` reads and writes by name without it.
+
+        Returns:
+            A `CodePageInfo` for each page.
+
+        Raises:
+            PolicyRefusedError: The client's policy doesn't allow code pages. Nothing was sent.
+            ConfigurationError: The realm isn't on `quickbase.com` or `quickbase.eu`, or the client
+                has a custom `base_url`. Nothing was sent.
+        """
+        root = await self._transport.xml.call(LIST_PAGES, self._id)
+        return parse(pages_from_xml, root, "code pages")
+
+    def code_page(self, name_or_id: str | int) -> "AsyncCodePage":
+        """Get a code page by name or ID. This makes no network calls.
+
+        A name is text and an ID is a whole number, so `"12"` is a page named `12`.
+
+        Args:
+            name_or_id: The page's name, such as `report.html`, or its ID.
+
+        Returns:
+            A `CodePage`.
+
+        Raises:
+            InvalidValueError: `name_or_id` is neither a name nor an ID.
+        """
+        return AsyncCodePage(self._transport, self._id, check_ref(name_or_id))
+
     async def events(self) -> list[AppEvent]:
         """List the app's webhooks, Quickbase actions, notifications, subscriptions, reminders,
         and the automations that records trigger.
@@ -575,10 +630,19 @@ class AsyncApp:
         """
         return await apply_plan(self, plan)
 
+    @overload
     async def operation(
         self, name: SchemaOperationName, *, max_changes: int = DEFAULT_MAX_CHANGES
-    ) -> "AsyncSchemaOperation":
-        """Make a schema operation into a tool for a model, with its JSON Schema.
+    ) -> "AsyncSchemaOperation": ...
+    @overload
+    async def operation(self, name: CodePageOperationName) -> "AsyncCodePageOperation": ...
+    async def operation(
+        self,
+        name: SchemaOperationName | CodePageOperationName,
+        *,
+        max_changes: int = DEFAULT_MAX_CHANGES,
+    ) -> "AsyncSchemaOperation | AsyncCodePageOperation":
+        """Make a schema or code page operation into a tool for a model, with its JSON Schema.
 
         `describe_schema` lists the tables and fields the client can read.
         `preview_schema_changes` says what a list of changes would do, without making them, and
@@ -603,22 +667,35 @@ class AsyncApp:
         result = await plan.run(arguments)
         ```
 
+        `list_code_pages` and `read_code_page` read the app's code pages, and
+        `preview_code_page_change` says what writing one would do. `apply_code_page_change` writes
+        it, but only with the `confirmation` the preview returned for exactly that page and text,
+        while the page is as it was then. A code page runs with the permissions of whoever opens
+        it, which no policy limits, so show the person each preview.
+
         Args:
-            name: `describe_schema`, `preview_schema_changes`, or `apply_schema_changes`.
+            name: What the tool does: `describe_schema`, `preview_schema_changes`,
+                `apply_schema_changes`, `list_code_pages`, `read_code_page`,
+                `preview_code_page_change`, or `apply_code_page_change`.
             max_changes: The most changes one plan may hold.
 
         Returns:
-            A `SchemaOperation`, with its `schema` and `run()`.
+            A `SchemaOperation`, or for a code page operation, a `CodePageOperation`, with its
+            `schema` and `run()`.
 
         Raises:
-            ConfigurationError: `name` isn't a schema operation, `max_changes` isn't a positive
-                whole number, or the client's policy allows no schema change for
-                `preview_schema_changes` or `apply_schema_changes`.
+            ConfigurationError: `name` isn't an operation, `max_changes` isn't a positive whole
+                number, or the client's policy doesn't allow what the operation does.
         """
-        if name not in get_args(SchemaOperationName):
-            raise ConfigurationError(
-                f"name must be one of: {', '.join(get_args(SchemaOperationName))}."
+        if name in get_args(CodePageOperationName):
+            code_page_name = cast(CodePageOperationName, name)
+            return AsyncCodePageOperation(
+                self, code_page_name, operation_schema(code_page_name, self._transport.policy)
             )
+        if name not in get_args(SchemaOperationName):
+            known = (*get_args(SchemaOperationName), *get_args(CodePageOperationName))
+            raise ConfigurationError(f"name must be one of: {', '.join(known)}.")
+        name = cast(SchemaOperationName, name)
         if type(max_changes) is not int or max_changes < 1:
             raise ConfigurationError("max_changes must be a positive whole number.")
         transport = self._transport
@@ -3171,6 +3248,201 @@ class AsyncOperation:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._spec.name!r}, table={self._table!r})"
+
+
+class AsyncCodePage:
+    """One code page in an app. Create one with `app.code_page()`. This makes no network calls.
+
+    A code page runs in the browser of whoever opens it, with that person's permissions. A
+    client's policy controls what the client may do, and has no say in what a page does once
+    someone opens it.
+    """
+
+    def __init__(self, transport: AsyncTransport, app_id: str, ref: str | int) -> None:
+        self._transport = transport
+        self._app_id = app_id
+        self._ref = ref
+
+    def _target(self) -> dict[str, str | int]:
+        return {"pageID" if isinstance(self._ref, int) else "pagename": self._ref}
+
+    def _content(self, text: str, page_id: int | None = None) -> CodePageContent:
+        name = self._ref if isinstance(self._ref, str) else None
+        if page_id is None and isinstance(self._ref, int):
+            page_id = self._ref
+        return content(page_id=page_id, name=name, text=text)
+
+    def url(self) -> str:
+        """Link to the page, as someone would open it. This makes no network calls.
+
+        Returns:
+            The URL, on the client's realm.
+        """
+        return code_page_url(self._transport.realm, self._app_id, self._ref)
+
+    async def read(self) -> CodePageContent:
+        """Read the page's text.
+
+        Quickbase returns every line ending as LF, whatever was written, so the original line
+        endings can't be recovered.
+
+        Returns:
+            A `CodePageContent`.
+
+        Raises:
+            NotFoundError: There's no page with that name or ID.
+            BadRequestError: The page is a home page, which can't be read this way.
+            PolicyRefusedError: The client's policy doesn't allow code pages. Nothing was sent.
+        """
+        root = await self._transport.xml.call(READ_PAGE, self._app_id, self._target())
+        return self._content(parse(page_text_from_xml, root, "code page"))
+
+    async def _current(self) -> CodePageContent | None:
+        """The page now, or None for a name that isn't in use. A missing ID stays an error."""
+        try:
+            return await self.read()
+        except NotFoundError:
+            if isinstance(self._ref, int):
+                raise
+            return None
+
+    async def preview_write(self, text: str) -> CodePagePreview:
+        """Say what `write()` would do with this text, without writing it.
+
+        Args:
+            text: The page's whole new text.
+
+        Returns:
+            A `CodePagePreview`, with a diff against the page as it is now.
+
+        Raises:
+            BadRequestError: The page is a home page.
+            NotFoundError: There's no page with that ID.
+            PolicyRefusedError: The client's policy doesn't allow code pages. Nothing was sent.
+        """
+        wanted = check_text(text)
+        return build_preview(self._ref, await self._current(), wanted)
+
+    async def write(self, text: str, *, expected_sha256: str | None = None) -> CodePageWrite:
+        """Create the page, or replace its text.
+
+        A name that isn't in use makes a new page, and a name in use overwrites that page, keeping
+        its ID. Quickbase keeps no history, so the result holds what was overwritten, and
+        Quickbase has no way to delete a page. It can't check the page hasn't changed at the
+        moment it writes, so a change just before this one can still be overwritten.
+
+        Args:
+            text: The page's whole new text. Line endings are written as LF.
+            expected_sha256: The hash of the version you expect to replace, from `read()` or
+                `preview_write()`. If the page differs, nothing is written.
+
+        Returns:
+            A `CodePageWrite`, with what was there before.
+
+        Raises:
+            CodePageChangedError: The page isn't the expected version. Nothing was written.
+            BadRequestError: The page is a home page, or Quickbase couldn't save it, as for a page
+                of several megabytes.
+            NotFoundError: There's no page with that ID.
+            PolicyRefusedError: The client's policy doesn't allow writing code pages. Nothing was
+                sent.
+        """
+        wanted = check_text(text)
+        current = await self._current()
+        found = None if current is None else current.sha256
+        if expected_sha256 is not None and found != expected_sha256:
+            raise CodePageChangedError(
+                "The page isn't the version you expected, so nothing was written. Read it again."
+            )
+        return await self._send(wanted, current)
+
+    async def _send(self, text: str, current: CodePageContent | None) -> CodePageWrite:
+        fields: dict[str, str | int] = {**self._write_target(), "pagetype": 1, "pagebody": text}
+        root = await self._transport.xml.call(WRITE_PAGE, self._app_id, fields)
+        page_id = parse(page_id_from_xml, root, "code page")
+        return CodePageWrite(
+            page=self._content(text, page_id), previous=current, created=current is None
+        )
+
+    def _write_target(self) -> dict[str, str | int]:
+        return {"pageid" if isinstance(self._ref, int) else "pagename": self._ref}
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self._ref!r}, app={self._app_id!r})"
+
+
+class AsyncCodePageOperation:
+    """One code page operation, for a model's tool call. Create one with `app.operation()`."""
+
+    def __init__(self, app: AsyncApp, name: CodePageOperationName, schema: dict[str, Any]) -> None:
+        self._app = app
+        self._name: CodePageOperationName = name
+        self._schema = schema
+
+    @property
+    def name(self) -> CodePageOperationName:
+        """What the operation does, such as `read_code_page`."""
+        return self._name
+
+    @property
+    def schema(self) -> dict[str, Any]:
+        """The JSON Schema of the arguments a model may send, for a tool's input.
+
+        It's self-contained, with no `$ref`, and a new dictionary each time, so you can add to it.
+        """
+        return copy_schema(self._schema)
+
+    async def run(self, arguments: Mapping[str, Any]) -> Any:
+        """Check a model's arguments, and run the operation.
+
+        Text a page holds is untrusted input, as field values are.
+
+        Args:
+            arguments: The arguments from the model's tool call.
+
+        Returns:
+            For `list_code_pages`, a list of `CodePageInfo`. For `read_code_page`, a
+            `CodePageContent`. For `preview_code_page_change`, a `CodePagePreview`, whose
+            `confirmation` `apply_code_page_change` needs. For `apply_code_page_change`, a
+            `CodePageWrite`. `tool_result()` takes each.
+
+        Raises:
+            InvalidValueError: An argument can't be used. Nothing was sent.
+            ConfirmationError: `apply_code_page_change` has no confirmation, or one that doesn't
+                match this page and text, as it is now. Nothing was changed.
+        """
+        if not isinstance(arguments, Mapping):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise InvalidValueError("The arguments must be an object.")
+        unknown = sorted(set(arguments) - set(self._schema["properties"]))
+        if unknown:
+            raise InvalidValueError(f"This tool doesn't take: {', '.join(unknown)}.")
+        if self._name == "list_code_pages":
+            return await self._app.code_pages()
+        ref = check_ref(arguments.get("page"))
+        page = self._app.code_page(ref)
+        if self._name == "read_code_page":
+            return await page.read()
+        text = check_text(arguments.get("text"))
+        current = await page._current()  # pyright: ignore[reportPrivateUsage]
+        transport = self._app._transport  # pyright: ignore[reportPrivateUsage]
+        bound = code_page_binding(
+            self._app.id,
+            ref,
+            text_sha256(text),
+            None if current is None else current.sha256,
+            transport.policy_hash,
+        )
+        key = transport.confirmation_key
+        if self._name == "preview_code_page_change":
+            preview = build_preview(ref, current, text)
+            if preview.unchanged:
+                return preview
+            return replace(preview, confirmation=issue_confirmation(key, "code_page", bound))
+        check_confirmation(key, "code_page", arguments.get("confirmation"), bound)
+        return await page._send(text, current)  # pyright: ignore[reportPrivateUsage]
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self._name!r}, app={self._app.id!r})"
 
 
 class AsyncSchemaOperation:

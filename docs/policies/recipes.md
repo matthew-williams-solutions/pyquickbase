@@ -79,6 +79,17 @@ policy = Policy(
 
 See [Schema changes](schema.md) for every verb, and which table each one is granted on.
 
+## A code page builder
+
+Writes an app's code pages for an agent. Nothing else in the app is open to it, but a page runs with the
+permissions of whoever opens it, as [Code pages](rules.md#code-pages) explains.
+
+```python
+from pyquickbase import Policy, allow
+
+policy = Policy(rules=[allow.code_pages(write=True)])
+```
+
 ## A nightly sync
 
 Upserts records by a unique code, in batches of up to 500 rows, with a rule of your own.

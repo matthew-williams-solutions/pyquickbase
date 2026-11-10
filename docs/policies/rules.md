@@ -50,6 +50,7 @@ IDs, `fields.all()`, `fields.new()` for fields added after binding, `fields.clas
 | `allow.report(table, reports)` | Running these reports, by name or ID, or every report with `None` |
 | `allow.schema(tables, *verbs, ...)` | Changing the schema, as [below](schema.md) |
 | `allow.create_tables()` | Creating tables in the bound app |
+| `allow.code_pages(write=False)` | Reading the app's code pages, and with `write=True`, creating and replacing them. See [below](#code-pages) |
 | `deny.all(selector)`, `deny.read(...)`, `deny.update(...)`, and the rest | Refusing what they name, whatever allows it |
 | `limit.rows(tables, where)` | Reaching only the records that match, as [below](rows.md) |
 
@@ -72,8 +73,20 @@ Things to know:
   client for those.
 - **A delete needs `filter` on the fields its filter uses,** because the number deleted shows how
   many records matched.
+- **Roles can't be allowed.** No policy can list who holds a role, or change it, as an agent that could change
+  roles could give itself anything the policy withholds. Use a client without a policy.
 - **`insert` alone can't be limited to creating records on a table with a custom key field.** If
   someone has changed a table's key field in the Quickbase UI, a row with an existing value in that
   field [changes that record](../api-notes.md#writes). `table.insert()` refuses those tables, so use
   `upsert()`, which needs both `insert` and `update`. `qb.request()` can't look up a table's key
   field, so any write through it without a merge field needs both.
+
+## Code pages
+
+`allow.code_pages()` lets a client list and read an app's code pages, and `allow.code_pages(write=True)` lets it
+create and replace them too. A client with any other policy, including `Policy.read_only()`, is refused.
+
+!!! danger "A policy doesn't limit what a page does"
+    A code page runs in the viewer's browser, with the viewer's permissions. A policy controls what this client may
+    do. It doesn't control what a page does once someone opens it. Allowing page writes lets the writer run code as
+    anyone who views that page, including an administrator, who could change roles or read fields this policy hides.

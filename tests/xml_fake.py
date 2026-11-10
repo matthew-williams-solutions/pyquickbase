@@ -108,6 +108,9 @@ RESPONSES = {
     "API_GetSchema": SCHEMA,
     "API_GetUserRole": MEMBER_ROLE,
     "API_UserRoles": USER_ROLES,
+    "API_ListDBPages": '<pages><page id="6" type="Text">a.html</page></pages>',
+    "API_GetDBPage": "<pagebody>plain</pagebody>",
+    "API_AddReplaceDBPage": "<pageID>6</pageID>",
 }
 
 

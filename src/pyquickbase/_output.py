@@ -18,9 +18,13 @@ from decimal import Decimal
 from typing import Any, Literal, cast, overload
 
 from ._confirm import expires_at
-from ._decision import READ_VERBS
+from ._decision import CODE_PAGE_WARNING, READ_VERBS
 from ._models import (
     AppEvent,
+    CodePageContent,
+    CodePageInfo,
+    CodePagePreview,
+    CodePageWrite,
     DeletePreview,
     DeletePreviewPage,
     Field,
@@ -50,6 +54,7 @@ from .errors import (
     APIError,
     AuthenticationError,
     BadRequestError,
+    CodePageChangedError,
     ConfigurationError,
     ConfirmationError,
     InvalidResponseError,
@@ -99,6 +104,7 @@ ToolErrorCode = Literal[
     "server_error",
     "api_error",
     "unsupported_operation",
+    "code_page_changed",
     "timeout",
     "network_error",
     "invalid_response",
@@ -160,6 +166,7 @@ _CODES: tuple[tuple[type[BaseException], ToolErrorCode], ...] = (
     (UnsupportedReportError, "unsupported_report"),
     (SchemaMismatchError, "schema_mismatch"),
     (UnsupportedOperationError, "unsupported_operation"),
+    (CodePageChangedError, "code_page_changed"),
     (AuthenticationError, "authentication"),
     (PermissionDeniedError, "permission_denied"),
     (NotFoundError, "not_found"),
@@ -203,6 +210,8 @@ _HINTS: dict[ToolErrorCode, str] = {
     "api_error": "Quickbase refused the request. Tell the user if the message doesn't say why.",
     "unsupported_operation": "Quickbase no longer offers this. Tell the user, as trying again "
     "won't help.",
+    "code_page_changed": "The page changed since you read it, and nothing was written. Read it "
+    "again and start from what's there now.",
     "timeout": "There was no answer in time. Check whether a change was made before trying again.",
     "network_error": "Quickbase couldn't be reached. Check whether a change was made before trying "
     "again.",
@@ -795,6 +804,16 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
         }
     if isinstance(value, SchemaChangeResult):
         return _applied(value)
+    if isinstance(value, CodePageContent):
+        return {"code_page": _code_page(value)}
+    if isinstance(value, CodePagePreview):
+        return _code_page_preview(value)
+    if isinstance(value, CodePageWrite):
+        return {
+            "code_page": _code_page(value.page),
+            "created": value.created,
+            "previous_sha256": None if value.previous is None else value.previous.sha256,
+        }
     if isinstance(value, FormulaResult):
         return {"value": _value(value.value, state), "type": value.type}
     if isinstance(value, Count):
@@ -817,6 +836,10 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
             schemas = cast(list[TableSchema], items)
             tables = {item.info.id: item.info.name for item in schemas}
             return {"tables": [_table_schema(item, state, tables) for item in schemas]}
+        if items and all(isinstance(item, CodePageInfo) for item in items):
+            pages = cast(Sequence[CodePageInfo], items)
+            found = [{"id": page.id, "name": page.name, "type": page.type} for page in pages]
+            return {"code_pages": found}
         for cls, key in ((TableInfo, "tables"), (Field, "fields"), (ReportInfo, "reports")):
             if items and all(isinstance(item, cls) for item in items):
                 return {key: [_metadata(item, state) for item in items]}
@@ -825,6 +848,23 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
         f"tool_result() can't describe a {type(value).__name__}. It takes records, pages, write "
         "results, summaries, previews, formula results, files, metadata, and plain values."
     )
+
+
+def _code_page(page: CodePageContent) -> dict[str, Any]:
+    return {"id": page.id, "name": page.name, "text": page.text, "sha256": page.sha256}
+
+
+def _code_page_preview(preview: CodePagePreview) -> dict[str, Any]:
+    current = preview.current
+    return {
+        "page": preview.page,
+        "exists": current is not None,
+        "current_sha256": None if current is None else current.sha256,
+        "proposed_sha256": preview.proposed_sha256,
+        "unchanged": preview.unchanged,
+        "diff": preview.diff,
+        **_approval(preview.confirmation, (), [f"{CODE_PAGE_WARNING}."]),
+    }
 
 
 def _limit(name: str, value: int | None) -> None:

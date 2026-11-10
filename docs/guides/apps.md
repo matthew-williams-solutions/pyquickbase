@@ -57,6 +57,10 @@ These methods use Quickbase's XML API, which sends the token to the realm's own 
 `quickbase.com` or `quickbase.eu` and the default `base_url`. See
 [Configuring clients](clients.md#using-another-api-host).
 
+## Code pages
+
+See [Code pages](code-pages.md) for reading and writing an app's pages.
+
 ## Creating an app
 
 `create_app()` makes an empty app and returns it, ready for

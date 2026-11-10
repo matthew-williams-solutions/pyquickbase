@@ -150,6 +150,8 @@ def namespace(qb: Any, scratch: Any, tables: tuple[Any, Any]) -> dict[str, Any]:
 PAGE_SETUP = {
     "operation": 'search = await tasks.operation("query", fields=["Title", "Status"])\n',
     "schema-operation": 'plan = await app.operation("preview_schema_changes")\n',
+    "code-page": 'page = app.code_page("pyquickbase-live-test.html")\n',
+    "code-page-operation": 'tool = await app.operation("read_code_page")\n',
 }
 
 

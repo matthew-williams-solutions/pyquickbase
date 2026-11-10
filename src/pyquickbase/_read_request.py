@@ -42,6 +42,7 @@ ReadAction = Literal[
     "find_user",
     "members",
     "member_roles",
+    "code_pages",
     "other",
 ]
 """What a read does. See `ReadRequest`."""
@@ -117,12 +118,13 @@ class ReadRequest:
             metadata. `field_usage` reads where fields are used, and `app_events` the app's
             webhooks, notifications, and automations. `apps`, `current_user`, `find_user`,
             `members`, and `member_roles` read about people and apps, which a policy always
-            refuses. `other` is anything else, including a
+            refuses. `code_pages` lists or reads an app's code pages, which only
+            `allow.code_pages()` permits. `other` is anything else, including a
             report run through `request()`, which doesn't say what kind of report it is. A
             change to tables, fields, or relationships isn't a read.
         table_id: The table it reads, or None for `tables`, `app`, `roles`, `app_events`, and
             `other`.
-        app_id: For `members` and `member_roles`, the app.
+        app_id: For `members`, `member_roles`, and `code_pages`, the app.
         field_ids: The fields it returns. For `file`, the file field, and for `field_usage`, the
             one field it asks about. None for a report, whose columns are chosen in Quickbase,
             and for other metadata.

@@ -642,6 +642,7 @@ a user token for a Basic Access role. Each request was a POST to `https://<realm
 | A home page | Listed, but `API_GetDBPage` refuses it, 400, errcode 23 |
 | Size | 1 MB saved. 5 MB is 400, errcode 1, `Unable to save page`. The limit is somewhere between |
 | Deleting a page | No documented call, and `API_DeleteDBPage` is errcode 5 |
+| Opening `/db/<app>?a=dbpage&pagename=...` with a user token | A 302 to sign in, so a user token can't fetch the rendered page. The address is the help's form, and a browser session wasn't tried |
 
 **Key fields**
 

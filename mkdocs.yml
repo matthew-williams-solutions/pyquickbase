@@ -62,6 +62,7 @@ nav:
       - Formulas: guides/formulas.md
       - Changing the schema: guides/schema.md
       - Working with apps: guides/apps.md
+      - Code pages: guides/code-pages.md
       - Handling errors: guides/errors.md
       - Configuring clients: guides/clients.md
   - AI agents:
@@ -88,6 +89,7 @@ nav:
           - App: reference/app.md
           - Table: reference/table.md
           - Report: reference/report.md
+          - CodePage: reference/code-page.md
       - Data:
           - Queries: reference/queries.md
           - Records and results: reference/records.md
@@ -101,6 +103,7 @@ nav:
           - Rules: reference/rules.md
       - AI agents:
           - Operation: reference/operation.md
+          - CodePageOperation: reference/code-page-operation.md
           - Tools for models: reference/tools.md
       - Errors and retries:
           - Errors: reference/errors.md

@@ -10,7 +10,8 @@ A client takes one `policy`, which says what it may read and change.
 
 A policy protects against bugs in your code and mistakes by a model. See
 [what it doesn't do](limits.md), and give your token access to as little as possible,
-so that Quickbase enforces the limit too.
+so that Quickbase enforces the limit too. A policy also has no say in what a code page does once someone opens it,
+as [Code pages](rules.md#code-pages) explains.
 
 ## How a policy decides
 
@@ -63,8 +64,8 @@ report adds to its usage count in Quickbase, but changes no records. It names no
 takes it without binding.
 
 It doesn't cover everything a token can read. A client with any policy, including this one, can't list apps, ask who
-a token belongs to, look up users, or read an app's members or their roles, because those aren't about one app's tables.
-Use a client without a policy for those.
+a token belongs to, look up users, or read an app's members or their roles, because those aren't about one app's tables,
+and only `allow.code_pages()` opens code pages. Use a client without a policy for those.
 
 ```python
 from pyquickbase import Policy, Quickbase

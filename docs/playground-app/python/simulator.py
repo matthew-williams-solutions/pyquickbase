@@ -13,6 +13,8 @@ import re
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from typing import Any
+from xml.etree import ElementTree
+from xml.sax.saxutils import escape
 
 import httpx
 
@@ -30,6 +32,12 @@ _APP = {
     "timeZone": "(UTC) Coordinated Universal Time",
     "dateFormat": "MM-DD-YYYY",
 }
+_XML_USER_ID = "58390212.abcd"
+_XML_USER_EMAIL = "sam@example.com"
+_XML_ROLE = (
+    '<role id="12"><name>Administrator</name><access id="1">Administrator</access></role>'
+    '<role id="10"><name>Viewer</name><access id="3">Basic Access</access></role>'
+)
 _STATUSES = ["Open", "Blocked", "Done"]
 _PRIORITIES = ["Low", "Medium", "High"]
 _PROJECT_STATUSES = ["Active", "On Hold", "Complete"]
@@ -579,10 +587,36 @@ class _WhereParser:
         return lambda row: _matches(operator, row.get(field_id), wanted, field_type)
 
 
+class _XmlError(Exception):
+    def __init__(self, status: int, code: int, text: str, detail: str | None) -> None:
+        super().__init__(text)
+        self.status, self.code, self.text = status, code, text
+        self.body = "" if detail is None else f"<errdetail>{escape(detail)}</errdetail>"
+
+
+def _xml_response(
+    action: str, status: int, body: str, code: int = 0, text: str = "No error"
+) -> httpx.Response:
+    content = (
+        '<?xml version="1.0" encoding="utf-8" ?>\n<qdbapi>\n'
+        f"\t<action>{action}</action>\n\t<errcode>{code}</errcode>\n\t<errtext>{text}</errtext>\n"
+        f"\t{body}\n</qdbapi>\n"
+    )
+    return httpx.Response(status, content=content.encode(), headers={"tid": "simulated"})
+
+
+def _page_body(text: str) -> str:
+    """A page as Quickbase returns it: plain, or wrapped with each line break as `<BR/>`."""
+    if "\n" not in text:
+        return escape(text)
+    return "\r\n" + "<BR/>\n".join(escape(line) for line in text.split("\n")) + "\r\n\t"
+
+
 class SimulatedQuickbase:
     """An httpx handler for `httpx.MockTransport`. Each instance starts from sample data."""
 
     def __init__(self) -> None:
+        self._pages: dict[int, tuple[str, str]] = {2: ("welcome.html", "<h1>Welcome</h1>\n")}
         self._tables: dict[str, dict[str, Any]] = {
             TASKS_ID: _sample_table(
                 TASKS_ID,
@@ -676,6 +710,8 @@ class SimulatedQuickbase:
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path.removeprefix("/v1")
+        if path.startswith("/db/"):
+            return self._xml(request)
         try:
             payload = self._route(request, path)
         except _ApiError as error:
@@ -720,6 +756,96 @@ class SimulatedQuickbase:
             "It covers reading records, schema, table reports, and adding, changing, and deleting "
             "records so far.",
         )
+
+    def _xml(self, request: httpx.Request) -> httpx.Response:
+        """Answer an XML call, in the envelope and with the errors docs/api-notes.md records."""
+        target = request.url.path.removeprefix("/db/")
+        action = request.headers.get("QUICKBASE-ACTION", "")
+        fields = {item.tag: item.text or "" for item in ElementTree.fromstring(request.content)}
+        try:
+            body = self._xml_body(action, target, fields)
+        except _XmlError as error:
+            return _xml_response(action, error.status, error.body, error.code, error.text)
+        return _xml_response(action, 200, body)
+
+    def _xml_body(self, action: str, target: str, fields: dict[str, str]) -> str:
+        if target != "main" and target != APP_ID:
+            raise _XmlError(400, 83, "Invalid error code: 83", "User token is invalid")
+        if action == "API_GrantedDBs":
+            return (
+                f"<databases><dbinfo><dbname>{_APP['name']}</dbname><dbid>{APP_ID}</dbid>"
+                "<ancestorappid></ancestorappid><oldestancestorappid></oldestancestorappid>"
+                "</dbinfo></databases>"
+            )
+        if action == "API_GetUserInfo":
+            if fields.get("email", _XML_USER_EMAIL).casefold() != _XML_USER_EMAIL:
+                raise _XmlError(
+                    400,
+                    2,
+                    "Invalid input",
+                    "The user with the specified email address or user name does not exist.",
+                )
+            return (
+                f'<user id="{_XML_USER_ID}"><firstName>Sam</firstName><lastName>Lee</lastName>'
+                f"<email>{_XML_USER_EMAIL}</email><screenName></screenName></user>"
+            )
+        if action == "API_GetRoleInfo":
+            return f"<roles>{_XML_ROLE}</roles>"
+        if action == "API_GetSchema":
+            return (
+                f"<time_zone>{escape(_APP['timeZone'])}</time_zone>"
+                f"<date_format>{_APP['dateFormat']}</date_format>"
+                f"<table><name>{_APP['name']}</name><desc>{_APP['description']}</desc></table>"
+            )
+        if action == "API_GetUserRole":
+            member = '<member type="user">Sam Lee</member></role>'
+            return (
+                f'<user id="{_XML_USER_ID}"><name>Sam Lee</name><roles>'
+                f"{_XML_ROLE.replace('</role>', member)}</roles></user>"
+            )
+        if action == "API_UserRoles":
+            return (
+                f'<users><user type="user" id="{_XML_USER_ID}"><name>Sam Lee</name>'
+                "<lastAccess>1793727139259</lastAccess><firstName>Sam</firstName>"
+                f"<lastName>Lee</lastName><roles>{_XML_ROLE}</roles></user></users>"
+            )
+        if action == "API_ListDBPages":
+            pages = "".join(
+                f'<page id="{page_id}" type="Text">{escape(name)}</page>'
+                for page_id, (name, _) in self._pages.items()
+            )
+            return f'<pages>{pages}<page id="1" type="Home Page">Dashboard</page></pages>'
+        if action == "API_GetDBPage":
+            _, text = self._page(fields)
+            return f"<pagebody>{_page_body(text)}</pagebody>"
+        if action == "API_AddReplaceDBPage":
+            return f"<pageID>{self._save_page(fields)}</pageID>"
+        raise _XmlError(404, 5, "No Such Operation", None)
+
+    def _page(self, fields: dict[str, str]) -> tuple[int, str]:
+        if fields.get("pagename") == "Dashboard" or fields.get("pageID") == "1":
+            raise _XmlError(400, 23, "Home pages can't be read this way", None)
+        for page_id, (name, text) in self._pages.items():
+            if fields.get("pagename") == name or fields.get("pageID") == str(page_id):
+                return page_id, text
+        raise _XmlError(400, 81, "Item not found", "Page not found")
+
+    def _save_page(self, fields: dict[str, str]) -> int:
+        text = fields.get("pagebody", "").replace("\r\n", "\n").replace("\r", "\n")
+        if "pageid" in fields:
+            found = int(fields["pageid"])
+            if found not in self._pages:
+                raise _XmlError(400, 81, "Item not found", "Page not found")
+            self._pages[found] = (self._pages[found][0], text)
+            return found
+        name = fields["pagename"]
+        for page_id, (existing, _) in self._pages.items():
+            if existing == name:
+                self._pages[page_id] = (name, text)
+                return page_id
+        page_id = max(self._pages, default=1) + 1
+        self._pages[page_id] = (name, text)
+        return page_id
 
     def _app(self, app_id: str | None) -> dict[str, Any]:
         if app_id != APP_ID:

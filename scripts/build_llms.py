@@ -39,6 +39,8 @@ DESCRIPTIONS = {
     "summaries, where fields are used, and what each refusal leaves behind",
     "guides/apps.md": "Creating, copying, and deleting apps, and the webhooks and automations "
     "that run in one",
+    "guides/code-pages.md": "Reading, previewing, and replacing code pages, and why a policy "
+    "doesn't limit what a page does",
     "guides/errors.md": "Every exception, and which ones mean a request wasn't sent",
     "guides/clients.md": "Sync or async, tokens, retries, proxies, and other settings",
     "agents/index.md": "Limiting what an agent can do, and why the token is the real boundary",

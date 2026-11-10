@@ -28,6 +28,10 @@ SKIPPED = {
     'qb.create_app("Field Jobs"': "Makes a lasting app. test_apps.py tests this method",
     '.copy("Jobs (staging)"': "Makes a lasting app. test_apps.py tests this method",
     'staging.drop(confirm="Jobs (staging)")': "Deletes an app. test_apps.py tests this method",
+    'qb.find_user("jordan@example.com")': "Names a person who isn't in the test realm",
+    "page.read().text": "Names a code page. test_xml.py tests these methods on a fixed page",
+    "page.preview_write(new_text)": "Names a code page. test_xml.py tests these methods",
+    "saved = result.previous.text": "Names a code page. test_xml.py tests these methods",
 }
 
 # These change a table's fields, or need a field that's unique, so they get their own table.

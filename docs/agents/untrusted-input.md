@@ -115,3 +115,9 @@ What it can't do is decide whether a filter is the right one:
   list only the fields a tool needs.
 - **Treat labels as untrusted.** Passing `fields` shows their labels to the model, and a label can hold
   any text, so only offer fields from an app you trust.
+
+## Code page text
+
+A code page's text is untrusted input, as a field's value is. Anyone who can edit a page can put text in it that
+reads like an instruction, so don't let what a page says decide a change. `read_code_page` and
+`preview_code_page_change` return it for a model to read, and it isn't filtered.

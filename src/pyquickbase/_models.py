@@ -180,6 +180,82 @@ class MemberRole:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class CodePageInfo:
+    """A page in an app, from `app.code_pages()`.
+
+    Attributes:
+        id: The page's ID.
+        name: The page's name.
+        type: What Quickbase calls it: `Text` for a code page, and `Home Page` for a home page,
+            which can't be read or written this way.
+    """
+
+    id: int
+    name: str
+    type: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True, repr=False)
+class CodePageContent:
+    """A code page's text. Its `repr` shows only the name, length, and hash.
+
+    Attributes:
+        id: The page's ID, if it was given by ID or just written.
+        name: The page's name, if it was given by name.
+        text: The page's text. Quickbase returns line endings as LF, however they were written.
+        sha256: The hash of `text`, for comparing versions.
+    """
+
+    id: int | None
+    name: str | None
+    text: str
+    sha256: str
+
+    def __repr__(self) -> str:
+        return (
+            f"CodePageContent(name={self.name!r}, length={len(self.text)}, sha256={self.sha256!r})"
+        )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CodePagePreview:
+    """What writing a code page would do, without doing it. Its `repr` leaves out the diff.
+
+    Attributes:
+        page: The page, as it was named.
+        current: The page as it is now, or None for a page that doesn't exist yet.
+        proposed_sha256: The hash of the proposed text, with line endings as LF.
+        diff: A unified diff, from the current text to the proposed text.
+        unchanged: Whether the page already has exactly this text.
+        confirmation: From a `preview_code_page_change` operation, what its
+            `apply_code_page_change` operation needs. Empty otherwise.
+    """
+
+    page: str | int
+    current: CodePageContent | None
+    proposed_sha256: str
+    diff: str = field(repr=False)
+    unchanged: bool
+    confirmation: str = field(default="", repr=False)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CodePageWrite:
+    """What writing a code page did.
+
+    Attributes:
+        page: The page as it now is. Its `id` is always set.
+        previous: What was there before, or None if the page is new. Quickbase keeps no history
+            of a page, so this is the only copy if you want to put it back.
+        created: Whether the write made a new page.
+    """
+
+    page: CodePageContent
+    previous: CodePageContent | None
+    created: bool
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class TableInfo:
     """A table's metadata.
 
