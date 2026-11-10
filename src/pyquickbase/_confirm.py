@@ -28,6 +28,7 @@ from .errors import InvalidConfirmationError
 
 CONFIRMATION_SECONDS = 900
 """How long a preview's confirmation lasts: 15 minutes."""
+_MAX_EXPIRY_DIGITS = 20
 
 ConfirmationKind = Literal["update", "delete", "schema", "code_page"]
 _PREVIEWS: dict[str, str] = {
@@ -129,10 +130,15 @@ def code_page_binding(
     }
 
 
+def _is_expiry(text: str) -> bool:
+    """Whether text is a time as `issue()` writes it, which `int()` can always read."""
+    return text.isascii() and text.isdigit() and len(text) <= _MAX_EXPIRY_DIGITS
+
+
 def expires_at(token: str) -> int | None:
     """When a confirmation stops working, in seconds since the epoch, or None if it isn't one."""
     parts = token.split(".")
-    return int(parts[1]) if len(parts) == 3 and parts[1].isdigit() else None
+    return int(parts[1]) if len(parts) == 3 and _is_expiry(parts[1]) else None
 
 
 def issue(
@@ -160,7 +166,7 @@ def check(
             "confirmation. Nothing was changed."
         )
     parts = token.split(".") if isinstance(token, str) else []
-    if len(parts) != 3 or not parts[1].isdigit() or not parts[2]:
+    if len(parts) != 3 or not _is_expiry(parts[1]) or not parts[2] or not parts[2].isascii():
         raise InvalidConfirmationError(
             f"confirmation isn't one {preview} returned. Call {preview} again. Nothing was changed."
         )

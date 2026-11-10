@@ -639,6 +639,28 @@ async def test_a_confirmation_expires_and_only_works_with_its_own_client(
             await update.run({**CHANGE, "confirmation": confirmation})
 
 
+@pytest.mark.parametrize(
+    "garble",
+    [
+        lambda key, expires, _: f"{key}.{expires}.\u00e9",
+        lambda key, _, signature: f"{key}.\u00b2\u00b2.{signature}",
+        lambda key, _, signature: f"{key}.{'9' * 5000}.{signature}",
+    ],
+    ids=["non-ascii-signature", "unicode-digits", "enormous-expiry"],
+)
+async def test_a_garbled_confirmation_is_refused_cleanly(garble: Any) -> None:
+    fake = Fake()
+    async with client(fake) as qb:
+        tasks = qb.app("bq1234567").table("Tasks")
+        confirmation = tool_result(await (await tasks.operation("preview_update")).run(CHANGE))[
+            "confirmation"
+        ]
+        update = await tasks.operation("update", require_preview=True)
+        with pytest.raises(InvalidConfirmationError, match="isn't one preview_update returned"):
+            await update.run({**CHANGE, "confirmation": garble(*confirmation.split("."))})
+    assert fake.requests("POST /records") == []
+
+
 async def test_count_and_delete_say_what_their_number_is() -> None:
     async with client(Fake(matching=2)) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
