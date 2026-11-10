@@ -1,4 +1,4 @@
 try:
-    await app.add_role_assignments([])
+    await app.update_role_assignments([])
 except ValueError as error:
     print(type(error).__name__)

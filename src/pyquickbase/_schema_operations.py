@@ -17,8 +17,18 @@ from ._schema_plan import CHANGE_TYPES, FIELD_TYPES, SUMMARY_FUNCTIONS
 from ._write_request import UNSAFE_FORMULA_TYPES
 from .errors import ConfigurationError
 
-SchemaOperationName = Literal["describe_schema", "preview_schema_changes", "apply_schema_changes"]
+AppOperationName = Literal[
+    "describe_schema",
+    "preview_schema_changes",
+    "apply_schema_changes",
+    "list_code_pages",
+    "read_code_page",
+    "preview_code_page_change",
+    "apply_code_page_change",
+]
 """What `App.operation()` can offer a model."""
+
+SCHEMA_OPERATIONS = ("describe_schema", "preview_schema_changes", "apply_schema_changes")
 
 DEFAULT_MAX_CHANGES = 20
 
@@ -40,12 +50,12 @@ class SchemaAllowed:
 
 
 _ACTION_VERBS = {
-    "update_table": "change_table",
+    "update_table": "update_table",
     "delete_table": "delete_table",
-    "create_field": "add_field",
-    "update_field": "change_field",
+    "create_field": "create_field",
+    "update_field": "update_field",
     "delete_field": "delete_field",
-    "set_key_field": "set_key",
+    "set_key_field": "set_key_field",
     "create_relationship": "link",
     "create_lookup_field": "lookup",
     "create_summary_field": "summary",
@@ -72,9 +82,9 @@ def schema_allowed(
     for item in tables:
         none: list[tuple[int, str]] = []
         offered = policy.offers_for(item.id, none, lambda found: found)
-        if offered.schema:
+        if offered.schema_verbs:
             changeable.append(item.name)
-            grants.append((offered.schema, offered.field_types))
+            grants.append((offered.schema_verbs, offered.field_types))
     if create_tables:
         created = policy.with_created("\x00new", "new table")
         grants.append((policy.created_offers, created.field_types("\x00new")))
@@ -84,7 +94,7 @@ def schema_allowed(
         actions.add("create_table")
     types: set[str] = set()
     for found, allowed in grants:
-        if "add_field" in found:
+        if "create_field" in found:
             types |= set(FIELD_TYPES) if allowed is None else set(allowed)
     return SchemaAllowed(
         actions=frozenset(actions),
@@ -281,7 +291,7 @@ def _changes(allowed: SchemaAllowed, most: int) -> dict[str, Any]:
 
 
 def schema_operation_schema(
-    name: SchemaOperationName, allowed: SchemaAllowed, *, max_changes: int, tables: Sequence[str]
+    name: str, allowed: SchemaAllowed, *, max_changes: int, tables: Sequence[str]
 ) -> dict[str, Any]:
     """The JSON Schema for a schema operation's arguments.
 
@@ -311,7 +321,7 @@ def schema_operation_schema(
             "type": "string",
             "description": (
                 "The confirmation from preview_schema_changes, called with exactly these changes, "
-                "after the person approved the plan. It lasts 15 minutes."
+                "after the person approved the preview. It lasts 15 minutes."
             ),
         }
     return {

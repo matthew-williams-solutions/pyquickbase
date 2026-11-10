@@ -21,12 +21,12 @@ import httpx
 from ._config import DEFAULT_BASE_URL, LOOPBACK_HOSTS
 from ._links import app_url
 from ._models import (
+    AppListing,
     AppMember,
-    AppSummary,
     CodePageInfo,
     MemberRole,
     Role,
-    UserProfile,
+    UserAccount,
     role_from_api,
 )
 from ._read_request import ReadAction, ReadRequest
@@ -39,11 +39,11 @@ from .errors import (
     ConfigurationError,
     InvalidResponseError,
     InvalidValueError,
+    NoLongerAvailableError,
     NotFoundError,
     PermissionDeniedError,
     RateLimitError,
     ServerError,
-    UnsupportedOperationError,
 )
 
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
@@ -300,7 +300,7 @@ def parse_xml(body: bytes) -> Element:
 _ERRORS_BY_CODE: dict[int, type[APIError]] = {
     **dict.fromkeys((4, 20, 22, 24, 83), AuthenticationError),
     **dict.fromkeys((3, 7, 8, 19, 34, 61, 74, 114, 150, 151, 152), PermissionDeniedError),
-    5: UnsupportedOperationError,
+    5: NoLongerAvailableError,
     **dict.fromkeys((21, 30, 31, 32, 33, 35, 37, 81, 87, 110), NotFoundError),
     **dict.fromkeys(
         (
@@ -413,10 +413,10 @@ def _required(element: Element, tag: str) -> str:
     return found
 
 
-def apps_from_xml(root: Element, realm: str) -> list[AppSummary]:
+def apps_from_xml(root: Element, realm: str) -> list[AppListing]:
     databases = root.find("databases")
     return [
-        AppSummary(
+        AppListing(
             id=_required(item, "dbid"),
             name=item.text_of("dbname") or "",
             ancestor_id=item.text_of("ancestorappid"),
@@ -427,11 +427,11 @@ def apps_from_xml(root: Element, realm: str) -> list[AppSummary]:
     ]
 
 
-def user_from_xml(root: Element) -> UserProfile:
+def user_from_xml(root: Element) -> UserAccount:
     user = root.find("user")
     if user is None or "id" not in user.attributes:
         raise InvalidResponseError("Quickbase's response has no user.")
-    return UserProfile(
+    return UserAccount(
         id=user.attributes["id"],
         email=user.text_of("email"),
         first_name=user.text_of("firstName"),
@@ -481,7 +481,7 @@ def members_from_xml(root: Element) -> list[AppMember]:
         raise InvalidResponseError("Quickbase's response has no users.")
     found: list[AppMember] = []
     for user in users.find_all("user"):
-        last_access = user.text_of("lastAccess")
+        last_accessed_at = user.text_of("lastAccess")
         found.append(
             AppMember(
                 id=user.attributes["id"],
@@ -489,7 +489,7 @@ def members_from_xml(root: Element) -> list[AppMember]:
                 name=user.text_of("name") or "",
                 first_name=user.text_of("firstName"),
                 last_name=user.text_of("lastName"),
-                last_access=_from_millis(last_access),
+                last_accessed_at=_from_millis(last_accessed_at),
                 roles=tuple(role_from_api(_role_dict(item)) for item in _member_roles(user)),
             )
         )

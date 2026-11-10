@@ -51,7 +51,7 @@ DESCRIPTIONS = {
     "policies/index.md": "What a policy is, how it decides, and read-only clients",
     "policies/tutorial.md": "Building a policy for an agent step by step",
     "policies/rules.md": "Allowing and refusing reads and writes by table and field",
-    "policies/classes.md": "Groups of fields, formulas that read them, and new fields",
+    "policies/tags.md": "Named groups of fields, formulas that read them, and new fields",
     "policies/rows.md": "Keeping a client to some records",
     "policies/schema.md": "Allowing schema changes table by table",
     "policies/custom-rules.md": "Refusing requests with logic of your own",
@@ -80,7 +80,7 @@ _QUOTED_TYPE = re.compile(r"'([A-Z][\w\[\], ]*)'")
 _UNION = re.compile(r"\bUnion\[")
 
 
-class Page(NamedTuple):
+class RecordPage(NamedTuple):
     title: str
     path: str
     section: str | None
@@ -89,7 +89,7 @@ class Page(NamedTuple):
 class Config(NamedTuple):
     site_url: str
     summary: str
-    pages: list[Page]
+    pages: list[RecordPage]
 
 
 def read_config(text: str | None = None) -> Config:
@@ -97,7 +97,7 @@ def read_config(text: str | None = None) -> Config:
     lines = (CONFIG.read_text(encoding="utf-8") if text is None else text).splitlines()
     values = dict(line.split(": ", 1) for line in lines if re.match(r"site_\w+: ", line))
     start = lines.index("nav:") + 1
-    pages: list[Page] = []
+    pages: list[RecordPage] = []
     # The top-level section a page is in, as `(indent, title)`. A section inside it, such as the
     # reference's "Core", doesn't change it.
     section: tuple[int, str] | None = None
@@ -115,7 +115,7 @@ def read_config(text: str | None = None) -> Config:
         if path is None:
             section = section or (indent, title)
         else:
-            pages.append(Page(title, path, section[1] if section else None))
+            pages.append(RecordPage(title, path, section[1] if section else None))
     return Config(values["site_url"].rstrip("/") + "/", values["site_description"], pages)
 
 
@@ -138,7 +138,7 @@ def _next_fence(line: str, fence: str | None) -> str | None:
 
 
 def clean_types(text: str) -> str:
-    """Show types by their public names, as in `Expression`, not `pyquickbase._query.Expression`."""
+    """Show types by their public names, as in `WhereExpression`, not its full module path."""
     text = _QUOTED_TYPE.sub(r"\1", _MODULE_PREFIX.sub("", text)).replace("~", "")
     return _pipes(text)
 
@@ -259,7 +259,7 @@ def _page_source(path: str) -> str:
     return (DOCS / path).read_text(encoding="utf-8")
 
 
-def convert_page(page: Page, site_url: str) -> str:
+def convert_page(page: RecordPage, site_url: str) -> str:
     """Return one nav page as plain Markdown."""
     text = _resolve_snippets(_page_source(page.path))
     text = _without_title(text, page.path)
@@ -292,7 +292,7 @@ def is_covered(path: str) -> bool:
     return path == OVERVIEW or not path.startswith("reference/")
 
 
-def _covered_pages(config: Config) -> list[Page]:
+def _covered_pages(config: Config) -> list[RecordPage]:
     pages = [page for page in config.pages if is_covered(page.path)]
     paths = {page.path for page in pages}
     if paths != set(DESCRIPTIONS):

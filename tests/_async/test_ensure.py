@@ -9,9 +9,9 @@ import pytest
 from pyquickbase import (
     AsyncQuickbase,
     F,
+    InvalidQueryError,
     InvalidResponseError,
     InvalidValueError,
-    QueryError,
     Relationship,
     SchemaMismatchError,
 )
@@ -359,6 +359,6 @@ async def test_a_summary_filter_quickbase_would_save_broken_sends_nothing(
     app: Any, fake: FakeSchema, where: str
 ) -> None:
     # Quickbase accepts these with 200, and the summary is then always empty.
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         await app.table("Tasks").ensure_summary_field(project(fake), "Hours", "X", where=where)
     assert not fake.writes()

@@ -9,11 +9,11 @@ import pytest
 from pyquickbase import (
     BadRequestError,
     F,
+    InvalidQueryError,
     InvalidResponseError,
     InvalidValueError,
     Policy,
     PolicyRefusedError,
-    QueryError,
     Quickbase,
     ServerError,
     UnknownFieldError,
@@ -201,7 +201,7 @@ def test_failed_rows_raise_with_the_full_result() -> None:
         with pytest.raises(WriteError, match=r"1 row.* The first is row 1: Incompatible") as caught:
             qb.app(APP).table("Tasks").insert([{"Title": "a"}, {"Title": "b"}])
     assert caught.value.result.created_ids == (0,)
-    assert caught.value.result.errors[0].index == 1
+    assert caught.value.result.failed_rows[0].row_index == 1
 
 
 def test_large_writes_are_split_and_rows_keep_their_positions() -> None:
@@ -213,7 +213,7 @@ def test_large_writes_are_split_and_rows_keep_their_positions() -> None:
             qb.app(APP).table("Tasks").insert(rows, batch_size=2)
     assert [len(body["data"]) for body in server.sent("POST", "/records")] == [2, 2, 1]
     result = caught.value.result
-    assert result.errors[0].index == 2  # first row of the second batch
+    assert result.failed_rows[0].row_index == 2  # first row of the second batch
     assert len(result.created_ids) == 4
 
 
@@ -268,13 +268,13 @@ def test_empty_writes_send_nothing() -> None:
 @pytest.mark.parametrize("method", ["insert", "update"])
 def test_batch_size_must_be_positive(method: str) -> None:
     with client(FakeQuickbase()) as qb:
-        with pytest.raises(QueryError, match="batch_size"):
+        with pytest.raises(InvalidQueryError, match="batch_size"):
             getattr(qb.app(APP).table("Tasks"), method)([{"Title": "a"}], batch_size=0)
 
 
 def test_upsert_batch_size_must_be_positive() -> None:
     with client(FakeQuickbase()) as qb:
-        with pytest.raises(QueryError, match="batch_size"):
+        with pytest.raises(InvalidQueryError, match="batch_size"):
             qb.app(APP).table("Tasks").upsert([], merge_on="Code", batch_size=0)
 
 
@@ -295,7 +295,7 @@ def test_delete_never_sends_a_clause_it_cant_verify(where: str) -> None:
     """A lowercase operator acts like "contains" in the live API, so this protects real data."""
     server = FakeQuickbase()
     with client(server) as qb:
-        with pytest.raises(QueryError):
+        with pytest.raises(InvalidQueryError):
             qb.app(APP).table("Tasks").delete(where)
     assert [r for r in server.requests if r.method == "DELETE"] == []
 

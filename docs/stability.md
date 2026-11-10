@@ -17,14 +17,14 @@ minor release.
 - The attributes of `User`, `FileAttachment`, and `FileVersion`, which file and user fields read as. A
   value a policy leaves out, such as an email address, is None.
 - A `Policy` refusing whatever its rules don't allow, a deny winning over any allow, and the policy
-  leaving out of a response whatever it hides. A later version can add a new `Verb`, `WriteAction`, or
-  `ReadAction`, or a new attribute on `Decision`, `WriteRequest`, or `ReadRequest`, so have a rule of
+  leaving out of a response whatever it hides. A later version can add a new `PolicyVerb`, `WriteAction`, or
+  `ReadAction`, or a new attribute on `PolicyDecision`, `WriteRequest`, or `ReadRequest`, so have a rule of
   your own ignore an action it doesn't recognize.
 - The keys of what `tool_result()` and `tool_error()` return, how they write each kind of value, and the
   codes in `ToolErrorCode`, along with each code's `changed` and `retryable`. A later version can add a
   key or a code, so have your tool handle a code it doesn't recognize. The wording of `message` and
   `hint` isn't covered.
-- The operation names in `OperationName`, the arguments each one's schema takes, and how `run()` reads
+- The operation names in `TableOperationName`, the arguments each one's schema takes, and how `run()` reads
   them. A later version can add an operation or an optional argument. The schema's descriptions aren't
   covered.
 
@@ -37,7 +37,7 @@ minor release.
 - Quickbase's own behavior, including any change it makes to its responses, and the contents of `raw`
   attributes. This includes its XML API, which `apps()`, `current_user()`, `find_user()`, `members()`,
   `member_roles()`, code pages, and the fallbacks in `roles()` and `info()` depend on. If Quickbase retires a call,
-  the method behind it raises `UnsupportedOperationError`.
+  the method behind it raises `NoLongerAvailableError`.
 - Which metadata keys a policy keeps, as Quickbase's responses aren't covered either.
 
 ## Minor and patch releases

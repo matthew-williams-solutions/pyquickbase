@@ -10,11 +10,11 @@ from pyquickbase import (
     ConfigurationError,
     InvalidResponseError,
     InvalidValueError,
+    NoLongerAvailableError,
     NotFoundError,
     PermissionDeniedError,
     RateLimitError,
     ServerError,
-    UnsupportedOperationError,
 )
 from pyquickbase._code_pages import build_preview, check_ref, content, normalize_text, text_sha256
 from pyquickbase._config import DEFAULT_BASE_URL
@@ -86,7 +86,7 @@ def test_a_response_over_the_limit_is_refused() -> None:
     [
         ((4, 20, 22, 24, 83), AuthenticationError),
         ((3, 7, 8, 19, 34, 61, 74, 114, 150, 151, 152), PermissionDeniedError),
-        ((5,), UnsupportedOperationError),
+        ((5,), NoLongerAvailableError),
         ((21, 30, 31, 32, 33, 35, 37, 81, 87, 110), NotFoundError),
         ((2, 6, 9, 10, 11, 12, 13, 14, 15, 23, 50, 51, 52, 53), BadRequestError),
         ((70, 71, 75, 76, 78, 80), BadRequestError),

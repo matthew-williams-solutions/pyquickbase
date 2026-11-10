@@ -158,7 +158,7 @@ def test_a_report_with_a_body_or_other_parameters_is_other() -> None:
         ("GET", "/tables", {}, "other", None),
         ("GET", "/fields", {"tableId": TASKS, "x": 1}, "other", None),
         ("GET", "/fields/6", {"tableId": TASKS}, "other", None),
-        ("GET", "/apps/bqapp/events", None, "app_events", None),
+        ("GET", "/apps/bqapp/events", None, "app_triggers", None),
         ("GET", "/apps/bqapp/events", {"x": 1}, "other", None),
         ("GET", "/fields/usage", {"tableId": TASKS}, "field_usage", TASKS),
         ("GET", "/fields/usage", {"tableId": TASKS, "skip": 0, "top": 5}, "field_usage", TASKS),

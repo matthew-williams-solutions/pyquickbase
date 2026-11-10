@@ -4,7 +4,7 @@ policy = Policy(
     rules=[
         allow.create_tables(),
         allow.read(tables.created()),
-        allow.schema(tables.created(), "add_field"),
+        allow.schema(tables.created(), "create_field"),
     ]
 )
 async with AsyncQuickbase.from_env() as setup:

@@ -14,8 +14,8 @@ from pyquickbase import (
     PolicyRefusedError,
     Quickbase,
     RoleAssignment,
-    RoleChange,
-    RoleChangeResult,
+    RoleAssignmentResult,
+    RoleAssignmentUpdate,
     WriteError,
     allow,
     tables,
@@ -51,17 +51,17 @@ def client(handler: Any, **options: Any) -> Quickbase:
 def test_roles_are_added_and_reported() -> None:
     fake = FakeTrustees()
     with client(fake) as qb:
-        result = qb.app(APP).add_role_assignments([RoleAssignment(USER, 11)])
+        result = qb.app(APP).create_role_assignments([RoleAssignment(USER, 11)])
     assert fake.sent == [
         ("POST", f"/app/{APP}/trustees", [{"id": USER, "roleId": 11, "type": "user"}])
     ]
-    assert result == RoleChangeResult(changed=(RoleAssignment(USER, 11),))
+    assert result == RoleAssignmentResult(changed=(RoleAssignment(USER, 11),))
 
 
 def test_roles_are_removed() -> None:
     fake = FakeTrustees()
     with client(fake) as qb:
-        qb.app(APP).remove_role_assignments([RoleAssignment("9.ab", 11, kind="group")])
+        qb.app(APP).delete_role_assignments([RoleAssignment("9.ab", 11, kind="group")])
     assert fake.sent[0][0] == "DELETE"
     assert fake.sent[0][2] == [{"id": "9.ab", "roleId": 11, "type": "group"}]
 
@@ -69,10 +69,10 @@ def test_roles_are_removed() -> None:
 def test_roles_are_moved() -> None:
     fake = FakeTrustees()
     with client(fake) as qb:
-        result = qb.app(APP).change_role_assignments([RoleChange(USER, 11, 12)])
+        result = qb.app(APP).update_role_assignments([RoleAssignmentUpdate(USER, 11, 12)])
     assert fake.sent[0][0] == "PATCH"
     assert fake.sent[0][2] == [{"id": USER, "roleId": 12, "oldRoleId": 11, "type": "user"}]
-    assert result.changed == (RoleChange(USER, 11, 12),)
+    assert result.changed == (RoleAssignmentUpdate(USER, 11, 12),)
 
 
 def test_a_partial_failure_raises_with_what_happened() -> None:
@@ -85,7 +85,7 @@ def test_a_partial_failure_raises_with_what_happened() -> None:
     fake = FakeTrustees(status=207, body=body)
     with client(fake) as qb:
         with pytest.raises(WriteError) as raised:
-            qb.app(APP).remove_role_assignments(
+            qb.app(APP).delete_role_assignments(
                 [RoleAssignment(USER, 11), RoleAssignment(USER, 99)]
             )
     result = raised.value.result
@@ -107,7 +107,7 @@ def test_a_full_failure_changes_nothing() -> None:
     }
     with client(FakeTrustees(status=207, body=body)) as qb:
         with pytest.raises(WriteError) as raised:
-            qb.app(APP).add_role_assignments([RoleAssignment(USER, 11)])
+            qb.app(APP).create_role_assignments([RoleAssignment(USER, 11)])
     assert raised.value.result.changed == ()
     assert tool_error(raised.value)["error"]["data_changed"] == "no"
 
@@ -127,7 +127,7 @@ def test_a_bad_assignment_sends_nothing(bad: Any) -> None:
     fake = FakeTrustees()
     with client(fake) as qb:
         with pytest.raises(InvalidValueError):
-            qb.app(APP).add_role_assignments(bad)
+            qb.app(APP).create_role_assignments(bad)
     assert not fake.sent
 
 
@@ -137,11 +137,11 @@ def test_a_403_is_reported() -> None:
 
     with client(handler) as qb:
         with pytest.raises(PermissionDeniedError):
-            qb.app(APP).add_role_assignments([RoleAssignment(USER, 11)])
+            qb.app(APP).create_role_assignments([RoleAssignment(USER, 11)])
 
 
 @pytest.mark.parametrize(
-    "method", ["add_role_assignments", "remove_role_assignments", "change_role_assignments"]
+    "method", ["create_role_assignments", "delete_role_assignments", "update_role_assignments"]
 )
 @pytest.mark.parametrize(
     "policy",
@@ -155,7 +155,9 @@ def test_a_403_is_reported() -> None:
 def test_no_policy_can_allow_a_role_change(method: str, policy: Policy) -> None:
     fake = FakeTrustees()
     item = (
-        RoleChange(USER, 1, 2) if method == "change_role_assignments" else RoleAssignment(USER, 1)
+        RoleAssignmentUpdate(USER, 1, 2)
+        if method == "update_role_assignments"
+        else RoleAssignment(USER, 1)
     )
     with client(fake, policy=policy) as qb:
         with pytest.raises(PolicyRefusedError):
@@ -187,5 +189,5 @@ def test_a_timeout_isnt_retried() -> None:
 
     with client(handler) as qb:
         with pytest.raises(Exception, match="timed out"):
-            qb.app(APP).add_role_assignments([RoleAssignment(USER, 11)])
+            qb.app(APP).create_role_assignments([RoleAssignment(USER, 11)])
     assert calls == 1

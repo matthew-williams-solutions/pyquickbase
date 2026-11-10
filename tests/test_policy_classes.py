@@ -79,49 +79,49 @@ def app(*rules: Any, **options: Any) -> BoundPolicy:
 PAY_CLASS = {"pay": [("Tasks", "Rate")]}
 
 
-def classes_of(policy: BoundPolicy, table_id: str, field_id: int) -> set[str]:
-    return set(policy.classes_of(table_id, field_id)) - {"\x00rows"}
+def tags_of(policy: BoundPolicy, table_id: str, field_id: int) -> set[str]:
+    return set(policy.tags_of(table_id, field_id)) - {"\x00rows"}
 
 
 # Classes carry over
 
 
 def test_formulas_lookups_and_summaries_get_the_classes_of_what_they_read() -> None:
-    policy = app(classes={**PAY_CLASS, "secret": ["Notes.Secret"]})
-    assert classes_of(policy, TASKS, 20) == {"pay"}
-    assert classes_of(policy, TASKS, 21) == {"pay"}, "a formula of Rate"
-    assert classes_of(policy, TASKS, 22) == {"pay"}, "a formula of that formula"
-    assert classes_of(policy, NOTES, 30) == {"pay"}, "a summary of the formula, across tables"
-    assert classes_of(policy, TASKS, 28) == {"secret"}, "a lookup of Notes' Secret"
-    assert classes_of(policy, TASKS, 27) == {"pay"}, "a formula naming Rate by [_FID_20]"
-    assert classes_of(policy, TASKS, 29) == set()
-    assert classes_of(app(classes=PAY_CLASS), TASKS, 28) == set()
+    policy = app(tags={**PAY_CLASS, "secret": ["Notes.Secret"]})
+    assert tags_of(policy, TASKS, 20) == {"pay"}
+    assert tags_of(policy, TASKS, 21) == {"pay"}, "a formula of Rate"
+    assert tags_of(policy, TASKS, 22) == {"pay"}, "a formula of that formula"
+    assert tags_of(policy, NOTES, 30) == {"pay"}, "a summary of the formula, across tables"
+    assert tags_of(policy, TASKS, 28) == {"secret"}, "a lookup of Notes' Secret"
+    assert tags_of(policy, TASKS, 27) == {"pay"}, "a formula naming Rate by [_FID_20]"
+    assert tags_of(policy, TASKS, 29) == set()
+    assert tags_of(app(tags=PAY_CLASS), TASKS, 28) == set()
 
 
 def test_a_summary_gets_the_classes_of_the_fields_its_filter_uses() -> None:
-    policy = app(classes=PAY_CLASS)
-    assert classes_of(policy, NOTES, 31) == {"pay"}
-    assert classes_of(policy, NOTES, 32) == set(), "a count without a filter reads no field"
+    policy = app(tags=PAY_CLASS)
+    assert tags_of(policy, NOTES, 31) == {"pay"}
+    assert tags_of(policy, NOTES, 32) == set(), "a count without a filter reads no field"
 
 
 def test_cycles_settle() -> None:
-    policy = app(classes=PAY_CLASS)
-    assert classes_of(policy, TASKS, 25) == {"pay"}
-    assert classes_of(policy, TASKS, 26) == {"pay"}
+    policy = app(tags=PAY_CLASS)
+    assert tags_of(policy, TASKS, 25) == {"pay"}
+    assert tags_of(policy, TASKS, 26) == {"pay"}
 
 
 def test_a_formula_that_cant_be_read_counts_as_reading_its_whole_table() -> None:
-    policy = app(classes=PAY_CLASS)
-    assert classes_of(policy, TASKS, 23) == {"pay"}
+    policy = app(tags=PAY_CLASS)
+    assert tags_of(policy, TASKS, 23) == {"pay"}
 
 
 def test_a_formula_that_reads_other_records_counts_as_reading_the_whole_app() -> None:
-    policy = app(classes={"secret": ["Notes.Secret"]})
-    assert classes_of(policy, TASKS, 24) == {"secret"}
+    policy = app(tags={"secret": ["Notes.Secret"]})
+    assert tags_of(policy, TASKS, 24) == {"secret"}
 
 
 def test_denying_a_class_hides_everything_derived_from_it() -> None:
-    policy = app(allow.read(tables.all()), deny.all(fields.classed("pay")), classes=PAY_CLASS)
+    policy = app(allow.read(tables.all()), deny.all(fields.tagged("pay")), tags=PAY_CLASS)
     hidden = [fid for fid in (20, 21, 22, 23, 25, 26, 27) if not policy.visible(TASKS, fid)]
     assert hidden == [20, 21, 22, 23, 25, 26, 27]
     assert policy.visible(TASKS, 29)
@@ -132,10 +132,10 @@ def test_denying_a_class_hides_everything_derived_from_it() -> None:
 
 
 def test_classes_can_be_matched_by_label_pattern_across_tables() -> None:
-    policy = app(classes={"internal": [fields.labeled_like("*count")]})
-    assert classes_of(policy, NOTES, 31) == {"internal"}
-    assert classes_of(policy, NOTES, 32) == {"internal"}
-    assert classes_of(policy, TASKS, 6) == set()
+    policy = app(tags={"internal": [fields.labeled_like("*count")]})
+    assert tags_of(policy, NOTES, 31) == {"internal"}
+    assert tags_of(policy, NOTES, 32) == {"internal"}
+    assert tags_of(policy, TASKS, 6) == set()
 
 
 def test_an_ambiguous_dotted_name_must_be_written_as_a_pair() -> None:
@@ -144,9 +144,9 @@ def test_an_ambiguous_dotted_name_must_be_written_as_a_pair() -> None:
         "bqab": ("A.B", [field(6, "C")]),
     }
     with pytest.raises(ConfigurationError, match="could be several fields"):
-        bind(classes={"x": ["A.B.C"]}, tables=tables_with_dots)
-    policy = bind(classes={"x": [("A.B", "C")]}, tables=tables_with_dots)
-    assert classes_of(policy, "bqab", 6) == {"x"}
+        bind(tags={"x": ["A.B.C"]}, tables=tables_with_dots)
+    policy = bind(tags={"x": [("A.B", "C")]}, tables=tables_with_dots)
+    assert tags_of(policy, "bqab", 6) == {"x"}
 
 
 # Fields added after binding
@@ -180,14 +180,14 @@ def test_a_new_field_is_read_only_by_default() -> None:
 def test_a_new_field_can_be_hidden_or_given_a_class() -> None:
     hidden = app(allow.read(TASKS), new_fields="hidden")
     assert not hidden.visible(TASKS, 99)
-    classed = app(
+    tagged = app(
         allow.read(TASKS),
-        deny.read(TASKS, fields.classed("unreviewed")),
-        classes={"unreviewed": [("Tasks", "Title")]},
+        deny.read(TASKS, fields.tagged("unreviewed")),
+        tags={"unreviewed": [("Tasks", "Title")]},
         new_fields="unreviewed",
     )
-    assert not classed.visible(TASKS, 99)
-    assert classes_of(classed, TASKS, 99) == {"unreviewed"}
+    assert not tagged.visible(TASKS, 99)
+    assert tags_of(tagged, TASKS, 99) == {"unreviewed"}
 
 
 def test_fields_new_matches_only_fields_added_later() -> None:
@@ -236,7 +236,7 @@ def test_unknown_relationships_change_nothing_when_nothing_is_hidden() -> None:
 
 
 def test_unknown_relationships_hide_every_lookup_and_summary_from_a_hiding_policy() -> None:
-    policy = unknown_links(deny.all(fields.classed("pay")), classes=PAY_CLASS)
+    policy = unknown_links(deny.all(fields.tagged("pay")), tags=PAY_CLASS)
     assert not policy.visible(TASKS, 20)
     assert not policy.visible(TASKS, 28), "this lookup doesn't read Rate, but that can't be known"
     assert not policy.visible(NOTES, 30)
@@ -287,10 +287,10 @@ def test_a_saved_policy_decides_the_same() -> None:
         allow.read(tables.all(), max_paging_depth=20),
         allow.update(TASKS, ["Status"]),
         allow.create_tables(),
-        allow.schema(tables.created(), "add_field"),
-        deny.all(fields.classed("pay")),
+        allow.schema(tables.created(), "create_field"),
+        deny.all(fields.tagged("pay")),
         limit.rows(TASKS, F("Hours") > 1),
-        classes=PAY_CLASS,
+        tags=PAY_CLASS,
     ).with_created("bqnew", "New")
     loaded = BoundPolicy.from_json(policy.to_json())
     assert loaded == policy
@@ -331,9 +331,7 @@ def test_rename_delete_and_add_a_field_then_bind_again() -> None:
 
 
 def test_explain_names_the_rules_and_classes() -> None:
-    policy = app(
-        allow.read(tables.all()), deny.read(TASKS, fields.classed("pay")), classes=PAY_CLASS
-    )
+    policy = app(allow.read(tables.all()), deny.read(TASKS, fields.tagged("pay")), tags=PAY_CLASS)
     text = policy.explain("read", "Tasks", field="Plain")
     assert text.splitlines()[0] == "Allowed: reading Plain (29) in Tasks (bqtasks)."
     text = policy.explain("update", "Tasks", field="Title")
@@ -353,12 +351,12 @@ RULES = st.sampled_from(
         allow.insert(TASKS, fields.all()),
         allow.insert(NOTES, ["Text"]),
         allow.update(TASKS, ["Status", "Hours"]),
-        allow.update(tables.all(), fields.classed("pay")),
+        allow.update(tables.all(), fields.tagged("pay")),
         allow.delete(TASKS),
         allow.download(tables.all()),
         allow.delete_file(TASKS, ["Title"]),
-        allow.schema(TASKS, "add_field", "change_field", fields=["Title"]),
-        deny.all(fields.classed("pay")),
+        allow.schema(TASKS, "create_field", "update_field", fields=["Title"]),
+        deny.all(fields.tagged("pay")),
         deny.read(TASKS, ["Hours"]),
         deny.update(tables.all(), fields.labeled_like("*cost*")),
         deny.all(NOTES),
@@ -370,7 +368,7 @@ RULES = st.sampled_from(
 @settings(max_examples=60, deadline=None)
 @given(st.lists(RULES, max_size=6))
 def test_offers_matches_decide(rules: list[Any]) -> None:
-    policy = app(*rules, classes=PAY_CLASS)
+    policy = app(*rules, tags=PAY_CLASS)
     for table_id, (_, items) in APP_TABLES.items():
         offers = policy.offers(table_id)
         for verb, offered in (
@@ -412,7 +410,7 @@ def decided(policy: BoundPolicy, verb: str, table_id: str, field_id: int) -> boo
     return policy.decide(update(table_id, field_id)).allowed
 
 
-GRID_VERBS = ("read", "filter", "sort", "insert", "update", "download", "change_field")
+GRID_VERBS = ("read", "filter", "sort", "insert", "update", "download", "update_field")
 
 
 def grid(policy: BoundPolicy) -> str:
@@ -433,10 +431,10 @@ def test_the_decision_grid_matches_the_snapshot() -> None:
             allow.read(tables.all()),
             allow.update(TASKS, ["Status", "Hours"]),
             allow.insert(TASKS, fields.all()),
-            allow.schema(TASKS, "change_field", fields=["Title"]),
-            deny.all(fields.classed("pay")),
+            allow.schema(TASKS, "update_field", fields=["Title"]),
+            deny.all(fields.tagged("pay")),
             limit.rows(TASKS, F("Hours") > 1),
-            classes=PAY_CLASS,
+            tags=PAY_CLASS,
         ),
         "Policy.read_only()": app(
             allow.read(tables.all(), max_paging_depth=None), allow.download(tables.all())

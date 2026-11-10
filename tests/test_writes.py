@@ -9,11 +9,11 @@ import pytest
 
 from pyquickbase import (
     InvalidValueError,
-    RowError,
     UnknownFieldError,
     User,
     WriteError,
     WriteResult,
+    WriteRowFailure,
 )
 from pyquickbase._models import FieldIndex, field_from_api
 from pyquickbase._schema import SchemaCache
@@ -138,9 +138,9 @@ def test_result_collects_batches_and_numbers_rows_from_zero() -> None:
     assert result.created_ids == (1, 3)
     assert result.updated_ids == (2,)
     assert result.unchanged_ids == (4,)
-    assert result.errors == (
-        RowError(index=1, messages=("Bad value.",)),
-        RowError(index=1000, messages=("Other.", "Second.")),
+    assert result.failed_rows == (
+        WriteRowFailure(row_index=1, messages=("Bad value.",)),
+        WriteRowFailure(row_index=1000, messages=("Other.", "Second.")),
     )
     assert "2 row(s) failed. The first is row 1: Bad value." in write_result_summary(result)
 

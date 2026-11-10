@@ -22,7 +22,7 @@ from .errors import (
     PermissionDeniedError,
     UnknownFieldError,
     WriteError,
-    WritePermissionError,
+    WritePermissionDeniedError,
 )
 
 RowInput = Mapping[str | int, Any]
@@ -288,11 +288,11 @@ _ROW_ERROR_REASONS: tuple[tuple[RowErrorReason, re.Pattern[str]], ...] = (
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class RowError:
+class WriteRowFailure:
     """Why one row failed.
 
     Attributes:
-        index: The row's position in the rows you passed, starting from 0.
+        row_index: The row's position in the rows you passed, starting from 0.
         messages: Quickbase's wording, which can change, so use `reason` to decide what to do. For
             a `rule` failure, this holds the rule's message.
         reason: `duplicate` for a value already in a unique field, `permission` for a refusal by the
@@ -302,21 +302,23 @@ class RowError:
         field_id: The field Quickbase named, for `duplicate` and `invalid_choice`.
     """
 
-    index: int
+    row_index: int
     messages: tuple[str, ...]
     reason: RowErrorReason = "other"
     field_id: int | None = None
 
 
-def row_error(index: int, messages: tuple[str, ...]) -> RowError:
+def row_error(index: int, messages: tuple[str, ...]) -> WriteRowFailure:
     """Classify a failed row from Quickbase's messages."""
     for message in messages:
         for reason, pattern in _ROW_ERROR_REASONS:
             found = pattern.search(message)
             if found:
                 field_id = int(found.group(1)) if found.group(1) else None
-                return RowError(index=index, messages=messages, reason=reason, field_id=field_id)
-    return RowError(index=index, messages=messages)
+                return WriteRowFailure(
+                    row_index=index, messages=messages, reason=reason, field_id=field_id
+                )
+    return WriteRowFailure(row_index=index, messages=messages)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -328,7 +330,7 @@ class WriteResult:
             Use `row_ids` to match them to your rows.
         updated_ids: The records whose values changed.
         unchanged_ids: The records that already held these values.
-        errors: A `RowError` for each row that failed.
+        failed_rows: A `WriteRowFailure` for each row that failed.
         row_ids: For `insert()`, the new Record ID# of each row, in the order of your rows, or
             None for a row that failed. It stops short at a batch that wasn't sent, or whose
             response can't be matched to its rows, so compare its length with your rows. Empty for
@@ -338,15 +340,15 @@ class WriteResult:
     created_ids: tuple[int, ...] = ()
     updated_ids: tuple[int, ...] = ()
     unchanged_ids: tuple[int, ...] = ()
-    errors: tuple[RowError, ...] = ()
+    failed_rows: tuple[WriteRowFailure, ...] = ()
     row_ids: tuple[int | None, ...] = ()
 
 
 def write_result_summary(result: WriteResult) -> str:
     """Describe what failed. Quickbase's messages name field IDs rather than values."""
-    first = result.errors[0]
+    first = result.failed_rows[0]
     return (
-        f"{len(result.errors)} row(s) failed. The first is row {first.index}: "
+        f"{len(result.failed_rows)} row(s) failed. The first is row {first.row_index}: "
         f"{'; '.join(first.messages)} See `.result` for every row."
     )
 
@@ -354,8 +356,8 @@ def write_result_summary(result: WriteResult) -> str:
 def write_failure(result: WriteResult) -> WriteError:
     """The error for rows that failed, which is about permissions only if they all were."""
     summary = write_result_summary(result)
-    if all(item.reason == "permission" for item in result.errors):
-        return WritePermissionError(
+    if all(item.reason == "permission" for item in result.failed_rows):
+        return WritePermissionDeniedError(
             summary, result=result, status_code=207, method="POST", path="/records"
         )
     return WriteError(summary, result=result)
@@ -366,7 +368,7 @@ def refused_write(exc: PermissionDeniedError, result: WriteResult, start: int) -
     summary = str(exc)
     if start:
         summary = f"Writing stopped at row {start}, after earlier rows were written: {summary}"
-    return WritePermissionError(
+    return WritePermissionDeniedError(
         summary,
         result=result,
         status_code=exc.status_code,
@@ -405,6 +407,6 @@ def merge_write_result(
         created_ids=(*result.created_ids, *metadata["createdRecordIds"]),
         updated_ids=(*result.updated_ids, *metadata["updatedRecordIds"]),
         unchanged_ids=(*result.unchanged_ids, *metadata["unchangedRecordIds"]),
-        errors=(*result.errors, *errors),
+        failed_rows=(*result.failed_rows, *errors),
         row_ids=_row_ids(result, metadata["createdRecordIds"], failed, offset, rows),
     )

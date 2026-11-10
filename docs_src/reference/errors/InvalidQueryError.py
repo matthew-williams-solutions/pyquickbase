@@ -1,6 +1,6 @@
-from pyquickbase import QueryError
+from pyquickbase import InvalidQueryError
 
 try:
     await tasks.count("{7.ex.'Open'}")
-except QueryError:
+except InvalidQueryError:
     print("A lowercase operator was refused")

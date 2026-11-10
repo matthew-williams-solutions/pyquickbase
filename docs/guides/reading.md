@@ -32,8 +32,8 @@ print([(field.id, field.label, field.type) for field in tasks.fields()])
 print(tasks.relationships())  # Only those where this table is the child
 ```
 
-Metadata is cached for five minutes. Set `schema_ttl` on the client to change that, or call
-`qb.clear_schema_cache()` after changing a table outside this client. A name or label that isn't in
+Metadata is cached for five minutes. Set `metadata_cache_seconds` on the client to change that, or call
+`qb.clear_metadata_cache()` after changing a table outside this client. A name or label that isn't in
 the cache triggers one refresh before it counts as unknown.
 
 [Try it in the playground](../playground-app/index.html#explore-the-app), with simulated data.
@@ -74,7 +74,7 @@ print(tasks.count(where))
 | `F("Due Date").op("IR", "last 7 days")` | Any other Quickbase operator |
 | `F("Owner") == "a@example.com"` | A `user` or `multiuser` field, by email or user ID |
 
-Using `and`, `or`, or a chained comparison like `1 < F("x") < 5` raises `QueryError`, because
+Using `and`, `or`, or a chained comparison like `1 < F("x") < 5` raises `InvalidQueryError`, because
 Python would otherwise silently drop part of the condition.
 
 A `datetime` needs a timezone. On a date field, Quickbase reads text such as `today` or `1 day ago` as a
@@ -104,7 +104,7 @@ You can also pass a Quickbase query string, using field IDs:
 tasks.count("({7.EX.'Done'}OR{7.EX.'Blocked'})AND{9.BF.'today'}")
 ```
 
-The SDK raises `QueryError` before sending a string with a mistake that Quickbase would silently
+The SDK raises `InvalidQueryError` before sending a string with a mistake that Quickbase would silently
 accept, such as a lowercase operator or an unknown field. It can't tell an injected condition from
 a real one, so don't build these strings from text you don't control. In a value, write an apostrophe
 as `\'`.
@@ -315,14 +315,14 @@ on a large table. The others keep only running totals.
 
 `Period` groups a date or timestamp field by `day`, `week`, `month`, `quarter`, or `year`, labeled `2026-03-14`,
 `2026-W11`, `2026-03`, `2026-Q1`, and `2026`, so they sort in order. Which day a timestamp falls on depends on
-the time zone, so pass `tz` if you don't want UTC:
+the time zone, so pass `time_zone` if you don't want UTC:
 
 ```python
 from zoneinfo import ZoneInfo
 
 from pyquickbase import Period
 
-by_week = Period("Date Created", "week", tz=ZoneInfo("America/New_York"))
+by_week = Period("Date Created", "week", time_zone=ZoneInfo("America/New_York"))
 print(tasks.summarize(group_by=by_week))
 ```
 
@@ -366,15 +366,15 @@ month takes about 11 requests and 6 seconds. A report built in the UI does the c
 still. See [Reading summary and chart reports](#reading-summary-and-chart-reports).
 
 To refuse a scan larger than you expect, set `max_records_scanned`. If more records match, it raises
-`TooManyRecordsError`, a `QueryError`, without reading them, and its `matched` and `limit` say by how much. A count isn't
+`SummaryTooLargeError`, a `InvalidQueryError`, without reading them, and its `matched` and `limit` say by how much. A count isn't
 limited by it, as it reads no records. It never returns a total from only part of the data.
 
 ```python
-from pyquickbase import TooManyRecordsError
+from pyquickbase import SummaryTooLargeError
 
 try:
     rows = tasks.summarize(group_by="Status", max_records_scanned=50_000)
-except TooManyRecordsError as error:
+except SummaryTooLargeError as error:
     print(error.matched, error.limit)
 ```
 
@@ -400,7 +400,7 @@ Which method reads a report depends on its type, which `report.info().type` give
 | `report.info().type` | Read it with | Rows are |
 |---|---|---|
 | `table` | `run()` or `run_page()` | Records, as from `query()` |
-| `summary` or `chart` | `summary_rows()` | Keyed by column label |
+| `summary` or `chart` | `run_summary()` | Keyed by column label |
 
 Calling the other method raises `UnsupportedReportError`, as does every method on a report of another
 type, or one whose `incomplete` is true, such as one that asks the user for a value. The report isn't
@@ -434,11 +434,11 @@ you change a saved report's type.
 
 ### Reading summary and chart reports
 
-`summary_rows()` reads a report built in the UI as `{column label: value}` rows, with Quickbase doing the
+`run_summary()` reads a report built in the UI as `{column label: value}` rows, with Quickbase doing the
 calculating. A summary report labels its columns with the kind of total, such as `Hours (tot)`.
 
 ```python
-rows = tasks.report("Hours by Project").summary_rows()
+rows = tasks.report("Hours by Project").run_summary()
 for row in rows:
     print(row["Project"], row["Hours (tot)"])
 ```
@@ -456,16 +456,16 @@ These all raise before the query is sent, though the SDK may read table metadata
 |---|---|
 | The app has no such table, or the table is in another app | `UnknownTableError` |
 | `select`, `order_by`, or `where` names a field the table doesn't have, or the token can't see | `UnknownFieldError` |
-| `where` can't be sent as written, such as a lowercase operator in a query string, or `_curuser_` on a user field through `F` | `QueryError` |
-| `where_from_dict()` got data it can't use, such as an unknown operator, a missing `value`, or `today` on a date field | `QueryError` |
-| `limit`, `page_size`, or `max_total` below 1, or a negative `skip` | `QueryError` |
-| `select` or `order_by` isn't a field or a list of them | `QueryError` |
+| `where` can't be sent as written, such as a lowercase operator in a query string, or `_curuser_` on a user field through `F` | `InvalidQueryError` |
+| `where_from_dict()` got data it can't use, such as an unknown operator, a missing `value`, or `today` on a date field | `InvalidQueryError` |
+| `limit`, `page_size`, or `max_total` below 1, or a negative `skip` | `InvalidQueryError` |
+| `select` or `order_by` isn't a field or a list of them | `InvalidQueryError` |
 | `get()` with something other than a positive integer | `InvalidValueError` |
 | Reading a field the record doesn't hold | `KeyError` |
 | The table has no such report, or several with that name | `UnknownReportError` |
-| `run()` on a summary, chart, or ask-the-user report, or `summary_rows()` on a table or ask-the-user report, or one with two columns of the same label | `UnsupportedReportError` |
-| `summarize()` with a field it can't use, such as text in `sum`, or a multi-select field in `group_by` | `QueryError` |
-| `summarize()` finds more records than `max_records_scanned` | `TooManyRecordsError`, a `QueryError`, and no records are read |
+| `run()` on a summary, chart, or ask-the-user report, or `run_summary()` on a table or ask-the-user report, or one with two columns of the same label | `UnsupportedReportError` |
+| `summarize()` with a field it can't use, such as text in `sum`, or a multi-select field in `group_by` | `InvalidQueryError` |
+| `summarize()` finds more records than `max_records_scanned` | `SummaryTooLargeError`, a `InvalidQueryError`, and no records are read |
 | `summarize()` finds a value that isn't what its field's type says | `InvalidResponseError`, and there's no partial result |
 
 See [Handling errors](errors.md) for failures that come from Quickbase, such as a refused token.

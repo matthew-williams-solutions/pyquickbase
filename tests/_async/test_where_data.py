@@ -9,9 +9,9 @@ import pytest
 from pyquickbase import (
     AsyncQuickbase,
     F,
+    InvalidQueryError,
     Policy,
     PolicyRefusedError,
-    QueryError,
     where_from_dict,
     where_schema,
 )
@@ -81,7 +81,7 @@ async def test_a_bad_value_for_the_field_sends_nothing() -> None:
     fake = Fake()
     async with client(fake) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        with pytest.raises(QueryError, match="YYYY-MM-DD"):
+        with pytest.raises(InvalidQueryError, match="YYYY-MM-DD"):
             await tasks.delete(where_from_dict({"field": "Due", "op": "<", "value": "garbage"}))
     assert fake.bodies == []
 

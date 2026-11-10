@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from pyquickbase import F, QueryError, Quickbase, tool_result
+from pyquickbase import F, InvalidQueryError, Quickbase, tool_result
 
 
 @pytest.fixture(scope="module")
@@ -47,7 +47,7 @@ def test_an_update_outside_its_scope_changes_nothing(
 ) -> None:
     tasks = qb.app(scratch.app_id).table(table.info().id)
     update = tasks.operation("update", fields=["Hours"])
-    with pytest.raises(QueryError, match="aren't ones this tool may use"):
+    with pytest.raises(InvalidQueryError, match="aren't ones this tool may use"):
         update.run({"records": [{"Record ID#": 3, "Hours": 99}]}, scope=F("Project") == "Alpha")
     assert (tasks.get(3, select=["Hours"]) or {})["Hours"] == 4
     result = update.run({"records": [{"Record ID#": 1, "Hours": 9}]}, scope=F("Project") == "Alpha")
@@ -85,5 +85,5 @@ def test_a_formula_and_a_report(qb: Quickbase, scratch: Any, table: Any) -> None
     report = tasks.operation("run_report", reports=["1"])
     page = report.run({"report": "1", "limit": 2})
     assert len(page.records) == 2
-    with pytest.raises(QueryError, match="scope"):
+    with pytest.raises(InvalidQueryError, match="scope"):
         report.run({"report": "1"}, scope=F("Project") == "Alpha")

@@ -26,4 +26,4 @@ with Quickbase(realm="demo", token="demo") as qb:
     try:
         app.table("Time Entries").insert([{"Hours": 1.0, "Task Title": "Not allowed"}])
     except WriteError as error:
-        print(*error.result.errors[0].messages)
+        print(*error.result.failed_rows[0].messages)

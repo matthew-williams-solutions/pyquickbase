@@ -18,4 +18,4 @@ plan = await app.preview_schema_changes(
         ),
     ]
 )
-print(plan.changes[1].summary)
+print(plan.changes[1].description)

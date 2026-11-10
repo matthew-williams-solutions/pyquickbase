@@ -9,11 +9,11 @@ import pytest
 from pyquickbase import (
     AsyncQuickbase,
     F,
+    InvalidQueryError,
     InvalidResponseError,
     Policy,
     PolicyRefusedError,
-    QueryError,
-    TooManyRecordsError,
+    SummaryTooLargeError,
     UnknownFieldError,
     UnknownReportError,
     UnsupportedReportError,
@@ -150,7 +150,7 @@ async def test_max_records_refuses_without_reading_records() -> None:
     fake = Fake(total=11)
     async with client(fake) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        with pytest.raises(QueryError, match=r"11 records match.*max_records_scanned of 10"):
+        with pytest.raises(InvalidQueryError, match=r"11 records match.*max_records_scanned of 10"):
             await tasks.summarize("Status", max_records_scanned=10, page_size=5)
     assert len(fake.queries) == 1
     assert fake.queries[0]["options"]["top"] == 1
@@ -167,9 +167,9 @@ async def test_too_many_records_is_a_query_error_that_says_how_many() -> None:
     fake = Fake(total=11)
     async with client(fake) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
-        with pytest.raises(TooManyRecordsError) as caught:
+        with pytest.raises(SummaryTooLargeError) as caught:
             await tasks.summarize(sum="Hours", max_records_scanned=10)
-    assert isinstance(caught.value, QueryError)
+    assert isinstance(caught.value, InvalidQueryError)
     assert (caught.value.matched, caught.value.limit) == (11, 10)
     assert len(fake.queries) == 1
 
@@ -232,11 +232,11 @@ async def test_records_added_past_the_read_rules_limit_refuse_rather_than_cut_sh
 @pytest.mark.parametrize(
     ("options", "error"),
     [
-        ({"max_records_scanned": 0}, QueryError),
-        ({"page_size": 0}, QueryError),
-        ({"sum": "Status"}, QueryError),
+        ({"max_records_scanned": 0}, InvalidQueryError),
+        ({"page_size": 0}, InvalidQueryError),
+        ({"sum": "Status"}, InvalidQueryError),
         ({"group_by": "Nope"}, UnknownFieldError),
-        ({"where": "{6.ex.'x'}"}, QueryError),
+        ({"where": "{6.ex.'x'}"}, InvalidQueryError),
     ],
 )
 async def test_bad_arguments_raise_without_reading_records(options: Any, error: Any) -> None:
@@ -254,7 +254,7 @@ async def test_bad_arguments_raise_without_reading_records(options: Any, error: 
 async def test_rows_are_keyed_by_column_label(report: str) -> None:
     fake = Fake(total=2)
     async with client(fake, policy=Policy.read_only()) as qb:
-        rows = await qb.app("bq1234567").table("Tasks").report(report).summary_rows()
+        rows = await qb.app("bq1234567").table("Tasks").report(report).run_summary()
     assert rows == [{"Status": "s0", "Hours (tot)": 0}, {"Status": "s1", "Hours (tot)": 1}]
     assert fake.writes == []
 
@@ -263,7 +263,7 @@ async def test_rows_page_through_query_parameters() -> None:
     fake = Fake(total=25)
     async with client(fake) as qb:
         report = qb.app("bq1234567").table("Tasks").report("By Status")
-        rows = await report.summary_rows(page_size=10)
+        rows = await report.run_summary(page_size=10)
     assert len(rows) == 25
     assert [params["skip"] for _, params in fake.runs] == ["0", "10", "20"]
     assert all(params["tableId"] == TASKS for _, params in fake.runs)
@@ -273,14 +273,14 @@ async def test_rows_can_stop_at_a_limit() -> None:
     fake = Fake(total=25)
     async with client(fake) as qb:
         report = qb.app("bq1234567").table("Tasks").report("By Status")
-        rows = await report.summary_rows(page_size=10, max_total=15)
+        rows = await report.run_summary(page_size=10, max_total=15)
     assert len(rows) == 15
     assert [params["top"] for _, params in fake.runs] == ["10", "5"]
 
 
 async def test_a_report_with_no_rows_is_empty() -> None:
     async with client(Fake()) as qb:
-        assert await qb.app("bq1234567").table("Tasks").report("Chart").summary_rows() == []
+        assert await qb.app("bq1234567").table("Tasks").report("Chart").run_summary() == []
 
 
 @pytest.mark.parametrize(
@@ -296,7 +296,7 @@ async def test_reports_it_cant_read(report: str, error: Any, message: str) -> No
     fake = Fake(total=2)
     async with client(fake) as qb:
         with pytest.raises(error, match=message):
-            await qb.app("bq1234567").table("Tasks").report(report).summary_rows()
+            await qb.app("bq1234567").table("Tasks").report(report).run_summary()
 
 
 async def test_a_short_response_raises_rather_than_looping() -> None:
@@ -304,20 +304,20 @@ async def test_a_short_response_raises_rather_than_looping() -> None:
     async with client(fake) as qb:
         report = qb.app("bq1234567").table("Tasks").report("Short")
         with pytest.raises(InvalidResponseError, match="empty page"):
-            await report.summary_rows(page_size=10)
+            await report.run_summary(page_size=10)
 
 
 @pytest.mark.parametrize("options", [{"page_size": 0}, {"max_total": 0}, {"page_size": -1}])
 async def test_bad_paging_is_refused(options: Any) -> None:
     fake = Fake()
     async with client(fake) as qb:
-        with pytest.raises(QueryError):
-            await qb.app("bq1234567").table("Tasks").report("Chart").summary_rows(**options)
+        with pytest.raises(InvalidQueryError):
+            await qb.app("bq1234567").table("Tasks").report("Chart").run_summary(**options)
     assert fake.runs == []
 
 
 async def test_run_points_to_summary_rows() -> None:
     async with client(Fake()) as qb:
         report = qb.app("bq1234567").table("Tasks").report("By Status")
-        with pytest.raises(UnsupportedReportError, match=r"summary_rows\(\)"):
+        with pytest.raises(UnsupportedReportError, match=r"run_summary\(\)"):
             await report.run_page()

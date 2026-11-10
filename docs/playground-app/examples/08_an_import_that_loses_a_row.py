@@ -14,5 +14,5 @@ with Quickbase(realm="demo", token="demo") as qb:
         tasks.insert(rows)
     except WriteError as error:
         print("Saved:", error.result.created_ids)
-        for failed in error.result.errors:
-            print("Failed:", rows[failed.index]["Title"], "-", *failed.messages)
+        for failed in error.result.failed_rows:
+            print("Failed:", rows[failed.row_index]["Title"], "-", *failed.messages)

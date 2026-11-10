@@ -3,10 +3,10 @@ import httpx
 import pytest
 
 from pyquickbase import (
+    InvalidQueryError,
     InvalidResponseError,
     Policy,
     PolicyRefusedError,
-    QueryError,
     Quickbase,
     ReportInfo,
     UnknownReportError,
@@ -243,7 +243,7 @@ def test_reports_that_arent_records_are_refused_without_running(ref: str, messag
 def test_run_page_checks_arguments_before_sending(kwargs: dict[str, int]) -> None:
     server = FakeReports()
     with client(server) as qb:
-        with pytest.raises(QueryError):
+        with pytest.raises(InvalidQueryError):
             qb.app(APP).table("Tasks").report("1").run_page(**kwargs)
     assert server.requests == []
 
@@ -254,7 +254,7 @@ def test_run_page_checks_arguments_before_sending(kwargs: dict[str, int]) -> Non
 def test_run_checks_arguments_before_sending(kwargs: dict[str, int]) -> None:
     server = FakeReports()
     with client(server) as qb:
-        with pytest.raises(QueryError):
+        with pytest.raises(InvalidQueryError):
             qb.app(APP).table("Tasks").report("1").run(**kwargs)
     assert server.requests == []
 

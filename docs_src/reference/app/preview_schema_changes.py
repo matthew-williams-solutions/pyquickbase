@@ -5,4 +5,4 @@ change = CreateField(
 )
 plan = await app.preview_schema_changes([change])
 for planned in plan.changes:
-    print(planned.status, planned.summary)
+    print(planned.status, planned.description)

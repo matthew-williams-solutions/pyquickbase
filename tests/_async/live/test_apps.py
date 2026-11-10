@@ -54,13 +54,13 @@ async def test_events_and_previews(qb: AsyncQuickbase, scratch: Any) -> None:
     table = scratch.table(*FIELDS)
     scratch.fill(table, [{"Title": "a"}])
     app = qb.app(scratch.app_id)
-    events = await app.events()
+    events = await app.triggers()
     assert all(item.type for item in events)
     tasks = app.table(table.info().id)
     # A new table has nothing watching it.
-    assert await tasks.events() == []
-    assert (await tasks.preview_delete(F("Title") == "a")).events == ()
-    assert (await tasks.preview_update([{"Record ID#": 1, "Title": "b"}])).events == ()
+    assert await tasks.triggers() == []
+    assert (await tasks.preview_delete(F("Title") == "a")).triggers == ()
+    assert (await tasks.preview_update([{"Record ID#": 1, "Title": "b"}])).triggers == ()
 
 
 async def test_a_restricted_user_previews_without_events(scratch: Any) -> None:
@@ -71,11 +71,11 @@ async def test_a_restricted_user_previews_without_events(scratch: Any) -> None:
         app = qb.app(scratch.app_id)
         table = app.table(table_id)
         with pytest.raises(PermissionDeniedError):
-            await app.events()
+            await app.triggers()
         with pytest.raises(PermissionDeniedError):
             await table.field_usage()
         preview = await table.preview_delete(F("Category") == "Alpha")
-    assert preview.events is None
+    assert preview.triggers is None
     assert preview.total >= 1
 
 

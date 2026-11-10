@@ -8,8 +8,8 @@ from collections.abc import Coroutine, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Protocol, overload, runtime_checkable
 
-from ._decision import APP_VERBS, SCHEMA_VERBS, VERBS, Decision, SchemaVerb
-from ._query import NO_VALUE, Condition, Expression, Group
+from ._decision import APP_VERBS, SCHEMA_VERBS, VERBS, PolicyDecision, PolicySchemaVerb
+from ._query import NO_VALUE, Condition, Group, WhereExpression
 from .errors import ConfigurationError
 
 if TYPE_CHECKING:
@@ -23,19 +23,19 @@ DEFAULT_MAX_RECORDS = 100
 DEFAULT_MAX_SUMMARY_RECORDS = 10_000
 
 NewFields = Literal["read", "hidden"] | str
-"""What a field created after binding gets: `read`, `hidden`, or a class's name."""
+"""What a field created after binding gets: `read`, `hidden`, or a tag's name."""
 
 
 @dataclass(frozen=True, slots=True)
 class FieldSelector:
-    """Which fields a rule or class covers. Make one with `fields`, or name fields by label or ID.
+    """Which fields a rule or tag covers. Make one with `fields`, or name fields by label or ID.
 
     Attributes:
-        kind: `all`, `new`, `classed`, `labeled_like`, or `named`.
-        values: The classes, the pattern, or the labels and IDs.
+        kind: `all`, `new`, `tagged`, `labeled_like`, or `named`.
+        values: The tags, the pattern, or the labels and IDs.
     """
 
-    kind: Literal["all", "new", "classed", "labeled_like", "named"]
+    kind: Literal["all", "new", "tagged", "labeled_like", "named"]
     values: tuple[str | int, ...] = ()
 
     def __repr__(self) -> str:
@@ -64,7 +64,7 @@ class TableSelector:
 
 
 class _Fields:
-    """Field selectors, for rules and classes."""
+    """Field selectors, for rules and tags."""
 
     @staticmethod
     def all() -> FieldSelector:
@@ -77,16 +77,16 @@ class _Fields:
         return FieldSelector("new")
 
     @staticmethod
-    def classed(*names: str) -> FieldSelector:
-        """The fields in any of these classes, including formulas, lookups, and summaries that read
+    def tagged(*names: str) -> FieldSelector:
+        """The fields in any of these tags, including formulas, lookups, and summaries that read
         one, through any chain of them.
 
         Args:
-            *names: The classes, from the policy's `classes`.
+            *names: The tags, from the policy's `tags`.
         """
         if not names or not all(isinstance(item, str) and item for item in names):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise ConfigurationError("fields.classed() takes one or more class names.")
-        return FieldSelector("classed", tuple(names))
+            raise ConfigurationError("fields.tagged() takes one or more tag names.")
+        return FieldSelector("tagged", tuple(names))
 
     @staticmethod
     def labeled_like(pattern: str) -> FieldSelector:
@@ -115,7 +115,7 @@ class _Tables:
 
 
 fields = _Fields()
-"""Field selectors: `fields.all()`, `fields.new()`, `fields.classed()`, and
+"""Field selectors: `fields.all()`, `fields.new()`, `fields.tagged()`, and
 `fields.labeled_like()`."""
 
 tables = _Tables()
@@ -129,8 +129,8 @@ TableTarget = str | TableSelector
 """A table in a rule: a name, an ID, or a `tables` selector."""
 TablesArg = TableTarget | Sequence[TableTarget]
 """One table target or a list of them."""
-ClassTarget = str | tuple[str, str | int] | FieldSelector
-"""A field in a class: `"Table.Field"`, `("Table", "Field")`, or a `fields` selector."""
+TagTarget = str | tuple[str, str | int] | FieldSelector
+"""A field in a tag: `"Table.Field"`, `("Table", "Field")`, or a `fields` selector."""
 
 
 def _field_selectors(value: Any, argument: str) -> tuple[FieldSelector, ...]:
@@ -188,7 +188,7 @@ class PolicyRule:
         tables: The tables it covers, or None for the app itself, as for `create_tables`.
         grants: The verbs it covers, and on which fields.
         options: Its limits, such as `max_paging_depth`, and for `limit.rows()`, its `where`.
-        text: The rule as written, which a `Decision` names.
+        text: The rule as written, which a `PolicyDecision` names.
     """
 
     effect: Literal["allow", "deny", "limit"]
@@ -202,29 +202,29 @@ class PolicyRule:
 
 
 @runtime_checkable
-class Rule(Protocol):
+class CustomRule(Protocol):
     """Custom logic, added to a policy's `rules`. It can only refuse.
 
     `decide()` gets each request the built-in rules allowed, and returns None to leave it, or a
-    `Decision` with `allowed=False` to refuse it. `BoundPolicy.offers()` asks about one field and
-    one verb at a time, so a rule that decides each field on its own is offered exactly what it
+    `PolicyDecision` with `allowed=False` to refuse it. `BoundPolicy.offers()` asks about one field
+    and one verb at a time, so a rule that decides each field on its own is offered exactly what it
     allows.
     """
 
-    def decide(self, request: "ReadRequest | WriteRequest") -> Decision | None:
+    def decide(self, request: "ReadRequest | WriteRequest") -> PolicyDecision | None:
         """Refuse a request, or leave it to the other rules.
 
         Args:
             request: What the request would do, which holds no values.
 
         Returns:
-            A `Decision` with `allowed=False` to refuse, or None.
+            A `PolicyDecision` with `allowed=False` to refuse, or None.
         """
         ...
 
 
-RuleLike = PolicyRule | Rule
-"""A rule a `Policy` takes: one from `allow`, `deny`, or `limit`, or your own `Rule`."""
+RuleLike = PolicyRule | CustomRule
+"""A rule a `Policy` takes: one from `allow`, `deny`, or `limit`, or your own `CustomRule`."""
 
 
 def _text(name: str, *args: Any, **options: Any) -> str:
@@ -345,30 +345,30 @@ class _Allow:
     def schema(
         self,
         tables: TablesArg,
-        *verbs: SchemaVerb,
+        *verbs: PolicySchemaVerb,
         fields: FieldsArg | None = None,
         field_types: Sequence[str] | None = None,
     ) -> PolicyRule:
         """Changing tables' schema, granted on the table where the change lands.
 
-        `add_field`, `change_field`, and `delete_field` change fields, and `formula` makes or
-        changes a formula, which also needs `add_field` or `change_field`. `lookup` adds a lookup
+        `create_field`, `update_field`, and `delete_field` change fields, and `formula` makes or
+        changes a formula, which also needs `create_field` or `update_field`. `lookup` adds a lookup
         to a child table, and also needs `read` on the parent's field. `summary` adds a summary to
         a parent table, and also needs `read` on the child's field, and `filter` on every field its
         `where` uses. `link` and `unlink` need a grant on both tables, as a relationship adds a
         link field and an "Add" record formula to the parent, and `unlink` also needs
-        `delete_field` wherever its lookups and summaries are. `change_table` and `delete_table`
-        change or delete the table itself, and `set_key` changes which field is its key.
+        `delete_field` wherever its lookups and summaries are. `update_table` and `delete_table`
+        change or delete the table itself, and `set_key_field` changes which field is its key.
 
         Args:
             tables: The tables, by name or ID, or a `tables` selector.
             *verbs: What it grants, from those above.
-            fields: Which fields `change_field` and `delete_field` may change. Defaults to all.
-            field_types: The types `add_field` may create, such as `["text", "date"]`, or None
+            fields: Which fields `update_field` and `delete_field` may change. Defaults to all.
+            field_types: The types `create_field` may create, such as `["text", "date"]`, or None
                 for any. A formula counts by its result type.
         """
         if not verbs:
-            raise ConfigurationError("schema() needs at least one verb, such as 'add_field'.")
+            raise ConfigurationError("schema() needs at least one verb, such as 'create_field'.")
         unknown = [item for item in verbs if item not in SCHEMA_VERBS]
         if unknown:
             raise ConfigurationError(
@@ -384,9 +384,9 @@ class _Allow:
                 raise ConfigurationError("field_types takes a list of field types, or None.")
             types = frozenset(field_types)
             if not types:
-                raise ConfigurationError("field_types is empty. Leave out add_field instead.")
+                raise ConfigurationError("field_types is empty. Leave out create_field instead.")
         selectors = _field_selectors(FieldSelector("all") if fields is None else fields, "fields")
-        field_verbs = frozenset(verbs) & {"change_field", "delete_field"}
+        field_verbs = frozenset(verbs) & {"update_field", "delete_field"}
         table_verbs = frozenset(verbs) - field_verbs
         grants: list[Grant] = []
         if field_verbs:
@@ -583,7 +583,7 @@ class _Deny(_Allow):
         """Refuse everything on some fields, in every table, or on some tables.
 
         ```python
-        deny.all(fields.classed("sensitive"))
+        deny.all(fields.tagged("sensitive"))
         deny.all("Payroll")
         ```
 
@@ -596,7 +596,7 @@ class _Deny(_Allow):
             if selector.kind == "named":
                 raise ConfigurationError(
                     "deny.all() takes a fields.* selector, or tables. To deny named fields, put "
-                    "them in a class, or name their table in a deny rule."
+                    "them in a tag, or name their table in a deny rule."
                 )
             return PolicyRule(
                 effect="deny",
@@ -610,7 +610,7 @@ class _Deny(_Allow):
 class _Limit:
     """Limits on which records a client reaches."""
 
-    def rows(self, tables: TablesArg, where: Expression | str) -> PolicyRule:
+    def rows(self, tables: TablesArg, where: WhereExpression | str) -> PolicyRule:
         """Only reach the records that match a condition. It's ANDed onto every query, summary,
         and delete the client sends, and into a summary field's filter.
 
@@ -624,7 +624,7 @@ class _Limit:
                 names fields by ID.
             where: The condition, built with `F`, or a query string, by label or ID.
         """
-        if not isinstance(where, Expression | str) or (  # pyright: ignore[reportUnnecessaryIsInstance]
+        if not isinstance(where, WhereExpression | str) or (  # pyright: ignore[reportUnnecessaryIsInstance]
             isinstance(where, str) and not where.strip()
         ):
             raise ConfigurationError("limit.rows() takes a condition built with F, or a string.")
@@ -644,7 +644,7 @@ _OPERATORS = {
 _METHODS = {"CT": "contains", "XCT": "not_contains", "SW": "starts_with", "XSW": "not_starts_with"}
 
 
-def _condition_text(where: Expression | str) -> str:
+def _condition_text(where: WhereExpression | str) -> str:
     """A condition as it was written with `F`, for a rule's text."""
     if isinstance(where, str):
         return repr(where)
@@ -681,13 +681,13 @@ class Policy:
     ```python
     pay = ["Technicians.Hourly Rate"]
     policy = Policy(
-        classes={"pay": pay},
+        tags={"pay": pay},
         rules=[
             allow.read(tables.all()),
             allow.update(
                 "Job Tasks", ["Status", "Notes"]
             ),
-            deny.all(fields.classed("pay")),
+            deny.all(fields.tagged("pay")),
         ],
     )
     app = qb.app("bq1234567")
@@ -695,30 +695,30 @@ class Policy:
     ```
 
     Anything no rule allows is refused, and a deny always wins. A formula, lookup, or summary is
-    in every class of the fields it reads, through any chain of them, so it's denied wherever they
+    in every tag of the fields it reads, through any chain of them, so it's denied wherever they
     are.
 
     Args:
         app: The app's ID, which `bind()` checks, or None for any.
-        classes: Names for groups of fields, as `{name: [fields]}`, for `fields.classed()`. Each
+        tags: Names for groups of fields, as `{name: [fields]}`, for `fields.tagged()`. Each
             field is `"Table.Field"`, `("Table", "Field")`, or a `fields` selector, such as
             `fields.labeled_like("_*")`.
-        rules: What's allowed and refused, from `allow`, `deny`, and `limit`, and any `Rule`.
+        rules: What's allowed and refused, from `allow`, `deny`, and `limit`, and any `CustomRule`.
         new_fields: What a field added after binding gets: `read`, to be read, filtered, and
-            sorted by where a rule allows it, `hidden`, or a class's name, which also leaves it
+            sorted by where a rule allows it, `hidden`, or a tag's name, which also leaves it
             read-only. It's never writable until the policy is bound again.
 
     Raises:
-        ConfigurationError: A rule or class can't be used.
+        ConfigurationError: A rule or tag can't be used.
     """
 
-    __slots__ = ("app_id", "classes", "new_fields", "rules")
+    __slots__ = ("app_id", "new_fields", "rules", "tags")
 
     def __init__(
         self,
         *,
         app: str | None = None,
-        classes: Mapping[str, Sequence[ClassTarget]] | None = None,
+        tags: Mapping[str, Sequence[TagTarget]] | None = None,
         rules: Sequence[RuleLike] = (),
         new_fields: NewFields = "read",
     ) -> None:
@@ -726,32 +726,32 @@ class Policy:
             raise ConfigurationError(
                 "app takes the app's ID, which contains only letters and numbers."
             )
-        found: dict[str, tuple[ClassTarget, ...]] = {}
-        for name, targets in (classes or {}).items():
+        found: dict[str, tuple[TagTarget, ...]] = {}
+        for name, targets in (tags or {}).items():
             if not isinstance(name, str) or not name:  # pyright: ignore[reportUnnecessaryIsInstance]
-                raise ConfigurationError("Each class needs a name.")
+                raise ConfigurationError("Each tag needs a name.")
             items: list[Any] = [targets] if isinstance(targets, str | tuple) else list(targets)
             if not items:
-                raise ConfigurationError(f"Class {name!r} has no fields.")
+                raise ConfigurationError(f"Tag {name!r} has no fields.")
             for item in items:
                 _check_class_target(name, item)
             found[name] = tuple(items)
         if isinstance(rules, PolicyRule) or not isinstance(rules, Sequence):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise ConfigurationError("rules takes a list of rules.")
         for item in rules:
-            if not isinstance(item, PolicyRule) and not isinstance(item, Rule):  # pyright: ignore[reportUnnecessaryIsInstance]
+            if not isinstance(item, PolicyRule) and not isinstance(item, CustomRule):  # pyright: ignore[reportUnnecessaryIsInstance]
                 raise ConfigurationError(
                     f"{item!r} isn't a rule. Use allow, deny, or limit, or an object with "
                     "decide(request)."
                 )
         if not isinstance(new_fields, str) or not new_fields:  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise ConfigurationError("new_fields takes 'read', 'hidden', or a class's name.")
+            raise ConfigurationError("new_fields takes 'read', 'hidden', or a tag's name.")
         if new_fields not in ("read", "hidden") and new_fields not in found:
             raise ConfigurationError(
-                f"new_fields is {new_fields!r}, which isn't 'read', 'hidden', or a class."
+                f"new_fields is {new_fields!r}, which isn't 'read', 'hidden', or a tag."
             )
         self.app_id: str | None = app
-        self.classes: Mapping[str, tuple[ClassTarget, ...]] = found
+        self.tags: Mapping[str, tuple[TagTarget, ...]] = found
         self.rules: tuple[RuleLike, ...] = tuple(rules)
         self.new_fields: str = new_fields
 
@@ -775,7 +775,7 @@ class Policy:
     @property
     def needs_app(self) -> bool:
         """Whether anything in it names a table or field, so it needs `bind()` before use."""
-        if self.classes or self.new_fields not in ("read", "hidden"):
+        if self.tags or self.new_fields not in ("read", "hidden"):
             return True
         for item in self.rules:
             if not isinstance(item, PolicyRule):
@@ -789,7 +789,7 @@ class Policy:
                     return True
             for grant in item.grants:
                 for selector in grant.fields or ():
-                    if selector.kind in ("named", "labeled_like", "classed"):
+                    if selector.kind in ("named", "labeled_like", "tagged"):
                         return True
         return False
 
@@ -798,7 +798,7 @@ class Policy:
     @overload
     def bind(self, app: "App") -> "BoundPolicy": ...
     def bind(self, app: "App | AsyncApp") -> Any:
-        """Resolve every table, field, and class against an app, once.
+        """Resolve every table, field, and tag against an app, once.
 
         Every problem is reported at once. With an `AsyncApp`, this returns an awaitable. It reads
         the app's tables, each table's fields and relationships, and the reports of any table
@@ -815,7 +815,7 @@ class Policy:
             A `BoundPolicy`, which is frozen and keyed by ID.
 
         Raises:
-            ConfigurationError: A table, field, report, or class can't be found, or is ambiguous.
+            ConfigurationError: A table, field, report, or tag can't be found, or is ambiguous.
                 The message lists every one.
         """
         return app._bind_policy(self)  # pyright: ignore[reportPrivateUsage]
@@ -826,7 +826,7 @@ class Policy:
         Every field then counts as existing, so `new_fields` doesn't apply.
 
         Raises:
-            ConfigurationError: It names a table, field, class, report, or row limit.
+            ConfigurationError: It names a table, field, tag, report, or row limit.
         """
         from ._bound import bind_offline
 
@@ -848,7 +848,7 @@ def _check_class_target(name: str, item: Any) -> None:
     if isinstance(item, FieldSelector):
         if item.kind not in ("all", "labeled_like"):
             raise ConfigurationError(
-                f"Class {name!r} can use fields.all() and fields.labeled_like(), not {item!r}."
+                f"Tag {name!r} can use fields.all() and fields.labeled_like(), not {item!r}."
             )
         return
     if isinstance(item, tuple):
@@ -863,6 +863,6 @@ def _check_class_target(name: str, item: Any) -> None:
     elif isinstance(item, str) and "." in item.strip(".") and item.strip():
         return
     raise ConfigurationError(
-        f"Class {name!r} has {item!r}. Name a field as 'Table.Field', ('Table', 'Field'), or with "
+        f"Tag {name!r} has {item!r}. Name a field as 'Table.Field', ('Table', 'Field'), or with "
         "fields.labeled_like()."
     )

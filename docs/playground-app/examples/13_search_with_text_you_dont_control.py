@@ -1,5 +1,5 @@
 # Search with text you don't control
-from pyquickbase import F, QueryError, Quickbase
+from pyquickbase import F, InvalidQueryError, Quickbase
 
 searches = [
     "Renew O'Brien & Co retainer",
@@ -14,5 +14,5 @@ with Quickbase(realm="demo", token="demo") as qb:
     for text in searches:
         try:
             print(f"{text!r} matches {tasks.count(F('Title') == text)} task")
-        except QueryError as error:
+        except InvalidQueryError as error:
             print(f"{text!r} is refused: {error}")

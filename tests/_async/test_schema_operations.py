@@ -8,7 +8,7 @@ import pytest
 from pyquickbase import (
     AsyncQuickbase,
     ConfigurationError,
-    ConfirmationError,
+    InvalidConfirmationError,
     InvalidValueError,
     Policy,
     SchemaChangeResult,
@@ -43,12 +43,12 @@ async def test_a_plan_then_its_confirmation_applies_the_changes() -> None:
         plan = await app.operation("preview_schema_changes")
         apply = await app.operation("apply_schema_changes")
         shown = tool_result(await plan.run({"changes": [NEW_FIELD]}))
-        assert shown["changes"][0]["summary"] == 'Add field "Due" (date) to Tasks.'
+        assert shown["changes"][0]["description"] == 'Add field "Due" (date) to Tasks.'
         assert shown["expires_at"].endswith("Z")
         assert not fake.writes()
         result = await apply.run({"changes": [NEW_FIELD], "confirmation": shown["confirmation"]})
     assert isinstance(result, SchemaChangeResult)
-    assert tool_result(result)["applied"][0]["summary"] == 'Add field "Due" (date) to Tasks.'
+    assert tool_result(result)["applied"][0]["description"] == 'Add field "Due" (date) to Tasks.'
     assert fake.writes() == [("POST", "/fields")]
 
 
@@ -79,7 +79,7 @@ async def test_apply_needs_a_current_confirmation(confirmation: Any, match: str)
         if confirmation is not None:
             own = key_id(qb._transport.confirmation_key)  # pyright: ignore[reportPrivateUsage]
             arguments["confirmation"] = confirmation.replace("OWN", own)
-        with pytest.raises(ConfirmationError, match=match):
+        with pytest.raises(InvalidConfirmationError, match=match):
             await apply.run(arguments)
     assert not fake.writes()
 
@@ -92,7 +92,7 @@ async def test_a_confirmation_only_applies_the_changes_it_was_given_for() -> Non
             {"changes": [NEW_FIELD]}
         )
         other = {**NEW_FIELD, "label": "Deadline"}
-        with pytest.raises(ConfirmationError, match="these arguments differ"):
+        with pytest.raises(InvalidConfirmationError, match="these arguments differ"):
             await (await app.operation("apply_schema_changes")).run(
                 {"changes": [other], "confirmation": confirmation.confirmation}
             )
@@ -106,7 +106,7 @@ async def test_a_confirmation_is_refused_once_the_schema_changes() -> None:
         app = qb.app(APP)
         plan = await (await app.operation("preview_schema_changes")).run({"changes": [change]})
         fake.fields[TASKS][7]["unique"] = True  # Someone changes the field in the UI.
-        with pytest.raises(ConfirmationError, match="the schema has changed since"):
+        with pytest.raises(InvalidConfirmationError, match="the schema has changed since"):
             await (await app.operation("apply_schema_changes")).run(
                 {"changes": [change], "confirmation": plan.confirmation}
             )
@@ -133,11 +133,11 @@ async def test_a_plan_with_blockers_or_nothing_to_do_gives_no_confirmation() -> 
 async def test_the_schema_offers_only_what_the_rules_could_allow() -> None:
     fake = FakeApp()
     rules = fake.bind(
-        allow.read(TASKS), allow.schema(TASKS, "add_field", field_types=["text", "date"])
+        allow.read(TASKS), allow.schema(TASKS, "create_field", field_types=["text", "date"])
     )
     async with client(fake, policy=rules) as qb:
         plan = await qb.app(APP).operation("preview_schema_changes", max_changes=3)
-    schema = plan.schema
+    schema = plan.input_schema
     assert actions(schema) == ["create_field"]
     item = schema["properties"]["changes"]["items"]["oneOf"][0]
     assert item["properties"]["type"]["enum"] == ["text", "date"]
@@ -148,7 +148,7 @@ async def test_the_schema_offers_only_what_the_rules_could_allow() -> None:
 
 async def test_a_change_the_tool_doesnt_offer_is_refused() -> None:
     fake = FakeApp()
-    rules = fake.bind(allow.read(TASKS), allow.schema(TASKS, "add_field"))
+    rules = fake.bind(allow.read(TASKS), allow.schema(TASKS, "create_field"))
     async with client(fake, policy=rules) as qb:
         plan = await qb.app(APP).operation("preview_schema_changes", max_changes=1)
         with pytest.raises(InvalidValueError, match="isn't one this tool offers: create_field"):
@@ -199,32 +199,32 @@ async def test_a_refused_confirmation_says_how_to_get_one() -> None:  # F20
     async with client(fake) as qb:
         apply = await qb.app(APP).operation("apply_schema_changes")
         own = key_id(qb._transport.confirmation_key)  # pyright: ignore[reportPrivateUsage]
-        with pytest.raises(ConfirmationError) as missing:
+        with pytest.raises(InvalidConfirmationError) as missing:
             await apply.run({"changes": [NEW_FIELD], "confirmation": f"{own}.1.x"})
         error = tool_error(missing.value)["error"]
         assert error["code"] == "needs_confirmation"
-        assert "Preview or plan the same change again" in error["hint"]
-        assert "a plan's confirmation lasts 15 minutes" in error["message"]
+        assert "Preview the same change again" in error["hint"]
+        assert "a preview's confirmation lasts 15 minutes" in error["message"]
         async with client(fake) as other:
             elsewhere = await (await other.app(APP).operation("preview_schema_changes")).run(
                 {"changes": [NEW_FIELD]}
             )
-        with pytest.raises(ConfirmationError, match="another client or server process"):
+        with pytest.raises(InvalidConfirmationError, match="another client or server process"):
             await apply.run({"changes": [NEW_FIELD], "confirmation": elsewhere.confirmation})
 
 
 async def test_a_confirmation_from_a_client_with_another_policy_doesnt_match() -> None:
     fake = FakeApp()
     key = bytes(range(32))
-    wide = fake.bind(allow.read(tables.all()), allow.schema(TASKS, "add_field"))
-    narrow = fake.bind(allow.read(TASKS), allow.schema(TASKS, "add_field"))
+    wide = fake.bind(allow.read(tables.all()), allow.schema(TASKS, "create_field"))
+    narrow = fake.bind(allow.read(TASKS), allow.schema(TASKS, "create_field"))
     async with client(fake, policy=wide, confirmation_key=key) as qb:
         plan = await (await qb.app(APP).operation("preview_schema_changes")).run(
             {"changes": [NEW_FIELD]}
         )
     async with client(fake, policy=narrow, confirmation_key=key) as other:
         apply = await other.app(APP).operation("apply_schema_changes")
-        with pytest.raises(ConfirmationError, match="a client with a different policy"):
+        with pytest.raises(InvalidConfirmationError, match="a client with a different policy"):
             await apply.run({"changes": [NEW_FIELD], "confirmation": plan.confirmation})
     async with client(fake, policy=wide, confirmation_key=key) as same:
         apply = await same.app(APP).operation("apply_schema_changes")

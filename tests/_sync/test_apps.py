@@ -144,7 +144,7 @@ def test_dropping_an_app_forgets_what_was_cached() -> None:
 
 
 @pytest.mark.parametrize(
-    "policy", [Policy.read_only(), bind(allow.schema(TASKS, "add_field"), allow.create_tables())]
+    "policy", [Policy.read_only(), bind(allow.schema(TASKS, "create_field"), allow.create_tables())]
 )
 def test_a_client_with_a_policy_never_makes_or_deletes_apps(policy: Any) -> None:
     fake = Fake()

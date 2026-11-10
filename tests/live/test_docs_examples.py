@@ -30,7 +30,7 @@ SKIPPED = {
     'staging.drop(confirm="Jobs (staging)")': "Deletes an app. test_apps.py tests this method",
     'qb.find_user("jordan@example.com")': "Names a person who isn't in the test realm",
     "page.read().text": "Names a code page. test_xml.py tests these methods on a fixed page",
-    "page.preview_write(new_text)": "Names a code page. test_xml.py tests these methods",
+    "page.preview_change(new_text)": "Names a code page. test_xml.py tests these methods",
     "saved = result.previous.text": "Names a code page. test_xml.py tests these methods",
 }
 

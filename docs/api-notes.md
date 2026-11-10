@@ -581,7 +581,7 @@ a user token for a Basic Access role. Each request was a POST to `https://<realm
 | A bad token, a made-up app, and an app the token isn't assigned to | All 400, errcode 83, `User token is invalid`, so they can't be told apart, as in the JSON API |
 | No credentials | 400, errcode 24, `An Application Token must be supplied.` |
 | No permission | 403, errcode 3 |
-| An unknown action | 404, errcode 5, `No Such Operation` |
+| An unknown action | 404, errcode 5, `No Such TableOperation` |
 | Malformed XML | 400, errcode 11 |
 | Errcode 83's `errtext` | `Invalid error code: 83`. The useful text is in `errdetail` |
 | Response headers | `cf-ray` and `tid`. No `qb-api-ray` |

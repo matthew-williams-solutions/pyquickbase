@@ -7,10 +7,10 @@ from pyquickbase import (
 )
 
 policy = Policy(
-    classes={"codes": [fields.labeled_like("cod*")]},
+    tags={"codes": [fields.labeled_like("cod*")]},
     rules=[
         allow.read("Job Tasks"),
-        deny.all(fields.classed("codes")),
+        deny.all(fields.tagged("codes")),
     ],
 )
 async with AsyncQuickbase.from_env() as setup:

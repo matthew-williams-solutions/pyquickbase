@@ -24,7 +24,7 @@ import time
 from collections.abc import Mapping
 from typing import Any, Literal, cast
 
-from .errors import ConfirmationError
+from .errors import InvalidConfirmationError
 
 CONFIRMATION_SECONDS = 900
 """How long a preview's confirmation lasts: 15 minutes."""
@@ -39,7 +39,7 @@ _PREVIEWS: dict[str, str] = {
 _NOUNS: dict[str, str] = {
     "update": "preview",
     "delete": "preview",
-    "schema": "plan",
+    "schema": "preview",
     "code_page": "preview",
 }
 
@@ -154,26 +154,26 @@ def check(
     """Refuse unless `token` is a current confirmation for exactly these arguments."""
     preview, noun = _PREVIEWS[kind], _NOUNS[kind]
     if token is None:
-        raise ConfirmationError(
+        raise InvalidConfirmationError(
             f"This tool needs the confirmation that {preview} returns. Call {preview} with the "
             "same arguments, show the person what it found, and once they approve, send its "
             "confirmation. Nothing was changed."
         )
     parts = token.split(".") if isinstance(token, str) else []
     if len(parts) != 3 or not parts[1].isdigit() or not parts[2]:
-        raise ConfirmationError(
+        raise InvalidConfirmationError(
             f"confirmation isn't one {preview} returned. Call {preview} again. Nothing was changed."
         )
     issued_by, expires_text, signature = parts
     if issued_by != key_id(key):
-        raise ConfirmationError(
+        raise InvalidConfirmationError(
             f"The confirmation came from another client or server process, whose key this one "
             f"doesn't have, so it can't be checked here. Call {preview} with this tool, or give "
             "the clients the same confirmation_key. Nothing was changed."
         )
     expires = int(expires_text)
     if expires < (time.time() if now is None else now):
-        raise ConfirmationError(
+        raise InvalidConfirmationError(
             f"The confirmation has expired, as a {noun}'s confirmation lasts "
             f"{CONFIRMATION_SECONDS // 60} minutes. Call {preview} again, and show the person the "
             "result. Nothing was changed."
@@ -184,7 +184,7 @@ def check(
             "schema": " the schema has changed since,",
             "code_page": " the page has changed since,",
         }.get(kind, "")
-        raise ConfirmationError(
+        raise InvalidConfirmationError(
             f"The confirmation doesn't match: these arguments differ from the {noun}'s,{changed} "
             f"or it came from another {noun}, or from a client with a different policy. Call "
             f"{preview} again with exactly these arguments, and show the person the result. "

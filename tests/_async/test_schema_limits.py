@@ -208,7 +208,7 @@ async def test_a_new_table_gets_the_access_for_new_tables() -> None:
     fake = Fake()
     policy = bind(
         allow.create_tables(),
-        allow.schema(tables.created(), "add_field"),
+        allow.schema(tables.created(), "create_field"),
         allow.read(tables.created()),
     )
     async with client(fake, policy=policy) as qb:
@@ -234,7 +234,7 @@ async def test_without_access_for_new_tables_a_new_one_is_off_limits() -> None:
 
 async def test_a_formula_may_use_readable_fields() -> None:
     fake = Fake()
-    rules = writes("add_field", "change_field", "formula")
+    rules = writes("create_field", "update_field", "formula")
     async with client(fake, policy=bind(*reads(), rules)) as qb:
         tasks = qb.app(APP).table("Tasks")
         await tasks.create_field("Triple", "numeric", formula="[Hours] * 3")
@@ -254,7 +254,7 @@ async def test_a_formula_may_use_readable_fields() -> None:
 )
 async def test_a_formula_that_could_show_more_is_refused(formula: str, match: str) -> None:
     fake = Fake()
-    rules = writes("add_field", "formula")
+    rules = writes("create_field", "formula")
     async with client(fake, policy=bind(*reads(), rules)) as qb:
         with pytest.raises(PolicyRefusedError, match=match):
             await qb.app(APP).table("Tasks").create_field("New", "text", formula=formula)
@@ -281,7 +281,7 @@ async def test_a_formula_without_a_policy_isnt_checked() -> None:
 
 async def test_with_a_policy_only_the_sdk_may_make_a_formula() -> None:
     fake = Fake()
-    async with client(fake, policy=bind(writes("add_field", "formula"))) as qb:
+    async with client(fake, policy=bind(writes("create_field", "formula"))) as qb:
         with pytest.raises(PolicyRefusedError, match="check what they read"):
             await qb.request(
                 "POST", "/fields", params={"tableId": TASKS},
@@ -292,7 +292,7 @@ async def test_with_a_policy_only_the_sdk_may_make_a_formula() -> None:
 
 async def test_a_link_formula_cant_be_changed_under_a_policy() -> None:
     fake = Fake()
-    policy = bind(allow.read(tables.all()), writes("change_field", "formula"))
+    policy = bind(allow.read(tables.all()), writes("update_field", "formula"))
     async with client(fake, policy=policy) as qb:
         with pytest.raises(PolicyRefusedError, match="acts as them"):
             await qb.app(APP).table("Tasks").update_field("Link", formula='"https://x"')

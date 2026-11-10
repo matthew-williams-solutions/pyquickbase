@@ -12,7 +12,7 @@ Catch the specific errors you can act on, and `QuickbaseError` for the rest.
 from pyquickbase import (
     AuthenticationError,
     F,
-    QueryError,
+    InvalidQueryError,
     Quickbase,
     QuickbaseError,
     RateLimitError,
@@ -22,7 +22,7 @@ with Quickbase(realm="acme", token="your_user_token") as qb:
     tasks = qb.app("bq1234567").table("Tasks")
     try:
         print(tasks.count(F("Status") == "Open"))
-    except QueryError as error:
+    except InvalidQueryError as error:
         print("Fix the query:", error)
     except AuthenticationError:
         print("Check the token, and the app and table IDs")
@@ -34,15 +34,15 @@ with Quickbase(realm="acme", token="your_user_token") as qb:
 
 The other examples on this page use `tasks`, a table from a client made in the same way.
 
-Catching a class catches everything under it. `WritePermissionError` is under both `WriteError` and
+Catching a class catches everything under it. `WritePermissionDeniedError` is under both `WriteError` and
 `PermissionDeniedError`, so either one catches a refused write:
 
 ```text
 QuickbaseError
 ├── ConfigurationError
-├── QueryError
+├── InvalidQueryError
 ├── InvalidValueError
-├── ConfirmationError
+├── InvalidConfirmationError
 ├── PolicyRefusedError
 ├── SchemaMismatchError
 ├── UnknownTableError
@@ -55,14 +55,14 @@ QuickbaseError
 ├── InvalidResponseError
 ├── WriteError
 │   ├── SchemaChangeError
-│   └── WritePermissionError
+│   └── WritePermissionDeniedError
 └── APIError
     ├── BadRequestError
     ├── AuthenticationError
     ├── PermissionDeniedError
-    │   └── WritePermissionError
+    │   └── WritePermissionDeniedError
     ├── NotFoundError
-    ├── UnsupportedOperationError
+    ├── NoLongerAvailableError
     ├── RateLimitError
     └── ServerError
 ```
@@ -70,7 +70,7 @@ QuickbaseError
 The eleven listed first, from `ConfigurationError` to `CodePageChangedError`, mean the request wasn't
 sent, though the SDK may have read metadata or counted records first.
 
-`ConfigurationError`, `QueryError`, and `InvalidValueError` are also `ValueError`s, and the three
+`ConfigurationError`, `InvalidQueryError`, and `InvalidValueError` are also `ValueError`s, and the three
 `Unknown...Error`s are also `LookupError`s.
 
 Reading a missing key from a `Record` raises Python's `KeyError`, as any mapping does. That includes
@@ -83,7 +83,7 @@ These mean the request wasn't sent, though the SDK may have read the table's met
 | Exception | Cause |
 |---|---|
 | `ConfigurationError` | Invalid client settings, or missing environment variables |
-| `QueryError` | A query that can't be sent as written, such as a lowercase operator in a hand-written string |
+| `InvalidQueryError` | A query that can't be sent as written, such as a lowercase operator in a hand-written string |
 | `InvalidValueError` | A row, value, or file request that can't be sent |
 | `SchemaMismatchError` | An `ensure_` method found a field that isn't what it was asked for, or the schema changed since a plan was made |
 | `UnknownTableError` | No table with that name or ID in this app, or the client's policy hides it |
@@ -98,11 +98,11 @@ would allow it. Its message follows one form: `Refused by <layer>: <what>. <reas
 Nothing was sent. To allow it: <hint>.`
 
 ```python
-from pyquickbase import QueryError
+from pyquickbase import InvalidQueryError
 
 try:
     tasks.delete("{7.ex.'Done'}")
-except QueryError as error:
+except InvalidQueryError as error:
     print(error)  # Quickbase would read the lowercase operator as "contains"
 ```
 
@@ -123,8 +123,8 @@ try:
 except WriteError as error:
     for row, record_id in zip(rows, error.result.row_ids):
         print(row["Title"], record_id)  # None for a row that failed
-    for failed in error.result.errors:
-        print(failed.index, failed.reason, failed.messages)
+    for failed in error.result.failed_rows:
+        print(failed.row_index, failed.reason, failed.messages)
 ```
 
 When a later batch of a large write fails, the error's `__cause__` is that batch's own error, such as a
@@ -135,7 +135,7 @@ for each row's `reason`.
 
 Quickbase refuses a write in two ways, depending on the role. A role with neither add nor modify rights on
 the table gets a 403. Any other refusal, including a field the role can only view, is a row error in a
-successful response. `WritePermissionError` covers both. It's a `WriteError` and a
+successful response. `WritePermissionDeniedError` covers both. It's a `WriteError` and a
 `PermissionDeniedError`, so either one catches it, and its `status_code` is 403 or 207.
 
 If some rows failed for another reason too, you get a plain `WriteError`, so check each row's `reason`. A row
@@ -154,7 +154,7 @@ exception you get, and `status_code` is still the HTTP status.
 | `AuthenticationError` | 401 |
 | `PermissionDeniedError` | 403 |
 | `NotFoundError` | 404 |
-| `UnsupportedOperationError` | 404, when Quickbase says the operation doesn't exist |
+| `NoLongerAvailableError` | 404, when Quickbase says the operation doesn't exist |
 | `RateLimitError` | 429, with `retry_after` |
 | `ServerError` | 5xx |
 

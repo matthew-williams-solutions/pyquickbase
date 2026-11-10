@@ -16,10 +16,10 @@ from pyquickbase import (
     ConfigurationError,
     F,
     FormulaResult,
+    InvalidQueryError,
     InvalidResponseError,
     InvalidValueError,
     Policy,
-    QueryError,
     RetryPolicy,
     parse_where,
 )
@@ -85,7 +85,7 @@ OPERATORS = st.sampled_from(["EX", "XEX", "CT", "XCT", "SW", "XSW", "TV", "XTV",
 def test_a_value_stays_one_condition_or_is_refused(value: str, operator: str) -> None:
     try:
         clause = compile_where(F("Title").op(operator, value), INDEX)
-    except QueryError:
+    except InvalidQueryError:
         return
     found = parse_where(clause, FIELDS)
     assert len(found) == 1
@@ -100,7 +100,7 @@ def test_a_value_stays_one_condition_or_is_refused(value: str, operator: str) ->
 def test_no_value_reaches_quickbase_as_syntax(value: str) -> None:
     try:
         sent = format_value(value)
-    except QueryError:
+    except InvalidQueryError:
         return
     # What the live API treats as syntax, per docs/api-notes.md.
     assert not re.search(r"(?:^|[ \t])(?:OR|AND)(?:$|[ \t])", sent)
@@ -136,14 +136,14 @@ def test_combined_conditions_parse_back_with_every_condition(tree: Any) -> None:
 
     try:
         clause = compile_where(build(tree), INDEX)
-    except QueryError:
+    except InvalidQueryError:
         return
     assert len(parse_where(clause, FIELDS)) == leaves(tree)
 
 
 @given(TEXT)
 def test_a_where_string_is_accepted_or_refused_cleanly(where: str) -> None:
-    with contextlib.suppress(QueryError):
+    with contextlib.suppress(InvalidQueryError):
         parse_where(where, FIELDS)
 
 
@@ -360,7 +360,7 @@ def test_row_errors_keep_their_position_across_batches(failures: list[list[int]]
         result = merge_write_result(result, payload, offset)
         expected += [line - 1 + offset for line in unique]
         offset += 10
-    assert [error.index for error in result.errors] == expected
+    assert [error.row_index for error in result.failed_rows] == expected
 
 
 @given(

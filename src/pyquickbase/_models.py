@@ -104,8 +104,23 @@ def app_info_from_api(data: Mapping[str, Any]) -> AppInfo:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class ValueChange:
+    """A value before and after a change, with something that isn't there as None.
+
+    `repr` hides both values, because they may be sensitive and reprs end up in logs.
+
+    Attributes:
+        before: The value now. A file field shows the file's name, never its contents.
+        after: What the change would set. A file field shows the file's name here too.
+    """
+
+    before: Any = field(repr=False)
+    after: Any = field(repr=False)
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
-class AppSummary:
+class AppListing:
     """An app the token can reach, from `client.apps()`.
 
     Attributes:
@@ -124,7 +139,7 @@ class AppSummary:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class UserProfile:
+class UserAccount:
     """A Quickbase user, from `client.current_user()` or `client.find_user()`.
 
     Attributes:
@@ -152,7 +167,7 @@ class AppMember:
         name: Their name.
         first_name: A user's first name.
         last_name: A user's last name.
-        last_access: When they last used the app, or None if Quickbase doesn't say.
+        last_accessed_at: When they last used the app, or None if Quickbase doesn't say.
         roles: The roles they hold in the app.
     """
 
@@ -161,7 +176,7 @@ class AppMember:
     name: str
     first_name: str | None
     last_name: str | None
-    last_access: datetime | None
+    last_accessed_at: datetime | None
     roles: tuple[Role, ...]
 
 
@@ -222,7 +237,7 @@ class CodePagePreview:
     """What writing a code page would do, without doing it. Its `repr` leaves out the diff.
 
     Attributes:
-        page: The page, as it was named.
+        code_page: The page, as it was named.
         current: The page as it is now, or None for a page that doesn't exist yet.
         proposed_sha256: The hash of the proposed text, with line endings as LF.
         diff: A unified diff, from the current text to the proposed text.
@@ -231,7 +246,7 @@ class CodePagePreview:
             `apply_code_page_change` operation needs. Empty otherwise.
     """
 
-    page: str | int
+    code_page: str | int
     current: CodePageContent | None
     proposed_sha256: str
     diff: str = field(repr=False)
@@ -240,25 +255,25 @@ class CodePagePreview:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class CodePageWrite:
+class CodePageWriteResult:
     """What writing a code page did.
 
     Attributes:
-        page: The page as it now is. Its `id` is always set.
+        content: The page as it now is. Its `id` is always set.
         previous: What was there before, or None if the page is new. Quickbase keeps no history
             of a page, so this is the only copy if you want to put it back.
         created: Whether the write made a new page.
     """
 
-    page: CodePageContent
+    content: CodePageContent
     previous: CodePageContent | None
     created: bool
 
 
 @dataclass(frozen=True, slots=True)
 class RoleAssignment:
-    """A user or group holding a role, for `app.add_role_assignments()` and
-    `app.remove_role_assignments()`.
+    """A user or group holding a role, for `app.create_role_assignments()` and
+    `app.delete_role_assignments()`.
 
     Args:
         member_id: The user's or group's ID, from `app.members()` or `client.find_user()`.
@@ -272,8 +287,8 @@ class RoleAssignment:
 
 
 @dataclass(frozen=True, slots=True)
-class RoleChange:
-    """Moving a user or group from one role to another, for `app.change_role_assignments()`.
+class RoleAssignmentUpdate:
+    """Moving a user or group from one role to another, for `app.update_role_assignments()`.
 
     Args:
         member_id: The user's or group's ID.
@@ -289,7 +304,7 @@ class RoleChange:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class RoleChangeFailure:
+class RoleAssignmentFailure:
     """A role change Quickbase refused.
 
     Attributes:
@@ -297,12 +312,12 @@ class RoleChangeFailure:
         error: Quickbase's reason, such as `Trustee already has this role`.
     """
 
-    change: RoleAssignment | RoleChange
+    change: RoleAssignment | RoleAssignmentUpdate
     error: str
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class RoleChangeResult:
+class RoleAssignmentResult:
     """What a batch of role changes did.
 
     Attributes:
@@ -310,21 +325,23 @@ class RoleChangeResult:
         failed: The ones it refused. If there are any, `WriteError` raises with this as `result`.
     """
 
-    changed: tuple[RoleAssignment | RoleChange, ...] = ()
-    failed: tuple[RoleChangeFailure, ...] = ()
+    changed: tuple[RoleAssignment | RoleAssignmentUpdate, ...] = ()
+    failed: tuple[RoleAssignmentFailure, ...] = ()
 
 
-def _trustee(item: Mapping[str, Any]) -> RoleAssignment | RoleChange:
+def _trustee(item: Mapping[str, Any]) -> RoleAssignment | RoleAssignmentUpdate:
     if "oldRoleId" in item:
-        return RoleChange(item["id"], item["oldRoleId"], item["roleId"], item.get("type", "user"))
+        return RoleAssignmentUpdate(
+            item["id"], item["oldRoleId"], item["roleId"], item.get("type", "user")
+        )
     return RoleAssignment(item["id"], item["roleId"], item.get("type", "user"))
 
 
-def role_change_result_from_api(data: Mapping[str, Any]) -> RoleChangeResult:
-    return RoleChangeResult(
+def role_change_result_from_api(data: Mapping[str, Any]) -> RoleAssignmentResult:
+    return RoleAssignmentResult(
         changed=tuple(_trustee(item) for item in data.get("success") or ()),
         failed=tuple(
-            RoleChangeFailure(change=_trustee(item["trustee"]), error=item["error"])
+            RoleAssignmentFailure(change=_trustee(item["trustee"]), error=item["error"])
             for item in data.get("failure") or ()
         ),
     )
@@ -527,7 +544,7 @@ class Relationship:
         foreign_key_field_id: The child's field that holds the parent's Record ID#, if reported.
         lookup_field_ids: The lookup fields, which are on the child.
         summary_field_ids: The summary fields, which are on the parent.
-        is_cross_app: Whether Quickbase reports the parent as being in another app.
+        cross_app: Whether Quickbase reports the parent as being in another app.
         raw: Everything Quickbase returned, for anything not listed here.
     """
 
@@ -537,7 +554,7 @@ class Relationship:
     foreign_key_field_id: int | None
     lookup_field_ids: tuple[int, ...]
     summary_field_ids: tuple[int, ...] = ()
-    is_cross_app: bool
+    cross_app: bool
     raw: Mapping[str, Any] = field(repr=False, compare=False)
 
 
@@ -550,7 +567,7 @@ def relationship_from_api(data: Mapping[str, Any]) -> Relationship:
         foreign_key_field_id=foreign_key.get("id"),
         lookup_field_ids=tuple(item["id"] for item in data.get("lookupFields") or ()),
         summary_field_ids=tuple(item["id"] for item in data.get("summaryFields") or ()),
-        is_cross_app=bool(data.get("isCrossApp")),
+        cross_app=bool(data.get("isCrossApp")),
         raw=data,
     )
 
@@ -633,7 +650,7 @@ def require_table_report(report: ReportInfo) -> None:
     if report.type != "table":
         raise UnsupportedReportError(
             f"Report {report.name!r} is a {report.type} report, and only table reports can be read "
-            "as records. Use summary_rows() for a summary or chart report."
+            "as records. Use run_summary() for a summary or chart report."
         )
     if report.incomplete:
         raise UnsupportedReportError(
@@ -710,13 +727,13 @@ class FileVersion:
         number: The version's number, starting at 1. Numbers aren't reused after a delete.
         file_name: The file's name. Quickbase stores names as sent, such as `../../x`, so don't use
             this as a path without cleaning it.
-        uploaded: When it was uploaded, or None if Quickbase didn't say.
+        uploaded_at: When it was uploaded, or None if Quickbase didn't say.
         creator: Who uploaded it, or None if the client's policy leaves it out.
     """
 
     number: int
     file_name: str
-    uploaded: datetime | None
+    uploaded_at: datetime | None
     creator: User | None
 
 
@@ -751,7 +768,7 @@ def user_from_api(data: Mapping[str, Any]) -> User:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class AppEvent:
+class AppTrigger:
     """Something in an app that runs when records change or on a schedule, such as a webhook.
 
     Quickbase lists webhooks, Quickbase actions, email notifications, subscriptions, reminders,
@@ -787,11 +804,11 @@ class AppEvent:
 _SCHEDULED_EVENTS = frozenset({"subscription", "reminder"})
 
 
-def app_event_from_api(data: Mapping[str, Any]) -> AppEvent:
+def app_trigger_from_api(data: Mapping[str, Any]) -> AppTrigger:
     owner = data.get("owner")
     if not isinstance(owner, Mapping) or "id" not in owner:
         owner = None
-    return AppEvent(
+    return AppTrigger(
         type=data["type"],
         name=data.get("name") or None,
         active=bool(data.get("isActive")),
@@ -821,7 +838,7 @@ def file_from_api(data: Mapping[str, Any]) -> FileAttachment | None:
         FileVersion(
             number=int(item["versionNumber"]),
             file_name=item.get("fileName") or "",
-            uploaded=_uploaded(item.get("uploaded")),
+            uploaded_at=_uploaded(item.get("uploaded")),
             creator=_creator(item.get("creator")),
         )
         for item in data.get("versions") or ()
@@ -976,7 +993,7 @@ def formula_result_from_api(data: Mapping[str, Any]) -> FormulaResult:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class Page:
+class RecordPage:
     """One page of query results.
 
     Attributes:
@@ -1075,7 +1092,7 @@ class Page:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class DeletePreview(Page):
+class DeletePreview(RecordPage):
     """What `delete()` would delete: a page of the matching records, and what may run.
 
     Attributes:
@@ -1083,12 +1100,12 @@ class DeletePreview(Page):
         total: How many records would be deleted.
         skip: How many matching records came before this page.
         columns: The labels of the fields it returned, in order.
-        events: The active webhooks, Quickbase actions, email notifications, and automations on
+        triggers: The active webhooks, Quickbase actions, email notifications, and automations on
             the table, which deleting records may set off. Quickbase doesn't say which changes set
             each one off, so some may not run. None if they couldn't be read.
     """
 
-    events: tuple[AppEvent, ...] | None = None
+    triggers: tuple[AppTrigger, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -1102,7 +1119,7 @@ class DeletePreviewPage(DeletePreview):
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class FieldsLeftOutPage(Page):
+class FieldsLeftOutPage(RecordPage):
     """What a `query` operation found when it returned only some of the default fields, because
     the table has more than its `max_default_fields`, so `tool_result()` can say so. Private."""
 
@@ -1139,7 +1156,7 @@ def summary_rows_from_api(data: Mapping[str, Any]) -> tuple[list[dict[str, Any]]
     return rows, data["metadata"]["totalRecords"]
 
 
-def page_from_api(data: Mapping[str, Any]) -> Page:
+def page_from_api(data: Mapping[str, Any]) -> RecordPage:
     fields = data["fields"]
     labels: dict[str, int] = {item["label"]: item["id"] for item in fields}
     types: dict[int, str] = {item["id"]: item["type"] for item in fields}
@@ -1154,7 +1171,7 @@ def page_from_api(data: Mapping[str, Any]) -> Page:
         for row in data["data"]
     )
     metadata = data["metadata"]
-    return Page(
+    return RecordPage(
         records=records,
         total=metadata["totalRecords"],
         skip=metadata["skip"],

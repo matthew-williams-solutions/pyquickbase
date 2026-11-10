@@ -8,11 +8,11 @@ from pyquickbase import (
 )
 
 policy = Policy(
-    classes={"internal": [("Job Tasks", "Code")]},
+    tags={"internal": [("Job Tasks", "Code")]},
     rules=[
         allow.read(tables.all(), max_paging_depth=50),
         allow.update("Job Tasks", ["Status"]),
-        deny.all(fields.classed("internal")),
+        deny.all(fields.tagged("internal")),
     ],
 )
 async with AsyncQuickbase.from_env() as setup:

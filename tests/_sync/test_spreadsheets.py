@@ -78,7 +78,7 @@ def test_a_file_with_errors_writes_nothing() -> None:
     with client(fake) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         rows = tasks.rows_from_file(io.StringIO("Title,Hours\nA,1\nB,lots\n"))
-        assert [(error.row, error.column) for error in rows.errors] == [(3, "Hours")]
+        assert [(error.row, error.column) for error in rows.failed_rows] == [(3, "Hours")]
         with pytest.raises(InvalidValueError, match="Row 3, column 'Hours'"):
             tasks.insert(rows)
         with pytest.raises(InvalidValueError, match="nothing was"):

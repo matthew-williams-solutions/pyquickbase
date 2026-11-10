@@ -44,8 +44,8 @@ Every result has `"ok": true`, and a key for what it holds:
 
 | You pass | It holds |
 |---|---|
-| A `Page`, from `query_page()` | `records`, or `columns` and `rows` with `compact=True`, and `page` |
-| A list of records or dictionaries, such as from `query()` or `summary_rows()` | The same, with `page.total` as null, as it isn't known |
+| A `RecordPage`, from `query_page()` | `records`, or `columns` and `rows` with `compact=True`, and `page` |
+| A list of records or dictionaries, such as from `query()` or `run_summary()` | The same, with `page.total` as null, as it isn't known |
 | A `Record` or None, from `get()` or `first()` | `record`, which is null for None |
 | A `WriteResult` | `created_ids`, `updated_ids`, and `unchanged_ids` |
 | A list of `SummaryRow`, from `summarize()` | `groups`, each with `group`, `count`, and the totals it has |
@@ -139,7 +139,7 @@ reading the message. Check these in order, and act on the first that applies:
 | `data_changed` is `unknown` | Check what was written, then send only what's missing |
 | `data_changed` is `partly`, or `code` is `write_failed` | Fix `failed_rows`, and send only those. For a schema change, preview it again |
 | `code` is `needs_confirmation` | Preview again, show the person, then confirm |
-| `code` is `too_many_records` | Count without totals, which works at any size, or ask the user to narrow the question |
+| `code` is `summary_too_large` | Count without totals, which works at any size, or ask the user to narrow the question |
 | `code` is `invalid_arguments`, `invalid_value`, `unknown_table`, `unknown_field`, `unknown_report`, `unsupported_report`, `not_found`, `bad_request`, or `read_refused` | Fix the call, and try again |
 | Anything else | Stop, and tell the user |
 
@@ -150,14 +150,14 @@ The order matters: a `write_permission_denied` can be `partly`, and an `internal
 |---|---|---|---|
 | `needs_confirmation` | A change without the confirmation from its preview or plan, or with one that's expired or for something else | `no` | No |
 | `invalid_arguments`, `invalid_value` | A filter, argument, or value that can't be sent | `no` | No |
-| `too_many_records` | A summary that would read more records than its `max_records_scanned`, with `matched` and `limit` | `no` | No |
+| `summary_too_large` | A summary that would read more records than its `max_records_scanned`, with `matched` and `limit` | `no` | No |
 | `unknown_table`, `unknown_field`, `unknown_report` | A name that doesn't exist, or that the token or the read rules hide | `no` | No |
 | `unsupported_report` | A report that can't be read that way | `no` | No |
 | `read_refused`, `write_refused` | The client's limits refused it, and it wasn't sent | `no` | No |
 | `write_failed` | Every row of a write failed | `no` | No |
 | `partial_write` | Some rows were written and some weren't, or a later batch failed | `partly`, or `unknown` if the failed batch may have been written | No |
 | `write_permission_denied` | The token's role refused a write | `no`, or `partly` if earlier rows were written | No |
-| `bad_request`, `not_found`, `permission_denied`, `authentication`, `api_error`, `unsupported_operation`, `code_page_changed` | Quickbase answered with an error | `no` | No |
+| `bad_request`, `not_found`, `permission_denied`, `authentication`, `api_error`, `no_longer_available`, `code_page_changed` | Quickbase answered with an error | `no` | No |
 | `rate_limited` | Quickbase is limiting requests, and the retries ran out | `no` | Yes |
 | `server_error`, `timeout`, `network_error` | Quickbase failed, or didn't answer | `unknown` | Yes |
 | `invalid_response` | Quickbase's answer couldn't be read | `unknown` | No |
@@ -249,5 +249,5 @@ def task_totals(project: str, where: dict | None = None) -> dict:
 ```
 
 `tool_result()` writes dates in `min` and `max` as text, as it does everywhere. A `max_records_scanned`
-that's exceeded is a `too_many_records`, with `matched` and `limit`. A summary that only counts reads no
+that's exceeded is a `summary_too_large`, with `matched` and `limit`. A summary that only counts reads no
 records, so it's never refused this way.

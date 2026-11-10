@@ -17,14 +17,14 @@ from pyquickbase import (
     FileUpload,
     FormulaResult,
     InvalidResponseError,
-    Page,
+    RecordPage,
     Relationship,
     ReportInfo,
     RetryPolicy,
-    RowError,
     TableInfo,
     WhereCondition,
     WriteResult,
+    WriteRowFailure,
 )
 from pyquickbase._config import DEFAULT_BASE_URL, validate_base_url
 from pyquickbase._models import (
@@ -128,7 +128,7 @@ METADATA: list[Any] = [
         child_table_id="c",
         foreign_key_field_id=None,
         lookup_field_ids=(),
-        is_cross_app=False,
+        cross_app=False,
         raw={"s": "SECRET"},
     ),
     ReportInfo(
@@ -137,12 +137,12 @@ METADATA: list[Any] = [
 ]
 VALUES: list[Any] = [
     *METADATA,
-    Page(records=(), total=0, skip=0),
+    RecordPage(records=(), total=0, skip=0),
     FormulaResult(text="1", type="number"),
     FileDownload(file_name="a", data=b"SECRET", content_type=None),
     FileUpload("a", b"SECRET"),
     WriteResult(),
-    RowError(index=0, messages=()),
+    WriteRowFailure(row_index=0, messages=()),
     WhereCondition(1, "EX", "v"),
     RetryPolicy(),
 ]
@@ -163,9 +163,9 @@ def test_raw_stays_out_of_reprs_and_comparisons(value: Any) -> None:
 
 
 def test_keyword_only_where_promised() -> None:
-    for kind in (AppInfo, TableInfo, Field, Relationship, ReportInfo, Page, FormulaResult):
+    for kind in (AppInfo, TableInfo, Field, Relationship, ReportInfo, RecordPage, FormulaResult):
         assert all(item.kw_only for item in dataclasses.fields(kind))
-    for kind in (FileDownload, WriteResult, RowError, RetryPolicy):
+    for kind in (FileDownload, WriteResult, WriteRowFailure, RetryPolicy):
         assert all(item.kw_only for item in dataclasses.fields(kind))
     assert not any(item.kw_only for item in dataclasses.fields(FileUpload))
 
@@ -178,7 +178,7 @@ def test_file_contents_stay_out_of_reprs() -> None:
 
 DEFAULTS = [
     ("Quickbase", "__init__", "timeout", 30.0),
-    ("Quickbase", "__init__", "schema_ttl", 300.0),
+    ("Quickbase", "__init__", "metadata_cache_seconds", 300.0),
     ("Quickbase", "__init__", "policy", None),
     ("Quickbase", "__init__", "base_url", "https://api.quickbase.com/v1"),
     ("Table", "query", "page_size", 1000),
@@ -240,7 +240,7 @@ def test_metadata_settings_are_read() -> None:
     link = relationship_from_api(
         {"id": 1, "parentTableId": "p", "childTableId": "c", "isCrossApp": True}
     )
-    assert link.is_cross_app
+    assert link.cross_app
     assert table_info_from_api({"id": "t", "name": "n", "description": "d"}).description == "d"
 
 
@@ -283,5 +283,5 @@ def test_a_policy_cant_allow_a_role_change() -> None:
     everything = Policy.read_only().bind_offline()
     for method in ("POST", "PATCH", "DELETE"):
         request = describe_write(method, "/app/bq123/trustees", [{"id": "1"}])
-        assert request.action == "change_role_assignments"
+        assert request.action == "write_role_assignments"
         assert not everything.decide(request).allowed

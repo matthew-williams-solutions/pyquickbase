@@ -14,15 +14,16 @@ from collections.abc import Mapping, Sequence
 from dataclasses import MISSING, dataclass, field, fields
 from typing import Any, Literal, cast, get_args
 
+from ._models import ValueChange
 from .errors import InvalidValueError
 
-SummaryFunction = Literal[
+SummaryFieldFunction = Literal[
     "sum", "avg", "max", "min", "std_dev", "count", "distinct_count", "combined_text",
     "combined_user",
 ]  # fmt: skip
 """How a summary field combines a child's values. `count` counts the child records."""
 
-SUMMARY_FUNCTIONS: tuple[str, ...] = get_args(SummaryFunction)
+SUMMARY_FUNCTIONS: tuple[str, ...] = get_args(SummaryFieldFunction)
 
 # Other names for a function, which models and people write. Quickbase's own, such as `STD-DEV`,
 # are read by folding case and hyphens.
@@ -38,16 +39,16 @@ _FUNCTION_ALIASES = {
 }
 
 
-def summary_function(value: Any) -> SummaryFunction | None:
+def summary_function(value: Any) -> SummaryFieldFunction | None:
     """The function a name means, such as `sum` for `SUM` or `total`, or None for no function."""
     if not isinstance(value, str):
         return None
     key = "_".join(value.strip().casefold().replace("-", " ").replace("_", " ").split())
     key = _FUNCTION_ALIASES.get(key, key)
-    return cast(SummaryFunction, key) if key in SUMMARY_FUNCTIONS else None
+    return cast(SummaryFieldFunction, key) if key in SUMMARY_FUNCTIONS else None
 
 
-def quickbase_function(function: SummaryFunction) -> str:
+def quickbase_function(function: SummaryFieldFunction) -> str:
     """Quickbase's name for a function, such as `STD-DEV` for `std_dev`."""
     return function.upper().replace("_", "-")
 
@@ -241,7 +242,7 @@ class CreateSummaryField:
     child_table: str
     foreign_key: str
     label: str
-    function: SummaryFunction = "sum"
+    function: SummaryFieldFunction = "sum"
     child_field: FieldRefValue | None = None
     where: str | None = None
 
@@ -275,7 +276,7 @@ SchemaChange = (
 )
 """One change to an app's schema."""
 
-SchemaAction = Literal[
+SchemaChangeAction = Literal[
     "create_table", "update_table", "delete_table", "create_field", "update_field",
     "delete_field", "set_key_field", "create_relationship", "create_lookup_field",
     "create_summary_field", "delete_relationship",
@@ -301,11 +302,11 @@ _ACTION_ALIASES = {"create_lookup": "create_lookup_field", "create_summary": "cr
 # Keys models write, read as the ones the schema lists.
 _KEY_ALIASES = {"kind": "action", "child": "child_table", "parent": "parent_table"}
 
-Risk = Literal["additive", "modifying", "destructive"]
+ChangeRisk = Literal["additive", "modifying", "destructive"]
 """How much a change can lose: `additive` only adds, `modifying` changes what's there, and
 `destructive` deletes data or fields."""
 
-_RISKS: dict[str, Risk] = {
+_RISKS: dict[str, ChangeRisk] = {
     "create_table": "additive",
     "create_field": "additive",
     "create_relationship": "additive",
@@ -324,12 +325,12 @@ Status = Literal["ready", "already_done", "blocked"]
 or `blocked`, which stops the whole plan."""
 
 
-def change_action(change: SchemaChange) -> SchemaAction:
+def change_action(change: SchemaChange) -> SchemaChangeAction:
     """A change's `action`, as its JSON form names it."""
-    return cast(SchemaAction, _ACTIONS[type(change)])
+    return cast(SchemaChangeAction, _ACTIONS[type(change)])
 
 
-def change_risk(change: SchemaChange) -> Risk:
+def change_risk(change: SchemaChange) -> ChangeRisk:
     return _RISKS[change_action(change)]
 
 
@@ -445,19 +446,6 @@ def changes_from_json(data: Any, *, most: int | None = None) -> list[SchemaChang
     return [change_from_json(item, position) for position, item in enumerate(items)]
 
 
-@dataclass(frozen=True, slots=True)
-class SettingChange:
-    """One setting before and after a change, with a setting that isn't there as None.
-
-    Attributes:
-        before: The setting now.
-        after: What the change would set.
-    """
-
-    before: Any
-    after: Any
-
-
 @dataclass(frozen=True, slots=True, kw_only=True)
 class PlannedChange:
     """What one change would do, checked against the app as it is now.
@@ -467,27 +455,27 @@ class PlannedChange:
         status: `ready` if it would change the app, `already_done` if the app already has it, and
             `blocked` if it can't be applied, which stops the whole plan.
         risk: `additive`, `modifying`, or `destructive`.
-        summary: What it does, in a sentence, such as `Add field "Due" (date) to Tasks.`
-        settings: What it would set, as `{setting: SettingChange}`.
+        description: What it does, in a sentence, such as `Add field "Due" (date) to Tasks.`
+        settings: What it would set, as `{setting: ValueChange}`.
         warnings: What it would also do or affect, such as formulas that use a deleted field.
         blockers: Why it can't be applied.
         affected_records: How many records it would affect, such as those that would lose a
             deleted field's values, if counted.
-        link: A Quickbase page to check it on, if there is one yet.
+        url: A Quickbase page to check it on, if there is one yet.
         policy_effects: What the client's policy would do once the change is made: who can read
-            and write a new field, and its classes, and which rules lose a deleted field or
+            and write a new field, and its tags, and which rules lose a deleted field or
             table. A rule it would leave matching nothing is also a blocker.
     """
 
     change: SchemaChange
     status: Status
-    risk: Risk
-    summary: str
-    settings: Mapping[str, SettingChange] = field(default_factory=dict[str, SettingChange])
+    risk: ChangeRisk
+    description: str
+    settings: Mapping[str, ValueChange] = field(default_factory=dict[str, ValueChange])
     warnings: tuple[str, ...] = ()
     blockers: tuple[str, ...] = ()
     affected_records: int | None = None
-    link: str | None = None
+    url: str | None = None
     policy_effects: tuple[str, ...] = ()
 
 

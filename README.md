@@ -84,7 +84,7 @@ so `F` escapes quotes, refuses values containing `{` or `}` or like `_FID_6`, an
 `OR` or `AND` in lowercase so that it's matched as text.
 
 You can also pass a Quickbase query string as `where`, using field IDs:
-`"({7.EX.'Done'}OR{7.EX.'Blocked'})AND{9.BF.'today'}"`. The SDK raises `QueryError` before sending a
+`"({7.EX.'Done'}OR{7.EX.'Blocked'})AND{9.BF.'today'}"`. The SDK raises `InvalidQueryError` before sending a
 string with a mistake that Quickbase would silently accept, such as a lowercase operator, which it
 treats as "contains", or an unknown field, which matches nothing.
 
@@ -96,8 +96,8 @@ always selected, and without `order_by`, records come back in Record ID# order s
 stable. For one page at a time, use `query_page()`, which returns the records, the `total` number of
 matches, `has_more`, and `next_skip`.
 
-Table and field metadata is cached for five minutes. Set `schema_ttl` on the client to change this,
-or call `qb.clear_schema_cache()` after changing a table.
+Table and field metadata is cached for five minutes. Set `metadata_cache_seconds` on the client to change this,
+or call `qb.clear_metadata_cache()` after changing a table.
 
 ## Writing records
 
@@ -125,8 +125,8 @@ try:
     tasks.insert(rows)
 except WriteError as error:
     print(error.result.created_ids)  # these were written
-    for failed in error.result.errors:
-        print(rows[failed.index], failed.messages)
+    for failed in error.result.failed_rows:
+        print(rows[failed.row_index], failed.messages)
 ```
 
 Quickbase writes the rows it can and reports the rest, so a `WriteError` doesn't mean nothing changed.
@@ -187,11 +187,11 @@ for every rule, and what a policy doesn't do.
 from pyquickbase import Policy, Quickbase, allow, deny, fields, tables
 
 policy = Policy(
-    classes={"pay": ["Technicians.Hourly Rate"]},
+    tags={"pay": ["Technicians.Hourly Rate"]},
     rules=[
         allow.read(tables.all(), max_paging_depth=50),
         allow.update("Job Tasks", ["Status", "Notes"]),
-        deny.all(fields.classed("pay")),
+        deny.all(fields.tagged("pay")),
     ],
 )
 with Quickbase(realm="acme", token="your_user_token") as setup:

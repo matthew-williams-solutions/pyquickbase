@@ -1,5 +1,5 @@
 # Catch mistakes before they run
-from pyquickbase import F, QueryError, Quickbase, UnknownFieldError, UnsupportedReportError
+from pyquickbase import F, InvalidQueryError, Quickbase, UnknownFieldError, UnsupportedReportError
 
 with Quickbase(realm="demo", token="demo") as qb:
     tasks = qb.app("bq1234567").table("Tasks")
@@ -11,7 +11,7 @@ with Quickbase(realm="demo", token="demo") as qb:
 
     try:
         tasks.count("{7.ex.'Open'}")
-    except QueryError as error:
+    except InvalidQueryError as error:
         print("Lowercase operator:", error)
 
     try:

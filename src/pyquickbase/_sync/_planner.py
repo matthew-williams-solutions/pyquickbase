@@ -39,10 +39,10 @@ from .._schema_plan import (
     SchemaChangeResult,
     SchemaPlan,
     SetKeyField,
-    SettingChange,
     Status,
     UpdateField,
     UpdateTable,
+    ValueChange,
     change_risk,
     fingerprint,
     quickbase_function,
@@ -51,9 +51,9 @@ from .._schema_plan import (
 from .._xml import SET_KEY_FIELD
 from ..errors import (
     APIError,
+    InvalidQueryError,
     InvalidValueError,
     PolicyRefusedError,
-    QueryError,
     QuickbaseError,
     SchemaChangeError,
     SchemaMismatchError,
@@ -288,7 +288,7 @@ class Planner:
         status: Status,
         summary: str,
         *,
-        settings: dict[str, SettingChange] | None = None,
+        settings: dict[str, ValueChange] | None = None,
         warnings: Sequence[str] = (),
         blockers: Sequence[str] = (),
         affected: int | None = None,
@@ -301,12 +301,12 @@ class Planner:
             change=change,
             status=status,
             risk=change_risk(change),
-            summary=summary,
+            description=summary,
             settings=settings or {},
             warnings=tuple(warnings),
             blockers=tuple(blockers),
             affected_records=affected,
-            link=link,
+            url=link,
             policy_effects=tuple(effects),
         )
 
@@ -328,7 +328,7 @@ class Planner:
     def _formula_sources(
         self, table: _Table, formula: str
     ) -> list[tuple[str | None, int | None]] | None:
-        """The fields a formula reads, for its classes, or None if it may read anything."""
+        """The fields a formula reads, for its tags, or None if it may read anything."""
         try:
             parts = formula_parts(formula)
         except PolicyRefusedError:
@@ -993,7 +993,7 @@ class Planner:
             if clause is not None:
                 try:
                     clause = compile_where(clause, fields)
-                except (QueryError, UnknownFieldError) as error:
+                except (InvalidQueryError, UnknownFieldError) as error:
                     raise _Blocked(f"The summary's filter can't be used: {error}") from None
         policy = self._transport.policy
         if child.id is not None:
@@ -1181,10 +1181,10 @@ def _records(count: int, verb: str = "have") -> str:
     return f"1 record {singular}" if count == 1 else f"{count} records {verb}"
 
 
-def _settings(**pairs: tuple[Any, Any]) -> dict[str, SettingChange]:
+def _settings(**pairs: tuple[Any, Any]) -> dict[str, ValueChange]:
     """The settings a change would set, leaving out those it leaves alone or already has."""
     return {
-        name: SettingChange(before, after)
+        name: ValueChange(before, after)
         for name, (before, after) in pairs.items()
         if after is not None and before != after
     }
@@ -1253,7 +1253,7 @@ def apply_checked(app: "App", fresh: SchemaPlan) -> SchemaChangeResult:
             )
             done = f"{len(applied)} changes before it were made, " if applied else ""
             failure = SchemaChangeError(
-                f"{item.summary} failed: {error} {done}{len(result.not_attempted)} after it "
+                f"{item.description} failed: {error} {done}{len(result.not_attempted)} after it "
                 "weren't attempted. Plan the same changes again to see what's left.",
                 result=result,
             )

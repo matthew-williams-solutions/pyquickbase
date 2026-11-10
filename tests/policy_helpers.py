@@ -89,7 +89,7 @@ def snapshot(
 
 def bind(
     *rules: RuleLike,
-    classes: Mapping[str, Any] | None = None,
+    tags: Mapping[str, Any] | None = None,
     new_fields: NewFields = "read",
     tables: Mapping[str, tuple[str, list[dict[str, Any]]]] | None = None,
     relationships: Sequence[dict[str, Any]] = (),
@@ -97,7 +97,7 @@ def bind(
     app_id: str = APP,
     relationships_complete: bool = True,
 ) -> BoundPolicy:
-    policy = Policy(classes=classes, rules=rules, new_fields=new_fields)
+    policy = Policy(tags=tags, rules=rules, new_fields=new_fields)
     return bind_snapshot(
         policy,
         snapshot(

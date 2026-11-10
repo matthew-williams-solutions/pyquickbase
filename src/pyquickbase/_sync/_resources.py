@@ -6,15 +6,16 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, tzinfo
 from functools import partial
-from typing import TYPE_CHECKING, Any, Self, TypeVar, cast, get_args, overload
+from typing import TYPE_CHECKING, Any, Self, TypeVar, cast, get_args
 
 from .._bound import BoundPolicy, Snapshot, bind_snapshot
 from .._code_pages import (
-    CodePageOperationName,
+    CODE_PAGE_OPERATIONS,
     build_preview,
     check_ref,
     check_text,
     content,
+    normalize_page_arguments,
     operation_schema,
     text_sha256,
 )
@@ -22,7 +23,7 @@ from .._confirm import ConfirmationKind, code_page_binding, schema_binding
 from .._confirm import binding as confirmation_binding
 from .._confirm import check as check_confirmation
 from .._confirm import issue as issue_confirmation
-from .._decision import Decision
+from .._decision import PolicyDecision
 from .._derived import (
     check_filterable,
     check_formula_sources,
@@ -43,13 +44,13 @@ from .._links import (
 )
 from .._models import (
     RECORD_ID_FIELD,
-    AppEvent,
     AppInfo,
     AppMember,
+    AppTrigger,
     CodePageContent,
     CodePageInfo,
     CodePagePreview,
-    CodePageWrite,
+    CodePageWriteResult,
     DeletePreview,
     DeletePreviewPage,
     Field,
@@ -59,18 +60,18 @@ from .._models import (
     FileDownload,
     FormulaResult,
     MemberRole,
-    Page,
     Record,
+    RecordPage,
     Relationship,
     ReportInfo,
     Role,
     RoleAssignment,
-    RoleChange,
-    RoleChangeResult,
+    RoleAssignmentResult,
+    RoleAssignmentUpdate,
     TableInfo,
     TableSchema,
-    app_event_from_api,
     app_info_from_api,
+    app_trigger_from_api,
     extend,
     field_from_api,
     field_usage_from_api,
@@ -91,8 +92,8 @@ from .._models import (
 )
 from .._operations import (
     DEFAULT_MAX_ROWS,
-    OperationName,
     OperationSpec,
+    TableOperationName,
     allowed_for,
     check_scope,
     copy_schema,
@@ -113,11 +114,11 @@ from .._preview import (
     id_batches,
     merge_rows,
 )
-from .._query import Expression, F, FieldRef, FieldRefs, build_query_body, compile_where
+from .._query import F, FieldRef, FieldRefs, WhereExpression, build_query_body, compile_where
 from .._schema import SchemaCache
 from .._schema_operations import (
     DEFAULT_MAX_CHANGES,
-    SchemaOperationName,
+    AppOperationName,
     schema_allowed,
     schema_operation_schema,
 )
@@ -187,19 +188,19 @@ from ..errors import (
     APIError,
     CodePageChangedError,
     ConfigurationError,
+    InvalidQueryError,
     InvalidResponseError,
     InvalidValueError,
+    NoLongerAvailableError,
     NotFoundError,
     PermissionDeniedError,
     PolicyRefusedError,
-    QueryError,
     QuickbaseError,
     SchemaMismatchError,
-    TooManyRecordsError,
+    SummaryTooLargeError,
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
-    UnsupportedOperationError,
     WriteError,
 )
 from ._planner import Planner, apply_checked, apply_plan
@@ -215,7 +216,7 @@ DEFAULT_BATCH_SIZE = 1000
 
 def _require_positive(name: str, value: int) -> None:
     if value < 1:
-        raise QueryError(f"{name} must be at least 1.")
+        raise InvalidQueryError(f"{name} must be at least 1.")
 
 
 def _require_timeout(timeout: float | None) -> None:
@@ -326,7 +327,7 @@ class App:
         except PermissionDeniedError as denied:
             try:
                 root = self._transport.xml.call(APP_SCHEMA, self._id)
-            except UnsupportedOperationError:
+            except NoLongerAvailableError:
                 raise denied from None
             payload = parse(lambda found: app_info_dict(found, self._id), root, "app")
         info = parse(app_info_from_api, payload, "app")
@@ -383,7 +384,7 @@ class App:
         except PermissionDeniedError as denied:
             try:
                 root = self._transport.xml.call(ROLE_INFO, self._id)
-            except UnsupportedOperationError:
+            except NoLongerAvailableError:
                 raise denied from None
             roles = parse(roles_from_xml, root, "roles")
         else:
@@ -433,7 +434,9 @@ class App:
         root = self._transport.xml.call(USER_ROLE, self._id, fields)
         return parse(member_roles_from_xml, root, "member roles")
 
-    def _change_roles(self, method: str, rows: list[dict[str, Any]], what: str) -> RoleChangeResult:
+    def _change_roles(
+        self, method: str, rows: list[dict[str, Any]], what: str
+    ) -> RoleAssignmentResult:
         payload = self._transport.request(method, f"/app/{self._id}/trustees", json=rows)
         result = parse(role_change_result_from_api, payload, "role change")
         if result.failed:
@@ -446,7 +449,9 @@ class App:
             raise error
         return result
 
-    def add_role_assignments(self, assignments: Sequence[RoleAssignment]) -> RoleChangeResult:
+    def create_role_assignments(
+        self, assignments: Sequence[RoleAssignment]
+    ) -> RoleAssignmentResult:
         """Give users or groups a role, on top of any they hold.
 
         Don't retry this automatically, as Quickbase reports a role someone already has as a
@@ -456,7 +461,7 @@ class App:
             assignments: The `RoleAssignment`s to add.
 
         Returns:
-            A `RoleChangeResult`.
+            A `RoleAssignmentResult`.
 
         Raises:
             InvalidValueError: `assignments` is empty or isn't made of `RoleAssignment`s. Nothing
@@ -468,14 +473,16 @@ class App:
         rows = [_assignment_row(item) for item in _batch(assignments, RoleAssignment)]
         return self._change_roles("POST", rows, "additions")
 
-    def remove_role_assignments(self, assignments: Sequence[RoleAssignment]) -> RoleChangeResult:
+    def delete_role_assignments(
+        self, assignments: Sequence[RoleAssignment]
+    ) -> RoleAssignmentResult:
         """Take roles away from users or groups.
 
         Args:
             assignments: The `RoleAssignment`s to remove.
 
         Returns:
-            A `RoleChangeResult`.
+            A `RoleAssignmentResult`.
 
         Raises:
             InvalidValueError: `assignments` is empty or isn't made of `RoleAssignment`s. Nothing
@@ -487,17 +494,20 @@ class App:
         rows = [_assignment_row(item) for item in _batch(assignments, RoleAssignment)]
         return self._change_roles("DELETE", rows, "removals")
 
-    def change_role_assignments(self, changes: Sequence[RoleChange]) -> RoleChangeResult:
+    def update_role_assignments(
+        self, changes: Sequence[RoleAssignmentUpdate]
+    ) -> RoleAssignmentResult:
         """Move users or groups from one role to another.
 
         Args:
-            changes: The `RoleChange`s to make.
+            changes: The `RoleAssignmentUpdate`s to make.
 
         Returns:
-            A `RoleChangeResult`.
+            A `RoleAssignmentResult`.
 
         Raises:
-            InvalidValueError: `changes` is empty or isn't made of `RoleChange`s. Nothing was sent.
+            InvalidValueError: `changes` is empty or isn't made of `RoleAssignmentUpdate`s. Nothing
+                was sent.
             WriteError: Some failed, and the rest may have been made. Its `result` says which.
             PermissionDeniedError: The token isn't an administrator's.
             PolicyRefusedError: The client has a policy, which can't allow this. Nothing was sent.
@@ -509,7 +519,7 @@ class App:
                 "oldRoleId": _role(item.from_role_id),
                 "type": _kind(item.kind),
             }
-            for item in _batch(changes, RoleChange)
+            for item in _batch(changes, RoleAssignmentUpdate)
         ]
         return self._change_roles("PATCH", rows, "changes")
 
@@ -546,7 +556,7 @@ class App:
         """
         return CodePage(self._transport, self._id, check_ref(name_or_id))
 
-    def events(self) -> list[AppEvent]:
+    def triggers(self) -> list[AppTrigger]:
         """List the app's webhooks, Quickbase actions, notifications, subscriptions, reminders,
         and the automations that records trigger.
 
@@ -554,13 +564,13 @@ class App:
         off. With a policy, only events on tables it shows are listed, without their owners.
 
         Returns:
-            An `AppEvent` for each, active or not.
+            An `AppTrigger` for each, active or not.
 
         Raises:
             PermissionDeniedError: The token isn't an administrator's.
         """
         payload = self._transport.request("GET", f"/apps/{self._id}/events")
-        return parse(lambda rows: [app_event_from_api(row) for row in rows], payload, "events")
+        return parse(lambda rows: [app_trigger_from_api(row) for row in rows], payload, "triggers")
 
     def ensure_table(
         self,
@@ -745,18 +755,9 @@ class App:
         """
         return apply_plan(self, plan)
 
-    @overload
     def operation(
-        self, name: SchemaOperationName, *, max_changes: int = DEFAULT_MAX_CHANGES
-    ) -> "SchemaOperation": ...
-    @overload
-    def operation(self, name: CodePageOperationName) -> "CodePageOperation": ...
-    def operation(
-        self,
-        name: SchemaOperationName | CodePageOperationName,
-        *,
-        max_changes: int = DEFAULT_MAX_CHANGES,
-    ) -> "SchemaOperation | CodePageOperation":
+        self, name: AppOperationName, *, max_changes: int = DEFAULT_MAX_CHANGES
+    ) -> "AppOperation":
         """Make a schema or code page operation into a tool for a model, with its JSON Schema.
 
         `describe_schema` lists the tables and fields the client can read.
@@ -777,7 +778,7 @@ class App:
         )
         tool = {
             "name": "plan_changes",
-            "input_schema": plan.schema,
+            "input_schema": plan.input_schema,
         }
         result = plan.run(arguments)
         ```
@@ -795,22 +796,18 @@ class App:
             max_changes: The most changes one plan may hold.
 
         Returns:
-            A `SchemaOperation`, or for a code page operation, a `CodePageOperation`, with its
-            `schema` and `run()`.
+            An `AppOperation`, with its `input_schema` and `run()`.
 
         Raises:
             ConfigurationError: `name` isn't an operation, `max_changes` isn't a positive whole
                 number, or the client's policy doesn't allow what the operation does.
         """
-        if name in get_args(CodePageOperationName):
-            code_page_name = cast(CodePageOperationName, name)
-            return CodePageOperation(
-                self, code_page_name, operation_schema(code_page_name, self._transport.policy)
+        if name not in get_args(AppOperationName):
+            raise ConfigurationError(
+                f"name must be one of: {', '.join(get_args(AppOperationName))}."
             )
-        if name not in get_args(SchemaOperationName):
-            known = (*get_args(SchemaOperationName), *get_args(CodePageOperationName))
-            raise ConfigurationError(f"name must be one of: {', '.join(known)}.")
-        name = cast(SchemaOperationName, name)
+        if name in CODE_PAGE_OPERATIONS:
+            return AppOperation(self, name, operation_schema(name, self._transport.policy))
         if type(max_changes) is not int or max_changes < 1:
             raise ConfigurationError("max_changes must be a positive whole number.")
         transport = self._transport
@@ -819,7 +816,7 @@ class App:
         schema = schema_operation_schema(
             name, allowed, max_changes=max_changes, tables=[item.name for item in tables]
         )
-        return SchemaOperation(self, name, schema, max_changes)
+        return AppOperation(self, name, schema, max_changes)
 
     def _bind_policy(self, policy: Policy) -> BoundPolicy:
         """Read this app's schema, and bind a policy to it. See `Policy.bind()`."""
@@ -1034,7 +1031,7 @@ class RecordIterator:
             body = self._body = self._load_body()
         remaining = None if self._limit is None else self._limit - self._yielded
         top = self._page_size if remaining is None else min(self._page_size, remaining)
-        page: Page = self._fetch_page(body, top, self._skip)
+        page: RecordPage = self._fetch_page(body, top, self._skip)
         if page.has_more and not page.records:
             raise InvalidResponseError(
                 f"Quickbase returned an empty page at {self._skip} of {page.total} records."
@@ -1335,7 +1332,7 @@ class Table:
         field_id = (self.resolve_field_ids([field]))[0]
         return field_url(self._transport.realm, self._app.id, table_id, field_id)
 
-    def compile_where(self, where: Expression | str) -> str:
+    def compile_where(self, where: WhereExpression | str) -> str:
         """Return a condition as the query text that a query of this table would send.
 
         Use it to show a person what a query asked for, as Quickbase's own `{6.EX.'Open'}` form.
@@ -1351,7 +1348,7 @@ class Table:
 
         Raises:
             UnknownFieldError: The table has no such field, or the client's policy hides it.
-            QueryError: `where` can't be sent as written.
+            InvalidQueryError: `where` can't be sent as written.
         """
         return self._with_fields(lambda fields: compile_where(where, FieldIndex(fields)))
 
@@ -1364,7 +1361,7 @@ class Table:
 
     def _query_body(
         self,
-        where: Expression | str | None,
+        where: WhereExpression | str | None,
         select: FieldRefs | None,
         order_by: FieldRefs | None,
     ) -> dict[str, Any]:
@@ -1377,7 +1374,7 @@ class Table:
 
     def _fetch_page(
         self, body: dict[str, Any], top: int, skip: int, *, summarizing: bool = False
-    ) -> Page:
+    ) -> RecordPage:
         payload = self._transport.request(
             "POST",
             "/records/query",
@@ -1386,18 +1383,18 @@ class Table:
         )
         return parse(page_from_api, payload, "records query")
 
-    def _fetch_summary_page(self, body: dict[str, Any], top: int, skip: int) -> Page:
+    def _fetch_summary_page(self, body: dict[str, Any], top: int, skip: int) -> RecordPage:
         return self._fetch_page(body, top, skip, summarizing=True)
 
     def query_page(
         self,
         *,
-        where: Expression | str | None = None,
+        where: WhereExpression | str | None = None,
         select: FieldRefs | None = None,
         order_by: FieldRefs | None = None,
         limit: int = 100,
         skip: int = 0,
-    ) -> Page:
+    ) -> RecordPage:
         """Fetch one page of records, for controlling paging yourself.
 
         Args:
@@ -1411,23 +1408,23 @@ class Table:
             skip: How many matching records to pass over first. Use the previous page's `next_skip`.
 
         Returns:
-            A `Page` with `records`, `total`, `skip`, `has_more`, and `next_skip`. Skipping past the
-            end returns no records rather than raising an error.
+            A `RecordPage` with `records`, `total`, `skip`, `has_more`, and `next_skip`. Skipping
+            past the end returns no records rather than raising an error.
 
         Raises:
             UnknownFieldError: The table has no such field. Nothing was queried.
-            QueryError: An argument can't be sent as written. Nothing was queried.
+            InvalidQueryError: An argument can't be sent as written. Nothing was queried.
         """
         _require_positive("limit", limit)
         if skip < 0:
-            raise QueryError("skip can't be negative.")
+            raise InvalidQueryError("skip can't be negative.")
         body = self._query_body(where, select, order_by)
         return self._fetch_page(body, limit, skip)
 
     def query(
         self,
         *,
-        where: Expression | str | None = None,
+        where: WhereExpression | str | None = None,
         select: FieldRefs | None = None,
         order_by: FieldRefs | None = None,
         page_size: int = 1000,
@@ -1450,8 +1447,8 @@ class Table:
 
         Raises:
             UnknownFieldError: The table has no such field. Nothing was queried.
-            QueryError: An argument can't be sent as written. Nothing was queried. `page_size` and
-                `max_total` raise this right away, and the others on first use.
+            InvalidQueryError: An argument can't be sent as written. Nothing was queried.
+                `page_size` and `max_total` raise this right away, and the others on first use.
         """
         _require_positive("page_size", page_size)
         if max_total is not None:
@@ -1466,7 +1463,7 @@ class Table:
     def first(
         self,
         *,
-        where: Expression | str | None = None,
+        where: WhereExpression | str | None = None,
         select: FieldRefs | None = None,
         order_by: FieldRefs | None = None,
     ) -> Record | None:
@@ -1483,7 +1480,7 @@ class Table:
 
         Raises:
             UnknownFieldError: The table has no such field. Nothing was queried.
-            QueryError: An argument can't be sent as written. Nothing was queried.
+            InvalidQueryError: An argument can't be sent as written. Nothing was queried.
         """
         page = self.query_page(where=where, select=select, order_by=order_by, limit=1)
         return page.records[0] if page.records else None
@@ -1506,7 +1503,7 @@ class Table:
         require_id("record_id", record_id)
         return self.first(where=F(RECORD_ID_FIELD) == record_id, select=select)
 
-    def count(self, where: Expression | str | None = None) -> int:
+    def count(self, where: WhereExpression | str | None = None) -> int:
         """Count the matching records without fetching them.
 
         Args:
@@ -1518,7 +1515,7 @@ class Table:
 
         Raises:
             UnknownFieldError: The table has no such field. Nothing was queried.
-            QueryError: `where` can't be sent as written. Nothing was queried.
+            InvalidQueryError: `where` can't be sent as written. Nothing was queried.
         """
         body = self._query_body(where, None, None)
         return (self._fetch_page({**body, "select": [RECORD_ID_FIELD]}, 1, 0)).total
@@ -1556,7 +1553,7 @@ class Table:
                     f"Writing stopped at row {start}, after earlier rows were written: {exc}",
                     result=result,
                 ) from exc
-        if result.errors:
+        if result.failed_rows:
             raise write_failure(result)
         return result
 
@@ -1689,7 +1686,7 @@ class Table:
         refuse_blank_rows(built)
         return self._write(built, merge_field_id, batch_size, timeout)
 
-    def delete(self, where: Expression | str) -> int:
+    def delete(self, where: WhereExpression | str) -> int:
         """Delete the matching records and return how many were deleted.
 
         Args:
@@ -1701,7 +1698,7 @@ class Table:
             The number of records deleted, which is 0 if none matched.
 
         Raises:
-            QueryError: `where` can't be sent as written. Nothing was deleted.
+            InvalidQueryError: `where` can't be sent as written. Nothing was deleted.
             UnknownFieldError: `where` names a field the table doesn't have. Nothing was deleted.
             PolicyRefusedError: The client's policy doesn't allow deleting here, or more records
                 match than its `max_records_per_delete`. Nothing was deleted.
@@ -1713,7 +1710,7 @@ class Table:
             found = self.count(clause)
             if found > most:
                 raise PolicyRefusedError(
-                    Decision(
+                    PolicyDecision(
                         allowed=False,
                         verb="delete",
                         reason=f"{found} records match, and the policy allows deleting at most "
@@ -1731,7 +1728,7 @@ class Table:
         self,
         group_by: SummaryGroups | None = None,
         *,
-        where: Expression | str | None = None,
+        where: WhereExpression | str | None = None,
         sum: FieldRefs | None = None,
         avg: FieldRefs | None = None,
         median: FieldRefs | None = None,
@@ -1771,7 +1768,7 @@ class Table:
                 `change`. `group_by` must have exactly one `Period`, and the other fields in it
                 stay the same, so `[Period("Due", "month"), "Owner"]` compares each owner's months.
                 A filter that cuts a period short makes that period look smaller.
-            max_records_scanned: Raise `TooManyRecordsError` if more records match than this,
+            max_records_scanned: Raise `SummaryTooLargeError` if more records match than this,
                 without reading them. A summary that only counts reads no records, so this doesn't
                 limit it. It never returns a partial result. An agent's tool should always set
                 this. A client's policy can set a limit of its own, `max_records_scanned`.
@@ -1785,10 +1782,10 @@ class Table:
             0.
 
         Raises:
-            TooManyRecordsError: More records match than `max_records_scanned`. No records were
-                read. It's a `QueryError`.
-            QueryError: An argument can't be used, such as a text field in `sum`. No records were
-                read.
+            SummaryTooLargeError: More records match than `max_records_scanned`. No records were
+                read. It's a `InvalidQueryError`.
+            InvalidQueryError: An argument can't be used, such as a text field in `sum`. No
+                records were read.
             UnknownFieldError: The table has no such field. No records were read.
             PolicyRefusedError: More records match than the client's policy allows summarizing,
                 or it doesn't allow a field. No records were read.
@@ -1822,7 +1819,7 @@ class Table:
         if max_records_scanned is not None or allowed is not None:
             found = self.count(where)
             if max_records_scanned is not None and found > max_records_scanned:
-                raise TooManyRecordsError(found, max_records_scanned)
+                raise SummaryTooLargeError(found, max_records_scanned)
             if allowed is not None and found > allowed:
                 raise self._summary_refusal(
                     f"{found} records match, and this client's policy allows summarizing at most "
@@ -1845,7 +1842,7 @@ class Table:
 
     def _summary_refusal(self, reason: str) -> PolicyRefusedError:
         return PolicyRefusedError(
-            Decision(
+            PolicyDecision(
                 allowed=False,
                 verb="read",
                 reason=reason,
@@ -1855,7 +1852,7 @@ class Table:
 
     def preview_delete(
         self,
-        where: Expression | str,
+        where: WhereExpression | str,
         *,
         select: FieldRefs | None = None,
         order_by: FieldRefs | None = None,
@@ -1875,16 +1872,16 @@ class Table:
 
         Returns:
             A `DeletePreview`: a page whose `total` is how many records would be deleted, and
-            whose `events` are what deleting them may set off.
+            whose `triggers` are what deleting them may set off.
 
         Raises:
-            QueryError: `where` can't be sent as written, or is None. Nothing was queried.
+            InvalidQueryError: `where` can't be sent as written, or is None. Nothing was queried.
             UnknownFieldError: The table has no such field. Nothing was queried.
         """
         if where is None:  # pyright: ignore[reportUnnecessaryComparison]
-            raise QueryError("preview_delete() needs where, as delete() does.")
+            raise InvalidQueryError("preview_delete() needs where, as delete() does.")
         page = self.query_page(where=where, select=select, order_by=order_by, limit=limit)
-        return extend(page, DeletePreview, events=self._change_events())
+        return extend(page, DeletePreview, triggers=self._change_events())
 
     def preview_update(
         self, records: "Iterable[Mapping[str | int, Any]] | DataFrame | FileRows"
@@ -1901,7 +1898,7 @@ class Table:
                 works in `update()`. A DataFrame or a file's rows work too, as for `update()`.
 
         Returns:
-            An `UpdatePreview`, with `changes`, `unchanged_ids`, `missing_ids`, and the `events`
+            An `UpdatePreview`, with `changes`, `unchanged_ids`, `missing_ids`, and the `triggers`
             the update may set off. A value counts as a change whenever the comparison isn't
             certain, so `update()` may report a listed record as unchanged. A file upload is
             always a change.
@@ -1924,7 +1921,7 @@ class Table:
             )
             current.update({record.id: record for record in page.records})
         preview = build_update_preview(merged, current, FieldIndex(self.fields()))
-        return replace(preview, events=self._change_events())
+        return replace(preview, triggers=self._change_events())
 
     def rows_from_file(
         self,
@@ -1934,7 +1931,7 @@ class Table:
         skip_read_only: bool = False,
         format: FileFormat | None = None,
         sheet: str | None = None,
-        tz: tzinfo = UTC,
+        time_zone: tzinfo = UTC,
         date_format: str | None = None,
         datetime_format: str | None = None,
         encoding: str = "utf-8-sig",
@@ -1955,7 +1952,7 @@ class Table:
 
         ```python
         rows = tasks.rows_from_file("tasks.csv")
-        for error in rows.errors:
+        for error in rows.failed_rows:
             print(error)
         tasks.insert(rows)
         ```
@@ -1970,7 +1967,7 @@ class Table:
             format: `csv` or `xlsx`. By default it's `xlsx` for an `.xlsx` or `.xlsm` path or a
                 binary file, and `csv` otherwise.
             sheet: For Excel, the worksheet's name. Defaults to the first.
-            tz: The time zone of a timestamp without one, such as one from Excel.
+            time_zone: The time zone of a timestamp without one, such as one from Excel.
             date_format: How dates are written, for `datetime.strptime()`, such as `%m/%d/%Y`.
                 Defaults to ISO 8601, `2027-01-15`.
             datetime_format: How timestamps are written, as for `date_format`. Defaults to ISO
@@ -2011,7 +2008,7 @@ class Table:
                 fields,
                 columns=columns,
                 skip_read_only=skip_read_only,
-                tz=tz,
+                time_zone=time_zone,
                 date_format=date_format,
                 datetime_format=datetime_format,
                 max_rows=max_rows,
@@ -2019,24 +2016,24 @@ class Table:
 
         return run_blocking(parse)
 
-    def events(self) -> list[AppEvent]:
+    def triggers(self) -> list[AppTrigger]:
         """List the webhooks, Quickbase actions, notifications, subscriptions, reminders, and
-        record-triggered automations that watch this table. See `App.events()`.
+        record-triggered automations that watch this table. See `App.triggers()`.
 
         Returns:
-            An `AppEvent` for each, active or not.
+            An `AppTrigger` for each, active or not.
 
         Raises:
             PermissionDeniedError: The token isn't an administrator's.
         """
         table_id = (self.info()).id
-        return [item for item in self._app.events() if item.table_id == table_id]
+        return [item for item in self._app.triggers() if item.table_id == table_id]
 
-    def _change_events(self) -> tuple[AppEvent, ...] | None:
+    def _change_events(self) -> tuple[AppTrigger, ...] | None:
         """The active events on this table that changing records may set off, for a preview, or
         None if they can't be read, which shouldn't stop the preview."""
         try:
-            found = self.events()
+            found = self.triggers()
         except (APIError, InvalidResponseError, PolicyRefusedError):
             return None
         return tuple(item for item in found if item.active and item.runs_on_changes)
@@ -2330,7 +2327,7 @@ class Table:
         if "formula" in merged:
             if self._transport.policy is not None and target.type in UNSAFE_FORMULA_TYPES:
                 raise PolicyRefusedError(
-                    Decision(
+                    PolicyDecision(
                         allowed=False,
                         verb="formula",
                         reason=f"A {target.type} formula makes something people click, which acts "
@@ -2387,7 +2384,7 @@ class Table:
         for field_id in field_ids:
             if field_id is None:
                 raise PolicyRefusedError(
-                    Decision(
+                    PolicyDecision(
                         allowed=False,
                         verb=verb,
                         layer="derived",
@@ -2664,7 +2661,7 @@ class Table:
         label: str,
         *,
         function: str = "sum",
-        where: Expression | str | None = None,
+        where: WhereExpression | str | None = None,
     ) -> Field:
         """Return the summary of this table's `child_field` on the parent, creating it if needed.
 
@@ -2690,7 +2687,7 @@ class Table:
             InvalidValueError: `function` isn't one of these, or is `count`, which takes no field.
                 Nothing was sent.
             UnknownFieldError: This table has no such field. Nothing was sent.
-            QueryError: `where` can't be sent as written. Nothing was sent.
+            InvalidQueryError: `where` can't be sent as written. Nothing was sent.
             SchemaMismatchError: The label is already used on the parent by anything but this
                 summary. It wasn't changed.
             BadRequestError: Quickbase can't apply `function` to this field, such as `sum` of a
@@ -2709,7 +2706,7 @@ class Table:
         return self._ensure_summary(relationship, label, code, target_id, where)
 
     def ensure_count_field(
-        self, relationship: Relationship, label: str, *, where: Expression | str | None = None
+        self, relationship: Relationship, label: str, *, where: WhereExpression | str | None = None
     ) -> Field:
         """Return the count of this table's records for each parent, creating it if needed.
 
@@ -2728,7 +2725,7 @@ class Table:
             SchemaMismatchError: The label is already used on the parent by anything but this
                 count. It wasn't changed.
             UnknownFieldError: `where` uses a field this table doesn't have. Nothing was sent.
-            QueryError: `where` can't be sent as written. Nothing was sent.
+            InvalidQueryError: `where` can't be sent as written. Nothing was sent.
         """
         return self._ensure_summary(relationship, label, "COUNT", None, where)
 
@@ -2738,7 +2735,7 @@ class Table:
         label: str,
         function: str,
         target_id: int | None,
-        where: Expression | str | None,
+        where: WhereExpression | str | None,
     ) -> Field:
         """Find or create a summary on the parent. A count has no target, which Quickbase records
         as field 0. Under a policy, the child's row limit is ANDed into the filter, and an existing
@@ -2821,7 +2818,7 @@ class Table:
 
     def operation(
         self,
-        name: OperationName,
+        name: TableOperationName,
         *,
         fields: Sequence[FieldRef] | None = None,
         field_descriptions: Mapping[FieldRef, str] | None = None,
@@ -2830,10 +2827,10 @@ class Table:
         formula: str | None = None,
         max_records_per_call: int | None = None,
         max_records_per_write: int = DEFAULT_MAX_ROWS,
-        scope: Expression | None = None,
+        scope: WhereExpression | None = None,
         require_preview: bool = False,
         max_default_fields: int | None = None,
-    ) -> "Operation":
+    ) -> "TableOperation":
         """Make one operation on this table into a tool for a model, with its JSON Schema.
 
         The schema describes the arguments a model may send, and `run()` checks them against the
@@ -2846,7 +2843,7 @@ class Table:
         )
         tool = {
             "name": "search_tasks",
-            "input_schema": search.schema,
+            "input_schema": search.input_schema,
         }
         scope = F("Project") == project
         page = search.run(arguments, scope=scope)
@@ -2890,7 +2887,7 @@ class Table:
                 ones, and `tool_result()` says how many it left out. Defaults to every one.
 
         Returns:
-            An `Operation`, with its `schema` and `run()`.
+            An `TableOperation`, with its `schema` and `run()`.
 
         Raises:
             PolicyRefusedError: The client's policy doesn't allow this operation at all.
@@ -2955,7 +2952,7 @@ class Table:
             require_preview=require_preview,
             max_default_fields=max_default_fields,
         )
-        return Operation(self, spec)
+        return TableOperation(self, spec)
 
     def update_info(
         self,
@@ -3111,7 +3108,7 @@ class Report:
         require_table_report(info)
         return {"id": info.id, "tableId": (self._table.info()).id, "type": info.type}
 
-    def _fetch_page(self, target: dict[str, Any], top: int, skip: int) -> Page:
+    def _fetch_page(self, target: dict[str, Any], top: int, skip: int) -> RecordPage:
         # Quickbase silently ignores top and skip in the body and returns every record.
         payload = self._transport.request(
             "POST",
@@ -3121,7 +3118,7 @@ class Report:
         )
         return parse(page_from_api, payload, "report")
 
-    def run_page(self, *, limit: int = 100, skip: int = 0) -> Page:
+    def run_page(self, *, limit: int = 100, skip: int = 0) -> RecordPage:
         """Fetch one page of the report's records, for controlling paging yourself.
 
         Records hold only the report's columns, and each run adds to the report's usage count in
@@ -3132,7 +3129,7 @@ class Report:
             skip: How many records to pass over first. Use the previous page's `next_skip`.
 
         Returns:
-            A `Page`, whose `total` counts every record in the report.
+            A `RecordPage`, whose `total` counts every record in the report.
 
         Raises:
             UnknownReportError: The table has no such report, or several share the name.
@@ -3141,7 +3138,7 @@ class Report:
         """
         _require_positive("limit", limit)
         if skip < 0:
-            raise QueryError("skip can't be negative.")
+            raise InvalidQueryError("skip can't be negative.")
         return self._fetch_page(self._load_target(), limit, skip)
 
     def run(self, *, page_size: int = 1000, max_total: int | None = None) -> RecordIterator:
@@ -3167,7 +3164,7 @@ class Report:
             _require_positive("max_total", max_total)
         return RecordIterator(self._load_target, self._fetch_page, page_size, max_total)
 
-    def summary_rows(
+    def run_summary(
         self, *, page_size: int = 1000, max_total: int | None = None
     ) -> list[dict[str, Any]]:
         """Get a summary or chart report's rows, as `{column label: value}`.
@@ -3219,7 +3216,7 @@ class Report:
         return f"{type(self).__name__}({self._ref!r}, table={self._table!r})"
 
 
-class Operation:
+class TableOperation:
     """One operation on a table, for a model's tool call. Create one with `table.operation()`."""
 
     def __init__(self, table: Table, spec: OperationSpec) -> None:
@@ -3227,19 +3224,19 @@ class Operation:
         self._spec = spec
 
     @property
-    def name(self) -> OperationName:
+    def name(self) -> TableOperationName:
         """What the operation does, such as `query`."""
         return self._spec.name
 
     @property
-    def schema(self) -> dict[str, Any]:
+    def input_schema(self) -> dict[str, Any]:
         """The JSON Schema of the arguments a model may send, for a tool's input.
 
         It's self-contained, with no `$ref`, and a new dictionary each time, so you can add to it.
         """
         return copy_schema(self._spec.schema)
 
-    def run(self, arguments: Mapping[str, Any], *, scope: Expression | None = None) -> Any:
+    def run(self, arguments: Mapping[str, Any], *, scope: WhereExpression | None = None) -> Any:
         """Check a model's arguments, and run the operation.
 
         Arguments the schema doesn't allow are refused before anything is sent, with a message that
@@ -3257,12 +3254,12 @@ class Operation:
                 `==` conditions joined with `&`. A report can't take one.
 
         Returns:
-            What the table method returns, such as a `Page` for `query`, which `tool_result()`
+            What the table method returns, such as a `RecordPage` for `query`, which `tool_result()`
             takes.
 
         Raises:
-            QueryError: An argument can't be used, a record named isn't in `scope`, a write sets
-                a field the scope uses, or a delete matches more than `max_records_per_call`.
+            InvalidQueryError: An argument can't be used, a record named isn't in `scope`, a write
+                sets a field the scope uses, or a delete matches more than `max_records_per_call`.
                 Nothing was sent, other than the query that checks the scope or counts a delete.
             InvalidValueError: A record or value can't be written. Nothing was sent.
         """
@@ -3280,7 +3277,7 @@ class Operation:
         if call.most is not None:
             matching = table.count(call.arguments["where"])
             if matching > call.most:
-                raise QueryError(
+                raise InvalidQueryError(
                     f"{matching} records match, and this tool may delete at most {call.most} at "
                     "once, so nothing was deleted. Narrow the filter."
                 )
@@ -3288,7 +3285,7 @@ class Operation:
             ids = list(call.record_ids)
             found = table.count(scope & F(RECORD_ID_FIELD).is_in(ids))
             if found != len(ids):
-                raise QueryError(
+                raise InvalidQueryError(
                     "Some of these records don't exist, or aren't ones this tool may use, so "
                     "nothing was done."
                 )
@@ -3319,7 +3316,7 @@ class Operation:
             )
         if call.method == "query_page" and call.fields_left_out:
             return extend(
-                cast(Page, result), FieldsLeftOutPage, fields_left_out=call.fields_left_out
+                cast(RecordPage, result), FieldsLeftOutPage, fields_left_out=call.fields_left_out
             )
         if call.method == "delete":
             return DeletedCount(result)
@@ -3338,7 +3335,7 @@ class Operation:
         self,
         kind: ConfirmationKind,
         arguments: Mapping[str, Any],
-        scope: Expression | None,
+        scope: WhereExpression | None,
         matching: int | None,
     ) -> str:
         table_id = (self._table.info()).id
@@ -3349,7 +3346,7 @@ class Operation:
         return issue_confirmation(transport.confirmation_key, kind, bound)
 
     def _check_confirmation(
-        self, arguments: Mapping[str, Any], scope: Expression | None, matching: int | None
+        self, arguments: Mapping[str, Any], scope: WhereExpression | None, matching: int | None
     ) -> None:
         kind: ConfirmationKind = "delete" if self._spec.name == "delete" else "update"
         table_id = (self._table.info()).id
@@ -3419,7 +3416,7 @@ class CodePage:
                 raise
             return None
 
-    def preview_write(self, text: str) -> CodePagePreview:
+    def preview_change(self, text: str) -> CodePagePreview:
         """Say what `write()` would do with this text, without writing it.
 
         Args:
@@ -3436,7 +3433,7 @@ class CodePage:
         wanted = check_text(text)
         return build_preview(self._ref, self._current(), wanted)
 
-    def write(self, text: str, *, expected_sha256: str | None = None) -> CodePageWrite:
+    def write(self, text: str, *, expected_sha256: str | None = None) -> CodePageWriteResult:
         """Create the page, or replace its text.
 
         A name that isn't in use makes a new page, and a name in use overwrites that page, keeping
@@ -3447,10 +3444,10 @@ class CodePage:
         Args:
             text: The page's whole new text. Line endings are written as LF.
             expected_sha256: The hash of the version you expect to replace, from `read()` or
-                `preview_write()`. If the page differs, nothing is written.
+                `preview_change()`. If the page differs, nothing is written.
 
         Returns:
-            A `CodePageWrite`, with what was there before.
+            A `CodePageWriteResult`, with what was there before.
 
         Raises:
             CodePageChangedError: The page isn't the expected version. Nothing was written.
@@ -3469,12 +3466,12 @@ class CodePage:
             )
         return self._send(wanted, current)
 
-    def _send(self, text: str, current: CodePageContent | None) -> CodePageWrite:
+    def _send(self, text: str, current: CodePageContent | None) -> CodePageWriteResult:
         fields: dict[str, str | int] = {**self._write_target(), "pagetype": 1, "pagebody": text}
         root = self._transport.xml.call(WRITE_PAGE, self._app_id, fields)
         page_id = parse(page_id_from_xml, root, "code page")
-        return CodePageWrite(
-            page=self._content(text, page_id), previous=current, created=current is None
+        return CodePageWriteResult(
+            content=self._content(text, page_id), previous=current, created=current is None
         )
 
     def _write_target(self) -> dict[str, str | int]:
@@ -3484,21 +3481,28 @@ class CodePage:
         return f"{type(self).__name__}({self._ref!r}, app={self._app_id!r})"
 
 
-class CodePageOperation:
-    """One code page operation, for a model's tool call. Create one with `app.operation()`."""
+class AppOperation:
+    """One app operation, for a model's tool call. Create one with `app.operation()`."""
 
-    def __init__(self, app: App, name: CodePageOperationName, schema: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        app: App,
+        name: AppOperationName,
+        input_schema: dict[str, Any],
+        max_changes: int = DEFAULT_MAX_CHANGES,
+    ) -> None:
         self._app = app
-        self._name: CodePageOperationName = name
-        self._schema = schema
+        self._name: AppOperationName = name
+        self._schema = input_schema
+        self._max_changes = max_changes
 
     @property
-    def name(self) -> CodePageOperationName:
-        """What the operation does, such as `read_code_page`."""
+    def name(self) -> AppOperationName:
+        """What the operation does, such as `preview_schema_changes`."""
         return self._name
 
     @property
-    def schema(self) -> dict[str, Any]:
+    def input_schema(self) -> dict[str, Any]:
         """The JSON Schema of the arguments a model may send, for a tool's input.
 
         It's self-contained, with no `$ref`, and a new dictionary each time, so you can add to it.
@@ -3508,30 +3512,41 @@ class CodePageOperation:
     def run(self, arguments: Mapping[str, Any]) -> Any:
         """Check a model's arguments, and run the operation.
 
-        Text a page holds is untrusted input, as field values are.
+        Text a code page holds is untrusted input, as field values are.
 
         Args:
             arguments: The arguments from the model's tool call.
 
         Returns:
-            For `list_code_pages`, a list of `CodePageInfo`. For `read_code_page`, a
+            For `describe_schema`, a list of `TableSchema`. For `preview_schema_changes`, a
+            `SchemaPlan`, whose `confirmation` `apply_schema_changes` needs, unless the plan has
+            blockers or changes nothing. For `apply_schema_changes`, a `SchemaChangeResult`. For
+            `list_code_pages`, a list of `CodePageInfo`. For `read_code_page`, a
             `CodePageContent`. For `preview_code_page_change`, a `CodePagePreview`, whose
             `confirmation` `apply_code_page_change` needs. For `apply_code_page_change`, a
-            `CodePageWrite`. `tool_result()` takes each.
+            `CodePageWriteResult`. `tool_result()` takes each.
 
         Raises:
             InvalidValueError: An argument can't be used. Nothing was sent.
-            ConfirmationError: `apply_code_page_change` has no confirmation, or one that doesn't
-                match this page and text, as it is now. Nothing was changed.
+            InvalidConfirmationError: An `apply_` operation has no confirmation, or one that
+                doesn't match these arguments and the app as it is now. Nothing was changed.
+            SchemaChangeError: A change failed while applying. Its `result` says which were made.
         """
         if not isinstance(arguments, Mapping):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise InvalidValueError("The arguments must be an object.")
+        if self._name in CODE_PAGE_OPERATIONS:
+            arguments = normalize_page_arguments(arguments)
         unknown = sorted(set(arguments) - set(self._schema["properties"]))
         if unknown:
             raise InvalidValueError(f"This tool doesn't take: {', '.join(unknown)}.")
+        if self._name in CODE_PAGE_OPERATIONS:
+            return self._run_code_page(arguments)
+        return self._run_schema(arguments)
+
+    def _run_code_page(self, arguments: Mapping[str, Any]) -> Any:
         if self._name == "list_code_pages":
             return self._app.code_pages()
-        ref = check_ref(arguments.get("page"))
+        ref = check_ref(arguments.get("code_page"))
         page = self._app.code_page(ref)
         if self._name == "read_code_page":
             return page.read()
@@ -3554,62 +3569,7 @@ class CodePageOperation:
         check_confirmation(key, "code_page", arguments.get("confirmation"), bound)
         return page._send(text, current)  # pyright: ignore[reportPrivateUsage]
 
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}({self._name!r}, app={self._app.id!r})"
-
-
-class SchemaOperation:
-    """One schema operation, for a model's tool call. Create one with `app.operation()`."""
-
-    def __init__(
-        self,
-        app: App,
-        name: SchemaOperationName,
-        schema: dict[str, Any],
-        max_changes: int,
-    ) -> None:
-        self._app = app
-        self._name: SchemaOperationName = name
-        self._schema = schema
-        self._max_changes = max_changes
-
-    @property
-    def name(self) -> SchemaOperationName:
-        """What the operation does, such as `preview_schema_changes`."""
-        return self._name
-
-    @property
-    def schema(self) -> dict[str, Any]:
-        """The JSON Schema of the arguments a model may send, for a tool's input.
-
-        It's self-contained, with no `$ref`, and a new dictionary each time, so you can add to it.
-        """
-        return copy_schema(self._schema)
-
-    def run(self, arguments: Mapping[str, Any]) -> Any:
-        """Check a model's arguments, and run the operation.
-
-        Args:
-            arguments: The arguments from the model's tool call.
-
-        Returns:
-            For `describe_schema`, a list of `TableSchema`. For `preview_schema_changes`, a
-            `SchemaPlan`, whose `confirmation` `apply_schema_changes` needs, unless the plan has
-            blockers or changes nothing. For `apply_schema_changes`, a `SchemaChangeResult`.
-            `tool_result()` takes each.
-
-        Raises:
-            InvalidValueError: An argument can't be used. Nothing was sent.
-            QueryError: `apply_schema_changes` has no confirmation, or one that doesn't match these
-                changes and the schema as it is now. Nothing was changed.
-            SchemaChangeError: A change failed while applying. Its `result` says which were made.
-        """
-        if not isinstance(arguments, Mapping):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise InvalidValueError("The arguments must be an object.")
-        allowed = set(self._schema["properties"])
-        unknown = sorted(set(arguments) - allowed)
-        if unknown:
-            raise InvalidValueError(f"This tool doesn't take: {', '.join(unknown)}.")
+    def _run_schema(self, arguments: Mapping[str, Any]) -> Any:
         if self._name == "describe_schema":
             return self._describe(arguments.get("tables"))
         changes = changes_from_json(arguments.get("changes"), most=self._max_changes)

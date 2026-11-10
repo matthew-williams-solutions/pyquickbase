@@ -9,11 +9,11 @@ import pytest
 from pyquickbase import (
     AsyncQuickbase,
     BoundPolicy,
-    Decision,
     F,
+    InvalidQueryError,
     Policy,
+    PolicyDecision,
     PolicyRefusedError,
-    QueryError,
     ReadRequest,
     UnknownFieldError,
     UnknownReportError,
@@ -193,7 +193,7 @@ async def test_hand_written_filters_are_checked_too() -> None:
         with pytest.raises(PolicyRefusedError):
             await tasks.count("{7.EX.'_FID_6'}")
         # The SDK's validator already refuses a field it can't see.
-        with pytest.raises(QueryError):
+        with pytest.raises(InvalidQueryError):
             await tasks.count("{9.EX.'s3cret'}")
     assert queries(fake) == []
 
@@ -238,7 +238,7 @@ async def test_reports_must_be_listed_and_lose_hidden_columns() -> None:
         assert all("query" not in item.raw for item in await tasks.reports())
         record = (await tasks.report("Open").run_page(limit=5)).records[0]
         assert dict(record) == {"F3": 1, "F6": "Pour slab"}
-        assert await tasks.report("Totals").summary_rows(page_size=5) == [{"F3": 1, "F8": 4}]
+        assert await tasks.report("Totals").run_summary(page_size=5) == [{"F3": 1, "F8": 4}]
     async with client(Fake(), rules()) as qb:
         with pytest.raises(UnknownReportError):  # An unlisted report looks like none.
             await qb.app("bq1234567").table("Tasks").report("Open").run_page()
@@ -277,7 +277,7 @@ async def test_formulas_app_details_and_roles_are_refused() -> None:
 
 async def test_a_formula_that_reads_a_hidden_field_is_refused() -> None:
     fake = Fake()
-    async with client(fake, rules(allow.schema(TASKS, "add_field", "formula"))) as qb:
+    async with client(fake, rules(allow.schema(TASKS, "create_field", "formula"))) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         with pytest.raises(PolicyRefusedError, match=r"uses \[Notes\], which this client can't"):
             await tasks.create_field("Copy", "text", formula="[Notes]")
@@ -348,7 +348,7 @@ class Log:
     def __init__(self) -> None:
         self.seen: list[ReadRequest | WriteRequest] = []
 
-    def decide(self, request: ReadRequest | WriteRequest) -> Decision | None:
+    def decide(self, request: ReadRequest | WriteRequest) -> PolicyDecision | None:
         self.seen.append(request)
         return None
 

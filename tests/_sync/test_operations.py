@@ -11,15 +11,15 @@ import pytest
 
 from pyquickbase import (
     ConfigurationError,
-    ConfirmationError,
     F,
     FileDownload,
+    InvalidConfirmationError,
+    InvalidQueryError,
     InvalidValueError,
-    Page,
     Policy,
     PolicyRefusedError,
-    QueryError,
     Quickbase,
+    RecordPage,
     SummaryRow,
     UnknownReportError,
     UpdatePreview,
@@ -125,7 +125,7 @@ def test_query_runs_a_page_query_within_its_scope() -> None:
             {"where": OPEN, "select": ["Title"], "order_by": [{"field": "Title"}], "limit": 5},
             scope=F("Project") == "Alpha",
         )
-    assert isinstance(page, Page)
+    assert isinstance(page, RecordPage)
     (body,) = fake.requests("POST /records/query")
     assert body["select"] == [3, 6]
     assert body["where"] == "{9.EX.'Alpha'}AND{7.EX.'Open'}"
@@ -137,8 +137,8 @@ def test_query_runs_a_page_query_within_its_scope() -> None:
 def test_the_schema_is_a_new_dictionary_each_time() -> None:
     with client(Fake()) as qb:
         search = qb.app("bq1234567").table("Tasks").operation("query")
-    search.schema["properties"].clear()
-    assert search.schema["properties"]
+    search.input_schema["properties"].clear()
+    assert search.input_schema["properties"]
 
 
 def test_count_summarize_and_delete() -> None:
@@ -180,7 +180,7 @@ class Summarized(Fake):
 def test_a_summary_finds_medians_spreads_and_distinct_values() -> None:
     with client(Summarized()) as qb:
         summarize = qb.app("bq1234567").table("Tasks").operation("summarize")
-        properties = summarize.schema["properties"]
+        properties = summarize.input_schema["properties"]
         assert properties["median"]["items"]["enum"] == ["Hours"]
         assert "Status" in properties["distinct_count"]["items"]["enum"]
         # The table has no date field, so there's no period to compare.
@@ -233,7 +233,7 @@ def test_summary_sorts_it_cant_use_are_refused(order_by: Any, message: str) -> N
     fake = Summarized()
     with client(fake) as qb:
         summarize = qb.app("bq1234567").table("Tasks").operation("summarize")
-        with pytest.raises(QueryError, match=message):
+        with pytest.raises(InvalidQueryError, match=message):
             summarize.run({"group_by": ["Status"], "order_by": order_by})
     assert fake.requests("POST /records/query") == []
 
@@ -279,7 +279,7 @@ def test_a_scope_is_checked_before_a_record_is_named() -> None:
     fake = Fake(matching=0)
     with client(fake) as qb:
         update = qb.app("bq1234567").table("Tasks").operation("update")
-        with pytest.raises(QueryError, match="aren't ones this tool may use"):
+        with pytest.raises(InvalidQueryError, match="aren't ones this tool may use"):
             update.run(
                 {"records": [{"Record ID#": 1, "Status": "Done"}]}, scope=F("Project") == "Alpha"
             )
@@ -337,7 +337,7 @@ def test_insert_refuses_a_scope_a_new_record_cant_match(scope: Any) -> None:
     fake = Fake()
     with client(fake) as qb:
         insert = qb.app("bq1234567").table("Tasks").operation("insert", fields=["Title"])
-        with pytest.raises(QueryError, match="can't insert records"):
+        with pytest.raises(InvalidQueryError, match="can't insert records"):
             insert.run({"records": [{"Title": "Pour slab"}]}, scope=scope)
     assert fake.requests("POST /records") == []
 
@@ -350,7 +350,7 @@ def test_a_write_cant_set_a_field_the_scope_uses(name: str) -> None:
         row: dict[str, Any] = {"Project": "Beta"}
         if name != "insert":
             row["Record ID#"] = 1
-        with pytest.raises(QueryError, match=r"records\[0\] sets 'Project'"):
+        with pytest.raises(InvalidQueryError, match=r"records\[0\] sets 'Project'"):
             operation.run({"records": [row]}, scope=F("Project") == "Alpha")
     assert fake.requests("POST /records") == []
     assert fake.requests("POST /records/query") == []
@@ -360,8 +360,8 @@ def test_a_delete_that_matches_too_many_records_is_refused() -> None:
     fake = Fake(matching=11)
     with client(fake) as qb:
         delete = qb.app("bq1234567").table("Tasks").operation("delete", max_records_per_call=10)
-        assert "more than 10 records" in delete.schema["properties"]["where"]["description"]
-        with pytest.raises(QueryError, match="11 records match"):
+        assert "more than 10 records" in delete.input_schema["properties"]["where"]["description"]
+        with pytest.raises(InvalidQueryError, match="11 records match"):
             delete.run({"where": OPEN}, scope=F("Project") == "Alpha")
     assert fake.requests("DELETE /records") == []
     (count,) = fake.requests("POST /records/query")
@@ -375,7 +375,7 @@ def test_a_delete_preview_says_when_a_delete_would_be_refused(matching: int, ove
             qb.app("bq1234567").table("Tasks").operation("preview_delete", max_records_per_call=10)
         )
         page = preview.run({"where": OPEN})
-    assert isinstance(page, Page)
+    assert isinstance(page, RecordPage)
     assert page.total == matching
     result = tool_result(page)
     assert result["warnings"] == []
@@ -393,10 +393,10 @@ def test_preview_update_offers_only_fields_it_can_read() -> None:
     with client(Fake(), policy=policy) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         preview = tasks.operation("preview_update")
-        record = preview.schema["properties"]["records"]["items"]
+        record = preview.input_schema["properties"]["records"]["items"]
         assert list(record["properties"]) == ["Record ID#", "Status"]
         update = tasks.operation("update")
-        assert list(update.schema["properties"]["records"]["items"]["properties"]) == [
+        assert list(update.input_schema["properties"]["records"]["items"]["properties"]) == [
             "Record ID#",
             "Status",
             "Project",
@@ -421,7 +421,7 @@ def test_reports_are_chosen_by_id_and_described_separately() -> None:
         with pytest.raises(UnknownReportError, match="doesn't offer"):
             tasks.operation("run_report", report_descriptions={"99": "Missing."})
         run = tasks.operation("run_report", report_descriptions={"1": "Every task."})
-        assert "1: List All, Every task." in run.schema["properties"]["report"]["description"]
+        assert "1: List All, Every task." in run.input_schema["properties"]["report"]["description"]
 
 
 def test_reports() -> None:
@@ -429,9 +429,9 @@ def test_reports() -> None:
     with client(fake, policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         run = tasks.operation("run_report", reports=["1"], report_descriptions={"1": "Every task."})
-        assert "1: List All, Every task." in run.schema["properties"]["report"]["description"]
+        assert "1: List All, Every task." in run.input_schema["properties"]["report"]["description"]
         page = run.run({"report": "1", "limit": 2})
-        assert isinstance(page, Page)
+        assert isinstance(page, RecordPage)
         summary = tasks.operation("run_summary_report")
         assert summary.run({"report": "5"}) == [{"Record ID#": 1}]
     assert [name for name, _ in fake.sent if "/run" in name] == [
@@ -445,11 +445,11 @@ def test_reports_can_be_named_by_number_or_name() -> None:
     with client(fake, policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         run = tasks.operation("run_report")
-        assert isinstance(run.run({"report": 1}), Page)
-        assert isinstance(run.run({"report": "list all"}), Page)
+        assert isinstance(run.run({"report": 1}), RecordPage)
+        assert isinstance(run.run({"report": "list all"}), RecordPage)
         summary = tasks.operation("run_summary_report")
         assert summary.run({"report": "Totals"}) == [{"Record ID#": 1}]
-        with pytest.raises(QueryError, match="use the run_report operation"):
+        with pytest.raises(InvalidQueryError, match="use the run_report operation"):
             summary.run({"report": "List All"})
     assert [name for name, _ in fake.sent if "/run" in name] == [
         "POST /reports/1/run",
@@ -470,7 +470,7 @@ def test_an_operation_the_client_cant_run_is_refused_when_made() -> None:
         with pytest.raises(PolicyRefusedError, match="insert"):
             tasks.operation("insert")
         update = tasks.operation("update")
-        record = update.schema["properties"]["records"]["items"]
+        record = update.input_schema["properties"]["records"]["items"]
         assert list(record["properties"]) == ["Record ID#", "Status"]
 
 
@@ -479,7 +479,7 @@ def test_read_rules_shape_what_is_offered_and_refuse_formulas() -> None:
     with client(Fake(), policy=rules) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         search = tasks.operation("query")
-        properties = search.schema["properties"]
+        properties = search.input_schema["properties"]
         assert properties["select"]["items"]["enum"] == ["Record ID#", "Title", "Status"]
         assert properties["limit"]["maximum"] == 10
         with pytest.raises(PolicyRefusedError, match="formulas"):
@@ -506,7 +506,7 @@ def test_refused_arguments_send_nothing() -> None:
     with client(fake) as qb:
         insert = qb.app("bq1234567").table("Tasks").operation("insert")
         before = len(fake.sent)
-        with pytest.raises(QueryError):
+        with pytest.raises(InvalidQueryError):
             insert.run({"rows": []})
     assert len(fake.sent) == before
 
@@ -529,7 +529,7 @@ def test_a_scope_given_when_made_is_described_and_applied() -> None:
     with client(fake) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         count = tasks.operation("count", scope=F("Project") == "Alpha")
-        description = count.schema["properties"]["where"]["description"]
+        description = count.input_schema["properties"]["where"]["description"]
         assert 'Every record this tool reaches also matches: Project is "Alpha".' in description
         count.run({"where": OPEN})
         count.run({"where": OPEN}, scope=F("Hours") > 2)
@@ -543,7 +543,7 @@ def test_an_insert_scope_is_left_out_of_the_schema_and_filled_in() -> None:
     with client(fake) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         insert = tasks.operation("insert", scope=F("Project") == "Alpha")
-        records = insert.schema["properties"]["records"]
+        records = insert.input_schema["properties"]["records"]
         assert "Project" not in records["items"]["properties"]
         assert 'made to match this tool\'s scope (Project is "Alpha")' in records["description"]
         insert.run({"records": [{"Title": "New"}]})
@@ -591,8 +591,10 @@ def test_an_update_needs_the_confirmation_of_a_preview_of_the_same_records() -> 
         tasks = qb.app("bq1234567").table("Tasks")
         preview = tasks.operation("preview_update")
         update = tasks.operation("update", require_preview=True)
-        assert "confirmation" in update.schema["required"]
-        with pytest.raises(ConfirmationError, match="needs the confirmation that preview_update"):
+        assert "confirmation" in update.input_schema["required"]
+        with pytest.raises(
+            InvalidConfirmationError, match="needs the confirmation that preview_update"
+        ):
             update.run(CHANGE)
         shown = tool_result(preview.run(CHANGE))
         confirmation = shown["confirmation"]
@@ -601,9 +603,9 @@ def test_an_update_needs_the_confirmation_of_a_preview_of_the_same_records() -> 
         result = update.run({**reordered, "confirmation": confirmation})
         assert isinstance(result, WriteResult)
         other = {"records": [{"Record ID#": 1, "Status": "Open", "Title": "x"}]}
-        with pytest.raises(ConfirmationError, match="doesn't match"):
+        with pytest.raises(InvalidConfirmationError, match="doesn't match"):
             update.run({**other, "confirmation": confirmation})
-        with pytest.raises(ConfirmationError, match="isn't one preview_update returned"):
+        with pytest.raises(InvalidConfirmationError, match="isn't one preview_update returned"):
             update.run({**CHANGE, "confirmation": "nonsense"})
     assert len(fake.requests("POST /records")) == 1
 
@@ -617,12 +619,12 @@ def test_a_confirmation_expires_and_only_works_with_its_own_client(
         elsewhere = (
             other_qb.app("bq1234567").table("Tasks").operation("update", require_preview=True)
         )
-        with pytest.raises(ConfirmationError, match="another client or server process"):
+        with pytest.raises(InvalidConfirmationError, match="another client or server process"):
             elsewhere.run({**CHANGE, "confirmation": confirmation})
         update = qb.app("bq1234567").table("Tasks").operation("update", require_preview=True)
         later = time.time() + 16 * 60
         monkeypatch.setattr(time, "time", lambda: later)
-        with pytest.raises(ConfirmationError, match="has expired"):
+        with pytest.raises(InvalidConfirmationError, match="has expired"):
             update.run({**CHANGE, "confirmation": confirmation})
 
 
@@ -644,7 +646,7 @@ def test_a_delete_needs_a_preview_and_the_same_records_to_match() -> None:
         delete = tasks.operation("delete", max_records_per_call=10, require_preview=True)
         confirmation = tool_result(preview.run({"where": OPEN}))["confirmation"]
         fake.matching = 3  # Another record now matches.
-        with pytest.raises(ConfirmationError, match="the records that match have changed"):
+        with pytest.raises(InvalidConfirmationError, match="the records that match have changed"):
             delete.run({"where": OPEN, "confirmation": confirmation})
         assert fake.requests("DELETE /records") == []
         fake.matching = 2

@@ -75,7 +75,7 @@ nav:
       - Policies: policies/index.md
       - Your first policy: policies/tutorial.md
       - Writing rules: policies/rules.md
-      - Classes and new fields: policies/classes.md
+      - Tags and new fields: policies/tags.md
       - Limiting rows: policies/rows.md
       - Schema changes: policies/schema.md
       - Rules of your own: policies/custom-rules.md
@@ -97,13 +97,12 @@ nav:
           - Field types: field-types.md
       - Schema:
           - Schema changes: reference/schema-changes.md
-          - SchemaOperation: reference/schema-operation.md
+          - AppOperation: reference/app-operation.md
       - Policies:
           - Policies: reference/policies.md
           - Rules: reference/rules.md
       - AI agents:
-          - Operation: reference/operation.md
-          - CodePageOperation: reference/code-page-operation.md
+          - TableOperation: reference/table-operation.md
           - Tools for models: reference/tools.md
       - Errors and retries:
           - Errors: reference/errors.md

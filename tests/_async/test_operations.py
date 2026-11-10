@@ -11,14 +11,14 @@ import pytest
 from pyquickbase import (
     AsyncQuickbase,
     ConfigurationError,
-    ConfirmationError,
     F,
     FileDownload,
+    InvalidConfirmationError,
+    InvalidQueryError,
     InvalidValueError,
-    Page,
     Policy,
     PolicyRefusedError,
-    QueryError,
+    RecordPage,
     SummaryRow,
     UnknownReportError,
     UpdatePreview,
@@ -126,7 +126,7 @@ async def test_query_runs_a_page_query_within_its_scope() -> None:
             {"where": OPEN, "select": ["Title"], "order_by": [{"field": "Title"}], "limit": 5},
             scope=F("Project") == "Alpha",
         )
-    assert isinstance(page, Page)
+    assert isinstance(page, RecordPage)
     (body,) = fake.requests("POST /records/query")
     assert body["select"] == [3, 6]
     assert body["where"] == "{9.EX.'Alpha'}AND{7.EX.'Open'}"
@@ -138,8 +138,8 @@ async def test_query_runs_a_page_query_within_its_scope() -> None:
 async def test_the_schema_is_a_new_dictionary_each_time() -> None:
     async with client(Fake()) as qb:
         search = await qb.app("bq1234567").table("Tasks").operation("query")
-    search.schema["properties"].clear()
-    assert search.schema["properties"]
+    search.input_schema["properties"].clear()
+    assert search.input_schema["properties"]
 
 
 async def test_count_summarize_and_delete() -> None:
@@ -181,7 +181,7 @@ class Summarized(Fake):
 async def test_a_summary_finds_medians_spreads_and_distinct_values() -> None:
     async with client(Summarized()) as qb:
         summarize = await qb.app("bq1234567").table("Tasks").operation("summarize")
-        properties = summarize.schema["properties"]
+        properties = summarize.input_schema["properties"]
         assert properties["median"]["items"]["enum"] == ["Hours"]
         assert "Status" in properties["distinct_count"]["items"]["enum"]
         # The table has no date field, so there's no period to compare.
@@ -234,7 +234,7 @@ async def test_summary_sorts_it_cant_use_are_refused(order_by: Any, message: str
     fake = Summarized()
     async with client(fake) as qb:
         summarize = await qb.app("bq1234567").table("Tasks").operation("summarize")
-        with pytest.raises(QueryError, match=message):
+        with pytest.raises(InvalidQueryError, match=message):
             await summarize.run({"group_by": ["Status"], "order_by": order_by})
     assert fake.requests("POST /records/query") == []
 
@@ -282,7 +282,7 @@ async def test_a_scope_is_checked_before_a_record_is_named() -> None:
     fake = Fake(matching=0)
     async with client(fake) as qb:
         update = await qb.app("bq1234567").table("Tasks").operation("update")
-        with pytest.raises(QueryError, match="aren't ones this tool may use"):
+        with pytest.raises(InvalidQueryError, match="aren't ones this tool may use"):
             await update.run(
                 {"records": [{"Record ID#": 1, "Status": "Done"}]}, scope=F("Project") == "Alpha"
             )
@@ -340,7 +340,7 @@ async def test_insert_refuses_a_scope_a_new_record_cant_match(scope: Any) -> Non
     fake = Fake()
     async with client(fake) as qb:
         insert = await qb.app("bq1234567").table("Tasks").operation("insert", fields=["Title"])
-        with pytest.raises(QueryError, match="can't insert records"):
+        with pytest.raises(InvalidQueryError, match="can't insert records"):
             await insert.run({"records": [{"Title": "Pour slab"}]}, scope=scope)
     assert fake.requests("POST /records") == []
 
@@ -353,7 +353,7 @@ async def test_a_write_cant_set_a_field_the_scope_uses(name: str) -> None:
         row: dict[str, Any] = {"Project": "Beta"}
         if name != "insert":
             row["Record ID#"] = 1
-        with pytest.raises(QueryError, match=r"records\[0\] sets 'Project'"):
+        with pytest.raises(InvalidQueryError, match=r"records\[0\] sets 'Project'"):
             await operation.run({"records": [row]}, scope=F("Project") == "Alpha")
     assert fake.requests("POST /records") == []
     assert fake.requests("POST /records/query") == []
@@ -365,8 +365,8 @@ async def test_a_delete_that_matches_too_many_records_is_refused() -> None:
         delete = (
             await qb.app("bq1234567").table("Tasks").operation("delete", max_records_per_call=10)
         )
-        assert "more than 10 records" in delete.schema["properties"]["where"]["description"]
-        with pytest.raises(QueryError, match="11 records match"):
+        assert "more than 10 records" in delete.input_schema["properties"]["where"]["description"]
+        with pytest.raises(InvalidQueryError, match="11 records match"):
             await delete.run({"where": OPEN}, scope=F("Project") == "Alpha")
     assert fake.requests("DELETE /records") == []
     (count,) = fake.requests("POST /records/query")
@@ -384,7 +384,7 @@ async def test_a_delete_preview_says_when_a_delete_would_be_refused(
             .operation("preview_delete", max_records_per_call=10)
         )
         page = await preview.run({"where": OPEN})
-    assert isinstance(page, Page)
+    assert isinstance(page, RecordPage)
     assert page.total == matching
     result = tool_result(page)
     assert result["warnings"] == []
@@ -402,10 +402,10 @@ async def test_preview_update_offers_only_fields_it_can_read() -> None:
     async with client(Fake(), policy=policy) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         preview = await tasks.operation("preview_update")
-        record = preview.schema["properties"]["records"]["items"]
+        record = preview.input_schema["properties"]["records"]["items"]
         assert list(record["properties"]) == ["Record ID#", "Status"]
         update = await tasks.operation("update")
-        assert list(update.schema["properties"]["records"]["items"]["properties"]) == [
+        assert list(update.input_schema["properties"]["records"]["items"]["properties"]) == [
             "Record ID#",
             "Status",
             "Project",
@@ -430,7 +430,7 @@ async def test_reports_are_chosen_by_id_and_described_separately() -> None:
         with pytest.raises(UnknownReportError, match="doesn't offer"):
             await tasks.operation("run_report", report_descriptions={"99": "Missing."})
         run = await tasks.operation("run_report", report_descriptions={"1": "Every task."})
-        assert "1: List All, Every task." in run.schema["properties"]["report"]["description"]
+        assert "1: List All, Every task." in run.input_schema["properties"]["report"]["description"]
 
 
 async def test_reports() -> None:
@@ -440,9 +440,9 @@ async def test_reports() -> None:
         run = await tasks.operation(
             "run_report", reports=["1"], report_descriptions={"1": "Every task."}
         )
-        assert "1: List All, Every task." in run.schema["properties"]["report"]["description"]
+        assert "1: List All, Every task." in run.input_schema["properties"]["report"]["description"]
         page = await run.run({"report": "1", "limit": 2})
-        assert isinstance(page, Page)
+        assert isinstance(page, RecordPage)
         summary = await tasks.operation("run_summary_report")
         assert await summary.run({"report": "5"}) == [{"Record ID#": 1}]
     assert [name for name, _ in fake.sent if "/run" in name] == [
@@ -456,11 +456,11 @@ async def test_reports_can_be_named_by_number_or_name() -> None:
     async with client(fake, policy=Policy.read_only()) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         run = await tasks.operation("run_report")
-        assert isinstance(await run.run({"report": 1}), Page)
-        assert isinstance(await run.run({"report": "list all"}), Page)
+        assert isinstance(await run.run({"report": 1}), RecordPage)
+        assert isinstance(await run.run({"report": "list all"}), RecordPage)
         summary = await tasks.operation("run_summary_report")
         assert await summary.run({"report": "Totals"}) == [{"Record ID#": 1}]
-        with pytest.raises(QueryError, match="use the run_report operation"):
+        with pytest.raises(InvalidQueryError, match="use the run_report operation"):
             await summary.run({"report": "List All"})
     assert [name for name, _ in fake.sent if "/run" in name] == [
         "POST /reports/1/run",
@@ -481,7 +481,7 @@ async def test_an_operation_the_client_cant_run_is_refused_when_made() -> None:
         with pytest.raises(PolicyRefusedError, match="insert"):
             await tasks.operation("insert")
         update = await tasks.operation("update")
-        record = update.schema["properties"]["records"]["items"]
+        record = update.input_schema["properties"]["records"]["items"]
         assert list(record["properties"]) == ["Record ID#", "Status"]
 
 
@@ -490,7 +490,7 @@ async def test_read_rules_shape_what_is_offered_and_refuse_formulas() -> None:
     async with client(Fake(), policy=rules) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         search = await tasks.operation("query")
-        properties = search.schema["properties"]
+        properties = search.input_schema["properties"]
         assert properties["select"]["items"]["enum"] == ["Record ID#", "Title", "Status"]
         assert properties["limit"]["maximum"] == 10
         with pytest.raises(PolicyRefusedError, match="formulas"):
@@ -517,7 +517,7 @@ async def test_refused_arguments_send_nothing() -> None:
     async with client(fake) as qb:
         insert = await qb.app("bq1234567").table("Tasks").operation("insert")
         before = len(fake.sent)
-        with pytest.raises(QueryError):
+        with pytest.raises(InvalidQueryError):
             await insert.run({"rows": []})
     assert len(fake.sent) == before
 
@@ -540,7 +540,7 @@ async def test_a_scope_given_when_made_is_described_and_applied() -> None:
     async with client(fake) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         count = await tasks.operation("count", scope=F("Project") == "Alpha")
-        description = count.schema["properties"]["where"]["description"]
+        description = count.input_schema["properties"]["where"]["description"]
         assert 'Every record this tool reaches also matches: Project is "Alpha".' in description
         await count.run({"where": OPEN})
         await count.run({"where": OPEN}, scope=F("Hours") > 2)
@@ -554,7 +554,7 @@ async def test_an_insert_scope_is_left_out_of_the_schema_and_filled_in() -> None
     async with client(fake) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         insert = await tasks.operation("insert", scope=F("Project") == "Alpha")
-        records = insert.schema["properties"]["records"]
+        records = insert.input_schema["properties"]["records"]
         assert "Project" not in records["items"]["properties"]
         assert 'made to match this tool\'s scope (Project is "Alpha")' in records["description"]
         await insert.run({"records": [{"Title": "New"}]})
@@ -602,8 +602,10 @@ async def test_an_update_needs_the_confirmation_of_a_preview_of_the_same_records
         tasks = qb.app("bq1234567").table("Tasks")
         preview = await tasks.operation("preview_update")
         update = await tasks.operation("update", require_preview=True)
-        assert "confirmation" in update.schema["required"]
-        with pytest.raises(ConfirmationError, match="needs the confirmation that preview_update"):
+        assert "confirmation" in update.input_schema["required"]
+        with pytest.raises(
+            InvalidConfirmationError, match="needs the confirmation that preview_update"
+        ):
             await update.run(CHANGE)
         shown = tool_result(await preview.run(CHANGE))
         confirmation = shown["confirmation"]
@@ -612,9 +614,9 @@ async def test_an_update_needs_the_confirmation_of_a_preview_of_the_same_records
         result = await update.run({**reordered, "confirmation": confirmation})
         assert isinstance(result, WriteResult)
         other = {"records": [{"Record ID#": 1, "Status": "Open", "Title": "x"}]}
-        with pytest.raises(ConfirmationError, match="doesn't match"):
+        with pytest.raises(InvalidConfirmationError, match="doesn't match"):
             await update.run({**other, "confirmation": confirmation})
-        with pytest.raises(ConfirmationError, match="isn't one preview_update returned"):
+        with pytest.raises(InvalidConfirmationError, match="isn't one preview_update returned"):
             await update.run({**CHANGE, "confirmation": "nonsense"})
     assert len(fake.requests("POST /records")) == 1
 
@@ -628,12 +630,12 @@ async def test_a_confirmation_expires_and_only_works_with_its_own_client(
         elsewhere = (
             await other_qb.app("bq1234567").table("Tasks").operation("update", require_preview=True)
         )
-        with pytest.raises(ConfirmationError, match="another client or server process"):
+        with pytest.raises(InvalidConfirmationError, match="another client or server process"):
             await elsewhere.run({**CHANGE, "confirmation": confirmation})
         update = await qb.app("bq1234567").table("Tasks").operation("update", require_preview=True)
         later = time.time() + 16 * 60
         monkeypatch.setattr(time, "time", lambda: later)
-        with pytest.raises(ConfirmationError, match="has expired"):
+        with pytest.raises(InvalidConfirmationError, match="has expired"):
             await update.run({**CHANGE, "confirmation": confirmation})
 
 
@@ -657,7 +659,7 @@ async def test_a_delete_needs_a_preview_and_the_same_records_to_match() -> None:
         delete = await tasks.operation("delete", max_records_per_call=10, require_preview=True)
         confirmation = tool_result(await preview.run({"where": OPEN}))["confirmation"]
         fake.matching = 3  # Another record now matches.
-        with pytest.raises(ConfirmationError, match="the records that match have changed"):
+        with pytest.raises(InvalidConfirmationError, match="the records that match have changed"):
             await delete.run({"where": OPEN, "confirmation": confirmation})
         assert fake.requests("DELETE /records") == []
         fake.matching = 2

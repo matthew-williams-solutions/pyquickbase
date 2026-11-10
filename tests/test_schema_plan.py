@@ -138,9 +138,9 @@ def test_a_plan_may_be_limited_in_length() -> None:
 def test_a_plan_gathers_its_blockers_and_warnings() -> None:
     change = DeleteField(table="T", field="F")
     planned = [
-        PlannedChange(change=change, status="ready", risk="destructive", summary="a",
+        PlannedChange(change=change, status="ready", risk="destructive", description="a",
                       warnings=("w1",)),
-        PlannedChange(change=change, status="blocked", risk="destructive", summary="b",
+        PlannedChange(change=change, status="blocked", risk="destructive", description="b",
                       blockers=("b1",)),
     ]  # fmt: skip
     plan = SchemaPlan(app_id="bq1", changes=tuple(planned), fingerprint="f")

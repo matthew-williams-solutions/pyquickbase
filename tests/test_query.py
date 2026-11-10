@@ -11,8 +11,8 @@ from pyquickbase import (
     F,
     Field,
     FileAttachment,
+    InvalidQueryError,
     InvalidResponseError,
-    QueryError,
     UnknownFieldError,
     User,
     WhereCondition,
@@ -77,7 +77,7 @@ def test_format_value(value: Any, expected: str) -> None:
     ],
 )
 def test_values_that_could_break_out_of_a_condition_are_rejected(value: str) -> None:
-    with pytest.raises(QueryError, match="containing"):
+    with pytest.raises(InvalidQueryError, match="containing"):
         format_value(value)
 
 
@@ -93,14 +93,14 @@ def test_format_value_writes_numbers_without_an_exponent(value: Any, expected: s
     "value", [float("nan"), float("inf"), Decimal("NaN"), Decimal("-Infinity"), Decimal("1E+999")]
 )
 def test_format_value_rejects_numbers_it_cant_write(value: Any) -> None:
-    with pytest.raises(QueryError, match="finite"):
+    with pytest.raises(InvalidQueryError, match="finite"):
         format_value(value)
 
 
 def test_format_value_rejects_naive_datetimes_and_unknown_types() -> None:
-    with pytest.raises(QueryError, match="timezone"):
+    with pytest.raises(InvalidQueryError, match="timezone"):
         format_value(datetime(2026, 1, 2))
-    with pytest.raises(QueryError, match="type object"):
+    with pytest.raises(InvalidQueryError, match="type object"):
         format_value(object())
 
 
@@ -150,32 +150,32 @@ def test_compiled_expressions_pass_the_string_validator() -> None:
     ],
 )
 def test_python_boolean_logic_is_rejected_rather_than_dropping_a_condition(use: Any) -> None:
-    with pytest.raises(QueryError, match="Combine conditions"):
+    with pytest.raises(InvalidQueryError, match="Combine conditions"):
         use()
 
 
 def test_invalid_builder_input() -> None:
-    with pytest.raises(QueryError, match="field label"):
+    with pytest.raises(InvalidQueryError, match="field label"):
         F(True)
-    with pytest.raises(QueryError, match="field label"):
+    with pytest.raises(InvalidQueryError, match="field label"):
         F(1.5)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]
-    with pytest.raises(QueryError, match="at least one"):
+    with pytest.raises(InvalidQueryError, match="at least one"):
         F(6).is_in([])
-    with pytest.raises(QueryError, match="uppercase"):
+    with pytest.raises(InvalidQueryError, match="uppercase"):
         F(6).op("ex", "x")  # lowercase acts like CT in the live API
-    with pytest.raises(QueryError, match="other conditions"):
+    with pytest.raises(InvalidQueryError, match="other conditions"):
         (F(6) == "a") & "b"  # type: ignore[operator]  # pyright: ignore[reportOperatorIssue]
     with pytest.raises(TypeError, match="unhashable"):
         hash(F(6))
-    with pytest.raises(QueryError, match="must be a condition"):
+    with pytest.raises(InvalidQueryError, match="must be a condition"):
         compile_where(5, INDEX)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]
 
 
 def test_expression_base_requires_a_compile_method() -> None:
-    from pyquickbase._query import Expression
+    from pyquickbase._query import WhereExpression
 
     with pytest.raises(NotImplementedError):
-        Expression().compile(INDEX)
+        WhereExpression().compile(INDEX)
 
 
 def test_unknown_field_in_expression() -> None:
@@ -228,7 +228,7 @@ def test_validate_where_accepts(where: str) -> None:
     ],
 )
 def test_validate_where_rejects(where: str, problem: str) -> None:
-    with pytest.raises(QueryError, match=re.escape(problem)):
+    with pytest.raises(InvalidQueryError, match=re.escape(problem)):
         validate_where(where, INDEX)
 
 
@@ -242,7 +242,7 @@ def test_parse_where_returns_unescaped_conditions() -> None:
 
 
 def test_parse_where_rejects_what_validation_rejects() -> None:
-    with pytest.raises(QueryError, match="uppercase"):
+    with pytest.raises(InvalidQueryError, match="uppercase"):
         parse_where("{6.ex.'x'}", FIELDS)
 
 
@@ -444,7 +444,7 @@ def test_words_quickbase_treats_as_syntax_are_sent_as_text(value: str, sent: str
     ["_FID_6", "_fid_6", "_Fid_6", "_FID_6x", "_FID_ 6", "a OR _FID_6", " _FID_6", "\t_fid_1"],
 )
 def test_field_references_in_values_are_refused(value: str) -> None:
-    with pytest.raises(QueryError, match="_FID_6 as a field"):
+    with pytest.raises(InvalidQueryError, match="_FID_6 as a field"):
         format_value(value)
 
 
@@ -465,7 +465,7 @@ def test_body_takes_field_objects() -> None:
 @pytest.mark.parametrize("argument", ["order_by", "select"])
 @pytest.mark.parametrize("value", [1.5, F("Title") == "x", object(), [1.5], [["Title"]], [None]])
 def test_body_refuses_anything_else_clearly(argument: str, value: Any) -> None:
-    with pytest.raises(QueryError, match=argument):
+    with pytest.raises(InvalidQueryError, match=argument):
         build(**{argument: value})
 
 
@@ -484,7 +484,7 @@ USER_FIELDS = FieldIndex(
 def test_the_current_user_is_refused_on_user_fields(label: str, value: str) -> None:
     conditions = [F(label) == value, F(label).op("TV", value), F(label).is_in([value, "x"])]
     for condition in conditions:
-        with pytest.raises(QueryError, match="_curuser_"):
+        with pytest.raises(InvalidQueryError, match="_curuser_"):
             compile_where(condition, USER_FIELDS)
 
 
@@ -589,11 +589,11 @@ def test_percent_and_duration_values_are_sent_as_quickbase_compares_them(
 
 
 def test_a_duration_must_be_whole_milliseconds_and_a_timedelta_needs_a_duration() -> None:
-    with pytest.raises(QueryError, match="whole milliseconds"):
+    with pytest.raises(InvalidQueryError, match="whole milliseconds"):
         compile_where(F("Budget") > 1.5, TYPED_FIELDS)
-    with pytest.raises(QueryError, match="whole milliseconds"):
+    with pytest.raises(InvalidQueryError, match="whole milliseconds"):
         _ = F("Budget") > timedelta(microseconds=1500)
-    with pytest.raises(QueryError, match="not a duration"):
+    with pytest.raises(InvalidQueryError, match="not a duration"):
         compile_where(F("Hours") > timedelta(hours=1), TYPED_FIELDS)
     # A hand-written string is the caller's to get right.
     assert compile_where("{7.GT.'5'}", TYPED_FIELDS) == "{7.GT.'5'}"

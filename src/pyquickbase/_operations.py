@@ -21,24 +21,24 @@ from decimal import Decimal
 from typing import Any, Literal, cast, get_args
 
 from ._bound import BoundPolicy
-from ._decision import Decision, Named
+from ._decision import NamedItem, PolicyDecision
 from ._models import RECORD_ID_FIELD, Field, FieldIndex, ReportInfo
-from ._query import NO_VALUE, Condition, Expression, FieldRef, Group
+from ._query import NO_VALUE, Condition, FieldRef, Group, WhereExpression
 from ._read_request import ReadRequest
 from ._summary import STATISTICS, GroupSort, GroupSortKind, Period, PeriodUnit
 from ._where_data import case_hint, normalize_where, where_from_dict, where_schema
 from ._writes import FileUpload
 from .errors import (
     ConfigurationError,
+    InvalidQueryError,
     InvalidValueError,
     PolicyRefusedError,
-    QueryError,
     QuickbaseError,
     UnknownFieldError,
     UnknownReportError,
 )
 
-OperationName = Literal[
+TableOperationName = Literal[
     "query",
     "count",
     "summarize",
@@ -53,7 +53,7 @@ OperationName = Literal[
     "download_file",
     "delete_file_version",
 ]
-"""What an `Operation` does. Each runs the table or report method of the same name."""
+"""What an `TableOperation` does. Each runs the table or report method of the same name."""
 
 DEFAULT_LIMIT = 20
 DEFAULT_MAX_RECORDS = 100
@@ -143,33 +143,33 @@ def _glossary(fields: Sequence[Field], descriptions: Mapping[int, str]) -> str:
 def _check_names(data: Mapping[str, Any], allowed: Sequence[str], required: Sequence[str]) -> None:
     unknown = set(data) - set(allowed)
     if unknown:
-        raise QueryError(
+        raise InvalidQueryError(
             f"The arguments have a key this tool doesn't take. Use only: {', '.join(allowed)}."
         )
     missing = [name for name in required if name not in data]
     if missing:
-        raise QueryError(f"The arguments need {', '.join(missing)}.")
+        raise InvalidQueryError(f"The arguments need {', '.join(missing)}.")
 
 
 def _whole(value: Any, name: str, *, minimum: int, maximum: int | None = None) -> int:
     if type(value) is not int or value < minimum or (maximum is not None and value > maximum):
         top = "" if maximum is None else f" to {maximum}"
-        raise QueryError(f"{name} must be a whole number from {minimum}{top}.")
+        raise InvalidQueryError(f"{name} must be a whole number from {minimum}{top}.")
     return value
 
 
 def _field_names(value: Any, name: str, offered: Sequence[Field]) -> list[str]:
     labels = _labels(offered)
     if not isinstance(value, list) or not value:
-        raise QueryError(f"{name} must be a list with at least one field.")
+        raise InvalidQueryError(f"{name} must be a list with at least one field.")
     items = cast(list[Any], value)
     for index, item in enumerate(items):
         if item not in labels:
-            raise QueryError(
+            raise InvalidQueryError(
                 f"{name}[{index}] isn't a field this tool may use there.{case_hint(item, labels)}"
             )
     if len(set(items)) != len(items):
-        raise QueryError(f"{name} names a field more than once.")
+        raise InvalidQueryError(f"{name} names a field more than once.")
     return cast(list[str], items)
 
 
@@ -240,19 +240,21 @@ def _sort(value: Any, offered: Sequence[Field]) -> list[int]:
     """Read `order_by` as field IDs, negative for descending, which no label can make ambiguous."""
     ids = {item.label: item.id for item in offered}
     if not isinstance(value, list) or not value or len(value) > _MAX_SORT_FIELDS:  # pyright: ignore[reportUnknownArgumentType]
-        raise QueryError(f"order_by must be a list of 1 to {_MAX_SORT_FIELDS} fields.")
+        raise InvalidQueryError(f"order_by must be a list of 1 to {_MAX_SORT_FIELDS} fields.")
     found: list[int] = []
     for index, item in enumerate(cast(list[Any], value)):
         path = f"order_by[{index}]"
         if not isinstance(item, Mapping) or not set(item) <= {"field", "direction"}:  # pyright: ignore[reportUnknownArgumentType]
-            raise QueryError(f'{path} must be {{"field": ..., "direction": "asc" or "desc"}}.')
+            raise InvalidQueryError(
+                f'{path} must be {{"field": ..., "direction": "asc" or "desc"}}.'
+            )
         entry = cast(Mapping[str, Any], item)
         if entry.get("field") not in ids:
             hint = case_hint(entry.get("field"), ids)
-            raise QueryError(f"{path}.field isn't a field this tool may sort by.{hint}")
+            raise InvalidQueryError(f"{path}.field isn't a field this tool may sort by.{hint}")
         direction = entry.get("direction", "asc")
         if direction not in ("asc", "desc"):
-            raise QueryError(f"{path}.direction must be asc or desc.")
+            raise InvalidQueryError(f"{path}.direction must be asc or desc.")
         field_id = ids[entry["field"]]
         found.append(-field_id if direction == "desc" else field_id)
     return found
@@ -260,11 +262,11 @@ def _sort(value: Any, offered: Sequence[Field]) -> list[int]:
 
 def _period(item: Mapping[str, Any], path: str, dates: Sequence[Field]) -> Period:
     if set(item) != {"field", "unit"}:
-        raise QueryError(f'{path} must be a label, or {{"field": ..., "unit": ...}}.')
+        raise InvalidQueryError(f'{path} must be a label, or {{"field": ..., "unit": ...}}.')
     if item["field"] not in _labels(dates):
-        raise QueryError(f"{path}.field isn't a date field this tool may group by.")
+        raise InvalidQueryError(f"{path}.field isn't a date field this tool may group by.")
     if item["unit"] not in get_args(PeriodUnit):
-        raise QueryError(f"{path}.unit must be one of: {', '.join(get_args(PeriodUnit))}.")
+        raise InvalidQueryError(f"{path}.unit must be one of: {', '.join(get_args(PeriodUnit))}.")
     return Period(item["field"], item["unit"])
 
 
@@ -443,7 +445,7 @@ class Context:
     limit: int
     max_rows: int
     formula: str | None
-    scope: Expression | None = None
+    scope: WhereExpression | None = None
     scope_text: str = ""
     """The scope as a model reads it, such as `Billable is true`."""
     scope_labels: frozenset[str] = frozenset()
@@ -494,14 +496,14 @@ def _where(ctx: Context, *, required: bool) -> dict[str, Any]:
 
 
 def _read_where(
-    ctx: Context, data: Any, scope: Expression | None, *, required: bool
-) -> Expression | None:
+    ctx: Context, data: Any, scope: WhereExpression | None, *, required: bool
+) -> WhereExpression | None:
     if data is None:
         if required:
-            raise QueryError("where is required, and can't be empty.")
+            raise InvalidQueryError("where is required, and can't be empty.")
         return scope
     if not isinstance(data, Mapping):
-        raise QueryError("where must be an object.")
+        raise InvalidQueryError("where must be an object.")
     condition = where_from_dict(cast(Mapping[str, Any], data), fields=ctx.allowed.filterable)
     return condition if scope is None else scope & condition
 
@@ -590,7 +592,7 @@ def _file_field(fields: Sequence[Field], ctx: Context) -> dict[str, Any]:
 
 def _read_file_field(value: Any, fields: Sequence[Field]) -> str:
     if value not in _labels(fields):
-        raise QueryError("field isn't a file field this tool may use.")
+        raise InvalidQueryError("field isn't a file field this tool may use.")
     return cast(str, value)
 
 
@@ -619,7 +621,7 @@ def _find_report(value: Any, reports: Sequence[ReportInfo]) -> str | None:
     if isinstance(value, str):
         named = [item.id for item in reports if item.name.casefold() == value.casefold()]
         if len(named) > 1:
-            raise QueryError(
+            raise InvalidQueryError(
                 "Several reports this tool may run have that name. Use the report's ID instead."
             )
         if named:
@@ -635,18 +637,20 @@ def _read_report(
         return found
     try:
         elsewhere = _find_report(value, other)
-    except QueryError:
+    except InvalidQueryError:
         elsewhere = None
     if elsewhere is not None:
         # The ID is one the client may run anyway, so naming it reveals nothing.
         kind, use = (
             ("a table", "run_report") if summary else ("a summary or chart", "run_summary_report")
         )
-        raise QueryError(
+        raise InvalidQueryError(
             f"Report {elsewhere} isn't a report this tool may run: it's {kind} report, so use the "
             f"{use} operation."
         )
-    raise QueryError("report isn't a report this tool may run. Use an ID or name its schema lists.")
+    raise InvalidQueryError(
+        "report isn't a report this tool may run. Use an ID or name its schema lists."
+    )
 
 
 def _records(ctx: Context, *, update: bool, group: str) -> dict[str, Any]:
@@ -827,7 +831,7 @@ def _read_summary(ctx: Context, arguments: Mapping[str, Any]) -> dict[str, Any]:
     if "group_by" in arguments:
         value = arguments["group_by"]
         if not isinstance(value, list) or not value:
-            raise QueryError("group_by must be a list with at least one field.")
+            raise InvalidQueryError("group_by must be a list with at least one field.")
         groups: list[Any] = []
         for index, item in enumerate(cast(list[Any], value)):
             path = f"group_by[{index}]"
@@ -837,7 +841,7 @@ def _read_summary(ctx: Context, arguments: Mapping[str, Any]) -> dict[str, Any]:
                 groups.append(item)
             else:
                 hint = case_hint(item, _labels(offered["group_by"]))
-                raise QueryError(f"{path} isn't a field this tool may group by.{hint}")
+                raise InvalidQueryError(f"{path} isn't a field this tool may group by.{hint}")
         found["group_by"] = groups
     for key in STATISTICS:
         if key in arguments:
@@ -845,7 +849,7 @@ def _read_summary(ctx: Context, arguments: Mapping[str, Any]) -> dict[str, Any]:
     if "compare_periods" in arguments:
         compare = arguments["compare_periods"]
         if not isinstance(compare, bool):
-            raise QueryError("compare_periods must be true or false.")
+            raise InvalidQueryError("compare_periods must be true or false.")
         found["compare_periods"] = compare
     return found
 
@@ -853,7 +857,7 @@ def _read_summary(ctx: Context, arguments: Mapping[str, Any]) -> dict[str, Any]:
 def _group_sort(value: Any, summary: Mapping[str, Any]) -> tuple[GroupSort, ...]:
     """Read a summary's `order_by`, checking each field is one the summary groups or calculates."""
     if not isinstance(value, list) or not value or len(value) > _MAX_SORT_FIELDS:  # pyright: ignore[reportUnknownArgumentType]
-        raise QueryError(f"order_by must be a list of 1 to {_MAX_SORT_FIELDS} sorts.")
+        raise InvalidQueryError(f"order_by must be a list of 1 to {_MAX_SORT_FIELDS} sorts.")
     groups = [
         str(item.field if isinstance(item, Period) else item)
         for item in cast(list[Any], summary.get("group_by", []))
@@ -862,32 +866,36 @@ def _group_sort(value: Any, summary: Mapping[str, Any]) -> tuple[GroupSort, ...]
     for index, item in enumerate(cast(list[Any], value)):
         path = f"order_by[{index}]"
         if not isinstance(item, Mapping) or not set(item) <= {"by", "field", "direction"}:  # pyright: ignore[reportUnknownArgumentType]
-            raise QueryError(f'{path} must be {{"by": ..., "field": ..., "direction": ...}}.')
+            raise InvalidQueryError(
+                f'{path} must be {{"by": ..., "field": ..., "direction": ...}}.'
+            )
         entry = cast(Mapping[str, Any], item)
         kind = entry.get("by")
         if kind not in get_args(GroupSortKind):
             kinds = ", ".join(get_args(GroupSortKind))
-            raise QueryError(f"{path}.by must be one of: {kinds}.")
+            raise InvalidQueryError(f"{path}.by must be one of: {kinds}.")
         direction = entry.get("direction", "asc")
         if direction not in ("asc", "desc"):
-            raise QueryError(f"{path}.direction must be asc or desc.")
+            raise InvalidQueryError(f"{path}.direction must be asc or desc.")
         label = entry.get("field")
         if kind == "count":
             if label is not None:
-                raise QueryError(f"{path} sorts by count, which takes no field.")
+                raise InvalidQueryError(f"{path} sorts by count, which takes no field.")
         else:
             offered: list[str] = groups if kind == "group" else list(summary.get(str(kind), []))
             if label not in offered:
                 what = "group_by" if kind == "group" else kind
                 hint = case_hint(label, offered)
-                raise QueryError(f"{path}.field must be a field this summary has in {what}.{hint}")
+                raise InvalidQueryError(
+                    f"{path}.field must be a field this summary has in {what}.{hint}"
+                )
         found.append(GroupSort(cast(GroupSortKind, kind), label, direction == "desc"))
     return tuple(found)
 
 
 # The operations.
 
-Plan = Callable[[Context, Mapping[str, Any], Expression | None], Call]
+Plan = Callable[[Context, Mapping[str, Any], WhereExpression | None], Call]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -917,7 +925,7 @@ def _needs(group: str, reason: str) -> Callable[[Allowed, str | None], str | Non
     return check
 
 
-def _plan_query(ctx: Context, arguments: Mapping[str, Any], scope: Expression | None) -> Call:
+def _plan_query(ctx: Context, arguments: Mapping[str, Any], scope: WhereExpression | None) -> Call:
     found: dict[str, Any] = {
         "where": _read_where(ctx, arguments.get("where"), scope, required=False),
         "limit": _read_limit(ctx, arguments),
@@ -937,14 +945,16 @@ def _plan_query(ctx: Context, arguments: Mapping[str, Any], scope: Expression | 
 
 
 def _plan_where(method: str, *, required: bool, capped: bool = False) -> Plan:
-    def build(ctx: Context, arguments: Mapping[str, Any], scope: Expression | None) -> Call:
+    def build(ctx: Context, arguments: Mapping[str, Any], scope: WhereExpression | None) -> Call:
         where = _read_where(ctx, arguments.get("where"), scope, required=required)
         return Call(method=method, arguments={"where": where}, most=ctx.limit if capped else None)
 
     return build
 
 
-def _plan_summarize(ctx: Context, arguments: Mapping[str, Any], scope: Expression | None) -> Call:
+def _plan_summarize(
+    ctx: Context, arguments: Mapping[str, Any], scope: WhereExpression | None
+) -> Call:
     found = _read_summary(ctx, arguments)
     found["where"] = _read_where(ctx, arguments.get("where"), scope, required=False)
     order = _group_sort(arguments["order_by"], found) if "order_by" in arguments else ()
@@ -959,7 +969,7 @@ def _plan_summarize(ctx: Context, arguments: Mapping[str, Any], scope: Expressio
 
 
 def _plan_records(method: str, *, update: bool, group: str) -> Plan:
-    def build(ctx: Context, arguments: Mapping[str, Any], scope: Expression | None) -> Call:
+    def build(ctx: Context, arguments: Mapping[str, Any], scope: WhereExpression | None) -> Call:
         rows = _read_records(ctx, arguments["records"], update=update, group=group)
         ids = tuple(sorted({row[_RECORD_ID_LABEL] for row in rows})) if update else ()
         return Call(method=method, arguments={"rows": rows}, record_ids=ids)
@@ -968,7 +978,7 @@ def _plan_records(method: str, *, update: bool, group: str) -> Plan:
 
 
 def _plan_preview_delete(
-    ctx: Context, arguments: Mapping[str, Any], scope: Expression | None
+    ctx: Context, arguments: Mapping[str, Any], scope: WhereExpression | None
 ) -> Call:
     found: dict[str, Any] = {
         "where": _read_where(ctx, arguments.get("where"), scope, required=True),
@@ -979,12 +989,12 @@ def _plan_preview_delete(
     return Call(method="preview_delete", arguments=found)
 
 
-def _no_scope(scope: Expression | None) -> None:
+def _no_scope(scope: WhereExpression | None) -> None:
     if scope is not None:
-        raise QueryError("A report runs with its own filter, so it can't take a scope.")
+        raise InvalidQueryError("A report runs with its own filter, so it can't take a scope.")
 
 
-def _plan_report(ctx: Context, arguments: Mapping[str, Any], scope: Expression | None) -> Call:
+def _plan_report(ctx: Context, arguments: Mapping[str, Any], scope: WhereExpression | None) -> Call:
     _no_scope(scope)
     report_id = _read_report(
         arguments["report"], ctx.allowed.reports, ctx.allowed.summary_reports, summary=False
@@ -997,28 +1007,32 @@ def _plan_report(ctx: Context, arguments: Mapping[str, Any], scope: Expression |
 
 
 def _plan_summary_report(
-    ctx: Context, arguments: Mapping[str, Any], scope: Expression | None
+    ctx: Context, arguments: Mapping[str, Any], scope: WhereExpression | None
 ) -> Call:
     _no_scope(scope)
     report_id = _read_report(
         arguments["report"], ctx.allowed.summary_reports, ctx.allowed.reports, summary=True
     )
     found = {"max_total": _read_limit(ctx, arguments)}
-    return Call(method="summary_rows", arguments=found, report_id=report_id)
+    return Call(method="run_summary", arguments=found, report_id=report_id)
 
 
-def _plan_formula(ctx: Context, arguments: Mapping[str, Any], scope: Expression | None) -> Call:
+def _plan_formula(
+    ctx: Context, arguments: Mapping[str, Any], scope: WhereExpression | None
+) -> Call:
     found: dict[str, Any] = {"formula": ctx.formula}
     ids: tuple[int, ...] = ()
     if "record_id" in arguments:
         found["record_id"] = _whole(arguments["record_id"], "record_id", minimum=1)
         ids = (found["record_id"],)
     elif scope is not None:
-        raise QueryError("record_id is required, as this tool is limited to some records.")
+        raise InvalidQueryError("record_id is required, as this tool is limited to some records.")
     return Call(method="run_formula", arguments=found, record_ids=ids)
 
 
-def _plan_download(ctx: Context, arguments: Mapping[str, Any], scope: Expression | None) -> Call:
+def _plan_download(
+    ctx: Context, arguments: Mapping[str, Any], scope: WhereExpression | None
+) -> Call:
     record_id = _whole(arguments["record_id"], "record_id", minimum=1)
     found: dict[str, Any] = {
         "record_id": record_id,
@@ -1029,7 +1043,9 @@ def _plan_download(ctx: Context, arguments: Mapping[str, Any], scope: Expression
     return Call(method="download_file", arguments=found, record_ids=(record_id,))
 
 
-def _plan_delete_file(ctx: Context, arguments: Mapping[str, Any], scope: Expression | None) -> Call:
+def _plan_delete_file(
+    ctx: Context, arguments: Mapping[str, Any], scope: WhereExpression | None
+) -> Call:
     record_id = _whole(arguments["record_id"], "record_id", minimum=1)
     found = {
         "record_id": record_id,
@@ -1043,7 +1059,7 @@ def _version(description: str) -> dict[str, Any]:
     return {"version": {"type": "integer", "minimum": 1, "description": description}}
 
 
-_KINDS: dict[OperationName, Kind] = {
+_KINDS: dict[TableOperationName, Kind] = {
     "query": Kind(
         fields=("readable", "filterable", "sortable"),
         properties=lambda ctx: {
@@ -1173,7 +1189,7 @@ _KINDS: dict[OperationName, Kind] = {
 class OperationSpec:
     """One operation's schema and the checks that match it, for one table."""
 
-    name: OperationName
+    name: TableOperationName
     kind: Kind
     context: Context
     schema: dict[str, Any]
@@ -1181,13 +1197,13 @@ class OperationSpec:
     def normalize(self, data: Any) -> dict[str, Any]:
         """The arguments in the spelling the schema lists. See `normalize_arguments()`."""
         if not isinstance(data, Mapping):
-            raise QueryError("The arguments must be an object.")
+            raise InvalidQueryError("The arguments must be an object.")
         return normalize_arguments(cast(Mapping[str, Any], data), self.schema["properties"])
 
-    def plan(self, data: Any, scope: Expression | None) -> Call:
+    def plan(self, data: Any, scope: WhereExpression | None) -> Call:
         """Check a model's arguments, and return the call to make. Nothing is sent."""
         if not isinstance(data, Mapping):
-            raise QueryError("The arguments must be an object.")
+            raise InvalidQueryError("The arguments must be an object.")
         arguments = self.normalize(data)
         _check_names(arguments, list(self.schema["properties"]), self.kind.required)
         return self.kind.plan(self.context, arguments, scope)
@@ -1200,12 +1216,12 @@ def resolve_descriptions(
     if descriptions is None:
         return {}
     if not isinstance(descriptions, Mapping):  # pyright: ignore[reportUnnecessaryIsInstance]
-        raise QueryError("descriptions takes a dictionary of {label or ID: text}.")
+        raise InvalidQueryError("descriptions takes a dictionary of {label or ID: text}.")
     index = FieldIndex(offered)
     found: dict[int, str] = {}
     for key, text in descriptions.items():
         if not isinstance(text, str) or not text.strip():  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise QueryError("Each description must be text that isn't empty.")
+            raise InvalidQueryError("Each description must be text that isn't empty.")
         try:
             item = index.resolve(key)
         except UnknownFieldError:
@@ -1234,11 +1250,11 @@ def allowed_for(
     """
     if wanted is not None:
         if isinstance(wanted, str):
-            raise QueryError("fields takes a list of labels or IDs, not a single string.")
+            raise InvalidQueryError("fields takes a list of labels or IDs, not a single string.")
         index = FieldIndex(fields)
         ids = {index.resolve(ref).id for ref in wanted}
         if not ids:
-            raise QueryError("fields can't be empty.")
+            raise InvalidQueryError("fields can't be empty.")
         fields = [item for item in fields if item.id in ids]
     offered = _offered_reports(reports, wanted_reports)
     runnable = [item for item in offered if not item.incomplete]
@@ -1306,7 +1322,7 @@ def _offered_reports(
     if wanted is None:
         return list(reports)
     if isinstance(wanted, str):
-        raise QueryError("reports takes a list of report IDs, not a single string.")
+        raise InvalidQueryError("reports takes a list of report IDs, not a single string.")
     by_id = {item.id: item for item in reports}
     missing = [ref for ref in wanted if ref not in by_id]
     if missing:
@@ -1326,13 +1342,13 @@ def writable_fields(fields: Sequence[Field]) -> list[Field]:
     ]
 
 
-def unavailable(name: OperationName, allowed: Allowed, formula: str | None) -> str | None:
+def unavailable(name: TableOperationName, allowed: Allowed, formula: str | None) -> str | None:
     """Why the operation can't run with these limits, or None if it can."""
     return _KINDS[name].available(allowed, formula)
 
 
 def make_spec(
-    name: OperationName,
+    name: TableOperationName,
     allowed: Allowed,
     *,
     descriptions: Mapping[FieldRef, str] | None,
@@ -1340,7 +1356,7 @@ def make_spec(
     max_records: int | None,
     max_rows: int,
     formula: str | None,
-    scope: Expression | None = None,
+    scope: WhereExpression | None = None,
     scope_text: str = "",
     scope_labels: frozenset[str] = frozenset(),
     require_preview: bool = False,
@@ -1419,7 +1435,7 @@ _SCOPE_WORDS = {
 }
 
 
-def describe_scope(scope: Expression, index: FieldIndex) -> str:
+def describe_scope(scope: WhereExpression, index: FieldIndex) -> str:
     """A scope in words a model reads, such as `Billable is true and Team is "Platform"`."""
     if isinstance(scope, Group):
         joiner = " and " if scope.joiner == "AND" else " or "
@@ -1430,7 +1446,7 @@ def describe_scope(scope: Expression, index: FieldIndex) -> str:
             for part in scope.parts
         )
     if not isinstance(scope, Condition):
-        raise QueryError("scope must be a condition built with F.")
+        raise InvalidQueryError("scope must be a condition built with F.")
     label = index.resolve(scope.field).label
     words = _SCOPE_WORDS.get(scope.operator, scope.operator)
     value = scope.original
@@ -1448,7 +1464,7 @@ def describe_scope(scope: Expression, index: FieldIndex) -> str:
 
 
 def check_scope(
-    name: OperationName, scope: Expression, index: FieldIndex, allowed: Allowed
+    name: TableOperationName, scope: WhereExpression, index: FieldIndex, allowed: Allowed
 ) -> frozenset[str]:
     """Check a scope when an operation is made, and return the labels of its fields."""
     if not is_scoped(name):
@@ -1469,13 +1485,13 @@ def check_scope(
     return labels
 
 
-def is_scoped(name: OperationName) -> bool:
+def is_scoped(name: TableOperationName) -> bool:
     """Whether the operation can be limited to a scope."""
     return _KINDS[name].scoped
 
 
 def operation_names() -> tuple[str, ...]:
-    return get_args(OperationName)
+    return get_args(TableOperationName)
 
 
 def copy_schema(schema: dict[str, Any]) -> dict[str, Any]:
@@ -1486,7 +1502,7 @@ _WRITE_OPERATIONS = frozenset({"insert", "update", "delete", "delete_file_versio
 
 
 def refused_operation(
-    name: OperationName, reason: str, *, limited: bool, table: Named | None = None
+    name: TableOperationName, reason: str, *, limited: bool, table: NamedItem | None = None
 ) -> QuickbaseError:
     """The error for an operation that can't run at all: the policy's refusal when there is one."""
     if not limited or (name == "run_formula" and "policy" not in reason):
@@ -1503,7 +1519,7 @@ def refused_operation(
         "run_formula": "run_formula",
     }.get(name, "read")
     return PolicyRefusedError(
-        Decision(
+        PolicyDecision(
             allowed=False,
             verb=verb,  # pyright: ignore[reportArgumentType]
             reason=f"This client can't offer {name}: {reason}",
@@ -1515,15 +1531,15 @@ def refused_operation(
 _SCOPED_WRITES = frozenset({"insert", "update", "preview_update"})
 
 
-def _scope_conditions(scope: Expression) -> list[Condition]:
+def _scope_conditions(scope: WhereExpression) -> list[Condition]:
     if isinstance(scope, Condition):
         return [scope]
     if isinstance(scope, Group):
         return [item for part in scope.parts for item in _scope_conditions(part)]
-    raise QueryError("scope must be a condition built with F.")
+    raise InvalidQueryError("scope must be a condition built with F.")
 
 
-def _scope_values(scope: Expression, index: FieldIndex) -> dict[int, Any] | None:
+def _scope_values(scope: WhereExpression, index: FieldIndex) -> dict[int, Any] | None:
     """What a new record must hold to match the scope, or None if the scope isn't only `==`
     conditions joined with `&`, which a record can't be made to match by filling in fields."""
     if isinstance(scope, Group) and scope.joiner != "AND":
@@ -1539,7 +1555,7 @@ def _scope_values(scope: Expression, index: FieldIndex) -> dict[int, Any] | None
     return values
 
 
-def scope_rows(call: Call, scope: Expression | None, index: FieldIndex) -> Call:
+def scope_rows(call: Call, scope: WhereExpression | None, index: FieldIndex) -> Call:
     """Keep a write inside its scope: refuse rows that set a field the scope uses, as that could
     move a record out of it, and fill those fields into new records from an `==` scope."""
     if scope is None or call.method not in _SCOPED_WRITES:
@@ -1549,7 +1565,7 @@ def scope_rows(call: Call, scope: Expression | None, index: FieldIndex) -> Call:
     for position, row in enumerate(rows):
         for key in row:
             if key != _RECORD_ID_LABEL and index.resolve(key).id in fixed:
-                raise QueryError(
+                raise InvalidQueryError(
                     f"records[{position}] sets {key!r}, which this tool's scope fixes, so it can't "
                     "be written. Leave it out."
                 )
@@ -1557,7 +1573,7 @@ def scope_rows(call: Call, scope: Expression | None, index: FieldIndex) -> Call:
         return call
     values = _scope_values(scope, index)
     if values is None:
-        raise QueryError(
+        raise InvalidQueryError(
             "This tool is limited to a scope that a new record can't be made to match, so it "
             "can't insert records."
         )

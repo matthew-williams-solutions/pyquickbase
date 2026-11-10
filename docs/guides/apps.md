@@ -42,7 +42,7 @@ an administrator's token can read this.
 
 ```python
 for member in qb.app("bq1234567").members():
-    print(member.name, member.last_access, [role.name for role in member.roles])
+    print(member.name, member.last_accessed_at, [role.name for role in member.roles])
 ```
 
 `member_roles()` lists one user's roles, the token's own by default, which works for any role. Only an
@@ -62,18 +62,18 @@ These methods use Quickbase's XML API, which sends the token to the realm's own 
 Administrators can give, take away, and move roles.
 
 ```python
-from pyquickbase import RoleAssignment, RoleChange
+from pyquickbase import RoleAssignment, RoleAssignmentUpdate
 
 app = qb.app("bq1234567")
 user = qb.find_user("jordan@example.com")
 
-app.add_role_assignments([RoleAssignment(user.id, 11)])
-app.change_role_assignments([RoleChange(user.id, from_role_id=11, to_role_id=12)])
-app.remove_role_assignments([RoleAssignment(user.id, 12)])
+app.create_role_assignments([RoleAssignment(user.id, 11)])
+app.update_role_assignments([RoleAssignmentUpdate(user.id, from_role_id=11, to_role_id=12)])
+app.delete_role_assignments([RoleAssignment(user.id, 12)])
 ```
 
 Each takes a list, and Quickbase reports each item on its own. If any fail, the method raises `WriteError`, whose
-`result` is a `RoleChangeResult` listing what changed and what didn't, with Quickbase's reason for each failure. Don't
+`result` is a `RoleAssignmentResult` listing what changed and what didn't, with Quickbase's reason for each failure. Don't
 retry these automatically: Quickbase reports a role someone already has as a failure.
 
 A client with a policy can't change roles, at any setting. An agent that could change roles could give itself
@@ -129,12 +129,12 @@ staging.drop(confirm="Jobs (staging)")
 
 ## What runs in an app
 
-`events()` lists the app's webhooks, Quickbase actions, email notifications, subscriptions, reminders,
+`triggers()` lists the app's webhooks, Quickbase actions, email notifications, subscriptions, reminders,
 and the automations that records trigger. On a table, it lists that table's.
 
 ```python
-for event in qb.app("bq1234567").table("Tasks").events():
-    print(event.type, event.name, event.active)
+for trigger in qb.app("bq1234567").table("Tasks").triggers():
+    print(trigger.type, trigger.name, trigger.active)
 ```
 
 Only an app administrator's token can list them. Quickbase leaves out scheduled automations, and doesn't name automations, so an automation has a `url`
@@ -145,5 +145,5 @@ records may set off.
 
 A client with a [policy](../policies/index.md) never creates, copies, or deletes an app, because a policy
 covers one app's tables. Copying with `keep_data` would also read every record. Use a client without a
-policy for these. `events()` still works, and lists only events on tables the policy shows, without their
+policy for these. `triggers()` still works, and lists only triggers on tables the policy shows, without their
 owners.

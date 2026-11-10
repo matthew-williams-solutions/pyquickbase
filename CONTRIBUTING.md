@@ -81,7 +81,7 @@ To test a published release instead of this checkout, install it in a separate e
 `QB_LIVE_VERSION` to its version. Running a report adds to its usage count, so these tests only run
 reports on the tables they create, the two reports above, and the two below.
 
-Tests of `summary_rows()` skip without two reports, which the API can't create: `API Summary Test` and
+Tests of `run_summary()` skip without two reports, which the API can't create: `API Summary Test` and
 `API Chart Test`, on a table named `Sample Tasks` that holds the tasks `Book room` and `Prepare agenda`,
 with a numeric `Field Type Sample` of 1. The summary report groups by `Task Name` and shows both the total
 and the average of that field. The chart is a bar chart of the same total.

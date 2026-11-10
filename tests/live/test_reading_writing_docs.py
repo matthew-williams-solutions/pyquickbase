@@ -9,9 +9,9 @@ import pytest
 from pyquickbase import F, Policy, Quickbase
 from pyquickbase.errors import (
     BadRequestError,
+    InvalidQueryError,
     InvalidValueError,
     PolicyRefusedError,
-    QueryError,
     UnknownFieldError,
     UnknownTableError,
     WriteError,
@@ -44,17 +44,17 @@ def test_reading_mistakes_are_refused_before_querying(scratch: Any) -> None:
         table.query_page(order_by="Nope")
     with pytest.raises(UnknownFieldError):
         table.query_page(where=F("Nope") == 1)
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         table.query_page(where="{6.ex.'x'}")
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         table.query_page(limit=0)
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         table.query_page(skip=-1)
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         table.query(page_size=0)
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         table.query(max_total=0)
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         table.query_page(order_by=1.5)
     with pytest.raises(InvalidValueError):
         table.get(0)
@@ -162,11 +162,11 @@ def test_rows_refused_before_sending(scratch: Any) -> None:
             call()
     with pytest.raises(UnknownFieldError):
         table.insert([{"Nope": "x"}])
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         table.insert([{"Title": "x"}], batch_size=0)
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         table.delete("{6.ex.'x'}")
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         table.delete(None)
     assert table.count() == before
 
@@ -187,7 +187,7 @@ def test_rows_refused_by_quickbase(scratch: Any) -> None:
         )
     result = caught.value.result
     assert len(result.created_ids) == 1
-    by_index = {item.index: item for item in result.errors}
+    by_index = {item.row_index: item for item in result.failed_rows}
     assert by_index[1].reason == "duplicate"
     assert by_index[1].field_id == 8
     assert by_index[2].reason == "invalid_choice"
@@ -210,7 +210,7 @@ def test_new_choices_are_allowed_unless_turned_off(scratch: Any) -> None:
     assert not updated.allow_new_choices
     with pytest.raises(WriteError) as caught:
         table.insert([{"Open Choice": "Also not listed"}])
-    assert caught.value.result.errors[0].reason == "invalid_choice"
+    assert caught.value.result.failed_rows[0].reason == "invalid_choice"
 
 
 def test_a_read_only_client_refuses_writes(scratch: Any) -> None:
@@ -258,7 +258,7 @@ def test_the_current_user_and_how_user_fields_match(scratch: Any) -> None:
     assert found(f"{{{many}.EX.' _CURUSER_ '}}") == [mine]
     assert found(f"{{{who}.TV.'_curuser_'}}") == [mine]
     for where in (F("Many") == "_curuser_", F("Who").op("TV", " _CURUSER_ ")):
-        with pytest.raises(QueryError, match="_curuser_"):
+        with pytest.raises(InvalidQueryError, match="_curuser_"):
             found(where)
 
 

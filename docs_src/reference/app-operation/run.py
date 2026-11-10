@@ -7,5 +7,5 @@ change = {
     "type": "text",
 }
 result = tool_result(await plan.run({"changes": [change]}))
-print(result["changes"][0]["summary"])
+print(result["changes"][0]["description"])
 print("confirmation" in result)

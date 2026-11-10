@@ -20,7 +20,7 @@ from .._config import (
     validate_base_url,
     validate_token,
 )
-from .._models import AppSummary, UserProfile, parse
+from .._models import AppListing, UserAccount, parse
 from .._policy import Policy
 from .._retry import RetryPolicy
 from .._schema import SchemaCache
@@ -48,7 +48,8 @@ class Quickbase:
         user_agent: Identifies your application, placed before the SDK's own User-Agent.
         http_client: Your own configured httpx client, for proxies, custom TLS, event hooks,
             or custom transports. You remain responsible for closing it.
-        schema_ttl: Seconds to cache app, table, and field metadata. Use 0 to disable caching.
+        metadata_cache_seconds: Seconds to cache app, table, and field metadata. Use 0 to
+            disable caching.
         policy: What the client may do, as a `BoundPolicy` from `Policy.bind()`, or a `Policy`
             that names no table or field, such as `Policy.read_only()`. Every request is checked
             before it's sent, including through `request()`, and a refused one raises
@@ -74,7 +75,7 @@ class Quickbase:
         timeout: float = DEFAULT_TIMEOUT,
         user_agent: str | None = None,
         http_client: httpx.Client | None = None,
-        schema_ttl: float = DEFAULT_SCHEMA_TTL,
+        metadata_cache_seconds: float = DEFAULT_SCHEMA_TTL,
         policy: Policy | BoundPolicy | None = None,
         confirmation_key: bytes | None = None,
     ) -> None:
@@ -90,7 +91,7 @@ class Quickbase:
             policy=_check_policy(policy),
             confirmation_key=_check_key(confirmation_key),
         )
-        self._schema = SchemaCache(schema_ttl)
+        self._schema = SchemaCache(metadata_cache_seconds)
 
     @classmethod
     def from_env(
@@ -101,7 +102,7 @@ class Quickbase:
         timeout: float = DEFAULT_TIMEOUT,
         user_agent: str | None = None,
         http_client: httpx.Client | None = None,
-        schema_ttl: float = DEFAULT_SCHEMA_TTL,
+        metadata_cache_seconds: float = DEFAULT_SCHEMA_TTL,
         policy: Policy | BoundPolicy | None = None,
         confirmation_key: bytes | None = None,
         token_env: str = ENV_TOKEN,
@@ -129,7 +130,7 @@ class Quickbase:
             timeout=timeout,
             user_agent=user_agent,
             http_client=http_client,
-            schema_ttl=schema_ttl,
+            metadata_cache_seconds=metadata_cache_seconds,
             policy=policy,
             confirmation_key=confirmation_key,
         )
@@ -161,7 +162,7 @@ class Quickbase:
             raise ConfigurationError("An app ID contains only letters and numbers.")
         return App(self._transport, self._schema, app_id)
 
-    def apps(self, *, admin_only: bool = False) -> list[AppSummary]:
+    def apps(self, *, admin_only: bool = False) -> list[AppListing]:
         """List the apps in this realm that the token can reach.
 
         A token assigned to some apps lists only those, even if its user can reach more. Each app
@@ -172,7 +173,7 @@ class Quickbase:
             admin_only: List only the apps the token's user administers.
 
         Returns:
-            An `AppSummary` for each app.
+            An `AppListing` for each app.
 
         Raises:
             AuthenticationError: The token isn't valid.
@@ -190,11 +191,11 @@ class Quickbase:
         root = self._transport.xml.call(GRANTED_APPS, "main", fields)
         return parse(lambda found: apps_from_xml(found, self._realm), root, "apps")
 
-    def current_user(self) -> UserProfile:
+    def current_user(self) -> UserAccount:
         """Get the user the token belongs to.
 
         Returns:
-            A `UserProfile`.
+            A `UserAccount`.
 
         Raises:
             AuthenticationError: The token isn't valid.
@@ -205,14 +206,14 @@ class Quickbase:
         root = self._transport.xml.call(CURRENT_USER, "main")
         return parse(user_from_xml, root, "user")
 
-    def find_user(self, email: str) -> UserProfile:
+    def find_user(self, email: str) -> UserAccount:
         """Find a user by email address, such as to give them a role.
 
         Args:
             email: Their email address.
 
         Returns:
-            A `UserProfile`.
+            A `UserAccount`.
 
         Raises:
             InvalidValueError: `email` is empty. Nothing was sent.
@@ -253,7 +254,7 @@ class Quickbase:
         payload = self._transport.request("POST", "/apps", json=body)
         return app_from_payload(self._transport, self._schema, payload)
 
-    def clear_schema_cache(self) -> None:
+    def clear_metadata_cache(self) -> None:
         """Forget cached metadata, for example after changing a table's fields.
 
         Use this after a change made outside this client, such as in the Quickbase interface. The

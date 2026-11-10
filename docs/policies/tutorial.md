@@ -45,7 +45,7 @@ whole table.
 
 ## 3. Hide what it shouldn't see
 
-Costs and internal codes aren't the agent's business. Put them in a class and deny the class.
+Costs and internal codes aren't the agent's business. Put them in a tag and deny the tag.
 A deny always wins over an allow, and a formula, lookup, or summary that reads a denied field is
 denied too.
 
@@ -53,11 +53,11 @@ denied too.
 from pyquickbase import Policy, Quickbase, allow, deny, fields
 
 policy = Policy(
-    classes={"internal": ["Tasks.Amount", "Tasks.Code"]},
+    tags={"internal": ["Tasks.Amount", "Tasks.Code"]},
     rules=[
         allow.read("Tasks", max_paging_depth=50),
         allow.update("Tasks", ["Status", "Notes"]),
-        deny.all(fields.classed("internal")),
+        deny.all(fields.tagged("internal")),
     ],
 )
 with Quickbase.from_env() as setup:
@@ -78,11 +78,11 @@ project's tasks.
 from pyquickbase import F, Policy, Quickbase, allow, deny, fields, limit
 
 policy = Policy(
-    classes={"internal": ["Tasks.Amount", "Tasks.Code"]},
+    tags={"internal": ["Tasks.Amount", "Tasks.Code"]},
     rules=[
         allow.read("Tasks", max_paging_depth=50),
         allow.update("Tasks", ["Status", "Notes"]),
-        deny.all(fields.classed("internal")),
+        deny.all(fields.tagged("internal")),
         limit.rows("Tasks", F("Project") == "Roof"),
     ],
 )

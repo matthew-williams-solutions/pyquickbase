@@ -7,12 +7,21 @@ each type reads back.
 """
 
 from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from ._models import RECORD_ID_FIELD, AppEvent, Field, FieldIndex, FileAttachment, Record, User
+from ._models import (
+    RECORD_ID_FIELD,
+    AppTrigger,
+    Field,
+    FieldIndex,
+    FileAttachment,
+    Record,
+    User,
+    ValueChange,
+)
 from ._writes import FILE_FIELD_TYPE, require_id
 
 # Records to read in one query. Quickbase's limit on a query's length isn't confirmed.
@@ -21,32 +30,17 @@ _NUMERIC_TYPES = frozenset({"numeric", "currency", "percent", "rating", "duratio
 _MISSING = object()
 
 
-@dataclass(frozen=True, slots=True)
-class FieldChange:
-    """One field's value before and after a write, with an empty field as None.
-
-    `repr` hides both values, because they may be sensitive and reprs end up in logs.
-
-    Attributes:
-        before: The value now. A file field shows the file's name, never its contents.
-        after: The value the write would set. A file field shows the file's name here too.
-    """
-
-    before: Any = field(repr=False)
-    after: Any = field(repr=False)
-
-
 @dataclass(frozen=True, slots=True, kw_only=True)
 class RecordChange:
     """What a write would change on one record.
 
     Attributes:
         record_id: The record's Record ID#.
-        fields: What would change, as `{field label: FieldChange}`.
+        fields: What would change, as `{field label: ValueChange}`.
     """
 
     record_id: int
-    fields: Mapping[str, FieldChange]
+    fields: Mapping[str, ValueChange]
 
     def __repr__(self) -> str:
         return f"RecordChange(record_id={self.record_id!r}, fields={sorted(self.fields)!r})"
@@ -61,7 +55,7 @@ class UpdatePreview:
         unchanged_ids: The records that already hold these values.
         missing_ids: The records that don't exist, or that the token can't see. `update()` would
             report these as failed rows.
-        events: The active webhooks, Quickbase actions, email notifications, and automations on
+        triggers: The active webhooks, Quickbase actions, email notifications, and automations on
             the table, which the update may set off. Quickbase doesn't say which changes set each
             one off, so some may not run. None if they couldn't be read.
     """
@@ -69,7 +63,7 @@ class UpdatePreview:
     changes: tuple[RecordChange, ...] = ()
     unchanged_ids: tuple[int, ...] = ()
     missing_ids: tuple[int, ...] = ()
-    events: tuple[AppEvent, ...] | None = None
+    triggers: tuple[AppTrigger, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -216,12 +210,12 @@ def build_update_preview(
         if record is None:
             missing.append(record_id)
             continue
-        changed: dict[str, FieldChange] = {}
+        changed: dict[str, ValueChange] = {}
         for field_id, after in cells.items():
             item = fields.resolve(field_id)
             before = record.get(field_id, _MISSING)
             if before is _MISSING or not is_same(item, before, after):
-                changed[item.label] = FieldChange(
+                changed[item.label] = ValueChange(
                     before=None if before is _MISSING else _shown(item, before, written=False),
                     after=_shown(item, after, written=True),
                 )

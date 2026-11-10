@@ -148,10 +148,9 @@ def namespace(qb: Any, scratch: Any, tables: tuple[Any, Any]) -> dict[str, Any]:
 
 # What a page's setup makes beyond `tasks`, written for the async client.
 PAGE_SETUP = {
-    "operation": 'search = await tasks.operation("query", fields=["Title", "Status"])\n',
-    "schema-operation": 'plan = await app.operation("preview_schema_changes")\n',
+    "table-operation": 'search = await tasks.operation("query", fields=["Title", "Status"])\n',
+    "app-operation": 'plan = await app.operation("preview_schema_changes")\n',
     "code-page": 'page = app.code_page("pyquickbase-live-test.html")\n',
-    "code-page-operation": 'tool = await app.operation("read_code_page")\n',
 }
 
 

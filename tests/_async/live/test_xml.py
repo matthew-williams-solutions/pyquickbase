@@ -14,14 +14,14 @@ from pyquickbase import (
     AuthenticationError,
     BadRequestError,
     CodePageChangedError,
-    ConfirmationError,
+    InvalidConfirmationError,
     InvalidValueError,
     NotFoundError,
     PermissionDeniedError,
     Policy,
     PolicyRefusedError,
     RoleAssignment,
-    RoleChange,
+    RoleAssignmentUpdate,
     SchemaMismatchError,
     SetKeyField,
     WriteError,
@@ -178,8 +178,8 @@ async def test_xml_code_page_round_trip(page: Any, text: str) -> None:
     written = await page.write(text)
     expected = text.replace("\r\n", "\n").replace("\r", "\n")
     assert (await page.read()).text == expected
-    assert written.page.text == expected
-    assert written.page.id is not None
+    assert written.content.text == expected
+    assert written.content.id is not None
 
 
 async def test_xml_code_page_write_reports_what_it_replaced(page: Any) -> None:
@@ -198,7 +198,7 @@ async def test_xml_code_page_a_stale_hash_writes_nothing(page: Any) -> None:
 
 async def test_xml_code_page_preview_doesnt_write(page: Any) -> None:
     await page.write("before\n")
-    preview = await page.preview_write("after\n")
+    preview = await page.preview_change("after\n")
     assert "-before" in preview.diff
     assert "+after" in preview.diff
     assert (await page.read()).text == "before\n"
@@ -249,11 +249,11 @@ async def test_xml_code_page_operations_require_a_confirmation(page: Any, scratc
         app = qb.app(scratch.app_id)
         preview = await app.operation("preview_code_page_change")
         apply = await app.operation("apply_code_page_change")
-        shown = await preview.run({"page": PAGE, "text": "from a model\n"})
-        with pytest.raises(ConfirmationError):
-            await apply.run({"page": PAGE, "text": "from a model\n"})
+        shown = await preview.run({"code_page": PAGE, "text": "from a model\n"})
+        with pytest.raises(InvalidConfirmationError):
+            await apply.run({"code_page": PAGE, "text": "from a model\n"})
         await apply.run(
-            {"page": PAGE, "text": "from a model\n", "confirmation": shown.confirmation}
+            {"code_page": PAGE, "text": "from a model\n", "confirmation": shown.confirmation}
         )
     assert (await page.read()).text == "from a model\n"
 
@@ -288,9 +288,9 @@ async def role_nine_user(qb: AsyncQuickbase, scratch: Any) -> AsyncIterator[str]
         ]
         extra = [RoleAssignment(member, role) for role in now if role != 9]
         if extra:
-            await qb.app(scratch.app_id).remove_role_assignments(extra)
+            await qb.app(scratch.app_id).delete_role_assignments(extra)
         if 9 not in now:
-            await qb.app(scratch.app_id).add_role_assignments([RoleAssignment(member, 9)])
+            await qb.app(scratch.app_id).create_role_assignments([RoleAssignment(member, 9)])
         final = [
             item["roleId"] for item in await trustees(qb, scratch.app_id) if item["id"] == member
         ]
@@ -301,16 +301,16 @@ async def test_xml_role_changes_add_change_remove_and_partial_failure(
     qb: AsyncQuickbase, scratch: Any, role_nine_user: str
 ) -> None:
     app = qb.app(scratch.app_id)
-    moved = await app.change_role_assignments([RoleChange(role_nine_user, 9, 10)])
-    assert moved.changed == (RoleChange(role_nine_user, 9, 10),)
-    await app.change_role_assignments([RoleChange(role_nine_user, 10, 9)])
-    added = await app.add_role_assignments([RoleAssignment(role_nine_user, 10)])
+    moved = await app.update_role_assignments([RoleAssignmentUpdate(role_nine_user, 9, 10)])
+    assert moved.changed == (RoleAssignmentUpdate(role_nine_user, 9, 10),)
+    await app.update_role_assignments([RoleAssignmentUpdate(role_nine_user, 10, 9)])
+    added = await app.create_role_assignments([RoleAssignment(role_nine_user, 10)])
     assert added.changed == (RoleAssignment(role_nine_user, 10),)
     with pytest.raises(WriteError) as duplicate:
-        await app.add_role_assignments([RoleAssignment(role_nine_user, 10)])
+        await app.create_role_assignments([RoleAssignment(role_nine_user, 10)])
     assert duplicate.value.result.failed[0].error == "Trustee already has this role"
     with pytest.raises(WriteError) as partial:
-        await app.remove_role_assignments(
+        await app.delete_role_assignments(
             [RoleAssignment(role_nine_user, 10), RoleAssignment(role_nine_user, 99999)]
         )
     assert partial.value.result.changed == (RoleAssignment(role_nine_user, 10),)
@@ -321,7 +321,7 @@ async def test_xml_role_changes_are_refused_for_a_restricted_role(
     restricted: AsyncQuickbase, scratch: Any, role_nine_user: str
 ) -> None:
     with pytest.raises(PermissionDeniedError):
-        await restricted.app(scratch.app_id).add_role_assignments(
+        await restricted.app(scratch.app_id).create_role_assignments(
             [RoleAssignment(role_nine_user, 10)]
         )
 
@@ -332,7 +332,9 @@ async def test_xml_role_changes_are_refused_by_any_policy(
     token = os.environ["QB_USER_TOKEN"]
     async with AsyncQuickbase(realm=scratch.realm, token=token, policy=Policy.read_only()) as qb:
         with pytest.raises(PolicyRefusedError):
-            await qb.app(scratch.app_id).add_role_assignments([RoleAssignment(role_nine_user, 10)])
+            await qb.app(scratch.app_id).create_role_assignments(
+                [RoleAssignment(role_nine_user, 10)]
+            )
 
 
 async def test_xml_key_field_is_set_through_a_plan(qb: AsyncQuickbase, scratch: Any) -> None:

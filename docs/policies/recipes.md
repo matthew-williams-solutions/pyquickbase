@@ -22,11 +22,11 @@ Reads tasks without costs, a page at a time, and changes only their status and n
 from pyquickbase import Policy, allow, deny, fields
 
 policy = Policy(
-    classes={"internal": ["Tasks.Amount", "Tasks.Code"]},
+    tags={"internal": ["Tasks.Amount", "Tasks.Code"]},
     rules=[
         allow.read("Tasks", max_paging_depth=50),
         allow.update("Tasks", ["Status", "Notes"]),
-        deny.all(fields.classed("internal")),
+        deny.all(fields.tagged("internal")),
     ],
 )
 ```
@@ -72,7 +72,7 @@ from pyquickbase import Policy, allow
 policy = Policy(
     rules=[
         allow.read("Tasks"),
-        allow.schema("Tasks", "add_field", "change_field"),
+        allow.schema("Tasks", "create_field", "update_field"),
     ]
 )
 ```
@@ -95,13 +95,13 @@ policy = Policy(rules=[allow.code_pages(write=True)])
 Upserts records by a unique code, in batches of up to 500 rows, with a rule of your own.
 
 ```python
-from pyquickbase import Decision, Policy, WriteRequest, allow, fields
+from pyquickbase import PolicyDecision, Policy, WriteRequest, allow, fields
 
 
 class Batches:
     def decide(self, request):
         if isinstance(request, WriteRequest) and (request.row_count or 0) > 500:
-            return Decision(allowed=False, verb="insert", reason="Up to 500 rows at a time")
+            return PolicyDecision(allowed=False, verb="insert", reason="Up to 500 rows at a time")
         return None
 
 

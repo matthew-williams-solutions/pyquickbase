@@ -13,9 +13,9 @@ from pyquickbase import (
     AsyncQuickbase,
     F,
     FileUpload,
+    InvalidQueryError,
     Policy,
     PolicyRefusedError,
-    QueryError,
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
@@ -92,7 +92,7 @@ async def test_hidden_fields_and_tables_look_as_if_they_dont_exist(
         assert all("formula" not in json.dumps(dict(field.raw)) for field in await tasks.fields())
         with pytest.raises(UnknownFieldError):
             await tasks.first(select=["Notes"])
-        with pytest.raises(QueryError):
+        with pytest.raises(InvalidQueryError):
             await tasks.count(f"{{{ids['Notes']}.EX.'private one'}}")
         other = next(item for item in table_names(scratch) if item != table.info().name)
         with pytest.raises(UnknownTableError):
@@ -219,7 +219,7 @@ async def test_write_only_fields_can_be_written_but_not_read(
         with pytest.raises(PolicyRefusedError, match="formula"):
             await tasks.run_formula("1")
     # Even a policy that allows formulas can't add one that would copy a field it can't read.
-    schema = allow.schema(table_id, "add_field", "formula")
+    schema = allow.schema(table_id, "create_field", "formula")
     notes = allow.update(table_id, [ids["Notes"]])
     async with await limited(scratch, policy(scratch, table, ids, notes, schema)) as qb:
         tasks = qb.app(scratch.app_id).table(table.info().id)

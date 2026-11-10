@@ -2,18 +2,18 @@
 
 For logic the rules can't express, add an object with a `decide(request)` method to `rules`. It sees
 each request the built-in rules allow, as a `ReadRequest` or `WriteRequest`, which holds no values,
-so it's safe to log. It returns None to leave the request alone, or a `Decision` with
+so it's safe to log. It returns None to leave the request alone, or a `PolicyDecision` with
 `allowed=False` to refuse it. **It can only refuse,** so a bug in it can't allow more than the rules
 do.
 
 ```python
-from pyquickbase import Decision, Policy, WriteRequest, allow, fields
+from pyquickbase import PolicyDecision, Policy, WriteRequest, allow, fields
 
 
 class SmallBatches:
     def decide(self, request):
         if isinstance(request, WriteRequest) and (request.row_count or 0) > 100:
-            return Decision(allowed=False, verb="insert", reason="Up to 100 rows at a time")
+            return PolicyDecision(allowed=False, verb="insert", reason="Up to 100 rows at a time")
         return None
 
 

@@ -8,8 +8,8 @@ from pyquickbase import (
     AsyncQuickbase,
     ConfigurationError,
     F,
+    InvalidQueryError,
     InvalidResponseError,
-    QueryError,
     UnknownFieldError,
     UnknownTableError,
 )
@@ -99,7 +99,7 @@ async def test_app_info_and_tables_are_cached() -> None:
 
 async def test_schema_ttl_zero_disables_caching_and_clearing_forgets() -> None:
     server = FakeQuickbase()
-    async with client(server, schema_ttl=0) as qb:
+    async with client(server, metadata_cache_seconds=0) as qb:
         await qb.app(APP).tables()
         await qb.app(APP).tables()
     assert len(server.requests) == 2
@@ -107,7 +107,7 @@ async def test_schema_ttl_zero_disables_caching_and_clearing_forgets() -> None:
     server = FakeQuickbase()
     async with client(server) as qb:
         await qb.app(APP).tables()
-        qb.clear_schema_cache()
+        qb.clear_metadata_cache()
         await qb.app(APP).tables()
     assert len(server.requests) == 2
 
@@ -252,7 +252,7 @@ async def test_count_fetches_only_one_record() -> None:
 async def test_query_page_rejects_bad_paging_without_sending(arguments: dict[str, int]) -> None:
     server = FakeQuickbase(total=5)
     async with client(server) as qb:
-        with pytest.raises(QueryError):
+        with pytest.raises(InvalidQueryError):
             await qb.app(APP).table("Tasks").query_page(**arguments)
     assert server.requests == []
 
@@ -261,7 +261,7 @@ async def test_query_page_rejects_bad_paging_without_sending(arguments: dict[str
 async def test_query_rejects_bad_paging_when_called(arguments: dict[str, int]) -> None:
     server = FakeQuickbase(total=5)
     async with client(server) as qb:
-        with pytest.raises(QueryError):
+        with pytest.raises(InvalidQueryError):
             qb.app(APP).table("Tasks").query(**arguments)
     assert server.requests == []
 
@@ -270,7 +270,7 @@ async def test_bad_queries_are_never_sent() -> None:
     server = FakeQuickbase(total=5)
     async with client(server) as qb:
         table = qb.app(APP).table("Tasks")
-        with pytest.raises(QueryError, match="uppercase"):
+        with pytest.raises(InvalidQueryError, match="uppercase"):
             await table.count("{6.ex.'x'}")
         with pytest.raises(UnknownFieldError):
             await table.count(F("Nope") == "x")

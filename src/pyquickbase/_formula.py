@@ -11,7 +11,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from ._decision import Decision
+from ._decision import PolicyDecision
 from .errors import PolicyRefusedError
 
 # Functions that only work on the values they're given, the current user, or the date. Compared in
@@ -199,7 +199,7 @@ def _string_end(formula: str, start: int) -> int:
 def refused_formula(reason: str) -> PolicyRefusedError:
     """A formula that can't be allowed, because of what it reads."""
     return PolicyRefusedError(
-        Decision(allowed=False, verb="formula", layer="derived", reason=reason, hint=None)
+        PolicyDecision(allowed=False, verb="formula", layer="derived", reason=reason, hint=None)
     )
 
 

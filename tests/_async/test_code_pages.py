@@ -11,7 +11,7 @@ from pyquickbase import (
     BadRequestError,
     CodePageChangedError,
     ConfigurationError,
-    ConfirmationError,
+    InvalidConfirmationError,
     InvalidValueError,
     NotFoundError,
     Policy,
@@ -103,7 +103,7 @@ async def test_a_home_page_cant_be_read() -> None:
 async def test_a_preview_shows_a_diff_without_writing() -> None:
     fake = FakePages()
     async with client(fake) as qb:
-        preview = await qb.app(APP).code_page("a.html").preview_write("<h1>Bye</h1>\n")
+        preview = await qb.app(APP).code_page("a.html").preview_change("<h1>Bye</h1>\n")
     assert "+<h1>Bye</h1>" in preview.diff
     assert preview.current is not None
     assert fake.writes == 0
@@ -116,8 +116,8 @@ async def test_writing_replaces_the_page_and_returns_what_was_there() -> None:
     assert not result.created
     assert result.previous is not None
     assert result.previous.text == "<h1>Hi</h1>\n"
-    assert result.page.text == "new\ntext"
-    assert result.page.id == 6
+    assert result.content.text == "new\ntext"
+    assert result.content.id == 6
     assert b"<pagetype>1</pagetype>" in fake.sent[1].content
     assert fake.text == "new\ntext"
 
@@ -266,7 +266,7 @@ async def test_operations_list_and_read() -> None:
     async with client(fake, policy=Policy(rules=[allow.code_pages()])) as qb:
         listed = await (await qb.app(APP).operation("list_code_pages")).run({})
         read = await qb.app(APP).operation("read_code_page")
-        found = await read.run({"page": "a.html"})
+        found = await read.run({"code_page": "a.html"})
     assert tool_result(listed)["code_pages"][0]["name"] == "a.html"
     shown = tool_result(found)["code_page"]
     assert (shown["name"], shown["text"]) == ("a.html", "<h1>Hi</h1>\n")
@@ -274,7 +274,13 @@ async def test_operations_list_and_read() -> None:
 
 @pytest.mark.parametrize(
     "arguments",
-    [{"page": ""}, {"page": True}, {"page": 0}, {}, {"page": "a.html", "extra": 1}],
+    [
+        {"code_page": ""},
+        {"code_page": True},
+        {"code_page": 0},
+        {},
+        {"code_page": "a.html", "extra": 1},
+    ],
     ids=["blank", "bool", "zero", "missing", "unknown"],
 )
 async def test_a_bad_argument_sends_nothing(arguments: dict[str, Any]) -> None:
@@ -300,10 +306,10 @@ async def test_a_model_applies_a_change_it_previewed() -> None:
     fake = FakePages()
     async with client(fake, **WRITE) as qb:
         preview, apply = await _operations(qb)
-        shown = tool_result(await preview.run({"page": "a.html", "text": "new"}))
+        shown = tool_result(await preview.run({"code_page": "a.html", "text": "new"}))
         assert CODE_PAGE_WARNING in shown["warnings"][0]
         assert fake.writes == 0
-        arguments = {"page": "a.html", "text": "new", "confirmation": shown["confirmation"]}
+        arguments = {"code_page": "a.html", "text": "new", "confirmation": shown["confirmation"]}
         result = tool_result(await apply.run(arguments))
     assert fake.writes == 1
     assert result["created"] is False
@@ -314,7 +320,7 @@ async def test_a_model_applies_a_change_it_previewed() -> None:
     "change",
     [
         {"text": "other"},
-        {"page": "b.html"},
+        {"code_page": "b.html"},
         {"confirmation": "nope"},
         {"confirmation": None},
     ],
@@ -324,10 +330,10 @@ async def test_a_change_needs_its_own_confirmation(change: dict[str, Any]) -> No
     fake = FakePages()
     async with client(fake, **WRITE) as qb:
         preview, apply = await _operations(qb)
-        shown = tool_result(await preview.run({"page": "a.html", "text": "new"}))
-        arguments = {"page": "a.html", "text": "new", "confirmation": shown["confirmation"]}
+        shown = tool_result(await preview.run({"code_page": "a.html", "text": "new"}))
+        arguments = {"code_page": "a.html", "text": "new", "confirmation": shown["confirmation"]}
         arguments.update(change)
-        with pytest.raises(ConfirmationError):
+        with pytest.raises(InvalidConfirmationError):
             await apply.run(arguments)
     assert fake.writes == 0
 
@@ -336,11 +342,11 @@ async def test_a_confirmation_stops_working_if_the_page_changes() -> None:
     fake = FakePages()
     async with client(fake, **WRITE) as qb:
         preview, apply = await _operations(qb)
-        shown = tool_result(await preview.run({"page": "a.html", "text": "new"}))
+        shown = tool_result(await preview.run({"code_page": "a.html", "text": "new"}))
         fake.text = "someone else's edit"
-        with pytest.raises(ConfirmationError, match="page has changed"):
+        with pytest.raises(InvalidConfirmationError, match="page has changed"):
             await apply.run(
-                {"page": "a.html", "text": "new", "confirmation": shown["confirmation"]}
+                {"code_page": "a.html", "text": "new", "confirmation": shown["confirmation"]}
             )
     assert fake.writes == 0
 
@@ -349,7 +355,7 @@ async def test_an_unchanged_page_needs_no_confirmation() -> None:
     fake = FakePages()
     async with client(fake, **WRITE) as qb:
         preview, _ = await _operations(qb)
-        shown = tool_result(await preview.run({"page": "a.html", "text": "<h1>Hi</h1>\n"}))
+        shown = tool_result(await preview.run({"code_page": "a.html", "text": "<h1>Hi</h1>\n"}))
     assert shown["unchanged"] is True
     assert "confirmation" not in shown
 
@@ -358,9 +364,23 @@ async def test_previewing_a_new_page_is_allowed() -> None:
     fake = FakePages(text=None)
     async with client(fake, **WRITE) as qb:
         preview, apply = await _operations(qb)
-        shown = tool_result(await preview.run({"page": "new.html", "text": "hello"}))
+        shown = tool_result(await preview.run({"code_page": "new.html", "text": "hello"}))
         assert shown["exists"] is False
         written = await apply.run(
-            {"page": "new.html", "text": "hello", "confirmation": shown["confirmation"]}
+            {"code_page": "new.html", "text": "hello", "confirmation": shown["confirmation"]}
         )
     assert written.created
+
+
+async def test_a_model_may_write_page_for_code_page() -> None:
+    async with client(FakePages(), policy=Policy(rules=[allow.code_pages()])) as qb:
+        read = await qb.app(APP).operation("read_code_page")
+        assert (await read.run({"page": "a.html"})).name == "a.html"
+
+
+async def test_only_the_writing_tools_say_a_new_name_makes_a_page() -> None:
+    async with client(FakePages(), policy=Policy(rules=[allow.code_pages(write=True)])) as qb:
+        read = await qb.app(APP).operation("read_code_page")
+        preview = await qb.app(APP).operation("preview_code_page_change")
+    assert "new name" not in read.input_schema["properties"]["code_page"]["description"]
+    assert "new name" in preview.input_schema["properties"]["code_page"]["description"]

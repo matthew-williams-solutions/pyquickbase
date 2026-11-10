@@ -59,7 +59,7 @@ if rows.ok:
     result = tasks.insert(rows)
     print(result.created_ids)
 else:
-    for error in rows.errors:
+    for error in rows.failed_rows:
         print(error)  # Row 3, column 'Due Date': isn't a date in the form YYYY-MM-DD...
 ```
 
@@ -70,7 +70,7 @@ The first row names each column's field by its exact label. A blank cell leaves 
 |---|---|
 | `rows` | Each row, as `{field label: value}`, ready to write |
 | `row_numbers` | Each row's number in the file, counting the header as row 1, as a spreadsheet does |
-| `errors` | Every value that can't be written, each with its `row`, `column`, and `message` |
+| `failed_rows` | Every value that can't be written, each with its `row`, `column`, and `message` |
 | `columns` | Which field each column was read into |
 | `skipped` | The columns that weren't read |
 

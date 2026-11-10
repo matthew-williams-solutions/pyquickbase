@@ -8,7 +8,7 @@ client.
 from pyquickbase import F, Policy, Quickbase, allow, deny, fields, limit, tables
 
 policy = Policy(
-    classes={
+    tags={
         "pay": ["Tasks.Amount"],
         "internal": [("Tasks", "Code"), fields.labeled_like("Old*")],
     },
@@ -18,7 +18,7 @@ policy = Policy(
         allow.update("Tasks", ["Status", "Due Date", "Notes"]),
         allow.delete("Tasks", max_records_per_delete=3),
         limit.rows("Tasks", F("Project") == "Roof"),
-        deny.all(fields.classed("pay", "internal")),
+        deny.all(fields.tagged("pay", "internal")),
     ],
 )
 
@@ -37,7 +37,7 @@ can see every table and field.
 **Anything no rule allows is refused, and a deny always wins.** Each rule names its tables first:
 a table's name or ID, a list of them, `tables.all()` for every table in the app and any the client
 creates, or `tables.created()` for only those the client creates. Most then name fields: labels or
-IDs, `fields.all()`, `fields.new()` for fields added after binding, `fields.classed(...)`, or
+IDs, `fields.all()`, `fields.new()` for fields added after binding, `fields.tagged(...)`, or
 `fields.labeled_like(...)`, which matches labels such as `_*`, ignoring case.
 
 | Rule | What it allows |

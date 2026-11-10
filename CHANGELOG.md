@@ -6,21 +6,49 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+**Many names changed, so that each says what it is.** There are no aliases for the old names.
+
+| Before | After |
+|---|---|
+| `Operation`, `OperationName` | `TableOperation`, `TableOperationName` |
+| `SchemaOperation`, `SchemaOperationName` | `AppOperation`, `AppOperationName`, which also cover code pages |
+| `.schema` on an operation | `.input_schema` |
+| `Page` | `RecordPage` |
+| `Report.summary_rows()` | `Report.run_summary()` |
+| `events()`, `AppEvent`, `.events` on previews, the `events` result key, `app_events` | `triggers()`, `AppTrigger`, `.triggers`, `triggers`, `app_triggers` |
+| `Rule` | `CustomRule` |
+| `Decision`, `Verb`, `SchemaVerb`, `Offers`, `Layer`, `Named` | `PolicyDecision`, `PolicyVerb`, `PolicySchemaVerb`, `PolicyOffers`, `DecisionLayer`, `NamedItem` |
+| `Policy(classes=...)`, `fields.classed()`, `classes_of()` | `Policy(tags=...)`, `fields.tagged()`, `tags_of()` |
+| Verbs `add_field`, `change_field`, `change_table` | `create_field`, `update_field`, `update_table` |
+| `Offers.schema` | `PolicyOffers.schema_verbs` |
+| `Expression` | `WhereExpression` |
+| `QueryError`, `ConfirmationError`, `WritePermissionError` | `InvalidQueryError`, `InvalidConfirmationError`, `WritePermissionDeniedError` |
+| `TooManyRecordsError`, `too_many_records` | `SummaryTooLargeError`, `summary_too_large` |
+| `RowError`, `FileRowError`, `.errors`, `raise_for_errors()` | `WriteRowFailure`, `FileRowFailure`, `.failed_rows`, `raise_for_failures()` |
+| `RowError.index` | `WriteRowFailure.row_index` |
+| `FieldChange`, `SettingChange` | `ValueChange` |
+| `Risk`, `SchemaAction`, `SummaryFunction` | `ChangeRisk`, `SchemaChangeAction`, `SummaryFieldFunction` |
+| `PlannedChange.summary`, `.link`, and those result keys | `.description`, `.url`, `description`, `url` |
+| `schema_ttl`, `clear_schema_cache()` | `metadata_cache_seconds`, `clear_metadata_cache()` |
+| `FileVersion.uploaded` | `FileVersion.uploaded_at` |
+| `Relationship.is_cross_app` | `Relationship.cross_app` |
+| `tz=` on `rows_from_file()` and `Period` | `time_zone=` |
+
 ### Added
 
 - `client.apps()` lists the apps a token can reach, and `client.current_user()` and `client.find_user()` say who a
   token belongs to and look up a user by email.
 - `app.members()` lists who holds a role in an app, with names and last access, and `app.member_roles()` lists one
   user's roles.
-- `UnsupportedOperationError`, and `APIError.quickbase_code`.
-- Code pages: `app.code_pages()`, `app.code_page()`, and `CodePage.read()`, `preview_write()`, `write()`, and `url()`.
-  `CodePageWrite.previous` holds what a write replaced, and `CodePageChangedError` refuses a stale write.
-- `allow.code_pages()` and `deny.code_pages()`, with `Offers.can_read_code_pages` and `can_write_code_pages`. A code
+- `NoLongerAvailableError`, and `APIError.quickbase_code`.
+- Code pages: `app.code_pages()`, `app.code_page()`, and `CodePage.read()`, `preview_change()`, `write()`, and `url()`.
+  `CodePageWriteResult.previous` holds what a write replaced, and `CodePageChangedError` refuses a stale write.
+- `allow.code_pages()` and `deny.code_pages()`, with `PolicyOffers.can_read_code_pages` and `can_write_code_pages`. A code
   page runs with the viewer's permissions, which a policy doesn't limit, as the docs now say plainly.
-- `app.add_role_assignments()`, `remove_role_assignments()`, and `change_role_assignments()`, with `RoleAssignment`,
-  `RoleChange`, `RoleChangeResult`, and `RoleChangeFailure`. Partial failures raise `WriteError`. No policy can allow
+- `app.create_role_assignments()`, `delete_role_assignments()`, and `change_role_assignments()`, with `RoleAssignment`,
+  `RoleAssignmentUpdate`, `RoleAssignmentResult`, and `RoleAssignmentFailure`. Partial failures raise `WriteError`. No policy can allow
   these, and they're refused through `client.request()` too.
-- `SetKeyField`, a schema plan change that sets a table's key field, with `allow.schema(..., "set_key")`.
+- `SetKeyField`, a schema plan change that sets a table's key field, with `allow.schema(..., "set_key_field")`.
 - `app.operation()` offers `list_code_pages`, `read_code_page`, `preview_code_page_change`, and
   `apply_code_page_change`.
 

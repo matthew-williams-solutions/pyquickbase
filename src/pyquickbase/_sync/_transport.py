@@ -10,7 +10,7 @@ import httpx
 
 from .._bound import BoundPolicy
 from .._config import build_url, is_read
-from .._decision import Decision
+from .._decision import PolicyDecision
 from .._read_request import ReadRequest, describe_read
 from .._response import error_from_response, error_from_transport, parse_response
 from .._retry import RetryPolicy, parse_retry_after
@@ -203,7 +203,7 @@ class Transport:
         if request.derived and not sources_checked:
             kinds = " and ".join(sorted(request.derived))
             raise PolicyRefusedError(
-                Decision(
+                PolicyDecision(
                     allowed=False,
                     verb="formula" if "formula" in request.derived else "lookup",
                     layer="derived",
@@ -220,7 +220,7 @@ class Transport:
             most = policy.max_delete(table_id)
             if most is not None:
                 raise PolicyRefusedError(
-                    Decision(
+                    PolicyDecision(
                         allowed=False,
                         verb="delete",
                         rule=decision.rule,

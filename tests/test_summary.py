@@ -11,9 +11,9 @@ from hypothesis import strategies as st
 
 from pyquickbase import (
     F,
+    InvalidQueryError,
     InvalidResponseError,
     Period,
-    QueryError,
     SummaryRow,
     UnknownFieldError,
     User,
@@ -205,7 +205,7 @@ def test_a_timestamps_date_depends_on_the_time_zone() -> None:
         "Started": "2027-01-01"
     }
     west = timezone(timedelta(hours=-5))
-    assert summarize([rec(Started=moment)], group_by=Period("Started", "day", tz=west))[
+    assert summarize([rec(Started=moment)], group_by=Period("Started", "day", time_zone=west))[
         0
     ].group == {"Started": "2026-12-31"}
 
@@ -255,7 +255,7 @@ def test_durations_add_up() -> None:
     ],
 )
 def test_arguments_it_cant_use_are_refused(options: dict[str, Any]) -> None:
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         summarize([], **options)
 
 
@@ -280,7 +280,7 @@ def test_unknown_fields_are_refused(options: dict[str, Any]) -> None:
     ],
 )
 def test_bad_periods_are_refused(arguments: tuple[Any, ...]) -> None:
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         Period(*arguments)
 
 
@@ -461,13 +461,13 @@ def test_distinct_count_counts_users_and_dates_once_each() -> None:
 
 
 def test_distinct_count_refuses_fields_with_several_values() -> None:
-    with pytest.raises(QueryError, match="several of its values"):
+    with pytest.raises(InvalidQueryError, match="several of its values"):
         summarize([], distinct_count="Tags")
 
 
 @pytest.mark.parametrize("name", ["median", "std_dev"])
 def test_a_spread_needs_numbers(name: str) -> None:
-    with pytest.raises(QueryError, match="needs a numeric field"):
+    with pytest.raises(InvalidQueryError, match="needs a numeric field"):
         summarize([], **{name: "Status"})
 
 
@@ -531,7 +531,7 @@ def test_the_period_before_crosses_years(unit: Any, label: str, previous: str) -
     "group_by", [None, "Status", [Period("Due", "month"), Period("Started", "year")]]
 )
 def test_comparing_needs_exactly_one_period(group_by: Any) -> None:
-    with pytest.raises(QueryError, match="exactly one Period"):
+    with pytest.raises(InvalidQueryError, match="exactly one Period"):
         summarize([], group_by=group_by, compare_periods=True)
 
 

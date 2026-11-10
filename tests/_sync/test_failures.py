@@ -310,7 +310,7 @@ def test_row_errors_are_numbered_across_batches(server: Server) -> None:
         with pytest.raises(WriteError) as caught:
             table(qb).insert([{"Title": str(n)} for n in range(4)], batch_size=2)
     result = caught.value.result
-    assert [(e.index, e.messages) for e in result.errors] == [
+    assert [(e.row_index, e.messages) for e in result.failed_rows] == [
         (1, ("Bad first",)),
         (2, ("Bad second",)),
     ]

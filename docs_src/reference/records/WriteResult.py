@@ -9,4 +9,4 @@ result = await tasks.upsert(
 print(result.created_ids)
 print(result.updated_ids)
 print(result.unchanged_ids)
-print(result.errors)
+print(result.failed_rows)

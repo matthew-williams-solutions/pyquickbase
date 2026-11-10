@@ -3,10 +3,10 @@ import pytest
 
 from pyquickbase import (
     AsyncQuickbase,
+    InvalidQueryError,
     InvalidResponseError,
     Policy,
     PolicyRefusedError,
-    QueryError,
     ReportInfo,
     UnknownReportError,
     UnsupportedReportError,
@@ -248,7 +248,7 @@ async def test_reports_that_arent_records_are_refused_without_running(
 async def test_run_page_checks_arguments_before_sending(kwargs: dict[str, int]) -> None:
     server = FakeReports()
     async with client(server) as qb:
-        with pytest.raises(QueryError):
+        with pytest.raises(InvalidQueryError):
             await qb.app(APP).table("Tasks").report("1").run_page(**kwargs)
     assert server.requests == []
 
@@ -259,7 +259,7 @@ async def test_run_page_checks_arguments_before_sending(kwargs: dict[str, int]) 
 async def test_run_checks_arguments_before_sending(kwargs: dict[str, int]) -> None:
     server = FakeReports()
     async with client(server) as qb:
-        with pytest.raises(QueryError):
+        with pytest.raises(InvalidQueryError):
             qb.app(APP).table("Tasks").report("1").run(**kwargs)
     assert server.requests == []
 

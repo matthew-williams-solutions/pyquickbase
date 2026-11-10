@@ -9,11 +9,11 @@ import pytest
 
 from pyquickbase import (
     BoundPolicy,
-    Decision,
     F,
     FileUpload,
     InvalidValueError,
     Policy,
+    PolicyDecision,
     PolicyRefusedError,
     Quickbase,
     ReadRequest,
@@ -192,13 +192,13 @@ class Batches:
     def __init__(self) -> None:
         self.seen: list[int] = []
 
-    def decide(self, request: ReadRequest | WriteRequest) -> Decision | None:
+    def decide(self, request: ReadRequest | WriteRequest) -> PolicyDecision | None:
         if not isinstance(request, WriteRequest):
             return None
         self.seen.append(request.row_count or 0)
         if len(self.seen) < 2:
             return None
-        return Decision(allowed=False, verb="insert", reason="One batch is enough")
+        return PolicyDecision(allowed=False, verb="insert", reason="One batch is enough")
 
 
 def test_reads_are_only_held_to_the_read_rules() -> None:

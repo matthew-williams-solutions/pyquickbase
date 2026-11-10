@@ -8,8 +8,8 @@ import pytest
 from pyquickbase import (
     ConfigurationError,
     F,
+    InvalidQueryError,
     InvalidResponseError,
-    QueryError,
     Quickbase,
     UnknownFieldError,
     UnknownTableError,
@@ -98,7 +98,7 @@ def test_app_info_and_tables_are_cached() -> None:
 
 def test_schema_ttl_zero_disables_caching_and_clearing_forgets() -> None:
     server = FakeQuickbase()
-    with client(server, schema_ttl=0) as qb:
+    with client(server, metadata_cache_seconds=0) as qb:
         qb.app(APP).tables()
         qb.app(APP).tables()
     assert len(server.requests) == 2
@@ -106,7 +106,7 @@ def test_schema_ttl_zero_disables_caching_and_clearing_forgets() -> None:
     server = FakeQuickbase()
     with client(server) as qb:
         qb.app(APP).tables()
-        qb.clear_schema_cache()
+        qb.clear_metadata_cache()
         qb.app(APP).tables()
     assert len(server.requests) == 2
 
@@ -251,7 +251,7 @@ def test_count_fetches_only_one_record() -> None:
 def test_query_page_rejects_bad_paging_without_sending(arguments: dict[str, int]) -> None:
     server = FakeQuickbase(total=5)
     with client(server) as qb:
-        with pytest.raises(QueryError):
+        with pytest.raises(InvalidQueryError):
             qb.app(APP).table("Tasks").query_page(**arguments)
     assert server.requests == []
 
@@ -260,7 +260,7 @@ def test_query_page_rejects_bad_paging_without_sending(arguments: dict[str, int]
 def test_query_rejects_bad_paging_when_called(arguments: dict[str, int]) -> None:
     server = FakeQuickbase(total=5)
     with client(server) as qb:
-        with pytest.raises(QueryError):
+        with pytest.raises(InvalidQueryError):
             qb.app(APP).table("Tasks").query(**arguments)
     assert server.requests == []
 
@@ -269,7 +269,7 @@ def test_bad_queries_are_never_sent() -> None:
     server = FakeQuickbase(total=5)
     with client(server) as qb:
         table = qb.app(APP).table("Tasks")
-        with pytest.raises(QueryError, match="uppercase"):
+        with pytest.raises(InvalidQueryError, match="uppercase"):
             table.count("{6.ex.'x'}")
         with pytest.raises(UnknownFieldError):
             table.count(F("Nope") == "x")

@@ -20,11 +20,11 @@ from typing import Any, Literal, cast, overload
 from ._confirm import expires_at
 from ._decision import CODE_PAGE_WARNING, READ_VERBS
 from ._models import (
-    AppEvent,
+    AppTrigger,
     CodePageContent,
     CodePageInfo,
     CodePagePreview,
-    CodePageWrite,
+    CodePageWriteResult,
     DeletePreview,
     DeletePreviewPage,
     Field,
@@ -33,8 +33,8 @@ from ._models import (
     FileDownload,
     FileVersion,
     FormulaResult,
-    Page,
     Record,
+    RecordPage,
     Relationship,
     ReportInfo,
     TableInfo,
@@ -49,42 +49,42 @@ from ._schema_plan import (
     change_action,
 )
 from ._summary import STATISTICS, SummaryRow
-from ._writes import RowError, WriteResult
+from ._writes import WriteResult, WriteRowFailure
 from .errors import (
     APIError,
     AuthenticationError,
     BadRequestError,
     CodePageChangedError,
     ConfigurationError,
-    ConfirmationError,
+    InvalidConfirmationError,
+    InvalidQueryError,
     InvalidResponseError,
     InvalidValueError,
     NetworkError,
+    NoLongerAvailableError,
     NotFoundError,
     PermissionDeniedError,
     PolicyRefusedError,
-    QueryError,
     QuickbaseError,
     RateLimitError,
     RequestTimeoutError,
     SchemaChangeError,
     SchemaMismatchError,
     ServerError,
-    TooManyRecordsError,
+    SummaryTooLargeError,
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
-    UnsupportedOperationError,
     UnsupportedReportError,
     WriteError,
-    WritePermissionError,
+    WritePermissionDeniedError,
 )
 
 ToolErrorCode = Literal[
     "misconfigured",
     "needs_confirmation",
     "invalid_arguments",
-    "too_many_records",
+    "summary_too_large",
     "invalid_value",
     "read_refused",
     "write_refused",
@@ -103,7 +103,7 @@ ToolErrorCode = Literal[
     "rate_limited",
     "server_error",
     "api_error",
-    "unsupported_operation",
+    "no_longer_available",
     "code_page_changed",
     "timeout",
     "network_error",
@@ -153,19 +153,19 @@ class GroupPage(Sequence[SummaryRow]):
 
 # The most specific class wins, so subclasses come before their bases.
 _CODES: tuple[tuple[type[BaseException], ToolErrorCode], ...] = (
-    (WritePermissionError, "write_permission_denied"),
+    (WritePermissionDeniedError, "write_permission_denied"),
     (WriteError, "write_failed"),
     (ConfigurationError, "misconfigured"),
-    (ConfirmationError, "needs_confirmation"),
-    (TooManyRecordsError, "too_many_records"),
-    (QueryError, "invalid_arguments"),
+    (InvalidConfirmationError, "needs_confirmation"),
+    (SummaryTooLargeError, "summary_too_large"),
+    (InvalidQueryError, "invalid_arguments"),
     (InvalidValueError, "invalid_value"),
     (UnknownTableError, "unknown_table"),
     (UnknownFieldError, "unknown_field"),
     (UnknownReportError, "unknown_report"),
     (UnsupportedReportError, "unsupported_report"),
     (SchemaMismatchError, "schema_mismatch"),
-    (UnsupportedOperationError, "unsupported_operation"),
+    (NoLongerAvailableError, "no_longer_available"),
     (CodePageChangedError, "code_page_changed"),
     (AuthenticationError, "authentication"),
     (PermissionDeniedError, "permission_denied"),
@@ -181,10 +181,10 @@ _CODES: tuple[tuple[type[BaseException], ToolErrorCode], ...] = (
 )
 _HINTS: dict[ToolErrorCode, str] = {
     "misconfigured": "The tool is set up wrongly. Tell the user, as changing the call won't help.",
-    "needs_confirmation": "Preview or plan the same change again, show the user the result, and "
+    "needs_confirmation": "Preview the same change again, show the user the result, and "
     "send its confirmation once they approve.",
     "invalid_arguments": "Fix the filter or arguments as the message says, then try again.",
-    "too_many_records": "This summary would read more records than it may. Counting alone "
+    "summary_too_large": "This summary would read more records than it may. Counting alone "
     "works at any size. To total or average them, ask the user to narrow the question, such as to "
     "a shorter date range. Splitting it into several summaries takes a call for each part, and "
     "the parts must not overlap or miss records.",
@@ -208,7 +208,7 @@ _HINTS: dict[ToolErrorCode, str] = {
     "rate_limited": "Quickbase is limiting requests. Wait, then try again.",
     "server_error": "Quickbase failed. Check whether a change was made before trying again.",
     "api_error": "Quickbase refused the request. Tell the user if the message doesn't say why.",
-    "unsupported_operation": "Quickbase no longer offers this. Tell the user, as trying again "
+    "no_longer_available": "Quickbase no longer offers this. Tell the user, as trying again "
     "won't help.",
     "code_page_changed": "The page changed since you read it, and nothing was written. Read it "
     "again and start from what's there now.",
@@ -295,9 +295,9 @@ def _changed(error: BaseException) -> DataChanged:
     return "no"
 
 
-def _row_error(item: RowError) -> dict[str, Any]:
+def _row_error(item: WriteRowFailure) -> dict[str, Any]:
     return {
-        "index": item.index,
+        "index": item.row_index,
         "reason": item.reason,
         "field_id": item.field_id,
         "messages": list(item.messages),
@@ -349,7 +349,7 @@ def tool_error(error: BaseException) -> dict[str, Any]:
     - A `WriteError` adds `written`, with the IDs that were created, updated, and left unchanged,
       and `failed_rows`, with each row's `index`, `reason`, `field_id`, and Quickbase's `messages`.
     - An `APIError` adds `status`, the HTTP status.
-    - A `TooManyRecordsError` adds `matched`, how many records match, and `limit`, the most the
+    - A `SummaryTooLargeError` adds `matched`, how many records match, and `limit`, the most the
       summary may read.
 
     An exception from outside the SDK gets the code `internal` and a message that says nothing
@@ -377,12 +377,12 @@ def tool_error(error: BaseException) -> dict[str, Any]:
         found["retry_after"] = error.retry_after
     if isinstance(error, APIError) and error.status_code:
         found["status"] = error.status_code
-    if isinstance(error, TooManyRecordsError):
+    if isinstance(error, SummaryTooLargeError):
         found["matched"] = error.matched
         found["limit"] = error.limit
     if isinstance(error, WriteError) and isinstance(error.result, WriteResult):
         found["written"] = _written(error.result)
-        found["failed_rows"] = [_row_error(item) for item in error.result.errors]
+        found["failed_rows"] = [_row_error(item) for item in error.result.failed_rows]
     if isinstance(error, WriteError) and isinstance(error.result, SchemaChangeResult):
         found.update(_applied(error.result))
     return {"ok": False, "error": found}
@@ -426,7 +426,7 @@ def _version(value: FileVersion, state: _State) -> dict[str, Any]:
     return {
         "number": value.number,
         "file_name": _text(value.file_name, state),
-        "uploaded": _value(value.uploaded, state),
+        "uploaded": _value(value.uploaded_at, state),
         "creator": None if value.creator is None else _user(value.creator, state),
     }
 
@@ -597,24 +597,24 @@ def _approval(
     return found
 
 
-def _events(events: Sequence[AppEvent] | None) -> dict[str, Any]:
+def _events(events: Sequence[AppTrigger] | None) -> dict[str, Any]:
     """What a change may set off, for a preview, with null when it couldn't be read."""
     if events is None:
-        return {"events": None}
+        return {"triggers": None}
     return {
-        "events": [
+        "triggers": [
             {"type": item.type, "name": item.name, **({"url": item.url} if item.url else {})}
             for item in events
         ]
     }
 
 
-def _event_warnings(events: Sequence[AppEvent] | None) -> list[str]:
+def _event_warnings(events: Sequence[AppTrigger] | None) -> list[str]:
     if not events:
         return []
     return [
         f"The table has {len(events)} active webhooks, Quickbase actions, notifications, or "
-        "automations, listed in events, which this change may set off."
+        "automations, listed in triggers, which this change may set off."
     ]
 
 
@@ -635,7 +635,7 @@ def _preview(preview: UpdatePreview, state: _State) -> dict[str, Any]:
         ],
         "unchanged_ids": list(preview.unchanged_ids),
         "missing_ids": list(preview.missing_ids),
-        **_events(preview.events),
+        **_events(preview.triggers),
     }
 
 
@@ -672,7 +672,7 @@ def _planned(item: PlannedChange) -> dict[str, Any]:
         "action": change_action(item.change),
         "status": item.status,
         "risk": item.risk,
-        "summary": item.summary,
+        "description": item.description,
         "settings": {
             name: {"before": change.before, "after": change.after}
             for name, change in item.settings.items()
@@ -684,8 +684,8 @@ def _planned(item: PlannedChange) -> dict[str, Any]:
         found["affected_records"] = item.affected_records
     if item.policy_effects:
         found["policy_effects"] = list(item.policy_effects)
-    if item.link is not None:
-        found["link"] = item.link
+    if item.url is not None:
+        found["url"] = item.url
     return found
 
 
@@ -693,18 +693,18 @@ def _applied(result: SchemaChangeResult) -> dict[str, Any]:
     """What applying a plan did, by each change's summary."""
     found: dict[str, Any] = {
         "applied": [_summary_link(item) for item in result.applied],
-        "already_done": [item.summary for item in result.already_done],
+        "already_done": [item.description for item in result.already_done],
     }
     if result.failed is not None:
-        found["failed"] = result.failed.summary
-        found["not_attempted"] = [item.summary for item in result.not_attempted]
+        found["failed"] = result.failed.description
+        found["not_attempted"] = [item.description for item in result.not_attempted]
     return found
 
 
 def _summary_link(item: PlannedChange) -> dict[str, Any]:
-    found: dict[str, Any] = {"summary": item.summary}
-    if item.link is not None:
-        found["link"] = item.link
+    found: dict[str, Any] = {"description": item.description}
+    if item.url is not None:
+        found["url"] = item.url
     return found
 
 
@@ -750,7 +750,7 @@ def _download(value: FileDownload, state: _State) -> dict[str, Any]:
 
 
 def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, Any]:
-    if isinstance(value, Page):
+    if isinstance(value, RecordPage):
         page = value
         found = _paged(
             page.records,
@@ -761,7 +761,7 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
             has_more=page.has_more,
         )
         if isinstance(page, DeletePreview):
-            found.update(_events(page.events))
+            found.update(_events(page.triggers))
         if isinstance(page, DeletePreviewPage):
             blockers: list[str] = []
             if page.total > page.max_deletable:
@@ -771,7 +771,7 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
                     "deleting with this filter would be refused, and nothing would be deleted. "
                     "Narrow the filter."
                 )
-            found.update(_approval(page.confirmation, blockers, _event_warnings(page.events)))
+            found.update(_approval(page.confirmation, blockers, _event_warnings(page.triggers)))
         if isinstance(page, FieldsLeftOutPage):
             found["fields_left_out"] = {
                 "count": page.fields_left_out,
@@ -788,7 +788,7 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
     if isinstance(value, UpdatePreview):
         found = _preview(value, state)
         if isinstance(value, ConfirmedUpdatePreview):
-            warnings = _event_warnings(value.events)
+            warnings = _event_warnings(value.triggers)
             if value.missing_ids:
                 warnings.append(
                     f"Records {list(value.missing_ids)} don't exist, or this tool can't see them, "
@@ -808,9 +808,9 @@ def _describe(value: Any, state: _State, max_records: int | None) -> dict[str, A
         return {"code_page": _code_page(value)}
     if isinstance(value, CodePagePreview):
         return _code_page_preview(value)
-    if isinstance(value, CodePageWrite):
+    if isinstance(value, CodePageWriteResult):
         return {
-            "code_page": _code_page(value.page),
+            "code_page": _code_page(value.content),
             "created": value.created,
             "previous_sha256": None if value.previous is None else value.previous.sha256,
         }
@@ -857,7 +857,7 @@ def _code_page(page: CodePageContent) -> dict[str, Any]:
 def _code_page_preview(preview: CodePagePreview) -> dict[str, Any]:
     current = preview.current
     return {
-        "page": preview.page,
+        "code_page": preview.code_page,
         "exists": current is not None,
         "current_sha256": None if current is None else current.sha256,
         "proposed_sha256": preview.proposed_sha256,
@@ -892,7 +892,7 @@ def tool_result(
 
     | Value | Keys |
     |---|---|
-    | `Page` | `records`, or `columns` and `rows` with `compact`, and `page` |
+    | `RecordPage` | `records`, or `columns` and `rows` with `compact`, and `page` |
     | A list of records or dictionaries | The same. `page.total` is null, as it isn't known |
     | `Record` or None | `record`, which is null for None |
     | `WriteResult` | `created_ids`, `updated_ids`, and `unchanged_ids` |
@@ -900,7 +900,7 @@ def tool_result(
     | A `summarize` operation's result | As for a list of `SummaryRow`, sorted and paged as asked |
     | `UpdatePreview` | `changes`, `unchanged_ids`, and `missing_ids` |
     | A `preview_update` operation's result | As for an `UpdatePreview`, with the approval keys |
-    | A `preview_delete` operation's result | As for a `Page`, with the approval keys |
+    | A `preview_delete` operation's result | As for a `RecordPage`, with the approval keys |
     | `SchemaPlan` | `changes` and `has_changes`, and the approval keys |
     | `SchemaChangeResult` | `applied` and `already_done`, and `failed` and `not_attempted` too |
     | A list of `TableSchema` | `tables`, each with `fields` and `relationships` |

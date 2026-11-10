@@ -59,13 +59,13 @@ async def test_a_plan_changes_nothing_and_says_what_each_change_does() -> None:
     assert [item.status for item in plan.changes] == ["ready"] * 3
     assert [item.risk for item in plan.changes] == ["additive", "modifying", "modifying"]
     created, updated, renamed = plan.changes
-    assert created.summary == 'Add field "Due" (date) to Tasks.'
+    assert created.description == 'Add field "Due" (date) to Tasks.'
     assert set(created.settings) == {"label", "type", "help_text"}
     assert updated.settings["choices"].before == ["Open", "Done"]
     assert updated.settings["choices"].after == ["Open", "Done", "Blocked"]
     assert renamed.settings["description"].after == "Client work."
-    assert created.link is not None
-    assert created.link.endswith(f"/table/{TASKS}/action/listfields")
+    assert created.url is not None
+    assert created.url.endswith(f"/table/{TASKS}/action/listfields")
     assert plan.has_changes
     assert not plan.blockers
 
@@ -245,7 +245,7 @@ async def test_a_failure_stops_the_plan_and_says_what_was_made() -> None:
 
 async def test_a_plan_reports_what_the_clients_limits_would_refuse() -> None:
     fake = FakeApp()
-    policy = fake.bind(allow.read(TASKS), allow.schema(TASKS, "add_field", field_types=["text"]))
+    policy = fake.bind(allow.read(TASKS), allow.schema(TASKS, "create_field", field_types=["text"]))
     async with client(fake, policy=policy) as qb:
         plan = await qb.app(APP).preview_schema_changes(
             [
@@ -381,7 +381,7 @@ async def test_a_summary_can_filter_its_child_records() -> None:
         planned = plan.changes[0]
         assert planned.status == "ready", plan.blockers
         assert planned.settings["where"].after == "{7.EX.'Open'}"
-        assert planned.summary.endswith("its Tasks records that match {7.EX.'Open'}.")
+        assert planned.description.endswith("its Tasks records that match {7.EX.'Open'}.")
         await app.apply_schema_changes(plan)
         again = await app.preview_schema_changes([change])
         other = await app.preview_schema_changes(
@@ -425,7 +425,7 @@ async def test_deleting_a_field_a_summary_filters_on_warns() -> None:
 
 async def test_a_label_a_hidden_field_uses_is_a_blocker() -> None:  # F14
     fake = FakeApp()
-    policy = fake.bind(allow.read(TASKS, [6, 7, 8]), allow.schema(TASKS, "add_field"))
+    policy = fake.bind(allow.read(TASKS, [6, 7, 8]), allow.schema(TASKS, "create_field"))
     async with client(FakeApp(), policy=policy) as qb:
         hidden = await qb.app(APP).preview_schema_changes(
             [CreateField(table="Tasks", label="double", type="text")]
@@ -479,7 +479,7 @@ async def test_a_table_name_matches_ignoring_surrounding_spaces() -> None:  # F1
     async with client(FakeApp()) as qb:
         plan = await qb.app(APP).preview_schema_changes([CreateTable(name=" tasks ")])
     assert plan.changes[0].status == "already_done"
-    assert "ignoring case and spaces" in plan.changes[0].summary
+    assert "ignoring case and spaces" in plan.changes[0].description
 
 
 async def test_a_plan_says_what_it_can_only_check_when_applied() -> None:  # F17, F18
@@ -507,7 +507,7 @@ async def test_a_name_that_matches_says_how() -> None:  # F19
     table, field = plan.changes
     assert table.status == "already_done"
     assert "Later changes to tasks change the existing Tasks" in table.warnings[0]
-    assert field.summary == 'Tasks already has field "Hours", which matches ignoring case.'
+    assert field.description == 'Tasks already has field "Hours", which matches ignoring case.'
 
 
 async def test_refusals_name_tables_and_say_what_the_other_table_needs() -> None:  # F3, F4
@@ -517,7 +517,7 @@ async def test_refusals_name_tables_and_say_what_the_other_table_needs() -> None
     policy = fake.bind(
         allow.read(TASKS),
         allow.filter(PROJECTS, fields.all()),
-        allow.schema(TASKS, "lookup", "add_field", field_types=["date"]),
+        allow.schema(TASKS, "lookup", "create_field", field_types=["date"]),
     )
     async with client(fake, policy=policy) as qb:
         plan = await qb.app(APP).preview_schema_changes(
@@ -556,7 +556,7 @@ async def test_counts_say_what_they_count() -> None:  # F5, F7, F21
 
 async def test_a_new_field_says_who_can_read_and_write_it() -> None:
     fake = FakeApp()
-    policy = fake.bind(allow.read(TASKS), allow.schema(TASKS, "add_field", "formula"))
+    policy = fake.bind(allow.read(TASKS), allow.schema(TASKS, "create_field", "formula"))
     async with client(fake, policy=policy) as qb:
         plan = await qb.app(APP).preview_schema_changes(
             [CreateField(table="Tasks", label="Notes", type="text")]
@@ -572,9 +572,9 @@ async def test_a_derived_field_says_which_classes_it_gets_and_what_hides_it() ->
     fake = FakeApp()
     policy = fake.bind(
         allow.read(tables.all()),
-        allow.schema(TASKS, "add_field", "formula", "lookup"),
-        deny.read(TASKS, fields.classed("sensitive")),
-        classes={"sensitive": [("Projects", "Name"), ("Tasks", "Code")]},
+        allow.schema(TASKS, "create_field", "formula", "lookup"),
+        deny.read(TASKS, fields.tagged("sensitive")),
+        tags={"sensitive": [("Projects", "Name"), ("Tasks", "Code")]},
     )
     async with client(fake, policy=policy) as qb:
         plan = await qb.app(APP).preview_schema_changes(
@@ -587,8 +587,8 @@ async def test_a_derived_field_says_which_classes_it_gets_and_what_hides_it() ->
         )
     formula, lookup = plan.changes
     assert not any("class" in item for item in formula.policy_effects)
-    assert "Once bound again, it's in class sensitive." in lookup.policy_effects
-    assert "deny.read('bqtasks', fields.classed('sensitive')) then hides it." in (
+    assert "Once bound again, it's in tag sensitive." in lookup.policy_effects
+    assert "deny.read('bqtasks', fields.tagged('sensitive')) then hides it." in (
         lookup.policy_effects
     )
     assert lookup.status == "ready"
@@ -690,7 +690,7 @@ async def test_a_plan_is_refused_if_the_key_field_changed_since() -> None:
         app = qb.app(APP)
         plan = await app.preview_schema_changes([SetKeyField(table="Tasks", field="Code")])
         fake.tables[TASKS]["keyFieldId"] = 6
-        qb.clear_schema_cache()
+        qb.clear_metadata_cache()
         with pytest.raises(SchemaMismatchError):
             await app.apply_schema_changes(plan)
     assert fake.tables[TASKS]["keyFieldId"] == 6
@@ -699,12 +699,12 @@ async def test_a_plan_is_refused_if_the_key_field_changed_since() -> None:
 async def test_setting_a_key_field_needs_its_grant() -> None:
     fake = FakeApp()
     make_code_unique(fake)
-    without = fake.bind(allow.read(tables.all()), allow.schema(tables.all(), "add_field"))
+    without = fake.bind(allow.read(tables.all()), allow.schema(tables.all(), "create_field"))
     async with client(fake, policy=without) as qb:
         plan = await qb.app(APP).preview_schema_changes([SetKeyField(table="Tasks", field="Code")])
     assert plan.changes[0].status == "blocked"
-    assert "set_key" in plan.blockers[0]
-    granted = fake.bind(allow.read(tables.all()), allow.schema(tables.all(), "set_key"))
+    assert "set_key_field" in plan.blockers[0]
+    granted = fake.bind(allow.read(tables.all()), allow.schema(tables.all(), "set_key_field"))
     async with client(fake, policy=granted) as qb:
         plan = await qb.app(APP).preview_schema_changes([SetKeyField(table="Tasks", field="Code")])
         assert plan.changes[0].status == "ready"

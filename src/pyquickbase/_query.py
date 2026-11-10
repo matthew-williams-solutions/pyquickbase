@@ -14,7 +14,7 @@ from decimal import Decimal
 from typing import Any, ClassVar
 
 from ._models import RECORD_ID_FIELD, Field, FieldIndex, User
-from .errors import QueryError, UnknownFieldError
+from .errors import InvalidQueryError, UnknownFieldError
 
 FieldRef = str | int
 """A field's label (`str`) or ID (`int`)."""
@@ -77,11 +77,13 @@ def format_value(value: Any) -> str:
     if isinstance(value, float | Decimal):
         found = plain_number(value)
         if found is None:
-            raise QueryError("A number in a query must be finite, and can't be this large.")
+            raise InvalidQueryError("A number in a query must be finite, and can't be this large.")
         return found
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            raise QueryError("A datetime in a query needs a timezone, so its meaning is clear.")
+            raise InvalidQueryError(
+                "A datetime in a query needs a timezone, so its meaning is clear."
+            )
         return str(int(value.timestamp() * 1000))
     if isinstance(value, date):
         return value.isoformat()
@@ -89,17 +91,17 @@ def format_value(value: Any) -> str:
         return str(_whole_milliseconds(value / timedelta(milliseconds=1)))
     if isinstance(value, str):
         if "{" in value or "}" in value:
-            raise QueryError("Quickbase can't search for values containing { or }.")
+            raise InvalidQueryError("Quickbase can't search for values containing { or }.")
         if _FIELD_REFERENCE.search(value):
-            raise QueryError("Quickbase reads a value like _FID_6 as a field, not as text.")
+            raise InvalidQueryError("Quickbase reads a value like _FID_6 as a field, not as text.")
         lowered = _LIST_WORD.sub(lambda word: word[0].lower(), value)
         return lowered.replace("\\", "\\\\").replace("'", "\\'")
-    raise QueryError(f"Can't use a value of type {type(value).__name__} in a query.")
+    raise InvalidQueryError(f"Can't use a value of type {type(value).__name__} in a query.")
 
 
 def _whole_milliseconds(value: float | Decimal) -> int:
     if value != int(value):
-        raise QueryError(
+        raise InvalidQueryError(
             "A duration in a query must be whole milliseconds, as Quickbase keeps no less."
         )
     return int(value)
@@ -124,27 +126,27 @@ def typed_value(item: Field, text: str, original: Any) -> str:
     if item.type == "duration" and (_is_number(original) or isinstance(original, timedelta)):
         return f"{_whole_milliseconds(Decimal(text))} milliseconds"
     if isinstance(original, timedelta):
-        raise QueryError(
+        raise InvalidQueryError(
             f"Field {item.label!r} is {item.type}, not a duration, so it can't be compared with a "
             "timedelta."
         )
     return text
 
 
-class Expression:
+class WhereExpression:
     """A query condition. Combine with `&` and `|`, not `and` and `or`."""
 
     __slots__ = ()
 
-    def __and__(self, other: "Expression") -> "Group":
+    def __and__(self, other: "WhereExpression") -> "Group":
         return Group.of("AND", self, other)
 
-    def __or__(self, other: "Expression") -> "Group":
+    def __or__(self, other: "WhereExpression") -> "Group":
         return Group.of("OR", self, other)
 
     def __bool__(self) -> bool:
         # `a and b` or `1 < F("x") < 5` would otherwise silently drop a condition.
-        raise QueryError(
+        raise InvalidQueryError(
             "Combine conditions with & and |, not `and`, `or`, or chained comparisons."
         )
 
@@ -162,7 +164,7 @@ NO_VALUE: Any = _NoValue()
 
 
 @dataclass(frozen=True, slots=True)
-class Condition(Expression):
+class Condition(WhereExpression):
     """`value` is the text sent to Quickbase. `original` is the Python value it came from, when
     `F` made it, so that an operation's scope can be written into a new record."""
 
@@ -174,7 +176,7 @@ class Condition(Expression):
     def compile(self, fields: FieldIndex) -> str:
         item = fields.resolve(self.field)
         if item.type in _USER_TYPES and self.value.strip().casefold() == _CURRENT_USER:
-            raise QueryError(
+            raise InvalidQueryError(
                 "On a user field, Quickbase reads _curuser_ as the token's owner, so a value from "
                 "someone else could match the owner's records. To mean that on purpose, write a "
                 "query string."
@@ -187,16 +189,16 @@ class Condition(Expression):
 
 
 @dataclass(frozen=True, slots=True)
-class Group(Expression):
+class Group(WhereExpression):
     joiner: str
-    parts: tuple[Expression, ...]
+    parts: tuple[WhereExpression, ...]
 
     @classmethod
-    def of(cls, joiner: str, *parts: Expression) -> "Group":
+    def of(cls, joiner: str, *parts: WhereExpression) -> "Group":
         # Callers without a type checker can pass anything here.
-        if not all(isinstance(part, Expression) for part in parts):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise QueryError("Conditions can only be combined with other conditions.")
-        flat: list[Expression] = []
+        if not all(isinstance(part, WhereExpression) for part in parts):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise InvalidQueryError("Conditions can only be combined with other conditions.")
+        flat: list[WhereExpression] = []
         for part in parts:
             if isinstance(part, Group) and part.joiner == joiner:
                 flat.extend(part.parts)
@@ -231,7 +233,7 @@ class F:
 
     def __init__(self, field: FieldRef) -> None:
         if isinstance(field, bool) or not isinstance(field, str | int):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise QueryError("F() takes a field label (str) or ID (int).")
+            raise InvalidQueryError("F() takes a field label (str) or ID (int).")
         self._field = field
 
     def _condition(self, operator: str, value: Any) -> Condition:
@@ -325,7 +327,7 @@ class F:
         """
         return self._condition("XHAS", value)
 
-    def is_in(self, values: Iterable[Any]) -> Expression:
+    def is_in(self, values: Iterable[Any]) -> WhereExpression:
         """Match any of the values, as a series of `EX` conditions joined with `OR`.
 
         Args:
@@ -335,11 +337,11 @@ class F:
             A condition to pass as `where`.
 
         Raises:
-            QueryError: There are no values.
+            InvalidQueryError: There are no values.
         """
         conditions = [self._condition("EX", value) for value in values]
         if not conditions:
-            raise QueryError("is_in() needs at least one value.")
+            raise InvalidQueryError("is_in() needs at least one value.")
         return conditions[0] if len(conditions) == 1 else Group.of("OR", *conditions)
 
     def op(self, operator: str, value: Any) -> Condition:
@@ -353,15 +355,15 @@ class F:
             A condition to pass as `where`.
 
         Raises:
-            QueryError: Quickbase has no such operator.
+            InvalidQueryError: Quickbase has no such operator.
         """
         if operator not in OPERATORS:
-            raise QueryError(f"Unknown operator {operator!r}. Operators must be uppercase.")
+            raise InvalidQueryError(f"Unknown operator {operator!r}. Operators must be uppercase.")
         return self._condition(operator, value)
 
 
-def _where_error(where: str, position: int, problem: str) -> QueryError:
-    return QueryError(
+def _where_error(where: str, position: int, problem: str) -> InvalidQueryError:
+    return InvalidQueryError(
         f"Invalid where clause: {problem} near `{where[position : position + 40]}`. {_WHERE_HELP}"
     )
 
@@ -450,7 +452,7 @@ def parse_where(where: str, fields: Iterable[Field]) -> list[WhereCondition]:
         A `WhereCondition` for each condition in the string.
 
     Raises:
-        QueryError: It has the same mistakes that `table.query()` would refuse.
+        InvalidQueryError: It has the same mistakes that `table.query()` would refuse.
         UnknownFieldError: It names a field that isn't in `fields`.
     """
     return _scan_where(where.strip(), FieldIndex(fields).resolve)
@@ -466,17 +468,17 @@ def where_field_ids(where: str) -> frozenset[int] | None:
         return None
     try:
         conditions = _scan_where(where.strip(), lambda _: None)
-    except QueryError:
+    except InvalidQueryError:
         return None
     return frozenset(item.field_id for item in conditions)
 
 
-def compile_where(where: Expression | str, fields: FieldIndex) -> str:
+def compile_where(where: WhereExpression | str, fields: FieldIndex) -> str:
     if isinstance(where, str):
         return validate_where(where, fields)
-    if isinstance(where, Expression):  # pyright: ignore[reportUnnecessaryIsInstance]
+    if isinstance(where, WhereExpression):  # pyright: ignore[reportUnnecessaryIsInstance]
         return where.compile(fields)
-    raise QueryError("`where` must be a condition built with F, or a string.")
+    raise InvalidQueryError("`where` must be a condition built with F, or a string.")
 
 
 FieldRefs = FieldRef | F | Sequence[FieldRef | F]
@@ -489,10 +491,14 @@ def _as_list(refs: FieldRefs, argument: str) -> list[FieldRef | F]:
     try:
         items = list(refs)
     except TypeError:
-        raise QueryError(f"{argument} takes fields or a list of them, not this value.") from None
+        raise InvalidQueryError(
+            f"{argument} takes fields or a list of them, not this value."
+        ) from None
     for item in items:
         if not isinstance(item, str | int | F):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise QueryError(f"{argument} takes field labels, IDs, or fields, not this value.")
+            raise InvalidQueryError(
+                f"{argument} takes field labels, IDs, or fields, not this value."
+            )
     return items
 
 
@@ -529,7 +535,7 @@ def build_query_body(
     table_id: str,
     all_fields: Sequence[Field],
     *,
-    where: Expression | str | None,
+    where: WhereExpression | str | None,
     select: FieldRefs | None,
     order_by: FieldRefs | None,
 ) -> dict[str, Any]:

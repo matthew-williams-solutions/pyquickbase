@@ -12,7 +12,6 @@ import pytest
 
 from pyquickbase import (
     AsyncQuickbase,
-    ConfirmationError,
     CreateField,
     CreateLookupField,
     CreateRelationship,
@@ -21,6 +20,7 @@ from pyquickbase import (
     DeleteField,
     DeleteRelationship,
     DeleteTable,
+    InvalidConfirmationError,
     Policy,
     UpdateField,
     UpdateTable,
@@ -125,7 +125,7 @@ async def test_operations_hold_a_model_to_its_limits(scratch: Any) -> None:
     policy = Policy(
         rules=[
             allow.read(info.id, [title], filter=[title, salary]),
-            allow.schema(info.id, "add_field", "formula"),
+            allow.schema(info.id, "create_field", "formula"),
         ]
     )
     bound = policy.bind(scratch.client.app(scratch.app_id))
@@ -141,7 +141,7 @@ async def test_operations_hold_a_model_to_its_limits(scratch: Any) -> None:
 
         shown = {**hidden, "label": "Shout", "type": "text", "formula": "Upper([Title])"}
         planned = tool_result(await plan.run({"changes": [shown]}))
-        with pytest.raises(ConfirmationError, match="these arguments differ"):
+        with pytest.raises(InvalidConfirmationError, match="these arguments differ"):
             await apply.run({"changes": [hidden], "confirmation": planned["confirmation"]})
         result = await apply.run({"changes": [shown], "confirmation": planned["confirmation"]})
         assert len(result.applied) == 1

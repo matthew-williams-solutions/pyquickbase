@@ -1,6 +1,6 @@
-from pyquickbase import RoleAssignment, RoleChangeFailure
+from pyquickbase import RoleAssignment, RoleAssignmentFailure
 
-failure = RoleChangeFailure(
+failure = RoleAssignmentFailure(
     change=RoleAssignment("123.abc", 11),
     error="Trustee already has this role",
 )

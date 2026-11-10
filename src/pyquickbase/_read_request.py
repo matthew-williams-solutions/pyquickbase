@@ -36,7 +36,7 @@ ReadAction = Literal[
     "app",
     "roles",
     "field_usage",
-    "app_events",
+    "app_triggers",
     "apps",
     "current_user",
     "find_user",
@@ -115,14 +115,14 @@ class ReadRequest:
             because the number deleted shows how many matched. `report` runs a table report, and
             `summary_report` a summary or chart report. `file` downloads a file, and `formula`
             runs one. `tables`, `fields`, `relationships`, `reports`, `app`, and `roles` read
-            metadata. `field_usage` reads where fields are used, and `app_events` the app's
+            metadata. `field_usage` reads where fields are used, and `app_triggers` the app's
             webhooks, notifications, and automations. `apps`, `current_user`, `find_user`,
             `members`, and `member_roles` read about people and apps, which a policy always
             refuses. `code_pages` lists or reads an app's code pages, which only
             `allow.code_pages()` permits. `other` is anything else, including a
             report run through `request()`, which doesn't say what kind of report it is. A
             change to tables, fields, or relationships isn't a read.
-        table_id: The table it reads, or None for `tables`, `app`, `roles`, `app_events`, and
+        table_id: The table it reads, or None for `tables`, `app`, `roles`, `app_triggers`, and
             `other`.
         app_id: For `members`, `member_roles`, and `code_pages`, the app.
         field_ids: The fields it returns. For `file`, the file field, and for `field_usage`, the
@@ -254,7 +254,7 @@ def _describe_get(path: str, params: Mapping[str, Any] | None) -> ReadRequest:
             path=path,
         )
     if _APP_EVENTS.fullmatch(path) and not params:
-        return ReadRequest(action="app_events", method="GET", path=path)
+        return ReadRequest(action="app_triggers", method="GET", path=path)
     if _TRUSTEES.fullmatch(path):
         return ReadRequest(action="members", method="GET", path=path)
     if _ROLES.fullmatch(path):

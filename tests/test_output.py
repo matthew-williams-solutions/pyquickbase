@@ -11,50 +11,50 @@ from hypothesis import strategies as st
 
 from pyquickbase import (
     APIError,
-    AppEvent,
     AppInfo,
+    AppTrigger,
     AuthenticationError,
     BadRequestError,
     ConfigurationError,
-    Decision,
     DeletePreview,
     Field,
-    FieldChange,
     FileDownload,
     FormulaResult,
+    InvalidQueryError,
     InvalidResponseError,
     InvalidValueError,
     NetworkError,
     NotFoundError,
-    Page,
     PeriodChange,
     PermissionDeniedError,
+    PolicyDecision,
     PolicyRefusedError,
-    QueryError,
     QuickbaseError,
     RateLimitError,
     Record,
     RecordChange,
+    RecordPage,
     ReportInfo,
     RequestTimeoutError,
-    RowError,
     SchemaChangeError,
     SchemaChangeResult,
     SchemaMismatchError,
     ServerError,
     SummaryRow,
+    SummaryTooLargeError,
     TableInfo,
     ToolErrorCode,
-    TooManyRecordsError,
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
     UnsupportedReportError,
     UpdatePreview,
     User,
+    ValueChange,
     WriteError,
-    WritePermissionError,
+    WritePermissionDeniedError,
     WriteResult,
+    WriteRowFailure,
     tool_error,
     tool_result,
 )
@@ -108,7 +108,7 @@ def dumps(value: Any) -> str:
 
 
 def test_a_page_has_records_and_paging() -> None:
-    found = tool_result(Page(records=(full(), empty()), total=10, skip=4))
+    found = tool_result(RecordPage(records=(full(), empty()), total=10, skip=4))
     assert found["ok"] is True
     assert found["records"] == [
         {
@@ -139,7 +139,7 @@ def test_a_page_has_records_and_paging() -> None:
 
 
 def test_compact_sends_each_label_once_and_file_names() -> None:
-    found = tool_result(Page(records=(full(), empty()), total=2, skip=0), compact=True)
+    found = tool_result(RecordPage(records=(full(), empty()), total=2, skip=0), compact=True)
     assert found["columns"] == ["Record ID#", "Title", "Due Date", "Started", "Owner", "Spec"]
     assert found["rows"] == [
         [1, "Pour slab", "2027-01-15", "2027-01-15T14:30:00Z", USER, "spec.txt"],
@@ -158,12 +158,14 @@ def test_compact_rows_line_up_when_records_hold_different_fields() -> None:
 
 
 def test_compact_is_smaller() -> None:
-    page = Page(records=tuple(full(n) for n in range(1, 51)), total=50, skip=0)
+    page = RecordPage(records=tuple(full(n) for n in range(1, 51)), total=50, skip=0)
     assert len(dumps(tool_result(page, compact=True))) < len(dumps(tool_result(page))) * 0.7
 
 
 def test_max_records_cuts_and_says_so() -> None:
-    found = tool_result(Page(records=(full(1), full(2), full(3)), total=3, skip=0), max_records=2)
+    found = tool_result(
+        RecordPage(records=(full(1), full(2), full(3)), total=3, skip=0), max_records=2
+    )
     assert [item["Record ID#"] for item in found["records"]] == [1, 2]
     assert found["page"] == {
         "returned": 2,
@@ -253,32 +255,32 @@ def test_summaries() -> None:
 
 
 def test_previews() -> None:
-    change = RecordChange(record_id=1, fields={"Status": FieldChange("Open", "Done")})
+    change = RecordChange(record_id=1, fields={"Status": ValueChange("Open", "Done")})
     preview = UpdatePreview(changes=(change,), unchanged_ids=(2,), missing_ids=(9,))
     assert tool_result(preview) == {
         "ok": True,
         "changes": [{"record_id": 1, "fields": {"Status": {"before": "Open", "after": "Done"}}}],
         "unchanged_ids": [2],
         "missing_ids": [9],
-        "events": None,
+        "triggers": None,
     }
 
 
 def test_previews_list_what_may_run() -> None:
-    hook = AppEvent(
+    hook = AppTrigger(
         type="webhook", name="Sync", active=True, table_id="t", url=None, owner=None, raw={}
     )
-    flow = AppEvent(
+    flow = AppTrigger(
         type="automation", name=None, active=True, table_id="t", url="https://x", owner=None,
         raw={},
     )  # fmt: skip
-    preview = UpdatePreview(events=(hook, flow))
-    assert tool_result(preview)["events"] == [
+    preview = UpdatePreview(triggers=(hook, flow))
+    assert tool_result(preview)["triggers"] == [
         {"type": "webhook", "name": "Sync"},
         {"type": "automation", "name": None, "url": "https://x"},
     ]
-    page = DeletePreview(records=(), total=0, skip=0, events=())
-    assert tool_result(page)["events"] == []
+    page = DeletePreview(records=(), total=0, skip=0, triggers=())
+    assert tool_result(page)["triggers"] == []
 
 
 def test_formula_results() -> None:
@@ -338,7 +340,9 @@ json_values = st.recursive(
 def test_results_always_dump_as_json(values: list[Any], compact: bool) -> None:
     labels = {f"F{index}": index + 6 for index in range(len(values))}
     item = Record({index + 6: value for index, value in enumerate(values)}, labels)
-    dumps(tool_result(Page(records=(item,), total=1, skip=0), compact=compact, max_text_chars=5))
+    dumps(
+        tool_result(RecordPage(records=(item,), total=1, skip=0), compact=compact, max_text_chars=5)
+    )
 
 
 # Errors
@@ -352,18 +356,28 @@ def written(**ids: Any) -> WriteResult:
     ("error", "code", "changed", "retryable"),
     [
         (ConfigurationError("x"), "misconfigured", "no", False),
-        (QueryError("x"), "invalid_arguments", "no", False),
+        (InvalidQueryError("x"), "invalid_arguments", "no", False),
         (InvalidValueError("x"), "invalid_value", "no", False),
-        (PolicyRefusedError(Decision(allowed=False, verb="read")), "read_refused", "no", False),
-        (PolicyRefusedError(Decision(allowed=False, verb="filter")), "read_refused", "no", False),
         (
-            PolicyRefusedError(Decision(allowed=False, verb="update")),
+            PolicyRefusedError(PolicyDecision(allowed=False, verb="read")),
+            "read_refused",
+            "no",
+            False,
+        ),
+        (
+            PolicyRefusedError(PolicyDecision(allowed=False, verb="filter")),
+            "read_refused",
+            "no",
+            False,
+        ),
+        (
+            PolicyRefusedError(PolicyDecision(allowed=False, verb="update")),
             "write_refused",
             "no",
             False,
         ),
         (
-            PolicyRefusedError(Decision(allowed=False, verb="lookup")),
+            PolicyRefusedError(PolicyDecision(allowed=False, verb="lookup")),
             "write_refused",
             "no",
             False,
@@ -383,10 +397,10 @@ def written(**ids: Any) -> WriteResult:
         (RequestTimeoutError("x"), "timeout", "unknown", True),
         (NetworkError("x"), "network_error", "unknown", True),
         (InvalidResponseError("x"), "invalid_response", "unknown", False),
-        (TooManyRecordsError(11, 10), "too_many_records", "no", False),
+        (SummaryTooLargeError(11, 10), "summary_too_large", "no", False),
         (QuickbaseError("x"), "quickbase_error", "no", False),
         (WriteError("x", result=written()), "write_failed", "no", False),
-        (WritePermissionError("x", result=written()), "write_permission_denied", "no", False),
+        (WritePermissionDeniedError("x", result=written()), "write_permission_denied", "no", False),
         (KeyError("s3cret"), "internal", "unknown", False),
     ],
 )
@@ -412,7 +426,7 @@ def test_every_code_is_documented_and_has_a_hint() -> None:
 
 
 def test_too_many_records_says_how_many_matched_and_the_limit() -> None:
-    found = tool_error(TooManyRecordsError(83460, 10000))["error"]
+    found = tool_error(SummaryTooLargeError(83460, 10000))["error"]
     assert (found["matched"], found["limit"]) == (83460, 10000)
     assert "83460 records match" in found["message"]
     assert "Counting alone works at any size" in found["hint"]
@@ -425,7 +439,7 @@ def test_other_exceptions_say_nothing_about_themselves() -> None:
 
 
 def test_sdk_messages_are_kept() -> None:
-    assert tool_error(QueryError("where.op isn't an operator."))["error"]["message"] == (
+    assert tool_error(InvalidQueryError("where.op isn't an operator."))["error"]["message"] == (
         "where.op isn't an operator."
     )
 
@@ -437,8 +451,8 @@ def test_api_errors_give_their_status_and_rate_limits_their_wait() -> None:
 
 
 def test_failed_rows_and_what_was_written() -> None:
-    failure = RowError(index=1, messages=("Duplicate",), reason="duplicate", field_id=10)
-    result = WriteResult(created_ids=(4,), errors=(failure,))
+    failure = WriteRowFailure(row_index=1, messages=("Duplicate",), reason="duplicate", field_id=10)
+    result = WriteResult(created_ids=(4,), failed_rows=(failure,))
     found = tool_error(WriteError("1 row failed", result=result))["error"]
     assert found["code"] == "partial_write"
     assert found["data_changed"] == "partly"
@@ -449,8 +463,8 @@ def test_failed_rows_and_what_was_written() -> None:
 
 
 def test_every_row_failing_changed_nothing() -> None:
-    failure = RowError(index=0, messages=("x",))
-    found = tool_error(WriteError("x", result=WriteResult(errors=(failure,))))["error"]
+    failure = WriteRowFailure(row_index=0, messages=("x",))
+    found = tool_error(WriteError("x", result=WriteResult(failed_rows=(failure,))))["error"]
     assert (found["code"], found["data_changed"]) == ("write_failed", "no")
 
 
@@ -500,7 +514,7 @@ def test_a_schema_change_that_may_have_been_made_keeps_its_own_hint() -> None:
 
 
 def test_a_permission_refusal_after_earlier_rows_were_written() -> None:
-    error = WritePermissionError("x", result=written(updated_ids=[1, 2]))
+    error = WritePermissionDeniedError("x", result=written(updated_ids=[1, 2]))
     found = tool_error(error)["error"]
     assert (found["code"], found["data_changed"]) == ("write_permission_denied", "partly")
 
@@ -644,7 +658,7 @@ def test_paging_under_max_chars_reaches_every_record_once(
     seen: list[int] = []
     skip = 0
     while True:
-        page = Page(records=tuple(records[skip : skip + 50]), total=len(records), skip=skip)
+        page = RecordPage(records=tuple(records[skip : skip + 50]), total=len(records), skip=skip)
         found = tool_result(page, compact=compact, max_chars=budget, max_text_chars=2000)
         returned = found["page"]["returned"]
         assert returned >= 1
@@ -664,12 +678,12 @@ def test_paging_under_max_chars_reaches_every_record_once(
 
 
 def test_without_max_chars_nothing_is_left_out() -> None:
-    page = Page(records=tuple(wide(n, 2000) for n in range(1, 51)), total=50, skip=0)
+    page = RecordPage(records=tuple(wide(n, 2000) for n in range(1, 51)), total=50, skip=0)
     assert tool_result(page)["page"]["returned"] == 50
 
 
 def test_one_record_too_large_on_its_own_has_its_text_cut_to_fit() -> None:
-    page = Page(records=(wide(1, 9000), wide(2, 10)), total=2, skip=0)
+    page = RecordPage(records=(wide(1, 9000), wide(2, 10)), total=2, skip=0)
     found = tool_result(page, max_chars=2000)
     assert found["page"] == {"returned": 1, "total": 2, "skip": 0, "next_skip": 1, "has_more": True}
     assert found["text_truncated"] is True

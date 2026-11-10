@@ -16,7 +16,7 @@
 
 - **A policy complements the token's role, and doesn't replace it.** Quickbase still enforces the
   role on everything it allows.
-- **A value can be copied without a formula.** A class follows formulas, lookups, and summaries, but
+- **A value can be copied without a formula.** A tag follows formulas, lookups, and summaries, but
   not a value someone pasted into another field, or an address's subfields.
 - **Filtering and sorting reveal values.** A model that may filter on a field can find out what it
   holds by seeing which records match, even if the field isn't returned, so `allow.read()` takes its

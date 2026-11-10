@@ -13,9 +13,9 @@ from hypothesis import strategies as st
 from pyquickbase import (
     BoundPolicy,
     ConfigurationError,
-    Decision,
     F,
     Policy,
+    PolicyDecision,
     PolicyRefusedError,
     Quickbase,
     ReadRequest,
@@ -217,17 +217,17 @@ def test_a_deny_always_wins() -> None:
 @pytest.mark.parametrize(
     ("rule", "request_args", "allowed"),
     [
-        (allow.schema(TASKS, "change_table"), ("POST", f"/tables/{TASKS}", {}), True),
-        (allow.schema(TASKS, "add_field"), ("POST", f"/tables/{TASKS}", {}), False),
+        (allow.schema(TASKS, "update_table"), ("POST", f"/tables/{TASKS}", {}), True),
+        (allow.schema(TASKS, "create_field"), ("POST", f"/tables/{TASKS}", {}), False),
         (allow.schema(TASKS, "delete_table"), ("DELETE", f"/tables/{TASKS}", None), True),
-        (allow.schema(TASKS, "change_table"), ("DELETE", f"/tables/{TASKS}", None), False),
-        (allow.schema(TASKS, "add_field"), ("POST", "/fields", {"fieldType": "text"}), True),
-        (allow.schema(TASKS, "add_field", field_types=["date"]), ("POST", "/fields",
+        (allow.schema(TASKS, "update_table"), ("DELETE", f"/tables/{TASKS}", None), False),
+        (allow.schema(TASKS, "create_field"), ("POST", "/fields", {"fieldType": "text"}), True),
+        (allow.schema(TASKS, "create_field", field_types=["date"]), ("POST", "/fields",
                                                                   {"fieldType": "text"}), False),
-        (allow.schema(TASKS, "add_field"), ("POST", "/fields", {}), False),
-        (allow.schema(TASKS, "change_field", fields=[6]), ("POST", "/fields/6", {"label": "y"}),
+        (allow.schema(TASKS, "create_field"), ("POST", "/fields", {}), False),
+        (allow.schema(TASKS, "update_field", fields=[6]), ("POST", "/fields/6", {"label": "y"}),
          True),
-        (allow.schema(TASKS, "change_field", fields=[7]), ("POST", "/fields/6", {"label": "y"}),
+        (allow.schema(TASKS, "update_field", fields=[7]), ("POST", "/fields/6", {"label": "y"}),
          False),
         (allow.schema(TASKS, "delete_field"), ("DELETE", "/fields", {"fieldIds": [6]}), True),
         (allow.schema(TASKS, "delete_field", fields=[6]), ("DELETE", "/fields",
@@ -252,8 +252,8 @@ def test_schema_changes_need_a_schema_grant() -> None:
 
 def test_formulas_need_their_own_grant_and_cant_make_links() -> None:
     formula = {"fieldType": "numeric", "properties": {"formula": "1"}}
-    assert not allows(bind(allow.schema(TASKS, "add_field")), schema("POST", "/fields", formula))
-    policy = bind(allow.schema(TASKS, "add_field", "change_field", "formula"))
+    assert not allows(bind(allow.schema(TASKS, "create_field")), schema("POST", "/fields", formula))
+    policy = bind(allow.schema(TASKS, "create_field", "update_field", "formula"))
     assert allows(policy, schema("POST", "/fields", formula))
     assert allows(policy, schema("POST", "/fields/6", {"properties": {"formula": "2"}}))
     for unsafe in ("url", "rich-text"):
@@ -313,7 +313,7 @@ def test_unlinking_needs_delete_field_where_its_lookups_and_summaries_are() -> N
 
 
 def test_created_tables_get_their_own_rules_in_a_new_policy() -> None:
-    policy = bind(allow.create_tables(), allow.schema(tables.created(), "add_field"))
+    policy = bind(allow.create_tables(), allow.schema(tables.created(), "create_field"))
     assert allows(policy, schema("POST", "/tables", {"name": "x"}))
     assert not allows(policy, describe_write("POST", "/tables", {}, params={"appId": "other"}))
     add = schema("POST", "/fields", {"fieldType": "text"}, table="bqnew")
@@ -323,7 +323,7 @@ def test_created_tables_get_their_own_rules_in_a_new_policy() -> None:
     assert not allows(policy, add), "the old policy is unchanged"
     assert created.created == ("bqnew",)
     assert created.hash != policy.hash
-    assert not allows(bind(allow.schema(tables.created(), "add_field")), add)
+    assert not allows(bind(allow.schema(tables.created(), "create_field")), add)
 
 
 # Reads
@@ -493,7 +493,7 @@ def test_formulas_and_app_metadata_are_refused(
 )
 def test_no_policy_makes_copies_or_deletes_apps(method: str, path: str) -> None:
     request = describe_write(method, path, {"name": "x"})
-    policy = bind(allow.schema(TASKS, "add_field"), allow.create_tables())
+    policy = bind(allow.schema(TASKS, "create_field"), allow.create_tables())
     assert "can't create, copy, or delete an app" in refusal(policy, request)
     assert "can't create, copy, or delete an app" in refusal(
         Policy.read_only().bind_offline(), request
@@ -531,10 +531,10 @@ class Weekend:
     def __init__(self) -> None:
         self.seen: list[str] = []
 
-    def decide(self, request: ReadRequest | WriteRequest) -> Decision | None:
+    def decide(self, request: ReadRequest | WriteRequest) -> PolicyDecision | None:
         self.seen.append(request.action)
         if isinstance(request, WriteRequest):
-            return Decision(allowed=False, verb="update", reason="Closed for the weekend")
+            return PolicyDecision(allowed=False, verb="update", reason="Closed for the weekend")
         return None
 
     def __repr__(self) -> str:
@@ -553,8 +553,8 @@ def test_a_rule_of_your_own_can_only_refuse() -> None:
 
     # And it can't grant.
     class Yes:
-        def decide(self, request: Any) -> Decision:
-            return Decision(allowed=True, verb="insert")
+        def decide(self, request: Any) -> PolicyDecision:
+            return PolicyDecision(allowed=True, verb="insert")
 
     assert not allows(bind(Yes()), INSERT)
 
@@ -585,18 +585,18 @@ def test_a_rule_of_your_own_must_be_passed_again_to_load() -> None:
         lambda: allow.report(tables.all(), ["Open"]),
         lambda: allow.schema(TASKS),
         lambda: allow.schema(TASKS, "rename"),
-        lambda: allow.schema(TASKS, "add_field", field_types="text"),
-        lambda: allow.schema(TASKS, "add_field", field_types=[]),
-        lambda: allow.schema(TASKS, "add_field", field_types=[""]),
-        lambda: fields.classed(),
+        lambda: allow.schema(TASKS, "create_field", field_types="text"),
+        lambda: allow.schema(TASKS, "create_field", field_types=[]),
+        lambda: allow.schema(TASKS, "create_field", field_types=[""]),
+        lambda: fields.tagged(),
         lambda: fields.labeled_like(""),
         lambda: limit.rows(TASKS, ""),
         lambda: Policy(rules=[lambda request: True]),
         lambda: Policy(rules=allow.read(TASKS)),
         lambda: Policy(new_fields="secret"),
-        lambda: Policy(classes={"pay": ["Hourly Rate"]}),
-        lambda: Policy(classes={"pay": []}),
-        lambda: Policy(classes={"pay": [fields.new()]}),
+        lambda: Policy(tags={"pay": ["Hourly Rate"]}),
+        lambda: Policy(tags={"pay": []}),
+        lambda: Policy(tags={"pay": [fields.new()]}),
         lambda: Policy(app="bq-app"),
     ],
 )
@@ -611,8 +611,8 @@ def test_binding_reports_every_problem_at_once() -> None:
             allow.read("Jobs"),
             allow.update(TASKS, ["Labor Cost", "Status", 77]),
             allow.update(tables.all(), ["Title"]),
-            deny.all(fields.classed("pay")),
-            classes={"internal": ["Tasks.Sync ID"]},
+            deny.all(fields.tagged("pay")),
+            tags={"internal": ["Tasks.Sync ID"]},
         )
     message = str(caught.value)
     for problem in (
@@ -620,7 +620,7 @@ def test_binding_reports_every_problem_at_once() -> None:
         "no field 'Labor Cost'",
         "no field 77",
         "needs tables by name or ID",
-        "there's no class 'pay'",
+        "there's no tag 'pay'",
         "no table and field match 'Tasks.Sync ID'",
     ):
         assert problem in message

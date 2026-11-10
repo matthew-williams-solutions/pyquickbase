@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from ._bound import BoundPolicy, derived_refusal
-from ._decision import Named, Verb
+from ._decision import NamedItem, PolicyVerb
 from ._formula import check_formula, field_id_reference
 from ._models import Field
 from ._query import where_field_ids
@@ -37,8 +37,8 @@ def sources_of(fields: Sequence[Field], policy: BoundPolicy, table_id: str) -> l
     ]
 
 
-def _table(policy: BoundPolicy, table_id: str) -> Named:
-    return policy._named_table(table_id) or Named(table_id, table_id)  # pyright: ignore[reportPrivateUsage]
+def _table(policy: BoundPolicy, table_id: str) -> NamedItem:
+    return policy._named_table(table_id) or NamedItem(table_id, table_id)  # pyright: ignore[reportPrivateUsage]
 
 
 def check_formula_against(
@@ -46,7 +46,7 @@ def check_formula_against(
     sources: Sequence[Source],
     *,
     emails_shown: bool,
-    table: Named | None = None,
+    table: NamedItem | None = None,
 ) -> None:
     """Refuse a formula that names a field that isn't readable, or a user field when the client
     hides users' email addresses, which a formula can turn a user into.
@@ -99,7 +99,7 @@ def check_formula_sources(
 
 
 def check_readable(
-    field: Field, policy: BoundPolicy | None, table_id: str, what: str, verb: Verb = "lookup"
+    field: Field, policy: BoundPolicy | None, table_id: str, what: str, verb: PolicyVerb = "lookup"
 ) -> None:
     """Refuse unless the client can return this field.
 

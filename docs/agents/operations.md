@@ -22,7 +22,7 @@ async def make_search(qb: AsyncQuickbase):
 
 
 # At startup: search = await make_search(qb)
-# The tool's definition: {"name": "search_tasks", "input_schema": search.schema}
+# The tool's definition: {"name": "search_tasks", "input_schema": search.input_schema}
 
 
 async def search_tasks(search, project: str, arguments: dict) -> dict:
@@ -55,16 +55,16 @@ Only the last step changes anything:
 
 | Operation | The model sends | Runs | Returns |
 |---|---|---|---|
-| `query` | `where`, `select`, `order_by`, `limit`, `skip`. Without `select`, the table's default fields, or only the first `max_default_fields` of them | `query_page()` | `Page`, which `tool_result()` shows with `fields_left_out` when it left some out |
+| `query` | `where`, `select`, `order_by`, `limit`, `skip`. Without `select`, the table's default fields, or only the first `max_default_fields` of them | `query_page()` | `RecordPage`, which `tool_result()` shows with `fields_left_out` when it left some out |
 | `count` | `where` | `count()` | An `int`, which `tool_result()` shows as `count` |
 | `summarize` | `where`, `group_by`, `sum`, `avg`, `min`, `max`. `total`, `average`, `minimum`, and `maximum` are read too. `order_by` sorts the groups, by `count`, a `group` field, or a calculated value, and `limit` and `skip` page through them | `summarize()`, then sorts and pages its groups | The page of `SummaryRow`, which reads as a list, and which `tool_result()` shows with `page` |
 | `insert` | `records` | `insert()` | `WriteResult` |
 | `update` | `records`, each with `Record ID#` | `update()` | `WriteResult` |
 | `delete` | `where`, which is required. It's refused if it matches more than `max_records_per_call` | `delete()` | An `int`, which `tool_result()` shows as `deleted_count` |
 | `preview_update` | As `update` | `preview_update()` | `UpdatePreview` |
-| `preview_delete` | `where`, `select`, `limit`. Give it the same `max_records_per_call` as `delete`, and `tool_result()` lists a blocker when a delete would be refused | `preview_delete()` | `Page` |
-| `run_report` | `report`, as its ID, its ID as a number, or its name, and `limit`, `skip` | `Report.run_page()` | `Page` |
-| `run_summary_report` | `report`, as for `run_report`, and `limit` | `Report.summary_rows()` | A list of rows |
+| `preview_delete` | `where`, `select`, `limit`. Give it the same `max_records_per_call` as `delete`, and `tool_result()` lists a blocker when a delete would be refused | `preview_delete()` | `RecordPage` |
+| `run_report` | `report`, as its ID, its ID as a number, or its name, and `limit`, `skip` | `Report.run_page()` | `RecordPage` |
+| `run_summary_report` | `report`, as for `run_report`, and `limit` | `Report.run_summary()` | A list of rows |
 | `run_formula` | `record_id` | `run_formula()`, with the formula your code gives | `FormulaResult` |
 | `download_file` | `record_id`, `field`, `version` | `download_file()` | `FileDownload` |
 | `delete_file_version` | `record_id`, `field`, `version` | `delete_file_version()` | None |
@@ -142,7 +142,7 @@ many of them match the scope, with one query, and refuses the whole call if any 
 change between that check and the call.
 
 A write can't set a field the scope uses, so `update` can't move a record out of it, and `run()` raises
-`QueryError` for a row that tries. `insert` fills those fields in from the scope, so with
+`InvalidQueryError` for a row that tries. `insert` fills those fields in from the scope, so with
 `scope=F("Project") == project`, every new record gets that project. That needs a scope of only `==`
 conditions joined with `&`, and `insert` refuses any other scope, as a new record couldn't be made to
 match it. With a scope passed only to `run()`, pass `fields=` without the scope's fields, so the model
@@ -184,11 +184,11 @@ async def list_fields(table_id: str) -> dict:
 | The client can't run the operation at all, such as `insert` when read-only | `PolicyRefusedError`, from `operation()` | Nothing was sent |
 | The table has nothing for it, such as no file fields, or `formula` is missing | `ConfigurationError`, from `operation()` | Nothing was sent |
 | `fields` or `field_descriptions` names a field the client can't see, or that the operation doesn't offer | `UnknownFieldError`, from `operation()` | Nothing was sent |
-| An argument the schema doesn't allow, such as an unknown key or field, or a `limit` too high | `QueryError`, from `run()` | Nothing was sent |
+| An argument the schema doesn't allow, such as an unknown key or field, or a `limit` too high | `InvalidQueryError`, from `run()` | Nothing was sent |
 | A value that can't be written, such as `today` for a date | `InvalidValueError`, from `run()` | Nothing was sent |
-| A record named isn't in the scope, or doesn't exist | `QueryError`, from `run()` | Only the query that checks the scope |
-| A write sets a field the scope uses, or `insert` has a scope it can't fill in | `QueryError`, from `run()` | Nothing was sent |
-| A delete matches more than `max_records_per_call` | `QueryError`, from `run()` | Only the query that counts it |
+| A record named isn't in the scope, or doesn't exist | `InvalidQueryError`, from `run()` | Only the query that checks the scope |
+| A write sets a field the scope uses, or `insert` has a scope it can't fill in | `InvalidQueryError`, from `run()` | Nothing was sent |
+| A delete matches more than `max_records_per_call` | `InvalidQueryError`, from `run()` | Only the query that counts it |
 | Anything the table method raises | The same exception | As that method says |
 
 Return each one with `tool_error()`. Its message says where the mistake is, and doesn't repeat the values

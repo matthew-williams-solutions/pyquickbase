@@ -55,7 +55,7 @@ writing `null` to a field does nothing. This SDK turns those into errors or corr
 |---|---|
 | Numeric field IDs everywhere | Field labels and table names, or IDs if you prefer |
 | `{7.EX.'Done'}AND{9.BF.'today'}` | `(F("Status") == "Done") & (F("Due Date") < date.today())` |
-| Broken queries return plausible results | Broken queries raise `QueryError` before sending |
+| Broken queries return plausible results | Broken queries raise `InvalidQueryError` before sending |
 | Manual `skip` and `top` paging | `for record in table.query(...)` |
 | Rows like `{"7": {"value": "Done"}}` | `record["Status"]`, with real `date` and `datetime` values |
 | Failed rows inside a successful response | `WriteError`, listing what failed and what was written |
@@ -88,8 +88,8 @@ try:
     tasks.insert(rows)
 except WriteError as error:
     print("Saved:", error.result.created_ids)
-    for failed in error.result.errors:
-        print("Failed:", rows[failed.index]["Title"], "-", *failed.messages)
+    for failed in error.result.failed_rows:
+        print("Failed:", rows[failed.row_index]["Title"], "-", *failed.messages)
 ```
 
 ```text

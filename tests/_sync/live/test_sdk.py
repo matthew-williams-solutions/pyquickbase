@@ -15,18 +15,18 @@ from pyquickbase import (
     F,
     FileUpload,
     FormulaResult,
+    InvalidQueryError,
     NotFoundError,
-    Page,
     Period,
     Policy,
     PolicyRefusedError,
-    QueryError,
     Quickbase,
     Record,
+    RecordPage,
     RetryPolicy,
     SchemaMismatchError,
+    SummaryTooLargeError,
     TableInfo,
-    TooManyRecordsError,
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
@@ -96,7 +96,7 @@ def test_client_and_app_details(qb: Quickbase, scratch: Any, table_id: str) -> N
     tables = app.tables()
     assert all(isinstance(item, TableInfo) for item in tables)
     assert table_id in {item.id for item in tables}
-    qb.clear_schema_cache()
+    qb.clear_metadata_cache()
     assert table_id in {item.id for item in app.tables(refresh=True)}
 
 
@@ -318,9 +318,9 @@ def test_a_value_quickbase_would_read_as_syntax_is_refused(
     qb: Quickbase, scratch: Any, seeded: str, value: str
 ) -> None:
     table = get(qb, scratch, seeded)
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         table.count(F("Title") == value)
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         table.delete(F("Title") == value)
     assert table.count() == 5
 
@@ -355,7 +355,7 @@ def test_created_ids_line_up_with_rows(qb: Quickbase, scratch: Any, seeded: str)
 def test_mistakes_in_where_strings_are_refused(qb: Quickbase, scratch: Any, seeded: str) -> None:
     table = get(qb, scratch, seeded)
     for where in ("{7.ex.'C1'}", "{7.NOPE.'C1'}", "{999.EX.'C1'}", "{7.EX.'C1'}AND", "nonsense"):
-        with pytest.raises(QueryError):
+        with pytest.raises(InvalidQueryError):
             table.count(where)
     assert [c.field_id for c in parse_where("{7.EX.'C1'}", table.fields())] == [7]
 
@@ -366,7 +366,7 @@ def test_paging_and_sorting(qb: Quickbase, scratch: Any, seeded: str) -> None:
     assert descending == ["C5", "C4", "C3", "C2", "C1"]
     assert len([r for r in table.query(max_total=3, page_size=2)]) == 3
     page = table.query_page(select=["Code"], order_by="Code", limit=2, skip=2)
-    assert isinstance(page, Page)
+    assert isinstance(page, RecordPage)
     assert (page.total, page.skip, page.next_skip, page.has_more) == (5, 2, 4, True)
     assert [r["Code"] for r in page.records] == ["C3", "C4"]
     last = table.query_page(limit=2, skip=4)
@@ -397,7 +397,7 @@ def test_a_row_failure_keeps_the_other_rows(qb: Quickbase, scratch: Any, seeded:
             ]
         )
     result = caught.value.result
-    assert [error.index for error in result.errors] == [0]
+    assert [error.index for error in result.failed_rows] == [0]
     assert len(result.updated_ids) == 1
     assert (one(table, "C1", "Title"))["Title"] == "Written"
     assert table.count() == 5
@@ -538,7 +538,7 @@ def test_custom_http_client_and_retry_settings(scratch: Any, seeded: str) -> Non
             http_client=http,
             retry=RetryPolicy(max_retries=1),
             user_agent="live-test/1",
-            schema_ttl=0,
+            metadata_cache_seconds=0,
         ) as qb:
             assert get(qb, scratch, seeded).count() == 5
     assert seen
@@ -610,8 +610,8 @@ def test_setup_methods_create_once_and_read_back_exactly(qb: Quickbase, scratch:
     child.insert([{"Code": "a", "Parent": created.created_ids[0], "Hours": 2}])
     with pytest.raises(WriteError) as caught:
         child.insert([{"Code": "a"}])
-    assert caught.value.result.errors[0].reason == "duplicate"
-    assert caught.value.result.errors[0].field_id == field.id
+    assert caught.value.result.failed_rows[0].reason == "duplicate"
+    assert caught.value.result.failed_rows[0].field_id == field.id
 
     assert any(role.access for role in app.roles())
 
@@ -868,7 +868,10 @@ def test_summarize_matches_the_records(qb: Quickbase, scratch: Any, seeded: str)
     assert [(row.group["Due Date"], row.count) for row in by_month] == [("2027-01", 5), (None, 1)]
 
     west = timezone(timedelta(hours=-5))
-    by_day = table.summarize(Period("Started", "day", tz=west), where=F("Done") == True)  # noqa: E712
+    by_day = table.summarize(
+        Period("Started", "day", time_zone=west),
+        where=F("Done") == True,  # noqa: E712
+    )
     assert [row.group["Started"] for row in by_day] == ["2027-03-03"]
 
     filtered = table.summarize(
@@ -878,7 +881,7 @@ def test_summarize_matches_the_records(qb: Quickbase, scratch: Any, seeded: str)
 
     # A count reads no records, so max_records_scanned doesn't limit it. Anything else it does.
     assert (table.summarize(max_records_scanned=1))[0].count == 7
-    with pytest.raises(TooManyRecordsError) as caught:
+    with pytest.raises(SummaryTooLargeError) as caught:
         table.summarize(sum="Amount", max_records_scanned=6)
     assert (caught.value.matched, caught.value.limit) == (7, 6)
     assert (table.summarize(sum="Amount", max_records_scanned=7))[0].count == 7
@@ -894,17 +897,17 @@ def test_summary_and_chart_reports_read_as_rows(qb: Quickbase, scratch: Any) -> 
     if not {"API Summary Test", "API Chart Test"} <= reports:
         pytest.skip("This needs the reports described in CONTRIBUTING.md.")
 
-    summary = table.report("API Summary Test").summary_rows()
+    summary = table.report("API Summary Test").run_summary()
     assert summary == [
         {"Task Name": "Book room", "Field Type Sample (tot)": 1, "Field Type Sample (avg)": 1},
         {"Task Name": "Prepare agenda", "Field Type Sample (tot)": 1, "Field Type Sample (avg)": 1},
     ]
-    chart = table.report("API Chart Test").summary_rows()
+    chart = table.report("API Chart Test").run_summary()
     assert chart == [
         {"Task Name": "Book room", "Field Type Sample (tot)": 1},
         {"Task Name": "Prepare agenda", "Field Type Sample (tot)": 1},
     ]
-    assert table.report("API Summary Test").summary_rows(page_size=1, max_total=1) == summary[:1]
-    assert table.report("API Chart Test").summary_rows(page_size=1) == chart
-    with pytest.raises(UnsupportedReportError, match="summary_rows"):
+    assert table.report("API Summary Test").run_summary(page_size=1, max_total=1) == summary[:1]
+    assert table.report("API Chart Test").run_summary(page_size=1) == chart
+    with pytest.raises(UnsupportedReportError, match="run_summary"):
         table.report("API Summary Test").run_page()

@@ -12,7 +12,7 @@ from pyquickbase import (
     InvalidValueError,
     PermissionDeniedError,
     WriteError,
-    WritePermissionError,
+    WritePermissionDeniedError,
 )
 from pyquickbase._writes import row_error
 
@@ -81,7 +81,7 @@ async def test_a_403_raises_a_permission_error_that_is_also_a_write_error() -> N
         return httpx.Response(403, json=FORBIDDEN, headers={"qb-api-ray": "ray-1"})
 
     async with client_for(handler) as qb:
-        with pytest.raises(WritePermissionError) as caught:
+        with pytest.raises(WritePermissionDeniedError) as caught:
             await qb.app(APP).table("Tasks").insert([{"Title": "x"}])
     error = caught.value
     assert isinstance(error, WriteError)
@@ -96,10 +96,10 @@ async def test_permission_row_errors_raise_the_same_error() -> None:
         return write_response({"1": ["You don't have permission to add records to this table."]})
 
     async with client_for(handler) as qb:
-        with pytest.raises(WritePermissionError) as caught:
+        with pytest.raises(WritePermissionDeniedError) as caught:
             await qb.app(APP).table("Tasks").insert([{"Title": "x"}])
     assert caught.value.status_code == 207
-    assert caught.value.result.errors[0].reason == "permission"
+    assert caught.value.result.failed_rows[0].reason == "permission"
 
 
 async def test_other_row_errors_stay_a_plain_write_error() -> None:
@@ -110,8 +110,8 @@ async def test_other_row_errors_stay_a_plain_write_error() -> None:
         with pytest.raises(WriteError) as caught:
             await qb.app(APP).table("Tasks").insert([{"Title": "x"}])
     assert not isinstance(caught.value, PermissionDeniedError)
-    assert caught.value.result.errors[0].reason == "duplicate"
-    assert caught.value.result.errors[0].field_id == 8
+    assert caught.value.result.failed_rows[0].reason == "duplicate"
+    assert caught.value.result.failed_rows[0].field_id == 8
 
 
 async def test_mixed_row_errors_are_a_plain_write_error() -> None:
@@ -127,7 +127,7 @@ async def test_mixed_row_errors_are_a_plain_write_error() -> None:
         with pytest.raises(WriteError) as caught:
             await qb.app(APP).table("Tasks").insert([{"Title": "x"}, {"Title": "y"}])
     assert not isinstance(caught.value, PermissionDeniedError)
-    assert [e.reason for e in caught.value.result.errors] == ["permission", "duplicate"]
+    assert [e.reason for e in caught.value.result.failed_rows] == ["permission", "duplicate"]
 
 
 async def test_a_403_on_a_later_batch_keeps_the_earlier_results() -> None:
@@ -151,7 +151,7 @@ async def test_a_403_on_a_later_batch_keeps_the_earlier_results() -> None:
         return httpx.Response(403, json=FORBIDDEN)
 
     async with client_for(handler) as qb:
-        with pytest.raises(WritePermissionError, match="stopped at row 1") as caught:
+        with pytest.raises(WritePermissionDeniedError, match="stopped at row 1") as caught:
             await qb.app(APP).table("Tasks").insert([{"Title": "a"}, {"Title": "b"}], batch_size=1)
     assert caught.value.result.created_ids == (1,)
 

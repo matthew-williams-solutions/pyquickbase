@@ -140,7 +140,7 @@ def test_the_version_is_stated() -> None:
 
 def test_the_reference_holds_real_signatures_and_docstrings() -> None:
     assert "## API reference: Table" in FULL
-    assert "query(\n    *,\n    where: Expression | str | None = None" in FULL
+    assert "query(\n    *,\n    where: WhereExpression | str | None = None" in FULL
     assert "Stop after this many records in all, across pages." in FULL
     assert "What the client may do, as a [`BoundPolicy`]" in FULL
     assert "`Quickbase.realm`" in FULL
@@ -238,7 +238,7 @@ def test_an_unreadable_nav_stops_the_build() -> None:
 
 
 def test_a_page_without_a_description_stops_the_build() -> None:
-    page = build_llms.Page("New", "guides/new.md", "Guides")
+    page = build_llms.RecordPage("New", "guides/new.md", "Guides")
     config = CONFIG._replace(pages=[*CONFIG.pages, page])
     with pytest.raises(SystemExit, match=r"guides/new\.md"):
         build_llms.build_index(config)
@@ -261,5 +261,5 @@ def test_the_overview_needs_no_generated_files(
 ) -> None:
     """CI builds llms.txt before the reference, so the overview can't be read from disk."""
     monkeypatch.setattr(build_llms, "DOCS", tmp_path)
-    page = build_llms.Page("Overview", build_llms.OVERVIEW, "Reference")
+    page = build_llms.RecordPage("Overview", build_llms.OVERVIEW, "Reference")
     assert "Every public name" in build_llms.convert_page(page, SITE)

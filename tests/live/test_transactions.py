@@ -51,7 +51,7 @@ def test_insert_refuses_a_repeated_event(ledger: Any) -> None:
     ledger.insert(event)
     with pytest.raises(WriteError) as caught:
         ledger.insert(event)
-    assert len(caught.value.result.errors) == 1
+    assert len(caught.value.result.failed_rows) == 1
     assert ledger.count() == 1
 
 

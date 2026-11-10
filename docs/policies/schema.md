@@ -4,14 +4,14 @@
 
 | Verb | What it allows | Granted on |
 |---|---|---|
-| `add_field` | Adding fields, of `field_types=[...]` if given | The table |
-| `change_field`, `delete_field` | Changing or deleting the fields in `fields=`, or every field | The table |
-| `formula` | Making or changing a formula, with `add_field` or `change_field` | The table |
+| `create_field` | Adding fields, of `field_types=[...]` if given | The table |
+| `update_field`, `delete_field` | Changing or deleting the fields in `fields=`, or every field | The table |
+| `formula` | Making or changing a formula, with `create_field` or `update_field` | The table |
 | `lookup` | Adding a lookup, which also needs `read` on the parent's field | The child |
 | `summary` | Adding a summary, which also needs `read` on the child's field, and `filter` on every field its filter uses | The parent |
 | `link`, `unlink` | Making or deleting a relationship | **Both tables**, as Quickbase adds a link field and an "Add" record formula to the parent. `unlink` also needs `delete_field` wherever its lookups and summaries are |
-| `change_table`, `delete_table` | Renaming the table, or deleting it and its records | The table |
-| `set_key` | Changing which field is the table's key, with a `SetKeyField` change | The table |
+| `update_table`, `delete_table` | Renaming the table, or deleting it and its records | The table |
+| `set_key_field` | Changing which field is the table's key, with a `SetKeyField` change | The table |
 
 For a relationship, the grant goes where the new field appears:
 

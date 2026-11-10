@@ -82,9 +82,9 @@ def preview_delete_tasks(project: str, where: dict) -> dict:
 The delete preview's `page.total` is how many tasks the delete would remove. Add `tool_error()` as in
 [Returning results to a model](results.md#returning-results-to-a-model) to return a refusal too.
 
-Both previews' results also have `events`: the table's active webhooks, Quickbase actions, email
+Both previews' results also have `triggers`: the table's active webhooks, Quickbase actions, email
 notifications, and automations, which the change may set off, with a warning when there are any. Show
-these to the person too, as a change can send email or reach other systems. `events` is `null` when the
+these to the person too, as a change can send email or reach other systems. `triggers` is `null` when the
 token can't read them, which needs an app administrator.
 
 The values in a preview are record data, so treat them as [untrusted](results.md#reading-results), and only return
@@ -107,14 +107,14 @@ policy = Policy(
         allow.read("Tasks"),
         allow.schema(
             "Tasks",
-            "add_field",
-            "change_field",
+            "create_field",
+            "update_field",
             "formula",
             field_types=["text", "numeric", "date", "checkbox", "text-multiple-choice"],
         ),
         allow.create_tables(),
         allow.read(tables.created()),
-        allow.schema(tables.created(), "add_field", "change_field", "delete_field"),
+        allow.schema(tables.created(), "create_field", "update_field", "delete_field"),
     ]
 )
 async with AsyncQuickbase.from_env() as setup:
@@ -151,7 +151,7 @@ as `SUM` or `STD-DEV`, or words like `total` and `average`. The result lists eac
   text, which act as whoever clicks them. A field's formula is only shown when everything it uses is
   readable, and a summary's filter when every field it uses is readable on the child.
 - **A plan says what the policy would do with each change,** in its `policy_effects`: who could read
-  and write a new field, the classes a new formula, lookup, or summary would get, and which rules lose
+  and write a new field, the tags a new formula, lookup, or summary would get, and which rules lose
   a deleted field or table. A deletion that would leave a rule matching nothing is a blocker, and so
   is a label a field the client can't see already uses.
 - **Tables the client creates are covered by `tables.created()`.** Creating one gives the client a
@@ -163,8 +163,8 @@ as `SUM` or `STD-DEV`, or words like `total` and `average`. The result lists eac
   processes the same `confirmation_key`, and the same bound policy, if a plan may be applied by
   another one.
 
-A plan's `tool_result()` has `plan.changes`, each with its `summary`, `risk`, `settings`, `warnings`,
-`blockers`, any `policy_effects`, and a `link` to check it in Quickbase, then `blockers`, `warnings`, `confirmation`, and
+A plan's `tool_result()` has `plan.changes`, each with its `description`, `risk`, `settings`, `warnings`,
+`blockers`, any `policy_effects`, and a `url` to check it in Quickbase, then `blockers`, `warnings`, `confirmation`, and
 `expires_at`. Show the person the summaries and warnings, and send `apply_schema_changes` the same changes with
 the confirmation once they approve. It makes sure a plan happened, not that a person saw it, so ask
 your client to show each change for approval too.
@@ -177,9 +177,9 @@ your client to show each change for approval too.
 | Operation | The model sends | Returns |
 |---|---|---|
 | `list_code_pages` | Nothing | A list of `CodePageInfo` |
-| `read_code_page` | `page`, by name or ID | `CodePageContent` |
-| `preview_code_page_change` | `page`, `text` | `CodePagePreview`, with a diff and a `confirmation` |
-| `apply_code_page_change` | `page`, `text`, `confirmation` | `CodePageWrite`, with what the page held before |
+| `read_code_page` | `code_page`, by name or ID | `CodePageContent` |
+| `preview_code_page_change` | `code_page`, `text` | `CodePagePreview`, with a diff and a `confirmation` |
+| `apply_code_page_change` | `code_page`, `text`, `confirmation` | `CodePageWriteResult`, with what the page held before |
 
 A write only runs with the confirmation its preview returned, for exactly that page and text, within 15 minutes, while
 the page is as it was. Show the person the preview before they approve it.
@@ -201,8 +201,8 @@ try:
     result = tasks.insert(rows)
 except WriteError as error:
     print("Written:", error.result.created_ids)
-    for failed in error.result.errors:
-        print("Failed:", rows[failed.index], failed.messages)
+    for failed in error.result.failed_rows:
+        print("Failed:", rows[failed.row_index], failed.messages)
 ```
 
 Rate limits, connection failures, and reads that timed out are retried for you. A write that timed out
@@ -211,7 +211,7 @@ may already have applied, so an agent should check the data before trying again.
 
 | Exception | What it means for a write |
 |---|---|
-| [Mistakes caught before sending](../guides/errors.md#mistakes-caught-before-sending), such as `QueryError`, `InvalidValueError`, and `PolicyRefusedError` | This request wasn't sent |
+| [Mistakes caught before sending](../guides/errors.md#mistakes-caught-before-sending), such as `InvalidQueryError`, `InvalidValueError`, and `PolicyRefusedError` | This request wasn't sent |
 | `WriteError` | Some rows may have been written. If a large write stopped at a later batch, `result` covers only the earlier batches, `errors` can be empty, and the failed batch may have been written |
 | `NetworkError`, `RequestTimeoutError`, `ServerError`, `InvalidResponseError` | Unknown, so check the data first |
 | Other `APIError`s, such as `BadRequestError` | Quickbase answered with an error, so fix the cause rather than repeating the request |

@@ -35,7 +35,8 @@ class PolicyRefusedError(QuickbaseError):
     it didn't exist.
 
     Attributes:
-        decision: The `Decision`, with the rule, the reason, and the tables and fields involved.
+        decision: The `PolicyDecision`, with the rule, the reason, and the tables and fields
+            involved.
     """
 
     def __init__(self, decision: Any) -> None:
@@ -50,11 +51,11 @@ class CodePageChangedError(QuickbaseError):
     """
 
 
-class QueryError(QuickbaseError, ValueError):
+class InvalidQueryError(QuickbaseError, ValueError):
     """A query can't be sent as written, so it wasn't sent to Quickbase."""
 
 
-class TooManyRecordsError(QueryError):
+class SummaryTooLargeError(InvalidQueryError):
     """More records match a summary than its `max_records_scanned` lets it read. None were read.
 
     A summary that only counts reads no records, so this is raised only for one that groups,
@@ -78,7 +79,7 @@ class TooManyRecordsError(QueryError):
         return (type(self), (self.matched, self.limit))
 
 
-class ConfirmationError(QuickbaseError):
+class InvalidConfirmationError(QuickbaseError):
     """A change needs the confirmation its preview or plan returned, and this one is missing,
     expired, or for something else. Nothing was changed. Preview or plan again, and show the
     person the result."""
@@ -219,7 +220,7 @@ class NotFoundError(APIError):
     """404: what was asked for doesn't exist. An app that doesn't exist is a 401 instead."""
 
 
-class UnsupportedOperationError(APIError):
+class NoLongerAvailableError(APIError):
     """Quickbase says this operation doesn't exist.
 
     The methods that use Quickbase's older API raise it if Quickbase retires the call behind them.
@@ -242,7 +243,7 @@ class ServerError(APIError):
     """5xx: Quickbase failed to process the request."""
 
 
-class WritePermissionError(WriteError, PermissionDeniedError):
+class WritePermissionDeniedError(WriteError, PermissionDeniedError):
     """A write was refused because of the token's role, so nothing in the failed rows changed.
 
     Quickbase refuses some writes with a 403, and reports others as row errors in a successful

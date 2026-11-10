@@ -154,10 +154,10 @@ print(preview.unchanged_ids, preview.missing_ids)
 
 | Attribute | What it holds |
 |---|---|
-| `changes` | The records that would change, each with `{field label: FieldChange}`, which has `before` and `after` |
+| `changes` | The records that would change, each with `{field label: ValueChange}`, which has `before` and `after` |
 | `unchanged_ids` | The records that already hold these values |
 | `missing_ids` | The records that don't exist, or that the token can't see |
-| `events` | Active webhooks, Quickbase actions, email notifications, and automations on the table, which the update may set off |
+| `triggers` | Active webhooks, Quickbase actions, email notifications, and automations on the table, which the update may set off |
 
 An empty field reads as `None` in both `before` and `after`. A file field shows the file's name, and leaves
 out its contents and who uploaded it. If a record is in several rows, a later row wins, as it would in
@@ -175,16 +175,16 @@ print(page.total, [task["Title"] for task in page.records])
 ```
 
 Both previews list the table's active webhooks, Quickbase actions, email notifications, and
-record-triggered automations in `events`, because changing records may set them off. Quickbase doesn't
-say which changes set each one off, so some may not run. `events` is `None` when they couldn't be read,
+record-triggered automations in `triggers`, because changing records may set them off. Quickbase doesn't
+say which changes set each one off, so some may not run. `triggers` is `None` when they couldn't be read,
 such as when the token isn't an app administrator's.
 
 ```python
 from pyquickbase import F
 
 preview = tasks.preview_delete(F("Status") == "Cancelled")
-for event in preview.events or ():
-    print(event.type, event.name or event.url)
+for trigger in preview.triggers or ():
+    print(trigger.type, trigger.name or trigger.url)
 ```
 
 A preview can't promise what the write will do:
@@ -205,13 +205,13 @@ A preview can't promise what the write will do:
 | `created_ids` | Record IDs of new records |
 | `updated_ids` | Record IDs of records that changed |
 | `unchanged_ids` | Record IDs of records whose values were already the same |
-| `errors` | The rows that failed. This is only ever set on `WriteError.result`, because a failure raises |
+| `failed_rows` | The rows that failed. This is only ever set on `WriteError.result`, because a failure raises |
 | `row_ids` | For `insert()`, each row's new Record ID#, or None for a row that failed |
 
 ## When rows fail
 
 Quickbase writes the rows it can and reports the rest, so a `WriteError` doesn't mean nothing
-changed. Its `result` lists both what was written and what failed, and `index` is the row's position
+changed. Its `result` lists both what was written and what failed, and `row_index` is the row's position
 in the list you passed. When a later batch of a large write fails, the error's `__cause__` is that
 batch's own error, such as a `RateLimitError`.
 
@@ -223,8 +223,8 @@ try:
 except WriteError as error:
     for row, record_id in zip(rows, error.result.row_ids):
         print(row, record_id)  # None for a row that failed
-    for failed in error.result.errors:
-        print(rows[failed.index], failed.messages)
+    for failed in error.result.failed_rows:
+        print(rows[failed.row_index], failed.messages)
 ```
 
 `reason` says why a row failed, without you having to read Quickbase's wording, which can change:
@@ -244,11 +244,11 @@ change:
 try:
     movements.insert([{"Key": "order-7", "Quantity": -1}])
 except WriteError as error:
-    if any(failed.reason != "duplicate" for failed in error.result.errors):
+    if any(failed.reason != "duplicate" for failed in error.result.failed_rows):
         raise
 ```
 
-A write refused by the role raises `WritePermissionError`, whichever way Quickbase reported it. See
+A write refused by the role raises `WritePermissionDeniedError`, whichever way Quickbase reported it. See
 [Errors](errors.md#refused-writes). **An upsert that matches an existing record needs permission to
 modify**, so a role that can only add gets a refusal when a write is repeated.
 
@@ -276,7 +276,7 @@ flowchart TD
 
 A write that times out, or gets a 502, 503, or 504, isn't retried, because Quickbase may already have
 applied it. If batch 1 fails, its own error is raised, such as `RateLimitError`, except a 403, which is
-still a `WritePermissionError`.
+still a `WritePermissionDeniedError`.
 
 ## When something is refused
 
@@ -286,17 +286,17 @@ still a `WritePermissionError`.
 | A row leaves out the `merge_on` field in `upsert()` | `InvalidValueError` | Nothing was sent |
 | A row can't be sent in `preview_update()`, for the same reasons as `update()` | `InvalidValueError` | Nothing was read |
 | `Record ID#` in `preview_update()` isn't a positive integer | `InvalidValueError` | Nothing was read |
-| `preview_delete()` with a `where` that's None or can't be sent as written | `QueryError` | Nothing was read |
+| `preview_delete()` with a `where` that's None or can't be sent as written | `InvalidQueryError` | Nothing was read |
 | A row has no real values in `insert()` or `upsert()` | `InvalidValueError` | Nothing was sent |
 | `insert()` on a table whose key field isn't `Record ID#` | `InvalidValueError` | Nothing was sent |
 | A value that can't be written, such as a `datetime` without a timezone | `InvalidValueError` | Nothing was sent |
 | A row names a field the table doesn't have, or the token can't see | `UnknownFieldError` | Nothing was sent |
-| `batch_size` below 1, or a `delete()` condition that can't be sent as written | `QueryError` | Nothing was sent |
+| `batch_size` below 1, or a `delete()` condition that can't be sent as written | `InvalidQueryError` | Nothing was sent |
 | The client is read-only, or its [policy](../policies/index.md) doesn't allow this write | `PolicyRefusedError` | Nothing was sent, unless it's a later batch, below |
 | `merge_on` isn't a unique field | `BadRequestError` | Nothing was written |
 | Some rows failed, such as a duplicate or a formula field | `WriteError` | **The other rows were written** |
 | A later batch failed outright, or a [rule of your own](../policies/custom-rules.md) refused it | `WriteError` | **Earlier batches were written** |
-| The role refused the write | `WritePermissionError` | Check `error.result` for earlier rows |
+| The role refused the write | `WritePermissionDeniedError` | Check `error.result` for earlier rows |
 | The request timed out | `RequestTimeoutError` | **It may have been applied.** It isn't retried |
 
 See [Handling errors](errors.md) for how these exceptions relate.

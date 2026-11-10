@@ -41,7 +41,7 @@ def test_a_csv_with_text_values_is_written_exactly(qb: Quickbase, scratch: Any) 
         "Frame walls,,0.5,,,no,,\n"
     )
     rows = tasks.rows_from_file(text)
-    assert rows.ok, rows.errors
+    assert rows.ok, rows.failed_rows
     result = tasks.insert(rows)
     first = tasks.get(result.created_ids[0], select=[*SELECT, "Who"])
     assert first is not None
@@ -83,7 +83,7 @@ def test_an_export_reads_back_without_a_change(
     written = records.to_csv(path) if suffix == "csv" else records.to_excel(path)
     assert written == 2
     rows = tasks.rows_from_file(path)
-    assert rows.ok, rows.errors
+    assert rows.ok, rows.failed_rows
     preview = tasks.preview_update(rows)
     assert preview.changes == ()
     assert len(preview.unchanged_ids) == 2

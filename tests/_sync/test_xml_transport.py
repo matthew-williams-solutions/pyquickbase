@@ -306,8 +306,8 @@ def test_members_are_listed_with_their_roles() -> None:
         ("user", "Jordan Rivera"),
         ("group", "Crew Leads"),
     ]
-    assert members[0].last_access is not None
-    assert members[1].last_access is None
+    assert members[0].last_accessed_at is not None
+    assert members[1].last_accessed_at is None
     assert [role.name for role in members[0].roles] == ["Administrator"]
     assert members[1].roles == ()
 

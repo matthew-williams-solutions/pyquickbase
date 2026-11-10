@@ -34,7 +34,7 @@ WriteAction = Literal[
     "copy_app",
     "delete_app",
     "write_code_page",
-    "change_role_assignments",
+    "write_role_assignments",
     "set_key_field",
     "other",
 ]
@@ -81,7 +81,7 @@ class WriteRequest:
             `delete_field`, `create_relationship`, `update_relationship`, and
             `delete_relationship` change the schema. `update_relationship` adds lookup or summary
             fields. `write_code_page` creates or replaces a code page, which only
-            `allow.code_pages(write=True)` permits. `change_role_assignments` gives or takes away a
+            `allow.code_pages(write=True)` permits. `write_role_assignments` gives or takes away a
             role, which no policy can allow. `set_key_field` changes a table's key field. `other`
             is any other write.
         table_id: The table it writes to. For a relationship, the child table.
@@ -207,7 +207,7 @@ def describe_write(
     trustees = _TRUSTEES_PATH.fullmatch(path)
     if trustees and method in ("POST", "PATCH", "DELETE"):
         return WriteRequest(
-            action="change_role_assignments",
+            action="write_role_assignments",
             table_id=None,
             field_ids=None,
             row_count=None,

@@ -8,7 +8,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from pyquickbase import FieldChange, InvalidValueError, RecordChange, UpdatePreview, User
+from pyquickbase import InvalidValueError, RecordChange, UpdatePreview, User, ValueChange
 from pyquickbase._models import FieldIndex, Record, field_from_api, file_from_api
 from pyquickbase._preview import build_update_preview, id_batches, is_same, merge_rows
 
@@ -172,7 +172,7 @@ def test_a_preview_sorts_records_into_what_would_happen() -> None:
     current = {1: record(Title="old", Hours=5), 2: record(Title="same"), 4: record(Title="a")}
     preview = build_update_preview(rows, current, FIELDS)
     assert preview.changes == (
-        RecordChange(record_id=1, fields={"Title": FieldChange(before="old", after="new")}),
+        RecordChange(record_id=1, fields={"Title": ValueChange(before="old", after="new")}),
     )
     assert preview.unchanged_ids == (2, 4)
     assert preview.missing_ids == (3,)
@@ -181,18 +181,18 @@ def test_a_preview_sorts_records_into_what_would_happen() -> None:
 def test_empty_values_read_as_none() -> None:
     preview = build_update_preview({1: {6: "", 7: 5}}, {1: record(Title="old", Hours=None)}, FIELDS)
     fields = preview.changes[0].fields
-    assert fields["Title"] == FieldChange(before="old", after=None)
-    assert fields["Hours"] == FieldChange(before=None, after=5)
+    assert fields["Title"] == ValueChange(before="old", after=None)
+    assert fields["Hours"] == ValueChange(before=None, after=5)
 
 
 def test_clearing_a_checkbox_reads_as_false() -> None:
     preview = build_update_preview({1: {8: ""}}, {1: record(Done=True)}, FIELDS)
-    assert preview.changes[0].fields["Done"] == FieldChange(before=True, after=False)
+    assert preview.changes[0].fields["Done"] == ValueChange(before=True, after=False)
 
 
 def test_a_field_the_response_left_out_counts_as_a_change() -> None:
     preview = build_update_preview({1: {6: "new"}}, {1: record(Hours=1)}, FIELDS)
-    assert preview.changes[0].fields["Title"] == FieldChange(before=None, after="new")
+    assert preview.changes[0].fields["Title"] == ValueChange(before=None, after="new")
 
 
 def test_a_file_shows_only_its_name() -> None:
@@ -216,7 +216,7 @@ def test_a_file_shows_only_its_name() -> None:
     written = {"fileName": "up.txt", "data": "czNjcmV0"}
     preview = build_update_preview({1: {13: written}}, {1: record(Attachment=stored)}, FIELDS)
     change = preview.changes[0].fields["Attachment"]
-    assert change == FieldChange(before="new.txt", after="up.txt")
+    assert change == ValueChange(before="new.txt", after="up.txt")
     assert "s3cret" not in str(change.before)
     assert "czNjcmV0" not in str(change.after)
 
@@ -232,7 +232,7 @@ def test_a_file_field_with_nothing_usable_reads_as_none(stored: Any) -> None:
 
 
 def test_reprs_never_show_values() -> None:
-    change = FieldChange(before="s3cret-before", after="s3cret-after")
+    change = ValueChange(before="s3cret-before", after="s3cret-after")
     preview = UpdatePreview(changes=(RecordChange(record_id=1, fields={"Title": change}),))
     for text in (repr(change), repr(preview), repr(preview.changes[0])):
         assert "s3cret" not in text

@@ -49,7 +49,7 @@ TITLES: dict[str, dict[str, str]] = {
         "create_app": "Create an app",
         "realm": "The client's realm",
         "policy": "The client's policy",
-        "clear_schema_cache": "Clear the metadata cache",
+        "clear_metadata_cache": "Clear the metadata cache",
         "request": "Call any endpoint",
     },
     "app": {
@@ -61,10 +61,10 @@ TITLES: dict[str, dict[str, str]] = {
         "code_pages": "List code pages",
         "code_page": "Get a code page",
         "member_roles": "List a member's roles",
-        "add_role_assignments": "Give roles",
-        "remove_role_assignments": "Take away roles",
-        "change_role_assignments": "Move members between roles",
-        "events": "List webhooks and automations",
+        "create_role_assignments": "Give roles",
+        "delete_role_assignments": "Take away roles",
+        "update_role_assignments": "Move members between roles",
+        "triggers": "List webhooks and automations",
         "table": "Get a table",
         "url": "Link to the app",
         "settings_url": "Link to the app's settings",
@@ -72,37 +72,32 @@ TITLES: dict[str, dict[str, str]] = {
         "create_table": "Create a table",
         "preview_schema_changes": "Preview schema changes",
         "apply_schema_changes": "Apply schema changes",
-        "operation": "Make a schema tool for a model",
+        "operation": "Make an app tool for a model",
         "copy": "Copy the app",
         "drop": "Delete the app",
     },
     "report": {
         "run": "Run a report",
         "run_page": "Fetch one page of a report",
-        "summary_rows": "Get a summary report's rows",
+        "run_summary": "Get a summary report's rows",
         "info": "Get the report's details",
         "url": "Link to the report",
     },
-    "operation": {
-        "schema": "The arguments' JSON Schema",
+    "table-operation": {
+        "input_schema": "The arguments' JSON Schema",
         "name": "The operation's name",
-        "run": "Run an operation",
+        "run": "Run a table operation",
     },
     "code-page": {
         "read": "Read the page",
-        "preview_write": "Preview a change",
+        "preview_change": "Preview a change",
         "write": "Write the page",
         "url": "Link to the page",
     },
-    "code-page-operation": {
-        "schema": "The arguments' JSON Schema",
+    "app-operation": {
+        "input_schema": "The arguments' JSON Schema",
         "name": "The operation's name",
-        "run": "Run a code page operation",
-    },
-    "schema-operation": {
-        "schema": "The arguments' JSON Schema",
-        "name": "The operation's name",
-        "run": "Run a schema operation",
+        "run": "Run an app operation",
     },
     # Pages of public names: a function, or a method of an object, has a title. An object, error, or
     # type keeps its name, as that's how it appears in signatures and tracebacks.
@@ -123,7 +118,7 @@ TITLES: dict[str, dict[str, str]] = {
         "Policy.read_only": "Make a read-only policy",
         "Policy.bind": "Bind to an app",
         "Policy.bind_offline": "Bind without an app",
-        "BoundPolicy.classes_of": "Get a field's classes",
+        "BoundPolicy.tags_of": "Get a field's classes",
         "BoundPolicy.decide": "Decide a request",
         "BoundPolicy.allows": "Check what's allowed",
         "BoundPolicy.explain": "Explain what's allowed",
@@ -132,7 +127,7 @@ TITLES: dict[str, dict[str, str]] = {
         "BoundPolicy.offers": "Get what an operation may offer",
         "BoundPolicy.to_json": "Save a bound policy",
         "BoundPolicy.from_json": "Load a bound policy",
-        "Decision.message": "Get the refusal's message",
+        "PolicyDecision.message": "Get the refusal's message",
     },
     "rules": {
         "allow.filter": "Allow filtering",
@@ -163,11 +158,11 @@ TITLES: dict[str, dict[str, str]] = {
         "limit.rows": "Limit the rows",
         "fields.all": "Select every field",
         "fields.new": "Select new fields",
-        "fields.classed": "Select fields by class",
+        "fields.tagged": "Select fields by class",
         "fields.labeled_like": "Select fields by label",
         "tables.all": "Select every table",
         "tables.created": "Select created tables",
-        "Rule.decide": "Refuse a request",
+        "CustomRule.decide": "Refuse a request",
     },
     "metadata": {
         "FieldUsage.describe": "Describe a field's uses in words",
@@ -177,11 +172,11 @@ TITLES: dict[str, dict[str, str]] = {
         "RecordIterator.to_polars": "Fetch records into polars",
         "RecordIterator.to_csv": "Write records to a CSV file",
         "RecordIterator.to_excel": "Write records to an Excel file",
-        "Page.to_csv": "Write a page to a CSV file",
-        "Page.to_excel": "Write a page to an Excel file",
-        "FileRows.raise_for_errors": "Refuse a file with errors",
-        "Page.to_pandas": "Turn a page into pandas",
-        "Page.to_polars": "Turn a page into polars",
+        "RecordPage.to_csv": "Write a page to a CSV file",
+        "RecordPage.to_excel": "Write a page to an Excel file",
+        "FileRows.raise_for_failures": "Refuse a file with errors",
+        "RecordPage.to_pandas": "Turn a page into pandas",
+        "RecordPage.to_polars": "Turn a page into polars",
         "SummaryRow.statistic": "Get one statistic's values",
     },
     "retries": {
@@ -211,7 +206,7 @@ TITLES: dict[str, dict[str, str]] = {
         "fields": "List fields",
         "relationships": "List relationships",
         "reports": "List reports",
-        "events": "List webhooks and automations",
+        "triggers": "List webhooks and automations",
         "field_usage": "See where fields are used",
         "rows_from_file": "Read rows from a CSV or Excel file",
         "report": "Get a report",
@@ -251,7 +246,7 @@ HAS_PUBLIC_CONSTRUCTOR = {
     "FileUpload",
     "Period",
     "Policy",
-    "Decision",
+    "PolicyDecision",
     "CreateTable",
     "UpdateTable",
     "DeleteTable",
@@ -264,12 +259,12 @@ HAS_PUBLIC_CONSTRUCTOR = {
     "DeleteRelationship",
     "SetKeyField",
     "RoleAssignment",
-    "RoleChange",
+    "RoleAssignmentUpdate",
     "RetryPolicy",
 }
 # Public so that the SDK can call them across modules, and of no use from outside it.
 INTERNAL_METHODS = {
-    "Expression.compile",
+    "WhereExpression.compile",
     "BoundPolicy.readable",
     "BoundPolicy.filterable",
     "BoundPolicy.visible",
@@ -305,26 +300,25 @@ ALIASES = {
     "SchemaChange": (
         "Any one of the changes on this page, as `App.preview_schema_changes()` takes them."
     ),
-    "SchemaAction": (
+    "SchemaChangeAction": (
         "The `action` of a change in the JSON form a model sends, such as `create_field`."
     ),
-    "SummaryFunction": "How `CreateSummaryField` combines a child's values. `count` counts the "
-    "child records.",
-    "Risk": "How much a planned change can lose: `additive` only adds, `modifying` changes what's "
-    "there, and `destructive` deletes data or fields.",
-    "SchemaOperationName": "What `App.operation()` can offer a model.",
-    "CodePageOperationName": "What `App.operation()` can offer a model for code pages.",
+    "SummaryFieldFunction": "How `CreateSummaryField` combines a child's values. `count` "
+    "counts the child records.",
+    "ChangeRisk": "How much a planned change can lose: `additive` only adds, `modifying` changes "
+    "what's there, and `destructive` deletes data or fields.",
+    "AppOperationName": "What `App.operation()` can offer a model.",
     "DerivedKind": "A field whose values come from other fields: a `formula`, a `lookup` of a "
     "parent's field, or a `summary` of a child's. `WriteRequest.derived` lists the ones a write "
     "makes or changes.",
     "ReadAction": "What kind of read a `ReadRequest` is.",
-    "OperationName": "What `Table.operation()` can offer a model, each running the table or "
+    "TableOperationName": "What `Table.operation()` can offer a model, each running the table or "
     "report method of the same name.",
     "ToolErrorCode": "The `code` in what `tool_error()` returns. Codes don't change within 1.x, so "
     "a tool can act on them.",
-    "Verb": "What a policy grants or refuses, such as `read`, `update`, or `lookup`.",
-    "SchemaVerb": "What `allow.schema()` grants on a table, where the change lands.",
-    "Layer": "Which check made a `Decision`: `policy`, `rows`, `derived`, or `confirmation`.",
+    "PolicyVerb": "What a policy grants or refuses, such as `read`, `update`, or `lookup`.",
+    "PolicySchemaVerb": "What `allow.schema()` grants on a table, where the change lands.",
+    "DecisionLayer": "Which check made a `PolicyDecision`: `policy`, `rows`, or `derived`.",
 }
 # What can't be shown happening in an example, and why.
 NO_EXAMPLE = {
@@ -333,14 +327,14 @@ NO_EXAMPLE = {
     "NetworkError": "`RequestTimeoutError` shows catching this",
     "InvalidResponseError": "only Quickbase returning something unexpected raises this",
     "PermissionDeniedError": "this needs a second token with less access",
-    "WritePermissionError": "this needs a second token with less access",
+    "WritePermissionDeniedError": "this needs a second token with less access",
     "RateLimitError": "this needs a real burst of requests",
     "ServerError": "only a failure at Quickbase raises this",
-    "UnsupportedOperationError": "only Quickbase retiring a call raises this",
+    "NoLongerAvailableError": "only Quickbase retiring a call raises this",
 }
 # Shown on the page, but not run by the live tests, because of what it needs.
 NOT_RUN_LIVE = {
-    "report/summary_rows": "A summary report can only be built in the Quickbase interface. "
+    "report/run_summary": "A summary report can only be built in the Quickbase interface. "
     "tests/_async/live/test_sdk.py tests this method.",
     "quickbase/create_app": "It makes a lasting app. tests/_async/live/test_apps.py tests this "
     "method, and deletes what it makes.",
@@ -419,7 +413,6 @@ _LINKS = "Link to the Quickbase interface"
 _TABLE_LINE = 'tasks = qb.app("bq1234567").table("Job Tasks")'
 _PLAN_LINES = '\n    plan = await app.operation("preview_schema_changes")'
 _PAGE_LINE = 'page = qb.app("bq1234567").code_page(\n        "pyquickbase-live-test.html"\n    )'
-_READ_PAGE_LINES = '\n    tool = await app.operation("read_code_page")'
 _CODE_PAGE_WARNING_TEXT = (
     "A code page runs in the browser of whoever opens it, with that person's permissions. A "
     "client's policy controls what the client may do, and has no say in what a page does once "
@@ -452,7 +445,7 @@ RESOURCES = (
                 "Use a client",
                 "use-a-client",
                 _CLIENTS,
-                ("app", "realm", "policy", "clear_schema_cache", "request"),
+                ("app", "realm", "policy", "clear_metadata_cache", "request"),
             ),
             Group("Apps and users", "apps-and-users", _APPS, ("apps", "current_user", "find_user")),
             Group("Create an app", "create-an-app", _APPS, ("create_app",)),
@@ -475,14 +468,14 @@ RESOURCES = (
                 "Look up the app's details",
                 "app-details",
                 _READING,
-                ("id", "info", "tables", "roles", "events"),
+                ("id", "info", "tables", "roles", "triggers"),
             ),
             Group("See who has access", "who-has-access", _APPS, ("members", "member_roles")),
             Group(
                 "Change who has a role",
                 "change-roles",
                 _APPS,
-                ("add_role_assignments", "remove_role_assignments", "change_role_assignments"),
+                ("create_role_assignments", "delete_role_assignments", "update_role_assignments"),
             ),
             Group("Work with code pages", "code-pages", _CODE_PAGES, ("code_pages", "code_page")),
             Group("Get a table", "get-a-table", _READING, ("table",)),
@@ -540,7 +533,7 @@ RESOURCES = (
                     "relationships",
                     "reports",
                     "report",
-                    "events",
+                    "triggers",
                     "resolve_field_ids",
                 ),
             ),
@@ -595,12 +588,12 @@ RESOURCES = (
         "`Table.report()`, by name or ID. Getting one doesn't contact Quickbase, so a report that "
         "doesn't exist raises `UnknownReportError` on first use.",
         f"The examples below use `tasks`, made as shown here. Every new table has a report named "
-        f"`List All`. {_LIVE_TEST} The exception is `summary_rows()`, because a summary report can "
+        f"`List All`. {_LIVE_TEST} The exception is `run_summary()`, because a summary report can "
         "only be built in the interface. `AsyncReport` has the same methods, which you `await`, "
         "but `run()` is called without it.",
         *_setup(_TABLE_LINE),
         (
-            Group("Run a report", "run-a-report", _READING, ("run", "run_page", "summary_rows")),
+            Group("Run a report", "run-a-report", _READING, ("run", "run_page", "run_summary")),
             Group("Look up the report's details", "report-details", _READING, ("info",)),
             Group(_LINKS, "links", _AGENTS, ("url",)),
         ),
@@ -618,58 +611,40 @@ RESOURCES = (
         *_setup(_PAGE_LINE),
         (
             Group("Read a page", "read-a-page", _CODE_PAGES, ("read",)),
-            Group("Change a page", "change-a-page", _CODE_PAGES, ("preview_write", "write")),
+            Group("Change a page", "change-a-page", _CODE_PAGES, ("preview_change", "write")),
             Group(_LINKS, "links", _CODE_PAGES, ("url",)),
         ),
     ),
     Resource(
-        "Operation",
-        "operation",
-        pyquickbase.Operation,
-        pyquickbase.AsyncOperation,
-        "An `Operation` is one table operation offered to a model as a tool: a JSON Schema of "
+        "TableOperation",
+        "table-operation",
+        pyquickbase.TableOperation,
+        pyquickbase.AsyncTableOperation,
+        "An `TableOperation` is one table operation offered to a model as a tool: a JSON Schema of "
         "the arguments it may send, and `run()`, which checks them against the same lists before "
         "calling the table. Get one from `Table.operation()`.",
         f"The examples below use `search`, made as shown here. {_JOB_TASKS} {_LIVE_TEST}",
         _setup(_TABLE_LINE)[0] + _SEARCH_LINES.replace("await ", ""),
         _setup(_TABLE_LINE)[1] + _SEARCH_LINES,
         (
-            Group("Describe it to a model", "describe-it", _AGENTS, ("schema", "name")),
+            Group("Describe it to a model", "describe-it", _AGENTS, ("input_schema", "name")),
             Group("Run it", "run-it", _AGENTS, ("run",)),
         ),
     ),
     Resource(
-        "CodePageOperation",
-        "code-page-operation",
-        pyquickbase.CodePageOperation,
-        pyquickbase.AsyncCodePageOperation,
-        "A `CodePageOperation` is one code page operation offered to a model as a tool: "
-        "`list_code_pages`, `read_code_page`, `preview_code_page_change`, or "
-        "`apply_code_page_change`. Get one from `App.operation()`. `apply_code_page_change` only "
-        "runs with the confirmation `preview_code_page_change` returned for the same page and "
-        f"text, while the page is as it was. {_CODE_PAGE_WARNING_TEXT}",
-        f"The examples below use `tool`, made as shown here. {_LIVE_TEST}",
-        _setup('app = qb.app("bq1234567")')[0] + _READ_PAGE_LINES.replace("await ", ""),
-        _setup('app = qb.app("bq1234567")')[1] + _READ_PAGE_LINES,
-        (
-            Group("Describe it to a model", "describe-it", _AGENTS, ("schema", "name")),
-            Group("Run it", "run-it", _AGENTS, ("run",)),
-        ),
-    ),
-    Resource(
-        "SchemaOperation",
-        "schema-operation",
-        pyquickbase.SchemaOperation,
-        pyquickbase.AsyncSchemaOperation,
-        "A `SchemaOperation` is one schema operation offered to a model as a tool: "
-        "`describe_schema`, `preview_schema_changes`, or `apply_schema_changes`. Get one from "
-        "`App.operation()`. `apply_schema_changes` only runs with the confirmation "
-        "`preview_schema_changes` returned for the same changes, while the schema is as it was.",
+        "AppOperation",
+        "app-operation",
+        pyquickbase.AppOperation,
+        pyquickbase.AsyncAppOperation,
+        "An `AppOperation` is one app-wide operation offered to a model as a tool, for schema "
+        "changes or code pages. Get one from `App.operation()`. The `apply_` operations only run "
+        "with the confirmation their preview returned for the same arguments, while the app is as "
+        f"it was. {_CODE_PAGE_WARNING_TEXT}",
         f"The examples below use `plan`, made as shown here. {_JOB_TASKS} {_LIVE_TEST}",
         _setup('app = qb.app("bq1234567")')[0] + _PLAN_LINES.replace("await ", ""),
         _setup('app = qb.app("bq1234567")')[1] + _PLAN_LINES,
         (
-            Group("Describe it to a model", "describe-it", _AGENTS, ("schema", "name")),
+            Group("Describe it to a model", "describe-it", _AGENTS, ("input_schema", "name")),
             Group("Run it", "run-it", _AGENTS, ("run",)),
         ),
     ),
@@ -693,7 +668,7 @@ SYMBOL_PAGES = (
         _SYMBOL_NOTE,
         *_setup(_TABLE_LINE),
         (
-            Group("Build a condition", "build-a-condition", _READING, ("F", "Expression")),
+            Group("Build a condition", "build-a-condition", _READING, ("F", "WhereExpression")),
             Group(
                 "Conditions from plain data",
                 "plain-data",
@@ -720,9 +695,9 @@ SYMBOL_PAGES = (
                 "Read results",
                 "read-results",
                 _READING,
-                ("Record", "RecordIterator", "Page", "User"),
+                ("Record", "RecordIterator", "RecordPage", "User"),
             ),
-            Group("Write results", "write-results", _WRITING, ("WriteResult", "RowError")),
+            Group("Write results", "write-results", _WRITING, ("WriteResult", "WriteRowFailure")),
             Group(
                 "Files",
                 "files",
@@ -733,14 +708,14 @@ SYMBOL_PAGES = (
                 "CSV and Excel files",
                 "spreadsheets",
                 _SPREADSHEETS,
-                ("FileRows", "FileRowError", "FileFormat", "FileLike", "ColumnMap"),
+                ("FileRows", "FileRowFailure", "FileFormat", "FileLike", "ColumnMap"),
             ),
             Group("Formula results", "formula-results", _FORMULAS, ("FormulaResult",)),
             Group(
                 "Previews of writes",
                 "previews",
                 _WRITING,
-                ("UpdatePreview", "DeletePreview", "RecordChange", "FieldChange"),
+                ("UpdatePreview", "DeletePreview", "RecordChange", "ValueChange"),
             ),
             Group(
                 "Summaries",
@@ -765,19 +740,24 @@ SYMBOL_PAGES = (
         f"{_SYMBOL_NOTE} {_PROJECTS}",
         *_setup(_TABLE_LINE),
         (
-            Group("Apps", "apps", _APPS, ("AppSummary", "AppInfo", "Role", "AppEvent")),
-            Group("People", "people", _APPS, ("UserProfile", "AppMember", "MemberRole")),
+            Group("Apps", "apps", _APPS, ("AppListing", "AppInfo", "Role", "AppTrigger")),
+            Group("People", "people", _APPS, ("UserAccount", "AppMember", "MemberRole")),
             Group(
                 "Role changes",
                 "role-changes",
                 _APPS,
-                ("RoleAssignment", "RoleChange", "RoleChangeResult", "RoleChangeFailure"),
+                (
+                    "RoleAssignment",
+                    "RoleAssignmentUpdate",
+                    "RoleAssignmentResult",
+                    "RoleAssignmentFailure",
+                ),
             ),
             Group(
                 "Code pages",
                 "code-pages",
                 _CODE_PAGES,
-                ("CodePageInfo", "CodePageContent", "CodePagePreview", "CodePageWrite"),
+                ("CodePageInfo", "CodePageContent", "CodePagePreview", "CodePageWriteResult"),
             ),
             Group(
                 "Tables and reports", "tables-and-reports", _READING, ("TableInfo", "ReportInfo")
@@ -821,16 +801,16 @@ SYMBOL_PAGES = (
                     "CreateLookupField",
                     "CreateSummaryField",
                     "DeleteRelationship",
-                    "SummaryFunction",
+                    "SummaryFieldFunction",
                 ),
             ),
             Group(
                 "Plans and results",
                 "plans",
                 _SCHEMA,
-                ("SchemaPlan", "PlannedChange", "SettingChange", "SchemaChangeResult", "Risk"),
+                ("SchemaPlan", "PlannedChange", "SchemaChangeResult", "ChangeRisk"),
             ),
-            Group("Any change", "any-change", _AGENTS, ("SchemaChange", "SchemaAction")),
+            Group("Any change", "any-change", _AGENTS, ("SchemaChange", "SchemaChangeAction")),
         ),
     ),
     SymbolPage(
@@ -846,14 +826,19 @@ SYMBOL_PAGES = (
         "",
         (
             Group("Write and bind a policy", "policies", _POLICIES, ("Policy", "BoundPolicy")),
-            Group("Decisions", "decisions", _DEBUGGING, ("Decision", "Named", "Offers")),
+            Group(
+                "Decisions",
+                "decisions",
+                _DEBUGGING,
+                ("PolicyDecision", "NamedItem", "PolicyOffers"),
+            ),
         ),
     ),
     SymbolPage(
         "Rules",
         "rules",
         "A policy is a list of rules. `allow` and `deny` name what a client may do with tables "
-        "and fields, `limit` keeps it to some records, and a `Rule` of your own can refuse "
+        "and fields, `limit` keeps it to some records, and a `CustomRule` of your own can refuse "
         "anything else. Anything no rule allows is refused, and a deny always wins.",
         _OWN_CLIENT_NOTE,
         "",
@@ -863,7 +848,15 @@ SYMBOL_PAGES = (
                 "Allow, deny, and limit",
                 "rules",
                 _RULES,
-                ("allow", "deny", "limit", "PolicyRule", "Verb", "SchemaVerb", "Layer"),
+                (
+                    "allow",
+                    "deny",
+                    "limit",
+                    "PolicyRule",
+                    "PolicyVerb",
+                    "PolicySchemaVerb",
+                    "DecisionLayer",
+                ),
             ),
             Group(
                 "Tables and fields",
@@ -876,7 +869,7 @@ SYMBOL_PAGES = (
                 "own-rules",
                 _CUSTOM_RULES,
                 (
-                    "Rule",
+                    "CustomRule",
                     "WriteRequest",
                     "ReadRequest",
                     "WriteAction",
@@ -914,7 +907,7 @@ SYMBOL_PAGES = (
                 "Operations",
                 "operations",
                 _AGENTS,
-                ("OperationName", "SchemaOperationName", "CodePageOperationName"),
+                ("TableOperationName", "AppOperationName"),
             ),
         ),
     ),
@@ -934,9 +927,9 @@ SYMBOL_PAGES = (
                 _ERRORS,
                 (
                     "ConfigurationError",
-                    "QueryError",
-                    "TooManyRecordsError",
-                    "ConfirmationError",
+                    "InvalidQueryError",
+                    "SummaryTooLargeError",
+                    "InvalidConfirmationError",
                     "InvalidValueError",
                     "FileTooLargeError",
                     "PolicyRefusedError",
@@ -959,7 +952,7 @@ SYMBOL_PAGES = (
                 "Writes",
                 "writes",
                 _WRITING,
-                ("WriteError", "WritePermissionError", "SchemaChangeError"),
+                ("WriteError", "WritePermissionDeniedError", "SchemaChangeError"),
             ),
             Group(
                 "Responses from Quickbase",
@@ -971,7 +964,7 @@ SYMBOL_PAGES = (
                     "AuthenticationError",
                     "PermissionDeniedError",
                     "NotFoundError",
-                    "UnsupportedOperationError",
+                    "NoLongerAvailableError",
                     "RateLimitError",
                     "ServerError",
                 ),
@@ -1033,7 +1026,7 @@ SECTIONS = (
         "Changes to tables, fields, and relationships, checked before they're made.",
         (
             ("schema-changes", "The changes, and the plans that check them"),
-            ("schema-operation", "One schema operation offered to a model"),
+            ("app-operation", "One schema or code page operation offered to a model"),
         ),
     ),
     Section(
@@ -1048,8 +1041,7 @@ SECTIONS = (
         "AI agents",
         "Operations and results for a model's tool calls.",
         (
-            ("operation", "One table operation offered to a model"),
-            ("code-page-operation", "One code page operation offered to a model"),
+            ("table-operation", "One table operation offered to a model"),
             ("tools", "Results and errors as plain data for a tool call"),
         ),
     ),
@@ -1078,10 +1070,9 @@ def _name_links() -> dict[str, str]:
     links["AsyncApp"] = links["App"]
     links["AsyncTable"] = links["Table"]
     links["AsyncReport"] = links["Report"]
-    links["AsyncOperation"] = links["Operation"]
-    links["AsyncSchemaOperation"] = links["SchemaOperation"]
+    links["AsyncTableOperation"] = links["TableOperation"]
     links["AsyncCodePage"] = links["CodePage"]
-    links["AsyncCodePageOperation"] = links["CodePageOperation"]
+    links["AsyncAppOperation"] = links["AppOperation"]
     links["AsyncRecordIterator"] = links["RecordIterator"]
     return links
 
@@ -1245,10 +1236,10 @@ def _alias_texts() -> tuple[tuple[str, str], ...]:
 
 
 def _clean_annotation(annotation: Any) -> str:
-    """Write a type for the docs, by its public alias where it has one, such as `Verb`.
+    """Write a type for the docs, by its public alias where it has one, such as `PolicyVerb`.
 
-    Python resolves an alias such as `verb: Verb` to what it stands for, which can be dozens of
-    values. A string annotation is written as the type it names.
+    Python resolves an alias such as `verb: PolicyVerb` to what it stands for, which can be dozens
+    of values. A string annotation is written as the type it names.
     """
     text = annotation if isinstance(annotation, str) else inspect.formatannotation(annotation)
     text = build_llms.clean_types(text)
@@ -1271,7 +1262,7 @@ def _ruff_format(source: str) -> str | None:
 def format_code(code: str) -> str:
     """Format a signature, a type alias, or a property, so no line is longer than `LINE_LIMIT`.
 
-    A signature such as `query(*, where: Expression | None = None) -> RecordIterator` isn't a
+    A signature such as `query(*, where: WhereExpression | None = None) -> RecordIterator` isn't a
     statement on its own, so it's formatted as a function and then unwrapped. Anything that
     can't be parsed is returned as it was, which the test of line lengths would catch.
     """
@@ -1691,6 +1682,9 @@ def read_symbol(page: SymbolPage, name: str) -> Symbol:
         else []
     )
     bases_line = f"class {name}({', '.join(bases)})" if bases else ""
+    if len(bases_line) > LINE_LIMIT:
+        listed = "".join(f"    {base},\n" for base in bases)
+        bases_line = f"class {name}(\n{listed})"
     return Symbol(
         name,
         doc,

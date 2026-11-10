@@ -9,17 +9,17 @@ string from it. The SDK can't tell an added condition from one you meant to writ
 record](../api-notes.md#query-pitfalls):
 
 ```python
-tasks.delete(F("Code") == code)  # Raises QueryError for that value
+tasks.delete(F("Code") == code)  # Raises InvalidQueryError for that value
 tasks.delete(f"{{6.EX.'{code}'}}")  # Don't do this
 ```
 
 `F` escapes quotes and backslashes, and handles the text that Quickbase would read as query syntax:
 
-- A value containing `{` or `}` raises `QueryError`.
-- A value like `_FID_6` raises `QueryError`.
+- A value containing `{` or `}` raises `InvalidQueryError`.
+- A value like `_FID_6` raises `InvalidQueryError`.
 - A standalone uppercase `OR` or `AND` is sent in lowercase, so `a OR b` finds that text rather than
   matching `a` and `b`. Comparisons ignore case, so it still finds a stored `a OR b`.
-- Anything other than text, a number, a date, a boolean, or None raises `QueryError`, and so does a
+- Anything other than text, a number, a date, a boolean, or None raises `InvalidQueryError`, and so does a
   `datetime` without a timezone.
 
 That protects the shape of a query, not its meaning:
@@ -35,7 +35,7 @@ That protects the shape of a query, not its meaning:
 !!! note "`_curuser_` and relative dates"
     On a `user` or `multiuser` field, Quickbase reads `_curuser_` as the token's owner, ignoring case
     and surrounding spaces, so a value from someone else could match the owner's records. `F` raises
-    `QueryError` for it there. On a text field it's literal text, so `F` allows it.
+    `InvalidQueryError` for it there. On a text field it's literal text, so `F` allows it.
 
     On a date field, Quickbase reads text such as `today` or `1 day ago` as a date. That gives a
     model nothing it couldn't get by naming the date, but text it can't read matches nothing, with no
@@ -83,7 +83,7 @@ flowchart TD
     AND --> Q["The query sent<br/>to Quickbase"]
 ```
 
-Return a `QueryError` or `UnknownFieldError` to the model as the tool's result, with
+Return a `InvalidQueryError` or `UnknownFieldError` to the model as the tool's result, with
 [`tool_error()`](results.md#errors). Their messages say where the mistake is and what's allowed, so it can correct
 itself, and they don't repeat the values it sent. Nothing has been sent to Quickbase at that point.
 

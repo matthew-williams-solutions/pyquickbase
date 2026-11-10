@@ -13,7 +13,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from jsonschema import Draft202012Validator
 
-from pyquickbase import F, QueryError, UnknownFieldError, where_from_dict, where_schema
+from pyquickbase import F, InvalidQueryError, UnknownFieldError, where_from_dict, where_schema
 from pyquickbase._models import FieldIndex, field_from_api
 from pyquickbase._query import compile_where
 
@@ -190,7 +190,7 @@ def test_it_combines_with_f_so_code_can_fix_the_scope() -> None:
     ],
 )
 def test_bad_shapes_are_refused(data: Any) -> None:
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         where_from_dict(data)
 
 
@@ -198,7 +198,7 @@ def test_bad_shapes_are_refused(data: Any) -> None:
     "op", ["like", "is", "IR", "XIR", "ir", "last 7 days", "", "EX'}OR{3.GT.'0", "starts"]
 )
 def test_unknown_operators_are_refused(op: str) -> None:
-    with pytest.raises(QueryError, match=r"where\.op"):
+    with pytest.raises(InvalidQueryError, match=r"where\.op"):
         where_from_dict(cond("Title", op, "x"))
 
 
@@ -216,14 +216,14 @@ def test_unknown_operators_are_refused(op: str) -> None:
     ],
 )
 def test_bad_value_shapes_are_refused(op: str, value: Any) -> None:
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         where_from_dict(cond("Title", op, value))
 
 
 @pytest.mark.parametrize("op", ["contains", "not_contains", "starts_with", "<", ">=", "HAS"])
 @pytest.mark.parametrize("value", [None, ""])
 def test_empty_values_only_work_with_equality(op: str, value: Any) -> None:
-    with pytest.raises(QueryError, match="empty value"):
+    with pytest.raises(InvalidQueryError, match="empty value"):
         where_from_dict(cond("Title", op, value))
 
 
@@ -234,7 +234,7 @@ def test_empty_values_match_empty_fields_when_explicit() -> None:
 
 @pytest.mark.parametrize("value", [" ", "\t\n", "   "])
 def test_whitespace_values_are_refused(value: str) -> None:
-    with pytest.raises(QueryError, match="whitespace"):
+    with pytest.raises(InvalidQueryError, match="whitespace"):
         where_from_dict(cond("Title", "==", value))
 
 
@@ -243,12 +243,12 @@ def test_whitespace_values_are_refused(value: str) -> None:
     ["a{b", "a}b", "_FID_6", " _fid_6", "x _FID_6", float("nan"), float("inf"), 10**400],
 )
 def test_values_quickbase_would_misread_are_refused(value: Any) -> None:
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         where_from_dict(cond("Title", "==", value))
 
 
 def test_injection_stays_inside_the_value() -> None:
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         where_from_dict(cond("Title", "==", "zz'}OR{3.GT.'0"))
     assert compiled(cond("Title", "==", "it's")) == "{6.EX.'it\\'s'}"
     assert compiled(cond("Title", "==", "a OR b")) == "{6.EX.'a or b'}"
@@ -256,7 +256,7 @@ def test_injection_stays_inside_the_value() -> None:
 
 @pytest.mark.parametrize("field", ["Owner", "Team"])
 def test_curuser_is_refused_on_user_fields(field: str) -> None:
-    with pytest.raises(QueryError, match="_curuser_"):
+    with pytest.raises(InvalidQueryError, match="_curuser_"):
         compiled(cond(field, "==", "_curuser_"))
 
 
@@ -283,7 +283,7 @@ def test_dates_must_be_real_dates() -> None:
     ],
 )
 def test_other_text_on_a_date_is_refused(value: str) -> None:
-    with pytest.raises(QueryError, match="YYYY-MM-DD"):
+    with pytest.raises(InvalidQueryError, match="YYYY-MM-DD"):
         compiled(cond("Due", "<", value))
 
 
@@ -301,12 +301,12 @@ def test_timestamps_become_milliseconds() -> None:
     ["2026-12-01T09:30:00", "yesterday", "1796117400000", "20261201T093000", "T", "2026-13-01"],
 )
 def test_other_text_on_a_timestamp_is_refused(value: str) -> None:
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         compiled(cond("Started", "<", value))
 
 
 def test_a_datetime_needs_a_time_zone() -> None:
-    with pytest.raises(QueryError, match="timezone"):
+    with pytest.raises(InvalidQueryError, match="timezone"):
         where_from_dict(cond("Started", "<", datetime(2026, 12, 1)))
 
 
@@ -330,12 +330,12 @@ def test_numbers(value: Any, text: str) -> None:
     "value", ["abc", "NaN", "Infinity", "sNaN", True, "1e999999999", "1e-999999999", "5 OR 6"]
 )
 def test_other_values_on_a_number_are_refused(field: str, value: Any) -> None:
-    with pytest.raises(QueryError, match="number"):
+    with pytest.raises(InvalidQueryError, match="number"):
         compiled(cond(field, "==", value))
 
 
 def test_huge_decimals_are_refused_without_being_written_out() -> None:
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         where_from_dict(cond("Title", "==", Decimal("1e999999999")))
 
 
@@ -343,15 +343,15 @@ def test_checkboxes() -> None:
     assert compiled(cond("Done", "==", True)) == "{11.EX.'true'}"
     assert compiled(cond("Done", "!=", "FALSE")) == "{11.XEX.'false'}"
     for value in ("yes", 1):
-        with pytest.raises(QueryError, match="true or false"):
+        with pytest.raises(InvalidQueryError, match="true or false"):
             compiled(cond("Done", "==", value))
-    with pytest.raises(QueryError, match="can only be compared"):
+    with pytest.raises(InvalidQueryError, match="can only be compared"):
         compiled(cond("Done", "<", True))
 
 
 @pytest.mark.parametrize("field", ["Due", "Started", "Hours"])
 def test_text_operators_are_refused_on_other_types(field: str) -> None:
-    with pytest.raises(QueryError, match="can only be compared"):
+    with pytest.raises(InvalidQueryError, match="can only be compared"):
         compiled(cond(field, "contains", "2026"))
 
 
@@ -365,7 +365,7 @@ def test_fields_limits_what_a_filter_can_use() -> None:
     assert compiled(cond("Status", "==", "x"), fields=allowed) == "{7.EX.'x'}"
     assert compiled(cond(6, "==", "x"), fields=allowed) == "{6.EX.'x'}"
     for field in ("Hours", 7, "Title", "status"):  # A label doesn't cover its ID, or the reverse.
-        with pytest.raises(QueryError, match=r"where\.all\[1\]\.field"):
+        with pytest.raises(InvalidQueryError, match=r"where\.all\[1\]\.field"):
             where_from_dict(
                 {"all": [cond("Status", "==", "x"), cond(field, "==", "x")]}, fields=allowed
             )
@@ -373,26 +373,26 @@ def test_fields_limits_what_a_filter_can_use() -> None:
 
 @pytest.mark.parametrize("fields", ["Status", [], ()])
 def test_unusable_field_lists_are_refused(fields: Any) -> None:
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         where_from_dict(cond("Status", "==", "x"), fields=fields)
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         where_schema(fields=fields)
 
 
 def test_nesting_is_limited_even_for_data_that_contains_itself() -> None:
     data: dict[str, Any] = {"all": []}
     data["all"].append(data)
-    with pytest.raises(QueryError, match="nested"):
+    with pytest.raises(InvalidQueryError, match="nested"):
         where_from_dict(data)
 
 
 def test_the_size_of_a_filter_is_limited() -> None:
     where_from_dict({"all": [cond("Title", "==", "x")] * 100})
-    with pytest.raises(QueryError, match="at most 100"):
+    with pytest.raises(InvalidQueryError, match="at most 100"):
         where_from_dict({"all": [cond("Title", "==", "x")] * 101})
-    with pytest.raises(QueryError, match="at most 100"):
+    with pytest.raises(InvalidQueryError, match="at most 100"):
         where_from_dict(cond("Title", "in", ["x"] * 101))
-    with pytest.raises(QueryError, match="at most 100"):
+    with pytest.raises(InvalidQueryError, match="at most 100"):
         where_from_dict({"all": [cond("Title", "in", ["x"] * 60)] * 2})
 
 
@@ -405,10 +405,10 @@ def test_errors_say_where_and_never_repeat_the_values() -> None:
         (cond("Title", "in", [{secret: 1}]), "where"),
     ]
     for data, where in cases:
-        with pytest.raises(QueryError, match=where) as caught:
+        with pytest.raises(InvalidQueryError, match=where) as caught:
             where_from_dict(data)
         assert secret not in str(caught.value)
-    with pytest.raises(QueryError) as caught:
+    with pytest.raises(InvalidQueryError) as caught:
         compiled(cond("Due", "<", secret))
     assert secret not in str(caught.value)
 
@@ -460,7 +460,7 @@ def test_what_the_schema_allows_is_accepted(data: Any) -> None:
 )
 def test_what_the_schema_refuses_is_refused(data: Any) -> None:
     assert not Draft202012Validator(where_schema()).is_valid(data)
-    with pytest.raises(QueryError):
+    with pytest.raises(InvalidQueryError):
         where_from_dict(data)
 
 
@@ -492,7 +492,7 @@ def test_the_schema_can_list_fields() -> None:
 
 @pytest.mark.parametrize("depth", [-1, 6, True])
 def test_the_schema_depth_is_limited(depth: Any) -> None:
-    with pytest.raises(QueryError, match="max_depth"):
+    with pytest.raises(InvalidQueryError, match="max_depth"):
         where_schema(max_depth=depth)
 
 
@@ -545,7 +545,7 @@ def test_any_json_raises_query_error_or_builds(data: Any) -> None:
         cond("Title", "==", data),
         cond("Hours", "in", [data]),
     ):
-        with contextlib.suppress(QueryError, UnknownFieldError):
+        with contextlib.suppress(InvalidQueryError, UnknownFieldError):
             compile_where(where_from_dict(candidate), FIELDS)
 
 
@@ -567,18 +567,18 @@ def test_fields_can_be_field_objects_in_both_halves() -> None:
     schema = where_schema(fields=[status])
     assert schema["anyOf"][0]["properties"]["field"]["enum"] == ["Status"]
     where_from_dict({"field": "Status", "op": "==", "value": "x"}, fields=[status])
-    with pytest.raises(QueryError, match="may use"):
+    with pytest.raises(InvalidQueryError, match="may use"):
         where_from_dict({"field": "Title", "op": "==", "value": "x"}, fields=[status])
 
 
 def test_descriptions_are_added_and_must_be_for_offered_fields() -> None:
     schema = where_schema(fields=["Status"], field_descriptions={"Status": "Open or Done."})
     assert schema["description"].endswith(" Fields: Status: Open or Done.")
-    with pytest.raises(QueryError, match="isn't one of the fields"):
+    with pytest.raises(InvalidQueryError, match="isn't one of the fields"):
         where_schema(fields=["Status"], field_descriptions={"Title": "x"})
-    with pytest.raises(QueryError, match="needs fields"):
+    with pytest.raises(InvalidQueryError, match="needs fields"):
         where_schema(field_descriptions={"Title": "x"})
-    with pytest.raises(QueryError, match="isn't empty"):
+    with pytest.raises(InvalidQueryError, match="isn't empty"):
         where_schema(fields=["Status"], field_descriptions={"Status": " "})
 
 
@@ -610,15 +610,15 @@ def test_a_models_percent_is_a_fraction_and_a_duration_is_milliseconds(
 
 
 def test_a_models_duration_must_be_whole_milliseconds() -> None:
-    with pytest.raises(QueryError, match="whole milliseconds"):
+    with pytest.raises(InvalidQueryError, match="whole milliseconds"):
         compile_where(where_from_dict(cond("Budget", ">", 1.5)), TYPED)
 
 
 def test_a_filter_label_in_another_case_says_which_one() -> None:
-    with pytest.raises(QueryError, match="as in 'Status'"):
+    with pytest.raises(InvalidQueryError, match="as in 'Status'"):
         where_from_dict(cond("status", "==", "x"), fields=["Status", "Title"])
     # Two labels that differ only in case make no hint, rather than a guess.
-    with pytest.raises(QueryError) as caught:
+    with pytest.raises(InvalidQueryError) as caught:
         where_from_dict(cond("Ab", "==", "x"), fields=["ab", "AB"])
     assert "as in" not in str(caught.value)
 

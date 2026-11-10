@@ -9,8 +9,8 @@ from pyquickbase import (
     AsyncQuickbase,
     BoundPolicy,
     F,
+    InvalidQueryError,
     InvalidValueError,
-    QueryError,
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
@@ -221,9 +221,9 @@ async def test_compile_where_refuses_what_a_query_would() -> None:
         tasks = qb.app(APP).table("Tasks")
         with pytest.raises(UnknownFieldError):
             await tasks.compile_where(F("Salary") > 1)
-        with pytest.raises(QueryError):
+        with pytest.raises(InvalidQueryError):
             await tasks.compile_where("{6.CT.'x'")
-        with pytest.raises(QueryError):
+        with pytest.raises(InvalidQueryError):
             await tasks.compile_where(7)  # pyright: ignore[reportArgumentType]
 
 

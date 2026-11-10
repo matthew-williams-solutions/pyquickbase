@@ -7,7 +7,8 @@ that form, and a page never looks changed because of them.
 
 import difflib
 import hashlib
-from typing import TYPE_CHECKING, Any, Literal
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 from ._decision import CODE_PAGE_WARNING
 from ._models import CodePageContent, CodePagePreview
@@ -16,11 +17,12 @@ from .errors import ConfigurationError, InvalidValueError
 if TYPE_CHECKING:
     from ._bound import BoundPolicy
 
-CodePageOperationName = Literal[
-    "list_code_pages", "read_code_page", "preview_code_page_change", "apply_code_page_change"
-]
-"""What `App.operation()` can offer a model for an app's code pages."""
-
+CODE_PAGE_OPERATIONS = (
+    "list_code_pages",
+    "read_code_page",
+    "preview_code_page_change",
+    "apply_code_page_change",
+)
 _WRITES = ("preview_code_page_change", "apply_code_page_change")
 
 
@@ -55,6 +57,14 @@ def check_ref(ref: Any) -> str | int:
     return ref
 
 
+def normalize_page_arguments(arguments: Mapping[str, Any]) -> dict[str, Any]:
+    """Read `page`, which models write for `code_page`, as the schema's name for it."""
+    found = dict(arguments)
+    if "page" in found and "code_page" not in found:
+        found["code_page"] = found.pop("page")
+    return found
+
+
 def check_text(text: Any) -> str:
     if not isinstance(text, str):
         raise InvalidValueError("A code page's text must be text.")
@@ -65,7 +75,7 @@ def build_preview(page: str | int, current: CodePageContent | None, text: str) -
     """What writing `text` would do, against the page as it is now."""
     before = "" if current is None else current.text
     return CodePagePreview(
-        page=page,
+        code_page=page,
         current=current,
         proposed_sha256=text_sha256(text),
         diff="".join(
@@ -80,14 +90,17 @@ def build_preview(page: str | int, current: CodePageContent | None, text: str) -
     )
 
 
-def _page_argument() -> dict[str, Any]:
+def _page_argument(name: str) -> dict[str, Any]:
+    description = "The code page, by name or by ID."
+    if name in _WRITES:
+        description += " A new name creates a new page."
     return {
         "anyOf": [{"type": "string", "minLength": 1}, {"type": "integer", "minimum": 1}],
-        "description": "The code page, by name or by ID. A new name creates a new page.",
+        "description": description,
     }
 
 
-def operation_schema(name: CodePageOperationName, policy: "BoundPolicy | None") -> dict[str, Any]:
+def operation_schema(name: str, policy: "BoundPolicy | None") -> dict[str, Any]:
     """The JSON Schema for a code page operation's arguments.
 
     Raises:
@@ -101,7 +114,7 @@ def operation_schema(name: CodePageOperationName, policy: "BoundPolicy | None") 
         )
     properties: dict[str, Any] = {}
     if name != "list_code_pages":
-        properties["page"] = _page_argument()
+        properties["code_page"] = _page_argument(name)
     if name in _WRITES:
         properties["text"] = {
             "type": "string",

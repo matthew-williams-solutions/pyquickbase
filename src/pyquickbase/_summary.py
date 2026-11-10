@@ -16,7 +16,7 @@ from typing import Any, Literal, cast, get_args
 
 from ._models import Field, FieldIndex, Record, User
 from ._query import F, FieldRef, FieldRefs, _as_list, _named  # pyright: ignore[reportPrivateUsage]
-from .errors import InvalidResponseError, QueryError
+from .errors import InvalidQueryError, InvalidResponseError
 
 PeriodUnit = Literal["day", "week", "month", "quarter", "year"]
 """How `Period` groups dates."""
@@ -71,23 +71,27 @@ class Period:
     Args:
         field: The date or timestamp field, by label, ID, or field object.
         unit: `day`, `week`, `month`, `quarter`, or `year`.
-        tz: The time zone that decides a timestamp's date. It has no effect on a date field.
+        time_zone: The time zone that decides a timestamp's date. It has no effect on a date field.
 
     Raises:
-        QueryError: `unit` isn't one of these, or `field` isn't a field.
+        InvalidQueryError: `unit` isn't one of these, or `field` isn't a field.
     """
 
     field: FieldRef | F
     unit: PeriodUnit
-    tz: tzinfo = UTC
+    time_zone: tzinfo = UTC
 
     def __post_init__(self) -> None:
         if self.unit not in get_args(PeriodUnit):
-            raise QueryError(f"A Period's unit must be one of: {', '.join(get_args(PeriodUnit))}.")
+            raise InvalidQueryError(
+                f"A Period's unit must be one of: {', '.join(get_args(PeriodUnit))}."
+            )
         if isinstance(self.field, bool) or not isinstance(self.field, str | int | F):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise QueryError("A Period takes a field's label or ID.")
-        if not isinstance(self.tz, tzinfo):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise QueryError("A Period's tz must be a time zone, such as ZoneInfo('Asia/Tokyo').")
+            raise InvalidQueryError("A Period takes a field's label or ID.")
+        if not isinstance(self.time_zone, tzinfo):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise InvalidQueryError(
+                "A Period's time_zone must be a time zone, such as ZoneInfo('Asia/Tokyo')."
+            )
 
 
 SummaryGroups = FieldRef | F | Period | Sequence[FieldRef | F | Period]
@@ -336,29 +340,31 @@ class Summary:
             try:
                 given = list(group_by)
             except TypeError:
-                raise QueryError("group_by takes fields or a list of them.") from None
+                raise InvalidQueryError("group_by takes fields or a list of them.") from None
         groups: list[tuple[Field, Period | None]] = []
         for ref in given:
             if isinstance(ref, Period):
                 item = self._resolve(ref.field)
                 if item.type not in _DATE_TYPES:
-                    raise QueryError(
+                    raise InvalidQueryError(
                         f"Field {item.label!r} isn't a date, so it can't use a Period."
                     )
                 groups.append((item, ref))
             elif isinstance(ref, str | int | F):
                 item = self._resolve(ref)
                 if item.type in _UNGROUPABLE_TYPES:
-                    raise QueryError(
+                    raise InvalidQueryError(
                         f"Field {item.label!r} can't be grouped by, because a record can hold "
                         "several of its values."
                     )
                 groups.append((item, None))
             else:
-                raise QueryError("group_by takes field labels, IDs, fields, or a Period.")
+                raise InvalidQueryError("group_by takes field labels, IDs, fields, or a Period.")
         labels = [item.label for item, _ in groups]
         if len(set(labels)) != len(labels):
-            raise QueryError("group_by can't use a field twice, as rows are keyed by its label.")
+            raise InvalidQueryError(
+                "group_by can't use a field twice, as rows are keyed by its label."
+            )
         return groups
 
     def _statistic_fields(self, name: StatisticName, refs: FieldRefs | None) -> list[Field]:
@@ -366,19 +372,21 @@ class Summary:
         takes = STATISTICS[name].takes
         for item in items:
             if takes is None and item.type in _UNGROUPABLE_TYPES:
-                raise QueryError(
+                raise InvalidQueryError(
                     f"{name} can't use {item.label!r}, because a record can hold several of its "
                     "values."
                 )
             if takes is not None and item.type not in takes:
                 kinds = "a numeric" if takes == _NUMERIC_TYPES else "a numeric, date, or time"
-                raise QueryError(f"{name} needs {kinds} field, and {item.label!r} is {item.type}.")
+                raise InvalidQueryError(
+                    f"{name} needs {kinds} field, and {item.label!r} is {item.type}."
+                )
         return items
 
     def _period_position(self) -> int:
         positions = [index for index, (_, period) in enumerate(self._groups) if period]
         if len(positions) != 1:
-            raise QueryError(
+            raise InvalidQueryError(
                 "compare_periods needs exactly one Period in group_by, to say which period comes "
                 "before which."
             )
@@ -412,7 +420,7 @@ class Summary:
             return None
         if period is not None:
             if isinstance(value, datetime):
-                return _period_label(value.astimezone(period.tz).date(), period.unit)
+                return _period_label(value.astimezone(period.time_zone).date(), period.unit)
             if isinstance(value, date):
                 return _period_label(value, period.unit)
             raise _unexpected(item)

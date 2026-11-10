@@ -18,8 +18,8 @@ from pyquickbase import (
     FileTooLargeError,
     FileVersion,
     InvalidValueError,
-    Page,
     Record,
+    RecordPage,
     User,
 )
 from pyquickbase._models import FieldIndex, field_from_api
@@ -56,7 +56,7 @@ def read(text: str, **options: Any) -> FileRows:
 
 def one(column: str, value: str, **options: Any) -> Any:
     found = read(f'{column}\n"{value}"\n', **options)
-    assert found.ok, found.errors
+    assert found.ok, found.failed_rows
     return found.rows[0][column]
 
 
@@ -93,7 +93,7 @@ def test_each_type_is_read_from_text(column: str, value: str, expected: Any) -> 
 def test_formats_and_time_zones_can_be_given() -> None:
     assert one("Due", "01/15/2027", date_format="%m/%d/%Y") == date(2027, 1, 15)
     tokyo = timezone(timedelta(hours=9))
-    started = one("Started", "15/01/2027 09:30", datetime_format="%d/%m/%Y %H:%M", tz=tokyo)
+    started = one("Started", "15/01/2027 09:30", datetime_format="%d/%m/%Y %H:%M", time_zone=tokyo)
     assert started == datetime(2027, 1, 15, 9, 30, tzinfo=tokyo)
 
 
@@ -116,10 +116,10 @@ def test_a_value_that_cant_be_read_is_an_error_with_its_row(
     column: str, value: str, message: str
 ) -> None:
     found = read(f'Title,{column}\nfine,s3cret\nsecond,"{value}"\n')
-    errors = [error for error in found.errors if error.row == 3]
+    errors = [error for error in found.failed_rows if error.row == 3]
     assert [(error.row, error.column) for error in errors] == [(3, column)]
     assert message in errors[0].message
-    assert "s3cret" not in str(found.errors)
+    assert "s3cret" not in str(found.failed_rows)
 
 
 def test_blank_cells_are_none_and_blank_rows_are_skipped() -> None:
@@ -164,7 +164,7 @@ def test_read_only_columns_can_be_skipped() -> None:
 
 def test_a_row_with_more_cells_than_columns_is_an_error() -> None:
     found = read("Title\nA,extra\n")
-    assert [(error.row, error.message) for error in found.errors] == [
+    assert [(error.row, error.message) for error in found.failed_rows] == [
         (2, "has more cells than the header names")
     ]
 
@@ -177,13 +177,13 @@ def test_a_write_refuses_rows_with_errors_and_takes_rows_without() -> None:
     assert given_rows(good) == [{"Title": "A"}]
     assert list(good) == [{"Title": "A"}]
     assert len(good) == 1
-    assert repr(bad) == "FileRows(rows=3, errors=2)"
+    assert repr(bad) == "FileRows(rows=3, failed_rows=2)"
 
 
 def test_errors_beyond_the_first_few_are_counted() -> None:
     bad = read("Hours\n" + "x\n" * 8)
     with pytest.raises(InvalidValueError, match="and 3 more"):
-        bad.raise_for_errors()
+        bad.raise_for_failures()
 
 
 def test_converted_rows_build_as_quickbase_needs() -> None:
@@ -259,7 +259,7 @@ def test_excel_cells_keep_their_types(tmp_path: Path) -> None:
     )
     cells = file_cells(path, "xlsx", sheet=None, encoding="utf-8", delimiter=None)
     found = read_rows(cells, FIELDS)
-    assert found.ok, found.errors
+    assert found.ok, found.failed_rows
     assert found.rows[0] == {
         "Title": "5",
         "Hours": Decimal("2.5"),
@@ -274,7 +274,7 @@ def test_excel_cells_keep_their_types(tmp_path: Path) -> None:
 def test_an_excel_date_with_a_time_is_refused_for_a_date_field(tmp_path: Path) -> None:
     path = workbook(tmp_path, [["Due"], [datetime(2027, 1, 15, 9, 30)]])
     found = read_rows(file_cells(path, "xlsx", sheet=None, encoding="", delimiter=None), FIELDS)
-    assert "has a time of day" in found.errors[0].message
+    assert "has a time of day" in found.failed_rows[0].message
 
 
 def test_an_excel_sheet_is_chosen_by_name(tmp_path: Path) -> None:
@@ -292,7 +292,7 @@ def test_an_excel_sheet_is_chosen_by_name(tmp_path: Path) -> None:
 LABELS = {label: number for number, label, _, _ in SPEC}
 ANN = User(id="1.a", name="Ann", email="ann@example.com")
 FILE = FileAttachment(
-    url="", versions=(FileVersion(number=1, file_name="plan.pdf", uploaded=None, creator=None),)
+    url="", versions=(FileVersion(number=1, file_name="plan.pdf", uploaded_at=None, creator=None),)
 )
 RECORD = Record(
     {
@@ -325,8 +325,8 @@ COLUMNS = (
 )
 
 
-def page(*records: Record) -> Page:
-    return Page(records=records, total=len(records), skip=0, columns=COLUMNS)
+def page(*records: Record) -> RecordPage:
+    return RecordPage(records=records, total=len(records), skip=0, columns=COLUMNS)
 
 
 def test_a_csv_holds_text_that_reads_back(tmp_path: Path) -> None:
@@ -353,7 +353,7 @@ def test_a_csv_holds_text_that_reads_back(tmp_path: Path) -> None:
     ]
     cells = file_cells(path, "csv", sheet=None, encoding="utf-8-sig", delimiter=None)
     back = read_rows(cells, FIELDS, skip_read_only=True)
-    assert back.ok, back.errors
+    assert back.ok, back.failed_rows
     assert back.skipped == ("Spec",)
     assert back.rows[0]["Title"] == "=HYPERLINK(1)"
     assert back.rows[0]["Started"] == datetime(2027, 1, 15, 7, 30, tzinfo=UTC)
@@ -387,7 +387,7 @@ def test_an_excel_file_keeps_types_and_never_holds_a_formula(tmp_path: Path) -> 
     assert sheet.freeze_panes == "A2"
     cells = file_cells(path, "xlsx", sheet="Tasks", encoding="", delimiter=None)
     back = read_rows(cells, FIELDS, skip_read_only=True)
-    assert back.ok, back.errors
+    assert back.ok, back.failed_rows
     assert back.rows[0]["Due"] == date(2027, 1, 15)
     assert back.rows[0]["Started"] == datetime(2027, 1, 15, 7, 30, tzinfo=UTC)
 

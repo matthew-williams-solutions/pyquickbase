@@ -43,14 +43,14 @@ itself, so it doesn't depend on the model following its instructions.
 from pyquickbase import Policy, Quickbase, allow, deny, fields, tables
 
 policy = Policy(
-    classes={"internal": ["Tasks.Amount", "Tasks.Code", fields.labeled_like("Old*")]},
+    tags={"internal": ["Tasks.Amount", "Tasks.Code", fields.labeled_like("Old*")]},
     rules=[
         # It can read everything but costs and codes, 50 records at a time, add tasks, and
         # change two of their fields. It can't delete anything.
         allow.read(tables.all(), max_paging_depth=50),
         allow.insert("Tasks", fields.all()),
         allow.update("Tasks", ["Status", "Notes"]),
-        deny.all(fields.classed("internal")),
+        deny.all(fields.tagged("internal")),
     ],
 )
 with Quickbase.from_env() as setup:
@@ -64,8 +64,8 @@ it out, and naming it raises `UnknownFieldError`. Anything else it refuses raise
 would allow it, without the values it sent. Return either one to the model as the tool's result, with
 [`tool_error()`](results.md#errors).
 
-- **A class carries over to what's built from it.** A formula, lookup, or summary of a field in a
-  class is in the class too, so denying the class hides them all, whatever table they're on.
+- **A tag carries over to what's built from it.** A formula, lookup, or summary of a field in a
+  tag is in the tag too, so denying the tag hides them all, whatever table they're on.
 - **Fields added after binding are read-only,** and follow the policy's `new_fields`, until you bind
   again.
 - **`limit.rows()` keeps it to some records,** by ANDing a condition onto every query, summary, and

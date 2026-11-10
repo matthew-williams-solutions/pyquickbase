@@ -66,7 +66,7 @@ WRITE_BATCH = 500
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class FileRowError:
+class FileRowFailure:
     """A value in a file that can't be written to its field.
 
     Attributes:
@@ -93,11 +93,11 @@ class FileRows:
     Attributes:
         rows: Each row that has a value, as `{field label: value}`. A blank cell is None, which
             leaves a field empty in `insert()`, and clears it in `update()` and `upsert()`.
-        row_numbers: Each row's number in the file, as for `FileRowError.row`, so `rows[0]` came
+        row_numbers: Each row's number in the file, as for `FileRowFailure.row`, so `rows[0]` came
             from row `row_numbers[0]`. A row whose cells are all blank is left out.
         columns: Which field each column was read into, as `{column: field label}`.
         skipped: The columns that weren't read.
-        errors: Every value that can't be written. Fix these in the file, or map or skip their
+        failed_rows: Every value that can't be written. Fix these in the file, or map or skip their
             columns.
 
     `repr` shows only its size, because values may be sensitive and reprs end up in logs.
@@ -107,27 +107,27 @@ class FileRows:
     row_numbers: tuple[int, ...] = ()
     columns: Mapping[str, str] = field(default_factory=dict[str, str])
     skipped: tuple[str, ...] = ()
-    errors: tuple[FileRowError, ...] = ()
+    failed_rows: tuple[FileRowFailure, ...] = ()
 
     @property
     def ok(self) -> bool:
         """Whether every value can be written."""
-        return not self.errors
+        return not self.failed_rows
 
-    def raise_for_errors(self) -> None:
+    def raise_for_failures(self) -> None:
         """Raise `InvalidValueError` listing the first errors, if there are any.
 
         Raises:
             InvalidValueError: The file has values that can't be written.
         """
-        if not self.errors:
+        if not self.failed_rows:
             return
-        shown = "; ".join(str(error) for error in self.errors[:_ERRORS_SHOWN])
-        more = len(self.errors) - _ERRORS_SHOWN
+        shown = "; ".join(str(error) for error in self.failed_rows[:_ERRORS_SHOWN])
+        more = len(self.failed_rows) - _ERRORS_SHOWN
         extra = f"; and {more} more" if more > 0 else ""
         raise InvalidValueError(
-            f"The file has {len(self.errors)} values that can't be written, so nothing was: "
-            f"{shown}{extra}. See FileRows.errors for all of them."
+            f"The file has {len(self.failed_rows)} values that can't be written, so nothing was: "
+            f"{shown}{extra}. See FileRows.failed_rows for all of them."
         )
 
     def __iter__(self) -> Iterator[Mapping[str, Any]]:
@@ -137,13 +137,13 @@ class FileRows:
         return len(self.rows)
 
     def __repr__(self) -> str:
-        return f"FileRows(rows={len(self.rows)}, errors={len(self.errors)})"
+        return f"FileRows(rows={len(self.rows)}, failed_rows={len(self.failed_rows)})"
 
 
 def given_rows(records: Any) -> list[Mapping[str | int, Any]]:
     """The rows a write was given, from dictionaries, a DataFrame, or a file's rows."""
     if isinstance(records, FileRows):
-        records.raise_for_errors()
+        records.raise_for_failures()
         return list(cast(Iterable[Mapping[str | int, Any]], records.rows))
     return list(rows_or_frame(records))
 
@@ -159,7 +159,7 @@ class _CellError(Exception):
 class _Reading:
     """How to read dates and timestamps that aren't ISO 8601, and naive timestamps."""
 
-    tz: tzinfo
+    time_zone: tzinfo
     date_format: str | None
     datetime_format: str | None
 
@@ -253,7 +253,7 @@ def _timestamp(value: Any, reading: _Reading) -> datetime:
             raise _CellError(
                 f"isn't a date and time in the form {shown}. Set datetime_format for another."
             ) from None
-    return found if found.tzinfo is not None else found.replace(tzinfo=reading.tz)
+    return found if found.tzinfo is not None else found.replace(tzinfo=reading.time_zone)
 
 
 def _time_of_day(value: Any) -> str:
@@ -405,7 +405,7 @@ def read_rows(
     *,
     columns: Mapping[str, str | int | None] | None = None,
     skip_read_only: bool = False,
-    tz: tzinfo = UTC,
+    time_zone: tzinfo = UTC,
     date_format: str | None = None,
     datetime_format: str | None = None,
     max_rows: int | None = None,
@@ -419,10 +419,10 @@ def read_rows(
     rows = iter(cells)
     headers = _headers(next(rows, None))
     planned, skipped = _plan_columns(headers, fields, columns, skip_read_only)
-    reading = _Reading(tz, date_format, datetime_format)
+    reading = _Reading(time_zone, date_format, datetime_format)
     found: list[Mapping[str, Any]] = []
     numbers: list[int] = []
-    errors: list[FileRowError] = []
+    errors: list[FileRowFailure] = []
     with_values = 0
     for number, row in enumerate(rows, start=2):
         if all(cell is None or (isinstance(cell, str) and not cell.strip()) for cell in row):
@@ -433,7 +433,9 @@ def read_rows(
         extra = row[len(headers) :]
         if any(cell is not None and _text(cell) for cell in extra):
             errors.append(
-                FileRowError(row=number, column="", message="has more cells than the header names")
+                FileRowFailure(
+                    row=number, column="", message="has more cells than the header names"
+                )
             )
             continue
         values: dict[str, Any] = {}
@@ -442,7 +444,7 @@ def read_rows(
             try:
                 values[item.label] = _convert(cell, item, reading)
             except _CellError as error:
-                errors.append(FileRowError(row=number, column=header, message=str(error)))
+                errors.append(FileRowFailure(row=number, column=header, message=str(error)))
         found.append(values)
         numbers.append(number)
     return FileRows(
@@ -450,7 +452,7 @@ def read_rows(
         row_numbers=tuple(numbers),
         columns={header: item.label for _, header, item in planned},
         skipped=tuple(skipped),
-        errors=tuple(errors),
+        failed_rows=tuple(errors),
     )
 
 

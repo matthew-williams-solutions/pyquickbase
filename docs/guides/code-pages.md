@@ -28,16 +28,16 @@ Home pages are listed too, but Quickbase refuses to read or replace them this wa
 
 ## Previewing and writing
 
-`preview_write()` says what a write would do, with a diff, and `write()` does it.
+`preview_change()` says what a write would do, with a diff, and `write()` does it.
 
 ```python
 new_text = "<h1>Jobs</h1>\n"
 
-preview = page.preview_write(new_text)
+preview = page.preview_change(new_text)
 print(preview.diff)
 
 result = page.write(new_text, expected_sha256=preview.current.sha256)
-print(result.created, result.page.id)
+print(result.created, result.content.id)
 ```
 
 A name that isn't in use creates a page, and a name that's in use replaces that page and keeps its ID. Passing an ID

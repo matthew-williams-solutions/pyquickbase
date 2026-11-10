@@ -1,7 +1,7 @@
 """A policy resolved against an app, and the one evaluator that decides every request. No network
 access.
 
-`bind_snapshot()` turns a `Policy`'s labels into IDs once, and works out each field's classes,
+`bind_snapshot()` turns a `Policy`'s labels into IDs once, and works out each field's tags,
 carrying them through formulas, lookups, and summaries. `BoundPolicy.decide()` is the only code
 that decides anything. `offers()` asks it about one field and one verb at a time, so what an
 operation offers is exactly what's allowed, and `trim()` uses the same answers to leave hidden
@@ -15,10 +15,18 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar, cast
 
-from ._decision import APP_VERBS, CODE_PAGE_WARNING, FIELD_VERBS, Decision, Layer, Named, Verb
+from ._decision import (
+    APP_VERBS,
+    CODE_PAGE_WARNING,
+    FIELD_VERBS,
+    DecisionLayer,
+    NamedItem,
+    PolicyDecision,
+    PolicyVerb,
+)
 from ._formula import field_id_reference, formula_parts, unsafe_functions
 from ._models import RECORD_ID_FIELD, Field, FieldIndex, Relationship, ReportInfo, TableInfo
-from ._policy import FieldSelector, Grant, Policy, PolicyRule, Rule
+from ._policy import CustomRule, FieldSelector, Grant, Policy, PolicyRule
 from ._query import compile_where, where_field_ids
 from ._read_request import (
     COLUMN_KEYS,
@@ -48,7 +56,7 @@ T = TypeVar("T")
 
 _FORMAT = 1
 _ROWS_CLASS = "\x00rows"
-"""The class of a lookup or summary that reads past a row limit, which every policy denies."""
+"""The tag of a lookup or summary that reads past a row limit, which every policy denies."""
 _SEEN_VERBS = FIELD_VERBS
 """A field any of these allow is visible, so its label can be used. Otherwise it's hidden."""
 _READS = ("read", "filter", "sort")
@@ -79,7 +87,7 @@ class _Match:
 
     all: bool = False
     new: bool = False
-    classes: frozenset[str] = frozenset()
+    tags: frozenset[str] = frozenset()
     ids: Mapping[str, frozenset[int]] = field(default_factory=dict[str, frozenset[int]])
 
 
@@ -93,7 +101,7 @@ class _Grant:
 class _Rule:
     effect: str
     text: str
-    layer: Layer = "policy"
+    layer: DecisionLayer = "policy"
     app: bool = False
     table_ids: frozenset[str] = frozenset()
     all_tables: bool = False
@@ -123,11 +131,11 @@ class _Verdict:
     rule: str | None = None
     reason: str = ""
     hint: str | None = None
-    layer: Layer = "policy"
+    layer: DecisionLayer = "policy"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class Offers(Generic[T]):
+class PolicyOffers(Generic[T]):
     """What a `BoundPolicy` allows on one table, for building an operation's schema. Each list
     comes from asking `decide()` about one field and one verb at a time.
 
@@ -142,8 +150,8 @@ class Offers(Generic[T]):
         file_deletable: File fields it may delete versions from.
         can_delete: Whether it may delete records.
         reports: Reports it may run.
-        schema: The schema verbs allowed on the table, such as `add_field`.
-        field_types: The field types `add_field` may create, or None for any.
+        schema_verbs: The schema verbs allowed on the table, such as `create_field`.
+        field_types: The field types `create_field` may create, or None for any.
         max_paging_depth: The most records one query may reach, or None for no limit.
         max_records_scanned: The most records one summary may read, or None for no limit.
         max_records_per_delete: The most records one delete may remove, or None for no limit.
@@ -153,7 +161,7 @@ class Offers(Generic[T]):
         can_write_code_pages: Whether it may create and replace them.
     """
 
-    table: Named
+    table: NamedItem
     readable: tuple[T, ...] = ()
     filterable: tuple[T, ...] = ()
     sortable: tuple[T, ...] = ()
@@ -163,7 +171,7 @@ class Offers(Generic[T]):
     file_deletable: tuple[T, ...] = ()
     can_delete: bool = False
     reports: tuple[Any, ...] = ()
-    schema: frozenset[str] = frozenset()
+    schema_verbs: frozenset[str] = frozenset()
     field_types: frozenset[str] | None = None
     max_paging_depth: int | None = None
     max_records_scanned: int | None = None
@@ -209,7 +217,6 @@ class BoundPolicy:
 
     __slots__ = (
         "_cache",
-        "_classes",
         "_created",
         "_custom",
         "_field_types",
@@ -223,6 +230,7 @@ class BoundPolicy:
         "_rows",
         "_rules",
         "_tables",
+        "_tags",
         "app_id",
     )
 
@@ -234,9 +242,9 @@ class BoundPolicy:
         tables: Mapping[str, str],
         fields: Mapping[str, Mapping[int, str]],
         field_types: Mapping[str, Mapping[int, str]],
-        classes: Mapping[str, Mapping[int, frozenset[str]]],
+        tags: Mapping[str, Mapping[int, frozenset[str]]],
         rules: Sequence[_Rule],
-        custom: Sequence[Rule],
+        custom: Sequence[CustomRule],
         rows: Mapping[str, tuple[str, str]],
         row_fields: Mapping[str, frozenset[int]],
         links: Sequence[_Link],
@@ -249,7 +257,7 @@ class BoundPolicy:
         self._tables = dict(tables)
         self._fields = {key: dict(value) for key, value in fields.items()}
         self._field_types = {key: dict(value) for key, value in field_types.items()}
-        self._classes = {key: dict(value) for key, value in classes.items()}
+        self._tags = {key: dict(value) for key, value in tags.items()}
         self._rules = tuple(rules)
         self._custom = tuple(custom)
         self._rows = dict(rows)
@@ -279,12 +287,12 @@ class BoundPolicy:
         found = self._tables.get(table_id) or dict(self._created).get(table_id)
         return found or table_id
 
-    def _named_table(self, table_id: str | None) -> Named | None:
-        return None if table_id is None else Named(table_id, self._table_name(table_id))
+    def _named_table(self, table_id: str | None) -> NamedItem | None:
+        return None if table_id is None else NamedItem(table_id, self._table_name(table_id))
 
-    def _named_fields(self, table_id: str | None, ids: Iterable[int]) -> tuple[Named, ...]:
+    def _named_fields(self, table_id: str | None, ids: Iterable[int]) -> tuple[NamedItem, ...]:
         labels = self._fields.get(table_id or "", {})
-        return tuple(Named(item, labels.get(item, str(item))) for item in sorted(ids))
+        return tuple(NamedItem(item, labels.get(item, str(item))) for item in sorted(ids))
 
     def _table_id(self, ref: str) -> str:
         """A table's ID, from its name or ID."""
@@ -318,8 +326,8 @@ class BoundPolicy:
             return False
         return field_id not in known
 
-    def classes_of(self, table_id: str, field_id: int) -> frozenset[str]:
-        """The classes a field is in, including those it reads through formulas, lookups, and
+    def tags_of(self, table_id: str, field_id: int) -> frozenset[str]:
+        """The tags a field is in, including those it reads through formulas, lookups, and
         summaries.
 
         Args:
@@ -327,9 +335,9 @@ class BoundPolicy:
             field_id: The field's ID.
 
         Returns:
-            The class names, which are empty for a field in none.
+            The tag names, which are empty for a field in none.
         """
-        found = self._classes.get(table_id, {}).get(field_id, frozenset())
+        found = self._tags.get(table_id, {}).get(field_id, frozenset())
         if self._is_new(table_id, field_id) and self._new_fields not in ("read", "hidden"):
             found = found | {self._new_fields}
         return found
@@ -353,7 +361,7 @@ class BoundPolicy:
             return True
         if field_id in match.ids.get(table_id, ()):
             return True
-        return bool(match.classes & self.classes_of(table_id, field_id))
+        return bool(match.tags & self.tags_of(table_id, field_id))
 
     # The evaluator
 
@@ -451,7 +459,7 @@ class BoundPolicy:
                 return f"add allow.{verb}({table})"
             return f"add allow.schema({table}, {json.dumps(verb)})"
         label = json.dumps(self._fields.get(table_id, {}).get(field_id, field_id))
-        if verb in ("change_field", "delete_field"):
+        if verb in ("update_field", "delete_field"):
             return f"add allow.schema({table}, {json.dumps(verb)}, fields=[{label}])"
         return f"add {label} to an allow.{verb}({table}, ...) rule"
 
@@ -478,10 +486,10 @@ class BoundPolicy:
         verb: str,
         table_id: str | None,
         field_ids: Iterable[int] = (),
-    ) -> Decision:
-        return Decision(
+    ) -> PolicyDecision:
+        return PolicyDecision(
             allowed=verdict.allowed,
-            verb=cast(Verb, verb),
+            verb=cast(PolicyVerb, verb),
             layer=verdict.layer,
             rule=verdict.rule,
             reason=verdict.reason or ("Allowed" if verdict.allowed else ""),
@@ -492,7 +500,7 @@ class BoundPolicy:
 
     def _all(
         self, checks: Sequence[tuple[str, str | None, int | None]], unknown: str | None = None
-    ) -> Decision:
+    ) -> PolicyDecision:
         """Allowed only if every check is. `unknown` refuses, for a request that can't be read."""
         last: tuple[_Verdict, str, str | None, list[int]] | None = None
         if unknown is not None:
@@ -514,18 +522,18 @@ class BoundPolicy:
                 ids.append(field_id)
             last = (verdict, verb, table_id, ids)
         if last is None:
-            return Decision(allowed=True, verb="read", reason="Allowed")
+            return PolicyDecision(allowed=True, verb="read", reason="Allowed")
         verdict, verb, table_id, ids = last
         return self._decision(verdict, verb, table_id, ids)
 
-    def decide(self, request: ReadRequest | WriteRequest) -> Decision:
+    def decide(self, request: ReadRequest | WriteRequest) -> PolicyDecision:
         """Decide whether a request may be sent. This is the only code that decides.
 
         Args:
             request: From `describe_read()` or `describe_write()`.
 
         Returns:
-            A `Decision`. A refusal names the first part refused, and the rule.
+            A `PolicyDecision`. A refusal names the first part refused, and the rule.
         """
         if isinstance(request, ReadRequest):
             decision = self._decide_read(request)
@@ -539,7 +547,7 @@ class BoundPolicy:
                 return found
         return decision
 
-    def _window(self, request: ReadRequest, limit: int | None, name: str) -> Decision | None:
+    def _window(self, request: ReadRequest, limit: int | None, name: str) -> PolicyDecision | None:
         if limit is None:
             return None
         table = request.table_id
@@ -556,7 +564,7 @@ class BoundPolicy:
         verb = "report" if request.action in ("report", "summary_report") else "read"
         return self._decision(_Verdict(False, reason=reason, hint=f"raise {name}"), verb, table)
 
-    def _decide_read(self, request: ReadRequest) -> Decision:
+    def _decide_read(self, request: ReadRequest) -> PolicyDecision:
         action, table_id = request.action, request.table_id
         if action in REFUSED_READS:
             reason = f"{REFUSED_READS[action]}. Use a client without a policy"
@@ -566,13 +574,15 @@ class BoundPolicy:
             return self._decision(verdict, "read_code_pages", request.app_id)
         if self._open_reads:
             # Policy.read_only() reads whatever the token can, as a client without one would.
-            return Decision(allowed=True, verb="read", rule="Policy.read_only()", reason="Allowed")
-        if action in ("tables", "app_events"):
+            return PolicyDecision(
+                allowed=True, verb="read", rule="Policy.read_only()", reason="Allowed"
+            )
+        if action in ("tables", "app_triggers"):
             # Both are trimmed to the tables the policy shows.
-            return Decision(allowed=True, verb="read", reason="Allowed")
+            return PolicyDecision(allowed=True, verb="read", reason="Allowed")
         if action in ("app", "roles", "other"):
             if self._open_reads:
-                return Decision(
+                return PolicyDecision(
                     allowed=True, verb="read", rule="Policy.read_only()", reason="Allowed"
                 )
             reason = {
@@ -592,7 +602,7 @@ class BoundPolicy:
             return self._all([("run_formula", table_id, None)])
         if action in ("fields", "relationships", "reports", "field_usage"):
             if self.table_visible(table_id):
-                return Decision(
+                return PolicyDecision(
                     allowed=True, verb="read", table=self._named_table(table_id), reason="Allowed"
                 )
             verdict = self._check("read", table_id, None)
@@ -670,7 +680,7 @@ class BoundPolicy:
             hint=f"list it in allow.report({json.dumps(self._table_name(table_id))}, [...])",
         )
 
-    def _decide_write(self, request: WriteRequest) -> Decision:
+    def _decide_write(self, request: WriteRequest) -> PolicyDecision:
         action, table_id, ids = request.action, request.table_id, request.field_ids
         if action in ("create_app", "copy_app", "delete_app"):
             return self._decision(
@@ -682,7 +692,7 @@ class BoundPolicy:
                 "update",
                 None,
             )
-        if action == "change_role_assignments":
+        if action == "write_role_assignments":
             reason = (
                 "A client that could change roles could give itself anything a policy withholds, "
                 "so no policy can allow it. Use a client without a policy"
@@ -728,14 +738,14 @@ class BoundPolicy:
         if action == "delete_file":
             return self._all([("delete_file", table_id, item) for item in sorted(ids or ())])
         if action == "set_key_field":
-            return self._all([("set_key", table_id, None)])
+            return self._all([("set_key_field", table_id, None)])
         if action == "update_table":
-            return self._all([("change_table", table_id, None)])
+            return self._all([("update_table", table_id, None)])
         if action == "delete_table":
             return self._all([("delete_table", table_id, None)])
         checks: list[tuple[str, str | None, int | None]] = []
         if action == "create_field":
-            checks.append(("add_field", table_id, None))
+            checks.append(("create_field", table_id, None))
             if "formula" in request.derived:
                 checks.append(("formula", table_id, None))
             decision = self._all(checks)
@@ -745,9 +755,9 @@ class BoundPolicy:
         if action == "update_field":
             if ids is None:
                 return self._all(
-                    [("change_field", table_id, None)], "The field can't be determined"
+                    [("update_field", table_id, None)], "The field can't be determined"
                 )
-            checks += [("change_field", table_id, item) for item in sorted(ids)]
+            checks += [("update_field", table_id, item) for item in sorted(ids)]
             if "formula" in request.derived:
                 checks.append(("formula", table_id, None))
             return self._all(checks)
@@ -784,11 +794,13 @@ class BoundPolicy:
             return self._all([("lookup", table_id, None)], "It adds no lookup or summary")
         return self._all(checks)
 
-    def _field_type(self, request: WriteRequest) -> Decision | None:
+    def _field_type(self, request: WriteRequest) -> PolicyDecision | None:
         field_type, table_id = request.field_type, request.table_id or ""
         if field_type is None:
             return self._decision(
-                _Verdict(False, reason="Its field type can't be determined"), "add_field", table_id
+                _Verdict(False, reason="Its field type can't be determined"),
+                "create_field",
+                table_id,
             )
         if "formula" in request.derived and field_type in UNSAFE_FORMULA_TYPES:
             return self._decision(
@@ -808,7 +820,7 @@ class BoundPolicy:
                     reason=f"The table only allows fields of type {', '.join(sorted(allowed))}",
                     hint="add the type to allow.schema(..., field_types=[...])",
                 ),
-                "add_field",
+                "create_field",
                 table_id,
             )
         return None
@@ -817,13 +829,13 @@ class BoundPolicy:
 
     def allows(
         self,
-        verb: Verb,
+        verb: PolicyVerb,
         table: str,
         *,
         field: str | int | None = None,
         fields: Sequence[str | int] = (),
         source: tuple[str, str | int] | None = None,
-    ) -> Decision:
+    ) -> PolicyDecision:
         """Whether the policy allows a verb on a table, or on some of its fields.
 
         ```python
@@ -848,7 +860,7 @@ class BoundPolicy:
                 which needs `read`.
 
         Returns:
-            A `Decision`.
+            A `PolicyDecision`.
 
         Raises:
             ConfigurationError: The policy doesn't know the table.
@@ -867,7 +879,7 @@ class BoundPolicy:
             source_id = self._field_id(other, source[1])
             found = self._all([("read", other, source_id)])
             if not found.allowed:
-                return Decision(
+                return PolicyDecision(
                     allowed=False,
                     verb=verb,
                     layer="derived",
@@ -879,7 +891,7 @@ class BoundPolicy:
                 )
             rows = self._rows.get(other)
             if verb == "lookup" and rows is not None:
-                return Decision(
+                return PolicyDecision(
                     allowed=False,
                     verb=verb,
                     layer="rows",
@@ -892,7 +904,7 @@ class BoundPolicy:
 
     def explain(
         self,
-        verb: Verb,
+        verb: PolicyVerb,
         table: str,
         *,
         field: str | int | None = None,
@@ -900,7 +912,7 @@ class BoundPolicy:
         source: tuple[str, str | int] | None = None,
     ) -> str:
         """What `allows()` decides, in words, with every rule that covers the table, and the
-        classes of the fields involved.
+        tags of the fields involved.
 
         Args:
             verb: Such as `read`, `update`, or `lookup`.
@@ -931,16 +943,16 @@ class BoundPolicy:
         if table_id in self._rows:
             covering.append(self._rows[table_id][1])
         lines.append("Rules that cover it: " + ("; ".join(covering) or "none") + ".")
-        classes = sorted(
+        tags = sorted(
             {
                 name
                 for item in decision.fields
-                for name in self.classes_of(table_id, int(item.id))
+                for name in self.tags_of(table_id, int(item.id))
                 if name != _ROWS_CLASS
             }
         )
-        if classes:
-            lines.append(f"Classes: {', '.join(classes)}.")
+        if tags:
+            lines.append(f"Tags: {', '.join(tags)}.")
         return "\n".join(lines)
 
     def readable(self, table_id: str, field_id: int) -> bool:
@@ -971,21 +983,18 @@ class BoundPolicy:
             found.append("No rule reads it, so it's hidden until a rule names it.")
         found.append("It can't be written until the policy is bound again.")
         if sources is None:
-            classes = {
-                item
-                for table in self._classes.values()
-                for value in table.values()
-                for item in value
+            tags = {
+                item for table in self._tags.values() for value in table.values() for item in value
             }
         else:
-            classes = {item for table, field in sources for item in self.classes_of(table, field)}
-        classes.discard(_ROWS_CLASS)
-        if classes:
-            found.append(f"Once bound again, it's in {_class_words(classes)}.")
+            tags = {item for table, field in sources for item in self.tags_of(table, field)}
+        tags.discard(_ROWS_CLASS)
+        if tags:
+            found.append(f"Once bound again, it's in {_class_words(tags)}.")
             for rule in self._rules:
                 if rule.effect != "deny" or not self._rule_has_table(rule, table_id):
                     continue
-                if any(grant.fields is not None and grant.fields.classes & classes
+                if any(grant.fields is not None and grant.fields.tags & tags
                        for grant in rule.grants):  # fmt: skip
                     found.append(f"{rule.text} then hides it.")
         return tuple(found)
@@ -1019,7 +1028,7 @@ class BoundPolicy:
                     continue
                 lost |= named & gone
                 others = any(ids for key, ids in match.ids.items() if key != table_id)
-                if not (named - gone) and not (match.all or match.new or match.classes or others):
+                if not (named - gone) and not (match.all or match.new or match.tags or others):
                     empty = True
             if lost:
                 labels = ", ".join(str(item) for item in self._named_fields(table_id, lost))
@@ -1044,13 +1053,13 @@ class BoundPolicy:
         for verb in (
             "delete",
             "report",
-            "change_table",
+            "update_table",
             "delete_table",
-            "add_field",
+            "create_field",
             "lookup",
             "summary",
             "link",
-            "set_key",
+            "set_key_field",
         ):
             if self._check(verb, table_id, None).allowed:
                 return True
@@ -1101,12 +1110,12 @@ class BoundPolicy:
         )
 
     def field_types(self, table_id: str) -> frozenset[str] | None:
-        """The types `add_field` may create in a table, or None for any."""
+        """The types `create_field` may create in a table, or None for any."""
         found: set[str] = set()
         for rule in self._rules:
             if rule.effect != "allow" or not self._rule_has_table(rule, table_id):
                 continue
-            if any("add_field" in grant.verbs for grant in rule.grants):
+            if any("create_field" in grant.verbs for grant in rule.grants):
                 if rule.field_types is None:
                     return None
                 found |= rule.field_types
@@ -1128,14 +1137,14 @@ class BoundPolicy:
     def emails_shown(self, table_id: str) -> bool:
         return self.user_emails(table_id)
 
-    def offers(self, table: str) -> Offers[Named]:
+    def offers(self, table: str) -> PolicyOffers[NamedItem]:
         """What the policy allows on a table, by field, as an operation's schema offers it.
 
         Args:
             table: The table, by name or ID.
 
         Returns:
-            An `Offers`, whose lists hold each field's `Named`.
+            An `PolicyOffers`, whose lists hold each field's `NamedItem`.
 
         Raises:
             ConfigurationError: The policy doesn't know the table, or was bound without an app.
@@ -1147,11 +1156,11 @@ class BoundPolicy:
                 f"The policy doesn't know {table!r}'s fields. Bind it again to see them."
             )
         items = [
-            (Named(field_id, label), self._field_types.get(table_id, {}).get(field_id, ""))
+            (NamedItem(field_id, label), self._field_types.get(table_id, {}).get(field_id, ""))
             for field_id, label in sorted(known.items())
         ]
         reports = [
-            Named(report_id, name)
+            NamedItem(report_id, name)
             for report_id, (name, _) in self._reports.get(table_id, {}).items()
         ]
         types = {
@@ -1172,7 +1181,7 @@ class BoundPolicy:
         field_id: Callable[[T], int],
         reports: Sequence[Any] = (),
         report_key: Callable[[Any], tuple[str, str]] | None = None,
-    ) -> Offers[T]:
+    ) -> PolicyOffers[T]:
         """`offers()` for fields the caller holds, as `(item, field type)`, with `field_id(item)`
         giving each one's ID, and reports with `report_key(report)` giving `(ID, type)`."""
 
@@ -1238,8 +1247,8 @@ class BoundPolicy:
             if ok(request):
                 offered_reports.append(report)
         schema = frozenset(verb for verb in _SCHEMA_TABLE_VERBS if self._schema_ok(verb, table_id))
-        return Offers(
-            table=Named(table_id, self._table_name(table_id)),
+        return PolicyOffers(
+            table=NamedItem(table_id, self._table_name(table_id)),
             readable=readable,
             filterable=filterable,
             sortable=sortable,
@@ -1249,8 +1258,8 @@ class BoundPolicy:
             file_deletable=file_deletable,
             can_delete=can_delete,
             reports=tuple(offered_reports),
-            schema=schema,
-            field_types=self.field_types(table_id) if "add_field" in schema else frozenset(),
+            schema_verbs=schema,
+            field_types=self.field_types(table_id) if "create_field" in schema else frozenset(),
             max_paging_depth=self.max_records(table_id),
             max_records_scanned=self.max_summary_records(table_id),
             max_records_per_delete=self.max_delete(table_id),
@@ -1262,7 +1271,7 @@ class BoundPolicy:
 
     def _schema_ok(self, verb: str, table_id: str) -> bool:
         """Whether a schema verb is allowed on a table for some field, as a plan may ask."""
-        if verb in ("change_field", "delete_field"):
+        if verb in ("update_field", "delete_field"):
             known = self._fields.get(table_id)
             if known is None:
                 return self._check(verb, table_id, _ANY_FIELD).allowed or any(
@@ -1274,10 +1283,10 @@ class BoundPolicy:
             return any(self._check(verb, table_id, item).allowed for item in known)
         return self._check(verb, table_id, None).allowed
 
-    def schema_tables(self) -> list[Named]:
+    def schema_tables(self) -> list[NamedItem]:
         """The tables any schema verb is allowed on."""
         return [
-            Named(table_id, name)
+            NamedItem(table_id, name)
             for table_id, name in (*self._tables.items(), *self._created)
             if any(self._schema_ok(verb, table_id) for verb in _SCHEMA_TABLE_VERBS)
         ]
@@ -1349,7 +1358,7 @@ class BoundPolicy:
                 for item in payload
                 if self.visible(table_id, item["field"]["id"])
             ]
-        if action == "app_events":
+        if action == "app_triggers":
             # Owners are people, and the SDK doesn't need them to say what may run.
             return [
                 pick(item, EVENT_KEYS)
@@ -1467,9 +1476,9 @@ class BoundPolicy:
                 key: {str(k): v for k, v in value.items()}
                 for key, value in self._field_types.items()
             },
-            "classes": {
+            "tags": {
                 key: {str(k): sorted(v) for k, v in value.items() if v}
-                for key, value in self._classes.items()
+                for key, value in self._tags.items()
             },
             "rules": [_rule_state(rule) for rule in self._rules],
             "custom": [repr(rule) for rule in self._custom],
@@ -1502,17 +1511,17 @@ class BoundPolicy:
     def to_json(self) -> str:
         """Save the bound policy, to use in another process without binding again.
 
-        Custom `Rule`s can't be saved, so pass them again to `from_json()`.
+        Custom `CustomRule`s can't be saved, so pass them again to `from_json()`.
         """
         return json.dumps(self._state(), sort_keys=True)
 
     @classmethod
-    def from_json(cls, text: str, *, rules: Sequence[Rule] = ()) -> "BoundPolicy":
+    def from_json(cls, text: str, *, rules: Sequence[CustomRule] = ()) -> "BoundPolicy":
         """Load a bound policy that `to_json()` saved.
 
         Args:
             text: What `to_json()` returned.
-            rules: The custom `Rule`s the policy had, which can't be saved.
+            rules: The custom `CustomRule`s the policy had, which can't be saved.
 
         Raises:
             ConfigurationError: The text isn't a saved policy, or the custom rules don't match.
@@ -1532,7 +1541,7 @@ class BoundPolicy:
         return found
 
     @classmethod
-    def _from_state(cls, state: Mapping[str, Any], custom: Sequence[Rule]) -> "BoundPolicy":
+    def _from_state(cls, state: Mapping[str, Any], custom: Sequence[CustomRule]) -> "BoundPolicy":
         return cls(
             app_id=state["app_id"],
             offline=bool(state["offline"]),
@@ -1544,9 +1553,9 @@ class BoundPolicy:
                 key: {int(k): v for k, v in value.items()}
                 for key, value in state["field_types"].items()
             },
-            classes={
+            tags={
                 key: {int(k): frozenset(v) for k, v in value.items()}
-                for key, value in state["classes"].items()
+                for key, value in state["tags"].items()
             },
             rules=[_rule_from_state(item) for item in state["rules"]],
             custom=custom,
@@ -1581,23 +1590,23 @@ _APP_HINTS = {
     "write_code_pages": "add allow.code_pages(write=True)",
 }
 _SCHEMA_TABLE_VERBS = (
-    "add_field",
-    "change_field",
+    "create_field",
+    "update_field",
     "delete_field",
     "formula",
     "lookup",
     "summary",
     "link",
     "unlink",
-    "change_table",
+    "update_table",
     "delete_table",
-    "set_key",
+    "set_key_field",
 )
 
 
-def _class_words(classes: Iterable[str]) -> str:
-    names = sorted(classes)
-    return f"class {names[0]}" if len(names) == 1 else f"classes {', '.join(names)}"
+def _class_words(tags: Iterable[str]) -> str:
+    names = sorted(tags)
+    return f"tag {names[0]}" if len(names) == 1 else f"tags {', '.join(names)}"
 
 
 def _nothing_left(rule: str, what: str) -> str:
@@ -1613,7 +1622,7 @@ def _match_state(match: _Match | None) -> Any:
     return {
         "all": match.all,
         "new": match.new,
-        "classes": sorted(match.classes),
+        "tags": sorted(match.tags),
         "ids": {key: sorted(value) for key, value in match.ids.items()},
     }
 
@@ -1646,7 +1655,7 @@ def _rule_from_state(state: Mapping[str, Any]) -> _Rule:
         return _Match(
             all=bool(value["all"]),
             new=bool(value["new"]),
-            classes=frozenset(value["classes"]),
+            tags=frozenset(value["tags"]),
             ids={key: frozenset(ids) for key, ids in value["ids"].items()},
         )
 
@@ -1714,7 +1723,7 @@ class _Binder:
         }
 
     def class_target(self, name: str, target: Any) -> dict[str, set[int]]:
-        where = f"class {name!r}"
+        where = f"tag {name!r}"
         if isinstance(target, FieldSelector):
             if target.kind == "all":
                 return {key: {item.id for item in value} for key, value in self.fields.items()}
@@ -1774,18 +1783,18 @@ class _Binder:
         if grant.fields is None:
             return None
         every = new = False
-        classes: set[str] = set()
+        tags: set[str] = set()
         ids: dict[str, set[int]] = {}
         for selector in grant.fields:
             if selector.kind == "all":
                 every = True
             elif selector.kind == "new":
                 new = True
-            elif selector.kind == "classed":
+            elif selector.kind == "tagged":
                 for name in selector.values:
-                    if name not in self.policy.classes:
-                        self.problems.append(f"{rule.text}: there's no class {name!r}.")
-                classes.update(str(item) for item in selector.values)
+                    if name not in self.policy.tags:
+                        self.problems.append(f"{rule.text}: there's no tag {name!r}.")
+                tags.update(str(item) for item in selector.values)
             elif selector.kind == "labeled_like":
                 for table_id, found in self.like(str(selector.values[0])).items():
                     ids.setdefault(table_id, set()).update(found)
@@ -1804,7 +1813,7 @@ class _Binder:
         return _Match(
             all=every,
             new=new,
-            classes=frozenset(classes),
+            tags=frozenset(tags),
             ids={key: frozenset(value) for key, value in ids.items()},
         )
 
@@ -1905,9 +1914,9 @@ def _carry(
     fields: Mapping[str, tuple[Field, ...]],
     links: Sequence[_Link],
 ) -> dict[str, dict[int, frozenset[str]]]:
-    """Give each formula, lookup, and summary the classes of what it reads, through chains and
+    """Give each formula, lookup, and summary the tags of what it reads, through chains and
     cycles, until nothing changes."""
-    classes = {
+    tags = {
         key: {item.id: set(seed.get(key, {}).get(item.id, ())) for item in value}
         for key, value in fields.items()
     }
@@ -1919,22 +1928,20 @@ def _carry(
     changed = True
     while changed:
         changed = False
-        everything = {
-            name for value in classes.values() for found in value.values() for name in found
-        }
+        everything = {name for value in tags.values() for found in value.values() for name in found}
         for (table_id, field_id), read in sources.items():
             if read == []:
                 continue
-            found = classes[table_id][field_id]
+            found = tags[table_id][field_id]
             before = len(found)
             if read is None:
                 found |= everything
             else:
                 for other_table, other_id in read:
-                    found |= classes.get(other_table, {}).get(other_id, set())
+                    found |= tags.get(other_table, {}).get(other_id, set())
             if len(found) != before:
                 changed = True
-    return {key: {k: frozenset(v) for k, v in value.items()} for key, value in classes.items()}
+    return {key: {k: frozenset(v) for k, v in value.items()} for key, value in tags.items()}
 
 
 def bind_snapshot(policy: Policy, snapshot: Snapshot) -> BoundPolicy:
@@ -1958,7 +1965,7 @@ def bind_snapshot(policy: Policy, snapshot: Snapshot) -> BoundPolicy:
         for item in snapshot.relationships
     ]
     seed: dict[str, dict[int, set[str]]] = {}
-    for name, targets in policy.classes.items():
+    for name, targets in policy.tags.items():
         for target in targets:
             for table_id, ids in binder.class_target(name, target).items():
                 for field_id in ids:
@@ -2002,7 +2009,7 @@ def bind_snapshot(policy: Policy, snapshot: Snapshot) -> BoundPolicy:
                 text=texts,
                 layer="rows",
                 all_tables=True,
-                grants=(_Grant(frozenset(_SEEN_VERBS), _Match(classes=frozenset({_ROWS_CLASS}))),),
+                grants=(_Grant(frozenset(_SEEN_VERBS), _Match(tags=frozenset({_ROWS_CLASS}))),),
             ),
         )
     if binder.problems:
@@ -2010,7 +2017,7 @@ def bind_snapshot(policy: Policy, snapshot: Snapshot) -> BoundPolicy:
             "The policy can't be bound to app "
             f"{snapshot.app_id}:\n" + "\n".join(f"- {item}" for item in binder.problems)
         )
-    classes = _carry(seed, snapshot.fields, links)
+    tags = _carry(seed, snapshot.fields, links)
     return BoundPolicy(
         app_id=snapshot.app_id,
         offline=False,
@@ -2021,7 +2028,7 @@ def bind_snapshot(policy: Policy, snapshot: Snapshot) -> BoundPolicy:
         field_types={
             key: {item.id: item.type for item in value} for key, value in snapshot.fields.items()
         },
-        classes=classes,
+        tags=tags,
         rules=rules,
         custom=custom,
         rows=row_text,
@@ -2037,9 +2044,9 @@ def bind_snapshot(policy: Policy, snapshot: Snapshot) -> BoundPolicy:
 
 def _bind_rules(
     policy: Policy, binder: _Binder
-) -> tuple[list[_Rule], list[Rule], dict[str, list[tuple[str, str]]]]:
+) -> tuple[list[_Rule], list[CustomRule], dict[str, list[tuple[str, str]]]]:
     rules: list[_Rule] = []
-    custom: list[Rule] = []
+    custom: list[CustomRule] = []
     rows: dict[str, list[tuple[str, str]]] = {}
     for item in policy.rules:
         if not isinstance(item, PolicyRule):
@@ -2089,7 +2096,7 @@ def bind_offline(policy: Policy) -> BoundPolicy:
     """Bind a policy that names nothing, so every table and field counts as known."""
     if policy.needs_app:
         raise ConfigurationError(
-            "This policy names tables, fields, classes, reports, or row limits, so it needs an "
+            "This policy names tables, fields, tags, reports, or row limits, so it needs an "
             "app. Bind it with `await policy.bind(app)` first, and pass the BoundPolicy."
         )
     binder = _Binder(policy, None)
@@ -2100,7 +2107,7 @@ def bind_offline(policy: Policy) -> BoundPolicy:
         tables={},
         fields={},
         field_types={},
-        classes={},
+        tags={},
         rules=rules,
         custom=custom,
         rows={},
@@ -2111,22 +2118,22 @@ def bind_offline(policy: Policy) -> BoundPolicy:
     )
 
 
-def refused(decision: Decision) -> PolicyRefusedError:
+def refused(decision: PolicyDecision) -> PolicyRefusedError:
     return PolicyRefusedError(decision)
 
 
 def derived_refusal(
-    verb: Verb,
+    verb: PolicyVerb,
     reason: str,
     *,
-    table: Named | None = None,
+    table: NamedItem | None = None,
     rule: str | None = None,
     hint: str | None = None,
-    layer: Layer = "derived",
+    layer: DecisionLayer = "derived",
 ) -> PolicyRefusedError:
     """A refusal of a formula, lookup, or summary because of what it reads."""
     return PolicyRefusedError(
-        Decision(
+        PolicyDecision(
             allowed=False, verb=verb, layer=layer, rule=rule, reason=reason, hint=hint, table=table
         )
     )

@@ -15,9 +15,9 @@ from pyquickbase import (
     FileAttachment,
     FileVersion,
     InvalidValueError,
-    Page,
     Quickbase,
     Record,
+    RecordPage,
     User,
 )
 from pyquickbase._frames import frame_rows
@@ -25,12 +25,12 @@ from pyquickbase._frames import frame_rows
 LABELS = {"Record ID#": 3, "Title": 6, "Due": 7, "Done At": 8, "Owner": 9, "Tags": 10, "File": 11}
 ANN = User(id="1.a", name="Ann", email="ann@example.com")
 FILE = FileAttachment(
-    url="", versions=(FileVersion(number=1, file_name="plan.pdf", uploaded=None, creator=None),)
+    url="", versions=(FileVersion(number=1, file_name="plan.pdf", uploaded_at=None, creator=None),)
 )
 
 
-def page(*records: Record) -> Page:
-    return Page(records=records, total=len(records), skip=0, columns=tuple(LABELS))
+def page(*records: Record) -> RecordPage:
+    return RecordPage(records=records, total=len(records), skip=0, columns=tuple(LABELS))
 
 
 FULL = Record(

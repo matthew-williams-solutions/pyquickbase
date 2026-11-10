@@ -52,7 +52,7 @@ Nothing here should break anyone.
 
 ## Apps, events, and DataFrames
 
-- `AppEvent` parsing is only tested against the published example. The test apps have no webhooks,
+- `AppTrigger` parsing is only tested against the published example. The test apps have no webhooks,
   actions, notifications, or automations, and the API can't make one, so confirm the shape on an app
   that has each kind, including whether an automation ever has a `name`.
 - A run killed during `tests/_async/live/test_apps.py` leaves an app named `ZZ Live App ...`. `client.apps()`

@@ -36,7 +36,7 @@ refused it:
 | `derived` | A formula, lookup, or summary would read something the client can't |
 
 A confirmation that `require_preview` asks for isn't part of the policy. A missing or mismatched one
-raises `ConfirmationError`.
+raises `InvalidConfirmationError`.
 
 ## Binding a policy
 

@@ -151,9 +151,9 @@ def test_a_public_name_without_a_page_stops_the_build(monkeypatch: pytest.Monkey
 
 
 def test_an_attribute_without_a_description_stops_the_build() -> None:
-    doc = build_reference.parse_docstring("A thing.", "Page")
+    doc = build_reference.parse_docstring("A thing.", "RecordPage")
     with pytest.raises(SystemExit, match=r"Page\.records has no description"):
-        build_reference._attributes(pyquickbase.Page, doc, has_constructor=False)
+        build_reference._attributes(pyquickbase.RecordPage, doc, has_constructor=False)
 
 
 def test_the_full_file_uses_sync_examples_only() -> None:
@@ -293,14 +293,14 @@ def test_a_named_method_that_does_not_exist_stops_the_build() -> None:
 def test_docstrings_are_split_into_their_parts() -> None:
     doc = build_reference.parse_docstring(
         "Summary.\n\nMore text.\n\nArgs:\n    a: First\n        line.\n\n"
-        "Returns:\n    A thing.\n\nRaises:\n    QueryError: Bad.",
+        "Returns:\n    A thing.\n\nRaises:\n    InvalidQueryError: Bad.",
         "Table.x",
     )
     assert doc.summary == "Summary."
     assert doc.prose == ["More text."]
     assert doc.args == {"a": "First line."}
     assert doc.returns == "A thing."
-    assert doc.raises == [("QueryError", "Bad.")]
+    assert doc.raises == [("InvalidQueryError", "Bad.")]
 
 
 def test_method_links_only_follow_the_call_form() -> None:
@@ -381,7 +381,7 @@ def test_signatures_and_definitions_are_python(name: str) -> None:
 def test_a_long_alias_is_shown_by_name() -> None:
     methods = {method.heading: method for method in SYMBOLS["Policies"]["BoundPolicy"].methods}
     signature = methods["BoundPolicy.allows()"].signature
-    assert "verb: Verb," in signature
+    assert "verb: PolicyVerb," in signature
     assert "Literal" not in signature
 
 

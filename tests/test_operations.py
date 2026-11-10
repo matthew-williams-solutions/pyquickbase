@@ -10,12 +10,12 @@ from pyquickbase import (
     ConfigurationError,
     F,
     FileUpload,
+    InvalidQueryError,
     InvalidValueError,
-    OperationName,
     Period,
     Policy,
-    QueryError,
     ReportInfo,
+    TableOperationName,
     UnknownFieldError,
     UnknownReportError,
     allow,
@@ -85,7 +85,7 @@ def bound(*rules: Any) -> Any:
     )
 
 
-def spec(name: OperationName, limits: Allowed | None = None, **kwargs: Any) -> Any:
+def spec(name: TableOperationName, limits: Allowed | None = None, **kwargs: Any) -> Any:
     options: dict[str, Any] = {
         "descriptions": None,
         "report_descriptions": {},
@@ -109,7 +109,7 @@ def valid(schema: dict[str, Any], arguments: dict[str, Any]) -> bool:
 
 
 def test_every_operation_has_a_valid_schema() -> None:
-    for name in get_args(OperationName):
+    for name in get_args(TableOperationName):
         schema = spec(name).schema
         Draft202012Validator.check_schema(schema)
         assert schema["type"] == "object"
@@ -176,7 +176,7 @@ def test_fields_narrows_everything() -> None:
     assert labels(limits.insertable) == ["Status", "Due Date"]
     with pytest.raises(UnknownFieldError):
         allowed(wanted=["Nope"])
-    with pytest.raises(QueryError, match="single string"):
+    with pytest.raises(InvalidQueryError, match="single string"):
         allowed(wanted="Status")
 
 
@@ -219,7 +219,7 @@ def test_descriptions_go_where_a_model_reads_them() -> None:
 def test_a_description_must_be_for_an_offered_field() -> None:
     with pytest.raises(UnknownFieldError, match="isn't one of this operation's fields"):
         spec("count", allowed(wanted=["Status"]), descriptions={"Title": "x"})
-    with pytest.raises(QueryError, match="isn't empty"):
+    with pytest.raises(InvalidQueryError, match="isn't empty"):
         spec("query", descriptions={"Title": " "})
 
 
@@ -276,9 +276,9 @@ def test_a_bare_label_sorts_ascending() -> None:
 
 def test_sort_is_only_read_as_order_by_once() -> None:
     query = spec("query")
-    with pytest.raises(QueryError, match="doesn't take"):
+    with pytest.raises(InvalidQueryError, match="doesn't take"):
         query.plan({"sort": ["Title"], "order_by": ["Title"]}, None)
-    with pytest.raises(QueryError, match="doesn't take"):
+    with pytest.raises(InvalidQueryError, match="doesn't take"):
         spec("count").plan({"sort": ["Title"]}, None)
 
 
@@ -307,29 +307,29 @@ def test_query_defaults() -> None:
 )
 def test_bad_query_arguments_are_refused(arguments: dict[str, Any], match: str) -> None:
     query = spec("query")
-    with pytest.raises(QueryError, match=match):
+    with pytest.raises(InvalidQueryError, match=match):
         query.plan(arguments, None)
     assert "Status is Open" not in str(match)
 
 
 def test_the_arguments_must_be_an_object() -> None:
-    with pytest.raises(QueryError, match="an object"):
+    with pytest.raises(InvalidQueryError, match="an object"):
         spec("count").plan([], None)
 
 
 def test_a_filter_is_held_to_the_filterable_fields() -> None:
     rules = bound(allow.read(TASKS, filter=[7]))
     count = spec("count", allowed(policy=rules))
-    with pytest.raises(QueryError, match="may use"):
+    with pytest.raises(InvalidQueryError, match="may use"):
         count.plan({"where": {"field": "Title", "op": "==", "value": "x"}}, None)
 
 
 def test_delete_needs_a_where() -> None:
     delete = spec("delete")
     assert not valid(delete.schema, {})
-    with pytest.raises(QueryError, match="need where"):
+    with pytest.raises(InvalidQueryError, match="need where"):
         delete.plan({}, None)
-    with pytest.raises(QueryError, match="required"):
+    with pytest.raises(InvalidQueryError, match="required"):
         delete.plan({"where": None}, None)
     call = delete.plan({"where": {"field": "Status", "op": "==", "value": "Done"}}, None)
     assert call.method == "delete"
@@ -339,7 +339,7 @@ def test_summarize_reads_the_words_models_write_for_aggregates() -> None:
     summarize = spec("summarize")
     call = summarize.plan({"total": ["Hours"], "maximum": ["Due Date"]}, None)
     assert (call.arguments["sum"], call.arguments["max"]) == (["Hours"], ["Due Date"])
-    with pytest.raises(QueryError, match="doesn't take"):
+    with pytest.raises(InvalidQueryError, match="doesn't take"):
         summarize.plan({"total": ["Hours"], "sum": ["Hours"]}, None)
 
 
@@ -361,7 +361,7 @@ def test_summarize_arguments() -> None:
         {"group_by": [{"field": "Due Date", "unit": "decade"}]},
         {"sum": ["Title"]},
     ):
-        with pytest.raises(QueryError):
+        with pytest.raises(InvalidQueryError):
             summarize.plan(bad, None)
 
 
@@ -514,9 +514,9 @@ def test_reports_are_chosen_from_the_list_and_take_no_scope() -> None:
         "1",
         {"limit": 3, "skip": 0},
     )
-    with pytest.raises(QueryError, match="isn't a report this tool may run"):
+    with pytest.raises(InvalidQueryError, match="isn't a report this tool may run"):
         run.plan({"report": "5"}, None)
-    with pytest.raises(QueryError, match="can't take a scope"):
+    with pytest.raises(InvalidQueryError, match="can't take a scope"):
         run.plan({"report": "1"}, F("Project") == "x")
     summary = spec("run_summary_report", report_descriptions={"5": "Hours by status."})
     assert "5: Totals, Hours by status." in summary.schema["properties"]["report"]["description"]
@@ -532,17 +532,20 @@ def test_a_report_can_be_named_by_its_id_as_a_number_or_by_its_name(report: Any)
 
 @pytest.mark.parametrize("report", [True, 1.0, "2", 2, "List", "Ask", None, ["1"]])
 def test_anything_else_is_refused_without_being_repeated(report: Any) -> None:
-    with pytest.raises(QueryError, match="isn't a report this tool may run") as caught:
+    with pytest.raises(InvalidQueryError, match="isn't a report this tool may run") as caught:
         spec("run_report").plan({"report": report}, None)
     assert "Ask" not in str(caught.value)
 
 
 def test_a_report_of_the_other_kind_says_which_operation_runs_it() -> None:
     with pytest.raises(
-        QueryError, match="it's a summary or chart report, so use the run_summary_report operation"
+        InvalidQueryError,
+        match="it's a summary or chart report, so use the run_summary_report operation",
     ):
         spec("run_report").plan({"report": "Totals"}, None)
-    with pytest.raises(QueryError, match="it's a table report, so use the run_report operation"):
+    with pytest.raises(
+        InvalidQueryError, match="it's a table report, so use the run_report operation"
+    ):
         spec("run_summary_report").plan({"report": 1}, None)
 
 
@@ -568,7 +571,7 @@ def test_a_name_shared_by_two_reports_needs_the_id() -> None:
         max_rows=100,
         formula=None,
     )
-    with pytest.raises(QueryError, match="Several reports"):
+    with pytest.raises(InvalidQueryError, match="Several reports"):
         run.plan({"report": "same"}, None)
     assert run.plan({"report": "2"}, None).report_id == "2"
 
@@ -585,10 +588,10 @@ def test_a_name_shared_by_two_reports_needs_the_id() -> None:
     ],
 )
 def test_a_label_in_another_case_is_refused_with_the_right_one(
-    name: OperationName, arguments: dict[str, Any], label: str
+    name: TableOperationName, arguments: dict[str, Any], label: str
 ) -> None:
     with pytest.raises(
-        (QueryError, InvalidValueError), match=f"must match exactly, as in '{label}'"
+        (InvalidQueryError, InvalidValueError), match=f"must match exactly, as in '{label}'"
     ):
         spec(name).plan(arguments, None)
 
@@ -606,7 +609,7 @@ def test_a_hint_never_names_a_field_the_tool_doesnt_offer() -> None:
         ("query", {"select": ["hours"]}),
         ("insert", {"records": [{"Title": "x", "hours": 1}]}),
     ):
-        with pytest.raises((QueryError, InvalidValueError)) as caught:
+        with pytest.raises((InvalidQueryError, InvalidValueError)) as caught:
             spec(name, hidden).plan(arguments, None)  # type: ignore[arg-type]
         assert "Hours" not in str(caught.value)
 
@@ -653,9 +656,9 @@ def test_a_formula_is_fixed_by_code_and_the_model_picks_the_record() -> None:
     call = formula.plan({"record_id": 2}, None)
     assert call.arguments == {"formula": "[Hours] * 2", "record_id": 2}
     assert call.record_ids == (2,)
-    with pytest.raises(QueryError, match="doesn't take"):
+    with pytest.raises(InvalidQueryError, match="doesn't take"):
         formula.plan({"formula": "GetRecords(...)"}, None)
-    with pytest.raises(QueryError, match="record_id is required"):
+    with pytest.raises(InvalidQueryError, match="record_id is required"):
         formula.plan({}, F("Project") == "x")
 
 
@@ -669,15 +672,15 @@ def test_files() -> None:
         ]
         == 2
     )
-    with pytest.raises(QueryError, match="file field"):
+    with pytest.raises(InvalidQueryError, match="file field"):
         download.plan({"record_id": 1, "field": "Title"}, None)
     delete = spec("delete_file_version")
-    with pytest.raises(QueryError, match="need version"):
+    with pytest.raises(InvalidQueryError, match="need version"):
         delete.plan({"record_id": 1, "field": "Attachment"}, None)
 
 
 def test_what_plan_accepts_matches_the_schema() -> None:
-    examples: dict[OperationName, dict[str, Any]] = {
+    examples: dict[TableOperationName, dict[str, Any]] = {
         "query": {"where": {"all": [{"field": "Hours", "op": ">", "value": 2}]}, "limit": 1},
         "count": {"where": {"field": "Done", "op": "==", "value": True}},
         "preview_delete": {"where": {"field": "Status", "op": "==", "value": "Done"}},

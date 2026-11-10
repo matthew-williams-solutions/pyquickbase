@@ -1,7 +1,7 @@
 from pyquickbase import (
     AsyncQuickbase,
-    Decision,
     Policy,
+    PolicyDecision,
     PolicyRefusedError,
     WriteRequest,
     allow,
@@ -15,7 +15,7 @@ class OneRowAtATime:
             isinstance(request, WriteRequest)
             and (request.row_count or 0) > 1
         ):
-            return Decision(
+            return PolicyDecision(
                 allowed=False,
                 verb="insert",
                 reason="Write one row at a time",

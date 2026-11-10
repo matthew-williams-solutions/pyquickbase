@@ -9,5 +9,9 @@ try:
     )
 except WriteError as error:
     print(error.result.created_ids)
-    for failure in error.result.errors:
-        print(failure.index, failure.reason, failure.field_id)
+    for failure in error.result.failed_rows:
+        print(
+            failure.row_index,
+            failure.reason,
+            failure.field_id,
+        )

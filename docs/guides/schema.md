@@ -162,7 +162,7 @@ tasks.ensure_count_field(link, "Done Tasks", where="{7.EX.'Done'}")
 
 - **The filter is checked before anything is sent.** Quickbase saves a filter it can't use, such as one
   with a typo or a field that doesn't exist, without an error, and the summary then always reads as
-  empty. The SDK raises `QueryError` instead.
+  empty. The SDK raises `InvalidQueryError` instead.
 - **It's part of what makes a summary the same.** If a summary with that label exists with a different
   filter, or none, the method raises `SchemaMismatchError`. `Field.summary_query` holds a summary's
   filter.
@@ -279,13 +279,13 @@ plan = app.preview_schema_changes(
     ]
 )
 for change in plan.changes:
-    print(change.status, change.risk, change.summary, change.warnings)
+    print(change.status, change.risk, change.description, change.warnings)
 if not plan.blockers:
     app.apply_schema_changes(plan)
 ```
 
 To change a table's key field, use a `SetKeyField` change in a plan. The field must be unique, or be `Record ID#`
-to go back to the usual key. `allow.schema(..., "set_key")` allows it for a client with a policy.
+to go back to the usual key. `allow.schema(..., "set_key_field")` allows it for a client with a policy.
 
 Each `PlannedChange` has:
 
@@ -342,4 +342,4 @@ See [Handling errors](errors.md) for how these exceptions relate.
 ## The metadata cache
 
 These methods refresh the client's cached metadata for you. After changing the schema some other way,
-such as in the Quickbase interface, call `qb.clear_schema_cache()`.
+such as in the Quickbase interface, call `qb.clear_metadata_cache()`.

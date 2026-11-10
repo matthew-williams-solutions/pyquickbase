@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from pyquickbase import AsyncQuickbase, F, QueryError, tool_result
+from pyquickbase import AsyncQuickbase, F, InvalidQueryError, tool_result
 
 pytestmark = pytest.mark.anyio
 
@@ -48,7 +48,7 @@ async def test_an_update_outside_its_scope_changes_nothing(
 ) -> None:
     tasks = qb.app(scratch.app_id).table(table.info().id)
     update = await tasks.operation("update", fields=["Hours"])
-    with pytest.raises(QueryError, match="aren't ones this tool may use"):
+    with pytest.raises(InvalidQueryError, match="aren't ones this tool may use"):
         await update.run(
             {"records": [{"Record ID#": 3, "Hours": 99}]}, scope=F("Project") == "Alpha"
         )
@@ -92,5 +92,5 @@ async def test_a_formula_and_a_report(qb: AsyncQuickbase, scratch: Any, table: A
     report = await tasks.operation("run_report", reports=["1"])
     page = await report.run({"report": "1", "limit": 2})
     assert len(page.records) == 2
-    with pytest.raises(QueryError, match="scope"):
+    with pytest.raises(InvalidQueryError, match="scope"):
         await report.run({"report": "1"}, scope=F("Project") == "Alpha")

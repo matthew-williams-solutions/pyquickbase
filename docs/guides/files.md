@@ -94,7 +94,7 @@ task = tasks.get(7, select=["Attachment"])
 
 if task["Attachment"] is not None:
     for version in task["Attachment"].versions:
-        print(version.number, version.file_name, version.uploaded)
+        print(version.number, version.file_name, version.uploaded_at)
 ```
 
 Each version names its uploader in `creator`, a `User` with their email address, so take care when
@@ -125,5 +125,5 @@ reused or renumbered.
 | A request over 40 MiB | `APIError`, status 413 | Nothing in that request was written. Earlier batches were, and a `WriteError` says so |
 | A record, version, or file that doesn't exist | `NotFoundError` | Nothing was changed |
 | A download from a field the role can't see | `NotFoundError` | Nothing was changed |
-| An upload the role can't do | `WritePermissionError` | Nothing in the refused rows changed |
+| An upload the role can't do | `WritePermissionDeniedError` | Nothing in the refused rows changed |
 | Deleting a version the role can't delete | `PermissionDeniedError` | Nothing was changed |

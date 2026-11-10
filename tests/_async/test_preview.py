@@ -10,10 +10,10 @@ from pyquickbase import (
     AsyncQuickbase,
     F,
     FileUpload,
+    InvalidQueryError,
     InvalidValueError,
     Policy,
     PolicyRefusedError,
-    QueryError,
     UnknownFieldError,
     where_from_dict,
 )
@@ -42,10 +42,10 @@ class Fake:
     """Serves records, and records every query, and any write that gets through."""
 
     def __init__(
-        self, records: dict[int, dict[str, Any]] | None = None, *, events: Any = EVENTS
+        self, records: dict[int, dict[str, Any]] | None = None, *, triggers: Any = EVENTS
     ) -> None:
         self.records = records or {}
-        self.events = events
+        self.triggers = triggers
         self.queries: list[dict[str, Any]] = []
         self.writes: list[str] = []
 
@@ -56,9 +56,9 @@ class Fake:
         if path == "/fields":
             return httpx.Response(200, json=FIELDS)
         if path == "/apps/bq1234567/events":
-            if self.events is None:
+            if self.triggers is None:
                 return httpx.Response(403, json={"message": "Access denied"})
-            return httpx.Response(200, json=self.events)
+            return httpx.Response(200, json=self.triggers)
         if path == "/records/query":
             body = json.loads(request.content)
             self.queries.append(body)
@@ -109,7 +109,7 @@ async def test_an_update_preview_compares_without_writing() -> None:
     assert preview.changes[0].fields["Title"].after == "new"
     assert preview.unchanged_ids == (2,)
     assert preview.missing_ids == (3,)
-    assert [(item.type, item.name) for item in preview.events or ()] == [
+    assert [(item.type, item.name) for item in preview.triggers or ()] == [
         ("webhook", "Notify CRM"),
         ("automation", None),
     ]
@@ -174,38 +174,38 @@ async def test_a_delete_preview_counts_every_match_without_deleting() -> None:
     assert page.total == 3
     assert len(page.records) == 2
     assert page.columns == ("Record ID#", "Title", "Status", "Attachment")
-    assert [item.type for item in page.events or ()] == ["webhook", "automation"]
+    assert [item.type for item in page.triggers or ()] == ["webhook", "automation"]
     assert fake.queries[0]["where"] == "{7.EX.'Done'}"
     assert fake.writes == []
 
 
 async def test_events_a_policy_shows_leave_out_owners() -> None:
     async with client(Fake(), policy=Policy.read_only()) as qb:
-        events = await qb.app("bq1234567").events()
-    assert len(events) == len(EVENTS)
-    assert all(item.owner is None for item in events)
+        triggers = await qb.app("bq1234567").triggers()
+    assert len(triggers) == len(EVENTS)
+    assert all(item.owner is None for item in triggers)
     async with client(Fake()) as qb:
-        events = await qb.app("bq1234567").events()
-    assert events[0].owner is not None
-    assert events[0].owner.email == "ann@example.com"
+        triggers = await qb.app("bq1234567").triggers()
+    assert triggers[0].owner is not None
+    assert triggers[0].owner.email == "ann@example.com"
 
 
 async def test_a_table_lists_only_its_own_events() -> None:
     async with client(Fake()) as qb:
-        events = await qb.app("bq1234567").table("Tasks").events()
-    assert [item.name for item in events] == ["Notify CRM", None, "Old", "Due soon"]
-    assert [item.runs_on_changes for item in events] == [True, True, True, False]
+        triggers = await qb.app("bq1234567").table("Tasks").triggers()
+    assert [item.name for item in triggers] == ["Notify CRM", None, "Old", "Due soon"]
+    assert [item.runs_on_changes for item in triggers] == [True, True, True, False]
 
 
-@pytest.mark.parametrize("events", [None, {"unexpected": True}])
-async def test_a_preview_still_works_when_events_cant_be_read(events: Any) -> None:
-    fake = Fake({1: {6: "old"}}, events=events)
+@pytest.mark.parametrize("triggers", [None, {"unexpected": True}])
+async def test_a_preview_still_works_when_events_cant_be_read(triggers: Any) -> None:
+    fake = Fake({1: {6: "old"}}, triggers=triggers)
     async with client(fake) as qb:
         tasks = qb.app("bq1234567").table("Tasks")
         update = await tasks.preview_update([{"Record ID#": 1, "Title": "new"}])
         delete = await tasks.preview_delete(F("Title") == "old")
-    assert update.events is None
-    assert delete.events is None
+    assert update.triggers is None
+    assert delete.triggers is None
     assert delete.total == 1
 
 
@@ -221,7 +221,7 @@ async def test_a_delete_preview_takes_a_filter_from_data() -> None:
 async def test_a_delete_preview_checks_where_like_a_delete(where: Any) -> None:
     fake = Fake()
     async with client(fake) as qb:
-        with pytest.raises(QueryError):
+        with pytest.raises(InvalidQueryError):
             await qb.app("bq1234567").table("Tasks").preview_delete(where)
     assert fake.queries == []
 

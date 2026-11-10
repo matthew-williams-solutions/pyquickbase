@@ -20,8 +20,8 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 
 from ._models import Field, FieldIndex
-from ._query import OPERATORS, Condition, Expression, FieldRef, Group, format_value
-from .errors import QueryError
+from ._query import OPERATORS, Condition, FieldRef, Group, WhereExpression, format_value
+from .errors import InvalidQueryError
 
 MAX_WHERE_DEPTH = 20
 MAX_WHERE_CONDITIONS = 100
@@ -112,7 +112,7 @@ def _iso_date(value: str, label: str) -> str:
             return value
     except ValueError:
         pass
-    raise QueryError(f"Field {label!r} is a date. Send its value as YYYY-MM-DD.")
+    raise InvalidQueryError(f"Field {label!r} is a date. Send its value as YYYY-MM-DD.")
 
 
 def _timestamp(value: str, label: str) -> str:
@@ -128,7 +128,7 @@ def _timestamp(value: str, label: str) -> str:
     except ValueError:
         parsed = None
     if parsed is None or parsed.tzinfo is None:
-        raise QueryError(problem)
+        raise InvalidQueryError(problem)
     return str(int(parsed.timestamp() * 1000))
 
 
@@ -139,14 +139,14 @@ def _number(value: str, label: str) -> str:
         number = None
     # The exponent is limited because writing out 1e999999999 would take all of the memory.
     if number is None or not number.is_finite() or abs(number.adjusted()) > _MAX_EXPONENT:
-        raise QueryError(f"Field {label!r} is a number. Send its value as a number.")
+        raise InvalidQueryError(f"Field {label!r} is a number. Send its value as a number.")
     return format(number, "f")  # Without an exponent, and in ASCII digits.
 
 
 def _checkbox(value: str, label: str) -> str:
     lowered = value.casefold()
     if lowered not in ("true", "false"):
-        raise QueryError(f"Field {label!r} is a checkbox. Send its value as true or false.")
+        raise InvalidQueryError(f"Field {label!r} is a checkbox. Send its value as true or false.")
     return lowered
 
 
@@ -164,7 +164,7 @@ class _CheckedCondition(Condition):
         if item.type in _DATE_TYPES or item.type in _NUMERIC_TYPES or item.type == "checkbox":
             allowed = _COMPARISONS if item.type != "checkbox" else _EMPTY_ALLOWED
             if operator not in allowed:
-                raise QueryError(
+                raise InvalidQueryError(
                     f"Field {item.label!r} has the type {item.type}, so it can only be compared, "
                     "with ==, !=, in, or not_in"
                     + (", or <, <=, >, or >=." if item.type != "checkbox" else ".")
@@ -194,67 +194,71 @@ class _Builder:
     def _count(self, path: str, added: int = 1) -> None:
         self._conditions += added
         if self._conditions > MAX_WHERE_CONDITIONS:
-            raise QueryError(
+            raise InvalidQueryError(
                 f"{path}: a filter can have at most {MAX_WHERE_CONDITIONS} conditions, counting "
                 "each value of in and not_in."
             )
 
-    def build(self, data: Any, path: str, depth: int) -> Expression:
+    def build(self, data: Any, path: str, depth: int) -> WhereExpression:
         if not isinstance(data, Mapping):
-            raise QueryError(f"{path} must be an object, not {type(data).__name__}. {_HELP}")
+            raise InvalidQueryError(f"{path} must be an object, not {type(data).__name__}. {_HELP}")
         if "all" in data or "any" in data:
             return self._group(data, path, depth)  # pyright: ignore[reportUnknownArgumentType]
         return self._condition(data, path)  # pyright: ignore[reportUnknownArgumentType]
 
-    def _group(self, data: Mapping[Any, Any], path: str, depth: int) -> Expression:
+    def _group(self, data: Mapping[Any, Any], path: str, depth: int) -> WhereExpression:
         if len(data) != 1:
-            raise QueryError(f"{path} must have only one key, all or any. {_HELP}")
+            raise InvalidQueryError(f"{path} must have only one key, all or any. {_HELP}")
         key = next(iter(data))
         parts = data[key]
         if not isinstance(parts, list | tuple) or not parts:
-            raise QueryError(f"{path}.{key} must be a list with at least one condition.")
+            raise InvalidQueryError(f"{path}.{key} must be a list with at least one condition.")
         if depth >= MAX_WHERE_DEPTH:
-            raise QueryError(f"{path}: groups can only be nested {MAX_WHERE_DEPTH} levels deep.")
+            raise InvalidQueryError(
+                f"{path}: groups can only be nested {MAX_WHERE_DEPTH} levels deep."
+            )
         built = [
             self.build(part, f"{path}.{key}[{index}]", depth + 1)
             for index, part in enumerate(parts)  # pyright: ignore[reportUnknownArgumentType, reportUnknownVariableType]
         ]
         return built[0] if len(built) == 1 else Group.of("AND" if key == "all" else "OR", *built)
 
-    def _condition(self, data: Mapping[Any, Any], path: str) -> Expression:
+    def _condition(self, data: Mapping[Any, Any], path: str) -> WhereExpression:
         if _CONDITION_KEYS.symmetric_difference(data):
             missing = sorted(_CONDITION_KEYS - set(data))
             problem = f"is missing {', '.join(missing)}" if missing else "has an unknown key"
-            raise QueryError(f"{path} {problem}. {_HELP} Use a value of null to match empty.")
+            raise InvalidQueryError(
+                f"{path} {problem}. {_HELP} Use a value of null to match empty."
+            )
         field, op, value = data["field"], data["op"], data["value"]
         if isinstance(field, bool) or not isinstance(field, str | int):
-            raise QueryError(f"{path}.field must be a field's label or ID.")
+            raise InvalidQueryError(f"{path}.field must be a field's label or ID.")
         if self._fields is not None and field not in self._fields:
-            raise QueryError(
+            raise InvalidQueryError(
                 f"{path}.field isn't a field this filter may use.{case_hint(field, self._fields)}"
             )
         if not isinstance(op, str):
-            raise QueryError(f"{path}.op must be text. {_operators_help()}")
+            raise InvalidQueryError(f"{path}.op must be text. {_operators_help()}")
         op = normalize_operator(op)
         try:
             if op in _LIST_OPERATORS:
                 return self._list_condition(field, op, value, path)
             operator = _NAMED_OPERATORS.get(op, op)
             if operator not in _RAW_OPERATORS:
-                raise QueryError(f"{path}.op isn't an operator. {_operators_help()}")
+                raise InvalidQueryError(f"{path}.op isn't an operator. {_operators_help()}")
             self._count(path)
             return _CheckedCondition(field, operator, _text(value, operator))
-        except QueryError as exc:
+        except InvalidQueryError as exc:
             if str(exc).startswith(path):
                 raise
-            raise QueryError(f"{path}: {exc}") from None
+            raise InvalidQueryError(f"{path}: {exc}") from None
 
-    def _list_condition(self, field: FieldRef, op: str, values: Any, path: str) -> Expression:
+    def _list_condition(self, field: FieldRef, op: str, values: Any, path: str) -> WhereExpression:
         operator, joiner = _LIST_OPERATORS[op]
         if not isinstance(values, list | tuple) or not values:
-            raise QueryError(f"{op} needs a list with at least one value.")
+            raise InvalidQueryError(f"{op} needs a list with at least one value.")
         self._count(path, len(values))  # pyright: ignore[reportUnknownArgumentType]
-        built: list[Expression] = [
+        built: list[WhereExpression] = [
             _CheckedCondition(field, operator, _text(item, operator))
             for item in values  # pyright: ignore[reportUnknownVariableType]
         ]
@@ -300,24 +304,26 @@ def normalize_where(data: Any, depth: int = 0) -> Any:
 def _text(value: Any, operator: str) -> str:
     """Render one value, refusing the ones whose meaning would be different from what's written."""
     if isinstance(value, float) and not math.isfinite(value):
-        raise QueryError("A value must be a finite number.")
+        raise InvalidQueryError("A value must be a finite number.")
     if isinstance(value, int) and abs(value) >= 10**_MAX_EXPONENT:
-        raise QueryError("A number can't be this large.")
+        raise InvalidQueryError("A number can't be this large.")
     if isinstance(value, Decimal) and (
         not value.is_finite() or abs(value.adjusted()) > _MAX_EXPONENT
     ):
-        raise QueryError("A value must be a finite number that isn't this large.")
+        raise InvalidQueryError("A value must be a finite number that isn't this large.")
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            raise QueryError("A datetime in a query needs a timezone, so its meaning is clear.")
+            raise InvalidQueryError(
+                "A datetime in a query needs a timezone, so its meaning is clear."
+            )
         value = value.isoformat()
     if not (value is None or isinstance(value, str | int | float | bool | Decimal | date)):
-        raise QueryError("A value must be text, a number, true, false, or null.")
+        raise InvalidQueryError("A value must be text, a number, true, false, or null.")
     text = format_value(value)
     if text != "" and not text.strip():
-        raise QueryError("A value can't be only whitespace.")
+        raise InvalidQueryError("A value can't be only whitespace.")
     if text == "" and operator not in _EMPTY_ALLOWED:
-        raise QueryError("An empty value can only be used with ==, !=, in, or not_in.")
+        raise InvalidQueryError("An empty value can only be used with ==, !=, in, or not_in.")
     return text
 
 
@@ -350,10 +356,10 @@ def _operators_help() -> str:
 def _field_set(fields: Iterable[FieldRef | Field]) -> frozenset[FieldRef]:
     """The fields a filter may use, with a `Field` counted by its label, as a model names it."""
     if isinstance(fields, str):
-        raise QueryError("fields takes a list of labels or IDs, not a single string.")
+        raise InvalidQueryError("fields takes a list of labels or IDs, not a single string.")
     allowed = frozenset(item.label if isinstance(item, Field) else item for item in fields)
     if not allowed:
-        raise QueryError("fields can't be empty, because no filter could use it.")
+        raise InvalidQueryError("fields can't be empty, because no filter could use it.")
     return allowed
 
 
@@ -362,7 +368,9 @@ def _descriptions(
 ) -> str:
     """Describe the fields in one sentence, refusing a description for a field not offered."""
     if fields is None:
-        raise QueryError("descriptions needs fields, so that each one is for a field offered.")
+        raise InvalidQueryError(
+            "descriptions needs fields, so that each one is for a field offered."
+        )
     names: dict[FieldRef, str] = {}
     for item in fields:
         if isinstance(item, Field):
@@ -372,16 +380,18 @@ def _descriptions(
     entries: list[str] = []
     for key, text in descriptions.items():
         if key not in names:
-            raise QueryError(f"descriptions has {key!r}, which isn't one of the fields offered.")
+            raise InvalidQueryError(
+                f"descriptions has {key!r}, which isn't one of the fields offered."
+            )
         if not isinstance(text, str) or not text.strip():  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise QueryError("Each description must be text that isn't empty.")
+            raise InvalidQueryError("Each description must be text that isn't empty.")
         entries.append(f"{names[key]}: {text.strip()}")
     return f" Fields: {' '.join(entries)}" if entries else ""
 
 
 def where_from_dict(
     data: Mapping[str, Any], *, fields: Iterable[FieldRef] | Iterable[Field] | None = None
-) -> Expression:
+) -> WhereExpression:
     """Build a condition from plain data, such as the JSON from a model's tool call.
 
     The result works anywhere a condition built with `F` does, including combined with one, which
@@ -429,9 +439,10 @@ def where_from_dict(
         A condition to pass as `where`.
 
     Raises:
-        QueryError: The data can't be used, and the message says where. Nothing was sent. One with
-            over 100 conditions, counting each value of `in` and `not_in`, or groups over 20 levels
-            deep, is refused too. Type checks raise this when the query is built, not here.
+        InvalidQueryError: The data can't be used, and the message says where. Nothing was sent.
+            One with over 100 conditions, counting each value of `in` and `not_in`, or groups over
+            20 levels deep, is refused too. Type checks raise this when the query is built, not
+            here.
         UnknownFieldError: The table has no such field, raised when the query is built.
     """
     allowed = None if fields is None else _field_set(fields)
@@ -500,15 +511,15 @@ def where_schema(
         The JSON Schema, as a dictionary.
 
     Raises:
-        QueryError: `fields` is empty, `max_depth` is out of range, or a description isn't for a
-            field in `fields`.
+        InvalidQueryError: `fields` is empty, `max_depth` is out of range, or a description isn't
+            for a field in `fields`.
     """
     if isinstance(max_depth, bool) or not 0 <= max_depth <= _MAX_SCHEMA_DEPTH:
-        raise QueryError(f"max_depth must be from 0 to {_MAX_SCHEMA_DEPTH}.")
+        raise InvalidQueryError(f"max_depth must be from 0 to {_MAX_SCHEMA_DEPTH}.")
     offered: list[FieldRef | Field] | None = None
     if fields is not None:
         if isinstance(fields, str):
-            raise QueryError("fields takes a list of labels or IDs, not a single string.")
+            raise InvalidQueryError("fields takes a list of labels or IDs, not a single string.")
         offered = list(fields)
     allowed = None if offered is None else _field_set(offered)
     glossary = "" if field_descriptions is None else _descriptions(field_descriptions, offered)
