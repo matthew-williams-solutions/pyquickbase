@@ -64,6 +64,9 @@ from .._models import (
     Relationship,
     ReportInfo,
     Role,
+    RoleAssignment,
+    RoleChange,
+    RoleChangeResult,
     TableInfo,
     TableSchema,
     app_event_from_api,
@@ -80,6 +83,7 @@ from .._models import (
     report_info_from_api,
     require_summary_report,
     require_table_report,
+    role_change_result_from_api,
     role_from_api,
     summary_rows_from_api,
     table_info_from_api,
@@ -167,6 +171,7 @@ from .._xml import (
     LIST_PAGES,
     READ_PAGE,
     ROLE_INFO,
+    SET_KEY_FIELD,
     USER_ROLE,
     USER_ROLES,
     WRITE_PAGE,
@@ -218,6 +223,37 @@ def _require_timeout(timeout: float | None) -> None:
         isinstance(timeout, bool) or not isinstance(timeout, int | float) or not timeout > 0  # pyright: ignore[reportUnnecessaryIsInstance]
     ):
         raise InvalidValueError("timeout must be a positive number of seconds.")
+
+
+def _batch(items: Any, kind: type) -> list[Any]:
+    if not isinstance(items, list | tuple):
+        raise InvalidValueError(f"This takes a non-empty list of {kind.__name__}.")
+    found: list[Any] = list(cast(Sequence[Any], items))
+    if not found or not all(isinstance(item, kind) for item in found):
+        raise InvalidValueError(f"This takes a non-empty list of {kind.__name__}.")
+    return found
+
+
+def _member(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise InvalidValueError("A member's ID is text, from members() or find_user().")
+    return value
+
+
+def _role(value: Any) -> int:
+    if type(value) is not int or value < 1:
+        raise InvalidValueError("A role's ID is a positive whole number.")
+    return value
+
+
+def _kind(value: Any) -> str:
+    if value not in ("user", "group"):
+        raise InvalidValueError("kind is 'user' or 'group'.")
+    return value
+
+
+def _assignment_row(item: RoleAssignment) -> dict[str, Any]:
+    return {"id": _member(item.member_id), "roleId": _role(item.role_id), "type": _kind(item.kind)}
 
 
 def _app_key(app_id: str) -> str:
@@ -396,6 +432,86 @@ class App:
             fields["userid"] = member_id
         root = self._transport.xml.call(USER_ROLE, self._id, fields)
         return parse(member_roles_from_xml, root, "member roles")
+
+    def _change_roles(self, method: str, rows: list[dict[str, Any]], what: str) -> RoleChangeResult:
+        payload = self._transport.request(method, f"/app/{self._id}/trustees", json=rows)
+        result = parse(role_change_result_from_api, payload, "role change")
+        if result.failed:
+            error = WriteError(
+                f"{len(result.failed)} of {len(rows)} role {what} failed, and "
+                f"{len(result.changed)} succeeded: {result.failed[0].error}",
+                result=result,
+            )
+            error._changed = bool(result.changed)  # pyright: ignore[reportPrivateUsage]
+            raise error
+        return result
+
+    def add_role_assignments(self, assignments: Sequence[RoleAssignment]) -> RoleChangeResult:
+        """Give users or groups a role, on top of any they hold.
+
+        Don't retry this automatically, as Quickbase reports a role someone already has as a
+        failure.
+
+        Args:
+            assignments: The `RoleAssignment`s to add.
+
+        Returns:
+            A `RoleChangeResult`.
+
+        Raises:
+            InvalidValueError: `assignments` is empty or isn't made of `RoleAssignment`s. Nothing
+                was sent.
+            WriteError: Some failed, and the rest may have been made. Its `result` says which.
+            PermissionDeniedError: The token isn't an administrator's.
+            PolicyRefusedError: The client has a policy, which can't allow this. Nothing was sent.
+        """
+        rows = [_assignment_row(item) for item in _batch(assignments, RoleAssignment)]
+        return self._change_roles("POST", rows, "additions")
+
+    def remove_role_assignments(self, assignments: Sequence[RoleAssignment]) -> RoleChangeResult:
+        """Take roles away from users or groups.
+
+        Args:
+            assignments: The `RoleAssignment`s to remove.
+
+        Returns:
+            A `RoleChangeResult`.
+
+        Raises:
+            InvalidValueError: `assignments` is empty or isn't made of `RoleAssignment`s. Nothing
+                was sent.
+            WriteError: Some failed, and the rest may have been made. Its `result` says which.
+            PermissionDeniedError: The token isn't an administrator's.
+            PolicyRefusedError: The client has a policy, which can't allow this. Nothing was sent.
+        """
+        rows = [_assignment_row(item) for item in _batch(assignments, RoleAssignment)]
+        return self._change_roles("DELETE", rows, "removals")
+
+    def change_role_assignments(self, changes: Sequence[RoleChange]) -> RoleChangeResult:
+        """Move users or groups from one role to another.
+
+        Args:
+            changes: The `RoleChange`s to make.
+
+        Returns:
+            A `RoleChangeResult`.
+
+        Raises:
+            InvalidValueError: `changes` is empty or isn't made of `RoleChange`s. Nothing was sent.
+            WriteError: Some failed, and the rest may have been made. Its `result` says which.
+            PermissionDeniedError: The token isn't an administrator's.
+            PolicyRefusedError: The client has a policy, which can't allow this. Nothing was sent.
+        """
+        rows = [
+            {
+                "id": _member(item.member_id),
+                "roleId": _role(item.to_role_id),
+                "oldRoleId": _role(item.from_role_id),
+                "type": _kind(item.kind),
+            }
+            for item in _batch(changes, RoleChange)
+        ]
+        return self._change_roles("PATCH", rows, "changes")
 
     def code_pages(self) -> list[CodePageInfo]:
         """List the app's pages: its code pages and its home pages.
@@ -2883,6 +2999,12 @@ class Table:
         self._cache.delete(f"tables:{self._app.id}")
         self._ref = table_id  # The old name no longer finds it.
         return parse(table_info_from_api, payload, "table")
+
+    def _set_key_field(self, field_id: int) -> None:
+        """Change which field is the table's key, for a schema plan, which checks it first."""
+        table_id = (self.info()).id
+        self._transport.xml.call(SET_KEY_FIELD, table_id, {"fid": field_id})
+        self._cache.delete(f"tables:{self._app.id}")
 
     def delete_relationship(self, relationship: Relationship) -> None:
         """Delete a relationship in which this table is the child.

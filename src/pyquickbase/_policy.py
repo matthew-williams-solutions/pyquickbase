@@ -358,7 +358,7 @@ class _Allow:
         `where` uses. `link` and `unlink` need a grant on both tables, as a relationship adds a
         link field and an "Add" record formula to the parent, and `unlink` also needs
         `delete_field` wherever its lookups and summaries are. `change_table` and `delete_table`
-        change or delete the table itself.
+        change or delete the table itself, and `set_key` changes which field is its key.
 
         Args:
             tables: The tables, by name or ID, or a `tables` selector.

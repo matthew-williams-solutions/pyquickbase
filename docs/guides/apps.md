@@ -57,6 +57,28 @@ These methods use Quickbase's XML API, which sends the token to the realm's own 
 `quickbase.com` or `quickbase.eu` and the default `base_url`. See
 [Configuring clients](clients.md#using-another-api-host).
 
+## Changing who has a role
+
+Administrators can give, take away, and move roles.
+
+```python
+from pyquickbase import RoleAssignment, RoleChange
+
+app = qb.app("bq1234567")
+user = qb.find_user("jordan@example.com")
+
+app.add_role_assignments([RoleAssignment(user.id, 11)])
+app.change_role_assignments([RoleChange(user.id, from_role_id=11, to_role_id=12)])
+app.remove_role_assignments([RoleAssignment(user.id, 12)])
+```
+
+Each takes a list, and Quickbase reports each item on its own. If any fail, the method raises `WriteError`, whose
+`result` is a `RoleChangeResult` listing what changed and what didn't, with Quickbase's reason for each failure. Don't
+retry these automatically: Quickbase reports a role someone already has as a failure.
+
+A client with a policy can't change roles, at any setting. An agent that could change roles could give itself
+anything the policy withholds, so use a client without one.
+
 ## Code pages
 
 See [Code pages](code-pages.md) for reading and writing an app's pages.

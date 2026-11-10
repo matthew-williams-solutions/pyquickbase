@@ -1,7 +1,9 @@
 class APIError(QuickbaseError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None, quickbase_code: int | None = None) -> None
 class App(object)
+    def add_role_assignments(self, assignments: Sequence[RoleAssignment]) -> RoleChangeResult
     def apply_schema_changes(self, plan: SchemaPlan) -> SchemaChangeResult
+    def change_role_assignments(self, changes: Sequence[RoleChange]) -> RoleChangeResult
     def code_page(self, name_or_id: str | int) -> 'CodePage'
     def code_pages(self) -> list[CodePageInfo]
     def copy(self, name: str, *, description: str | None = None, keep_data: bool = False, keep_files: bool = False, keep_users: bool = False, assign_token: bool = True) -> 'App'
@@ -14,7 +16,8 @@ class App(object)
     def member_roles(self, member_id: str | None = None, *, include_groups: bool = True) -> list[MemberRole]
     def members(self) -> list[AppMember]
     def operation(self, name: Literal['describe_schema', 'preview_schema_changes', 'apply_schema_changes'] | Literal['list_code_pages', 'read_code_page', 'preview_code_page_change', 'apply_code_page_change'], *, max_changes: int = 20) -> 'SchemaOperation | CodePageOperation'
-    def preview_schema_changes(self, changes: Sequence[CreateTable | UpdateTable | DeleteTable | CreateField | UpdateField | DeleteField | CreateRelationship | CreateLookupField | CreateSummaryField | DeleteRelationship]) -> SchemaPlan
+    def preview_schema_changes(self, changes: Sequence[CreateTable | UpdateTable | DeleteTable | CreateField | UpdateField | DeleteField | SetKeyField | CreateRelationship | CreateLookupField | CreateSummaryField | DeleteRelationship]) -> SchemaPlan
+    def remove_role_assignments(self, assignments: Sequence[RoleAssignment]) -> RoleChangeResult
     def roles(self, *, refresh: bool = False) -> list[Role]
     def settings_url(self) -> str
     def table(self, name_or_id: str) -> 'Table'
@@ -59,7 +62,9 @@ class AppSummary(object)
     field oldest_ancestor_id: str | None
     field url: str
 class AsyncApp(object)
+    async def add_role_assignments(self, assignments: Sequence[RoleAssignment]) -> RoleChangeResult
     async def apply_schema_changes(self, plan: SchemaPlan) -> SchemaChangeResult
+    async def change_role_assignments(self, changes: Sequence[RoleChange]) -> RoleChangeResult
     def code_page(self, name_or_id: str | int) -> 'AsyncCodePage'
     async def code_pages(self) -> list[CodePageInfo]
     async def copy(self, name: str, *, description: str | None = None, keep_data: bool = False, keep_files: bool = False, keep_users: bool = False, assign_token: bool = True) -> 'AsyncApp'
@@ -72,7 +77,8 @@ class AsyncApp(object)
     async def member_roles(self, member_id: str | None = None, *, include_groups: bool = True) -> list[MemberRole]
     async def members(self) -> list[AppMember]
     async def operation(self, name: Literal['describe_schema', 'preview_schema_changes', 'apply_schema_changes'] | Literal['list_code_pages', 'read_code_page', 'preview_code_page_change', 'apply_code_page_change'], *, max_changes: int = 20) -> 'AsyncSchemaOperation | AsyncCodePageOperation'
-    async def preview_schema_changes(self, changes: Sequence[CreateTable | UpdateTable | DeleteTable | CreateField | UpdateField | DeleteField | CreateRelationship | CreateLookupField | CreateSummaryField | DeleteRelationship]) -> SchemaPlan
+    async def preview_schema_changes(self, changes: Sequence[CreateTable | UpdateTable | DeleteTable | CreateField | UpdateField | DeleteField | SetKeyField | CreateRelationship | CreateLookupField | CreateSummaryField | DeleteRelationship]) -> SchemaPlan
+    async def remove_role_assignments(self, assignments: Sequence[RoleAssignment]) -> RoleChangeResult
     async def roles(self, *, refresh: bool = False) -> list[Role]
     def settings_url(self) -> str
     def table(self, name_or_id: str) -> 'AsyncTable'
@@ -182,7 +188,7 @@ class BadRequestError(APIError)
 class BoundPolicy(object)
     def __eq__(self, other: object) -> bool
     def __init__(self, *, app_id: str | None, offline: bool, tables: Mapping[str, str], fields: Mapping[str, Mapping[int, str]], field_types: Mapping[str, Mapping[int, str]], classes: Mapping[str, Mapping[int, frozenset[str]]], rules: Sequence[pyquickbase._bound._Rule], custom: Sequence[Rule], rows: Mapping[str, tuple[str, str]], row_fields: Mapping[str, frozenset[int]], links: Sequence[pyquickbase._bound._Link], reports: Mapping[str, Mapping[str, tuple[str, str]]], new_fields: str, created: Sequence[tuple[str, str]] = ()) -> None
-    def allows(self, verb: Literal['read', 'filter', 'sort', 'insert', 'update', 'delete', 'download', 'delete_file', 'report', 'run_formula', 'add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table', 'create_tables', 'read_code_pages', 'write_code_pages'], table: str, *, field: str | int | None = None, fields: Sequence[str | int] = (), source: tuple[str, str | int] | None = None) -> Decision
+    def allows(self, verb: Literal['read', 'filter', 'sort', 'insert', 'update', 'delete', 'download', 'delete_file', 'report', 'run_formula', 'add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table', 'set_key', 'create_tables', 'read_code_pages', 'write_code_pages'], table: str, *, field: str | int | None = None, fields: Sequence[str | int] = (), source: tuple[str, str | int] | None = None) -> Decision
     def can_create_tables(self, app_id: str) -> bool
     def can_use_code_pages(self, verb: str) -> bool
     def classes_of(self, table_id: str, field_id: int) -> frozenset[str]
@@ -191,7 +197,7 @@ class BoundPolicy(object)
     def decide(self, request: ReadRequest | WriteRequest) -> Decision
     def deletion_effects(self, table_id: str, field_ids: Sequence[int] = (), *, table: bool = False) -> tuple[tuple[str, ...], tuple[str, ...]]
     def emails_shown(self, table_id: str) -> bool
-    def explain(self, verb: Literal['read', 'filter', 'sort', 'insert', 'update', 'delete', 'download', 'delete_file', 'report', 'run_formula', 'add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table', 'create_tables', 'read_code_pages', 'write_code_pages'], table: str, *, field: str | int | None = None, fields: Sequence[str | int] = (), source: tuple[str, str | int] | None = None) -> str
+    def explain(self, verb: Literal['read', 'filter', 'sort', 'insert', 'update', 'delete', 'download', 'delete_file', 'report', 'run_formula', 'add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table', 'set_key', 'create_tables', 'read_code_pages', 'write_code_pages'], table: str, *, field: str | int | None = None, fields: Sequence[str | int] = (), source: tuple[str, str | int] | None = None) -> str
     def field_types(self, table_id: str) -> frozenset[str] | None
     def filterable(self, table_id: str, field_id: int) -> bool
     classmethod def from_json(cls, text: str, *, rules: Sequence[Rule] = ()) -> 'BoundPolicy'
@@ -299,7 +305,7 @@ class CreateTable(object)
     field single_record_name: str | None
 class Decision(object)
     def __eq__(self, other)
-    def __init__(self, *, allowed: bool, verb: Literal['read', 'filter', 'sort', 'insert', 'update', 'delete', 'download', 'delete_file', 'report', 'run_formula', 'add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table', 'create_tables', 'read_code_pages', 'write_code_pages'], layer: Literal['policy', 'rows', 'derived'] = 'policy', rule: str | None = None, reason: str = '', hint: str | None = None, table: Named | None = None, fields: tuple[Named, ...] = ()) -> None
+    def __init__(self, *, allowed: bool, verb: Literal['read', 'filter', 'sort', 'insert', 'update', 'delete', 'download', 'delete_file', 'report', 'run_formula', 'add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table', 'set_key', 'create_tables', 'read_code_pages', 'write_code_pages'], layer: Literal['policy', 'rows', 'derived'] = 'policy', rule: str | None = None, reason: str = '', hint: str | None = None, table: Named | None = None, fields: tuple[Named, ...] = ()) -> None
     field allowed: bool
     field fields: tuple[Named, ...]
     field hint: str | None
@@ -308,7 +314,7 @@ class Decision(object)
     field reason: str
     field rule: str | None
     field table: Named | None
-    field verb: Literal['read', 'filter', 'sort', 'insert', 'update', 'delete', 'download', 'delete_file', 'report', 'run_formula', 'add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table', 'create_tables', 'read_code_pages', 'write_code_pages']
+    field verb: Literal['read', 'filter', 'sort', 'insert', 'update', 'delete', 'download', 'delete_file', 'report', 'run_formula', 'add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table', 'set_key', 'create_tables', 'read_code_pages', 'write_code_pages']
     property what -> str
 class DeleteField(object)
     def __eq__(self, other)
@@ -530,10 +536,10 @@ class PermissionDeniedError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None, quickbase_code: int | None = None) -> None
 class PlannedChange(object)
     def __eq__(self, other)
-    def __init__(self, *, change: CreateTable | UpdateTable | DeleteTable | CreateField | UpdateField | DeleteField | CreateRelationship | CreateLookupField | CreateSummaryField | DeleteRelationship, status: Literal['ready', 'already_done', 'blocked'], risk: Literal['additive', 'modifying', 'destructive'], summary: str, settings: Mapping[str, SettingChange] = <factory>, warnings: tuple[str, ...] = (), blockers: tuple[str, ...] = (), affected_records: int | None = None, link: str | None = None, policy_effects: tuple[str, ...] = ()) -> None
+    def __init__(self, *, change: CreateTable | UpdateTable | DeleteTable | CreateField | UpdateField | DeleteField | SetKeyField | CreateRelationship | CreateLookupField | CreateSummaryField | DeleteRelationship, status: Literal['ready', 'already_done', 'blocked'], risk: Literal['additive', 'modifying', 'destructive'], summary: str, settings: Mapping[str, SettingChange] = <factory>, warnings: tuple[str, ...] = (), blockers: tuple[str, ...] = (), affected_records: int | None = None, link: str | None = None, policy_effects: tuple[str, ...] = ()) -> None
     field affected_records: int | None
     field blockers: tuple[str, ...]
-    field change: CreateTable | UpdateTable | DeleteTable | CreateField | UpdateField | DeleteField | CreateRelationship | CreateLookupField | CreateSummaryField | DeleteRelationship
+    field change: CreateTable | UpdateTable | DeleteTable | CreateField | UpdateField | DeleteField | SetKeyField | CreateRelationship | CreateLookupField | CreateSummaryField | DeleteRelationship
     field link: str | None
     field policy_effects: tuple[str, ...]
     field risk: Literal['additive', 'modifying', 'destructive']
@@ -653,6 +659,29 @@ class Role(object)
     field id: int
     field name: str
     field raw: Mapping[str, Any]
+class RoleAssignment(object)
+    def __eq__(self, other)
+    def __init__(self, member_id: str, role_id: int, kind: Literal['user', 'group'] = 'user') -> None
+    field kind: Literal['user', 'group']
+    field member_id: str
+    field role_id: int
+class RoleChange(object)
+    def __eq__(self, other)
+    def __init__(self, member_id: str, from_role_id: int, to_role_id: int, kind: Literal['user', 'group'] = 'user') -> None
+    field from_role_id: int
+    field kind: Literal['user', 'group']
+    field member_id: str
+    field to_role_id: int
+class RoleChangeFailure(object)
+    def __eq__(self, other)
+    def __init__(self, *, change: RoleAssignment | RoleChange, error: str) -> None
+    field change: RoleAssignment | RoleChange
+    field error: str
+class RoleChangeResult(object)
+    def __eq__(self, other)
+    def __init__(self, *, changed: tuple[RoleAssignment | RoleChange, ...] = (), failed: tuple[RoleChangeFailure, ...] = ()) -> None
+    field changed: tuple[RoleAssignment | RoleChange, ...]
+    field failed: tuple[RoleChangeFailure, ...]
 class RowError(object)
     def __eq__(self, other)
     def __init__(self, *, index: int, messages: tuple[str, ...], reason: Literal['duplicate', 'permission', 'invalid_choice', 'rule', 'other'] = 'other', field_id: int | None = None) -> None
@@ -663,8 +692,8 @@ class RowError(object)
 class Rule(Protocol)
     def __init__(self, *args, **kwargs)
     def decide(self, request: 'ReadRequest | WriteRequest') -> Decision | None
-value SchemaAction = Literal['create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'create_lookup_field', 'create_summary_field', 'delete_relationship']
-value SchemaChange = CreateTable | UpdateTable | DeleteTable | CreateField | UpdateField | DeleteField | CreateRelationship | CreateLookupField | CreateSummaryField | DeleteRelationship
+value SchemaAction = Literal['create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'set_key_field', 'create_relationship', 'create_lookup_field', 'create_summary_field', 'delete_relationship']
+value SchemaChange = CreateTable | UpdateTable | DeleteTable | CreateField | UpdateField | DeleteField | SetKeyField | CreateRelationship | CreateLookupField | CreateSummaryField | DeleteRelationship
 class SchemaChangeError(WriteError)
     def __init__(self, summary: str, *, result: Any = None) -> None
 class SchemaChangeResult(object)
@@ -692,9 +721,14 @@ class SchemaPlan(object)
     field fingerprint: str
     property has_changes -> bool
     property warnings -> tuple[str, ...]
-value SchemaVerb = Literal['add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table']
+value SchemaVerb = Literal['add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table', 'set_key']
 class ServerError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None, quickbase_code: int | None = None) -> None
+class SetKeyField(object)
+    def __eq__(self, other)
+    def __init__(self, *, table: str, field: str | int) -> None
+    field field: str | int
+    field table: str
 class SettingChange(object)
     def __eq__(self, other)
     def __init__(self, before: Any, after: Any) -> None
@@ -834,22 +868,22 @@ class UserProfile(object)
     field id: str
     field last_name: str | None
     field screen_name: str | None
-value Verb = Literal['read', 'filter', 'sort', 'insert', 'update', 'delete', 'download', 'delete_file', 'report', 'run_formula', 'add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table', 'create_tables', 'read_code_pages', 'write_code_pages']
+value Verb = Literal['read', 'filter', 'sort', 'insert', 'update', 'delete', 'download', 'delete_file', 'report', 'run_formula', 'add_field', 'change_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'change_table', 'delete_table', 'set_key', 'create_tables', 'read_code_pages', 'write_code_pages']
 class WhereCondition(object)
     def __eq__(self, other)
     def __init__(self, field_id: int, operator: str, value: str) -> None
     field field_id: int
     field operator: str
     field value: str
-value WriteAction = Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'update_relationship', 'delete_relationship', 'create_app', 'copy_app', 'delete_app', 'write_code_page', 'other']
+value WriteAction = Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'update_relationship', 'delete_relationship', 'create_app', 'copy_app', 'delete_app', 'write_code_page', 'change_role_assignments', 'set_key_field', 'other']
 class WriteError(QuickbaseError)
     def __init__(self, summary: str, *, result: Any = None) -> None
 class WritePermissionError(WriteError, PermissionDeniedError)
     def __init__(self, summary: str, *, result: Any = None, status_code: int = 403, **kwargs: Any) -> None
 class WriteRequest(object)
     def __eq__(self, other)
-    def __init__(self, *, action: Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'update_relationship', 'delete_relationship', 'create_app', 'copy_app', 'delete_app', 'write_code_page', 'other'], table_id: str | None, field_ids: frozenset[int] | None, row_count: int | None, method: str, path: str, app_id: str | None = None, parent_table_id: str | None = None, field_type: str | None = None, derived: frozenset[Literal['formula', 'lookup', 'summary']] = frozenset()) -> None
-    field action: Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'update_relationship', 'delete_relationship', 'create_app', 'copy_app', 'delete_app', 'write_code_page', 'other']
+    def __init__(self, *, action: Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'update_relationship', 'delete_relationship', 'create_app', 'copy_app', 'delete_app', 'write_code_page', 'change_role_assignments', 'set_key_field', 'other'], table_id: str | None, field_ids: frozenset[int] | None, row_count: int | None, method: str, path: str, app_id: str | None = None, parent_table_id: str | None = None, field_type: str | None = None, derived: frozenset[Literal['formula', 'lookup', 'summary']] = frozenset()) -> None
+    field action: Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'update_relationship', 'delete_relationship', 'create_app', 'copy_app', 'delete_app', 'write_code_page', 'change_role_assignments', 'set_key_field', 'other']
     field app_id: str | None
     field derived: frozenset[Literal['formula', 'lookup', 'summary']]
     field field_ids: frozenset[int] | None

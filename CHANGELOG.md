@@ -17,6 +17,10 @@ All notable changes to this project are documented here. The format follows
   `CodePageWrite.previous` holds what a write replaced, and `CodePageChangedError` refuses a stale write.
 - `allow.code_pages()` and `deny.code_pages()`, with `Offers.can_read_code_pages` and `can_write_code_pages`. A code
   page runs with the viewer's permissions, which a policy doesn't limit, as the docs now say plainly.
+- `app.add_role_assignments()`, `remove_role_assignments()`, and `change_role_assignments()`, with `RoleAssignment`,
+  `RoleChange`, `RoleChangeResult`, and `RoleChangeFailure`. Partial failures raise `WriteError`. No policy can allow
+  these, and they're refused through `client.request()` too.
+- `SetKeyField`, a schema plan change that sets a table's key field, with `allow.schema(..., "set_key")`.
 - `app.operation()` offers `list_code_pages`, `read_code_page`, `preview_code_page_change`, and
   `apply_code_page_change`.
 

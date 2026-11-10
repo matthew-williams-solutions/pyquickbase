@@ -1,9 +1,12 @@
 """A fake app that keeps its tables, fields, and relationships, for schema plans and operations."""
 
 import json
+import re
 from typing import Any
 
 import httpx
+
+from tests.xml_fake import envelope, failure
 
 APP = "bq1234567"
 TASKS = "bqtasks"
@@ -71,12 +74,24 @@ class FakeApp:
         return [(method, path) for method, path, _ in self.sent if method != "GET"
                 and path != "/records/query"]  # fmt: skip
 
+    def _xml(self, request: httpx.Request, path: str) -> httpx.Response:
+        table_id = path.removeprefix("/db/")
+        self.sent.append((request.method, path, request.content))
+        if self.fail and f"POST {path}".startswith(self.fail):
+            return httpx.Response(400, content=failure("API_SetKeyField", 3, "Denied"))
+        found = re.search(rb"<fid>(\d+)</fid>", request.content)
+        assert found is not None
+        self.tables[table_id]["keyFieldId"] = int(found[1])
+        return httpx.Response(200, content=envelope("API_SetKeyField"))
+
     def new_id(self) -> int:
         self.next_id += 1
         return self.next_id
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path.removeprefix("/v1")
+        if path.startswith("/db/"):
+            return self._xml(request, path)
         body = json.loads(request.content) if request.content else None
         self.sent.append((request.method, path, body))
         if self.fail and f"{request.method} {path}".startswith(self.fail):

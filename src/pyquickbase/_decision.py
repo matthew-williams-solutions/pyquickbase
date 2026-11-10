@@ -24,6 +24,7 @@ Verb = Literal[
     "unlink",
     "change_table",
     "delete_table",
+    "set_key",
     "create_tables",
     "read_code_pages",
     "write_code_pages",
@@ -41,6 +42,7 @@ SchemaVerb = Literal[
     "unlink",
     "change_table",
     "delete_table",
+    "set_key",
 ]
 """What `allow.schema()` grants on a table."""
 
@@ -107,6 +109,7 @@ _VERB_TEXT: dict[str, str] = {
     "unlink": "unlinking",
     "change_table": "changing",
     "delete_table": "deleting",
+    "set_key": "changing the key field of",
     "create_tables": "creating tables in",
     "read_code_pages": "reading code pages in",
     "write_code_pages": "writing code pages in",

@@ -38,6 +38,7 @@ from .._schema_plan import (
     SchemaChange,
     SchemaChangeResult,
     SchemaPlan,
+    SetKeyField,
     SettingChange,
     Status,
     UpdateField,
@@ -47,6 +48,7 @@ from .._schema_plan import (
     quickbase_function,
     summary_function,
 )
+from .._xml import SET_KEY_FIELD
 from ..errors import (
     APIError,
     InvalidValueError,
@@ -148,6 +150,7 @@ class _Table:
     loaded: bool = False
     dropped: bool = False
     touched: set[int] = field(default_factory=set[int])
+    planned_key: int | None = None
 
     @property
     def id(self) -> str | None:
@@ -206,6 +209,7 @@ class Planner:
             found[table.info.id] = {
                 "name": table.info.name,
                 "description": table.info.description,
+                "key_field": table.info.key_field_id,
                 "labels": sorted(item.label.casefold() for item in table.fields if item.id),
                 "fields": [item.state() for item in table.fields if item.id in table.touched],
                 "links": sorted(
@@ -264,6 +268,7 @@ class Planner:
             CreateTable: self._create_table,
             UpdateTable: self._update_table,
             DeleteTable: self._delete_table,
+            SetKeyField: self._set_key,
             CreateField: self._create_field,
             UpdateField: self._update_field,
             DeleteField: self._delete_field,
@@ -345,6 +350,42 @@ class Planner:
             return (), ()
         ids = [item for item in field_ids if item is not None]
         return policy.deletion_effects(table.id, ids, table=whole)
+
+    def _set_key(self, change: SetKeyField) -> PlannedChange:
+        table = self._table(change.table)
+        target = self._field(table, change.field)
+        current = table.planned_key
+        if current is None and table.info is not None:
+            current = table.info.key_field_id
+        name = f'"{target.label}" on {table.name}'
+        if target.id == current:
+            return self._result(change, "already_done", f"{name} is already the key field.")
+        blockers: list[str] = []
+        if target.id != RECORD_ID_FIELD and target.id in _BUILT_IN_FIELDS:
+            blockers.append(f'"{target.label}" is built into every table, so it can\'t be the key.')
+        elif target.id != RECORD_ID_FIELD and not target.unique:
+            blockers.append(
+                f'"{target.label}" isn\'t unique, and a key field has to be. Make it unique first.'
+            )
+        if table.id is not None:
+            try:
+                self._transport.xml.check(SET_KEY_FIELD, table.id)
+            except PolicyRefusedError as refused:
+                blockers.append(self._named(str(refused).replace(" Nothing was sent.", "")))
+        warnings = [
+            "insert() refuses a table whose key isn't Record ID#, as a row with an existing key "
+            "value updates that record. Use upsert() there.",
+        ]
+        if table.links:
+            warnings.append(
+                "Relationships use a table's key field, so check any relationship to this table."
+            )
+        settings = _settings(key_field=(current, target.id))
+        table.planned_key = target.id
+        return self._result(
+            change, "ready", f"Make {name} the key field.", settings=settings, warnings=warnings,
+            blockers=blockers, link=self._link(table),
+        )  # fmt: skip
 
     def _allowed(
         self,
@@ -1262,6 +1303,10 @@ def _apply(app: "App", change: SchemaChange) -> None:
         )
     elif isinstance(change, DeleteField):
         app.table(change.table).delete_fields(change.field)
+    elif isinstance(change, SetKeyField):
+        table = app.table(change.table)
+        field_id = (table.resolve_field_ids([change.field]))[0]
+        table._set_key_field(field_id)  # pyright: ignore[reportPrivateUsage]
     elif isinstance(change, CreateRelationship):
         app.table(change.child_table).create_relationship(
             app.table(change.parent_table), foreign_key=change.foreign_key

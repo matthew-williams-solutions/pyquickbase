@@ -18,6 +18,7 @@ from pyquickbase import (
     InvalidValueError,
     SchemaChangeError,
     SchemaMismatchError,
+    SetKeyField,
     UpdateField,
     UpdateTable,
     allow,
@@ -628,3 +629,109 @@ async def test_deleting_the_only_table_a_rule_names_is_a_blocker() -> None:
     assert "allow.read(['bqtasks', 'bqprojects']) loses table Projects." in change.policy_effects
     assert any(item.startswith("allow.update('bqprojects', fields.all()) would match nothing")
                for item in change.blockers)  # fmt: skip
+
+
+def make_code_unique(fake: FakeApp) -> None:
+    next(item for item in fake.fields[TASKS] if item["label"] == "Code")["unique"] = True
+
+
+async def test_setting_a_key_field_is_planned_and_applied() -> None:
+    fake = FakeApp()
+    make_code_unique(fake)
+    async with client(fake) as qb:
+        app = qb.app(APP)
+        plan = await app.preview_schema_changes([SetKeyField(table="Tasks", field="Code")])
+        [planned] = plan.changes
+        assert planned.status == "ready"
+        assert planned.risk == "modifying"
+        assert planned.settings["key_field"].before == 3
+        assert planned.settings["key_field"].after == 8
+        assert any("insert()" in item for item in planned.warnings)
+        result = await app.apply_schema_changes(plan)
+        assert [item.change for item in result.applied] == [planned.change]
+        assert (await app.table("Tasks").info()).key_field_id == 8
+    assert fake.tables[TASKS]["keyFieldId"] == 8
+
+
+async def test_a_key_field_already_set_is_done() -> None:
+    fake = FakeApp()
+    fake.tables[TASKS]["keyFieldId"] = 8
+    async with client(fake) as qb:
+        plan = await qb.app(APP).preview_schema_changes([SetKeyField(table="Tasks", field="Code")])
+    assert plan.changes[0].status == "already_done"
+
+
+@pytest.mark.parametrize(
+    ("field", "match"), [("Hours", "isn't unique"), ("Date Created", "built into")]
+)
+async def test_a_key_field_must_be_able_to_be_a_key(field: str, match: str) -> None:
+    fake = FakeApp()
+    async with client(fake) as qb:
+        plan = await qb.app(APP).preview_schema_changes([SetKeyField(table="Tasks", field=field)])
+    assert plan.changes[0].status == "blocked"
+    assert match in plan.blockers[0]
+
+
+async def test_a_key_field_can_go_back_to_record_id() -> None:
+    fake = FakeApp()
+    fake.tables[TASKS]["keyFieldId"] = 8
+    async with client(fake) as qb:
+        app = qb.app(APP)
+        plan = await app.preview_schema_changes([SetKeyField(table="Tasks", field="Record ID#")])
+        assert plan.changes[0].status == "ready"
+        await app.apply_schema_changes(plan)
+    assert fake.tables[TASKS]["keyFieldId"] == 3
+
+
+async def test_a_plan_is_refused_if_the_key_field_changed_since() -> None:
+    fake = FakeApp()
+    make_code_unique(fake)
+    async with client(fake) as qb:
+        app = qb.app(APP)
+        plan = await app.preview_schema_changes([SetKeyField(table="Tasks", field="Code")])
+        fake.tables[TASKS]["keyFieldId"] = 6
+        qb.clear_schema_cache()
+        with pytest.raises(SchemaMismatchError):
+            await app.apply_schema_changes(plan)
+    assert fake.tables[TASKS]["keyFieldId"] == 6
+
+
+async def test_setting_a_key_field_needs_its_grant() -> None:
+    fake = FakeApp()
+    make_code_unique(fake)
+    without = fake.bind(allow.read(tables.all()), allow.schema(tables.all(), "add_field"))
+    async with client(fake, policy=without) as qb:
+        plan = await qb.app(APP).preview_schema_changes([SetKeyField(table="Tasks", field="Code")])
+    assert plan.changes[0].status == "blocked"
+    assert "set_key" in plan.blockers[0]
+    granted = fake.bind(allow.read(tables.all()), allow.schema(tables.all(), "set_key"))
+    async with client(fake, policy=granted) as qb:
+        plan = await qb.app(APP).preview_schema_changes([SetKeyField(table="Tasks", field="Code")])
+        assert plan.changes[0].status == "ready"
+        await qb.app(APP).apply_schema_changes(plan)
+    assert fake.tables[TASKS]["keyFieldId"] == 8
+
+
+async def test_a_custom_key_still_stops_insert() -> None:
+    fake = FakeApp()
+    make_code_unique(fake)
+    async with client(fake) as qb:
+        app = qb.app(APP)
+        await app.apply_schema_changes(
+            await app.preview_schema_changes([SetKeyField(table="Tasks", field="Code")])
+        )
+        with pytest.raises(InvalidValueError):
+            await app.table("Tasks").insert([{"Code": "A"}])
+
+
+async def test_a_failed_key_change_stops_the_plan() -> None:
+    fake = FakeApp()
+    make_code_unique(fake)
+    fake.fail = f"POST /db/{TASKS}"
+    async with client(fake) as qb:
+        app = qb.app(APP)
+        with pytest.raises(SchemaChangeError):
+            await app.apply_schema_changes(
+                await app.preview_schema_changes([SetKeyField(table="Tasks", field="Code")])
+            )
+    assert fake.tables[TASKS]["keyFieldId"] == 3

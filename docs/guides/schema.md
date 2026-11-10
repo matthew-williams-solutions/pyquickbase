@@ -284,6 +284,9 @@ if not plan.blockers:
     app.apply_schema_changes(plan)
 ```
 
+To change a table's key field, use a `SetKeyField` change in a plan. The field must be unique, or be `Record ID#`
+to go back to the usual key. `allow.schema(..., "set_key")` allows it for a client with a policy.
+
 Each `PlannedChange` has:
 
 - **`status`:** `ready`, `already_done` if the app already has it, or `blocked`.

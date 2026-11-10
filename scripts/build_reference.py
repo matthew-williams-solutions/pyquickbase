@@ -61,6 +61,9 @@ TITLES: dict[str, dict[str, str]] = {
         "code_pages": "List code pages",
         "code_page": "Get a code page",
         "member_roles": "List a member's roles",
+        "add_role_assignments": "Give roles",
+        "remove_role_assignments": "Take away roles",
+        "change_role_assignments": "Move members between roles",
         "events": "List webhooks and automations",
         "table": "Get a table",
         "url": "Link to the app",
@@ -259,6 +262,9 @@ HAS_PUBLIC_CONSTRUCTOR = {
     "CreateLookupField",
     "CreateSummaryField",
     "DeleteRelationship",
+    "SetKeyField",
+    "RoleAssignment",
+    "RoleChange",
     "RetryPolicy",
 }
 # Public so that the SDK can call them across modules, and of no use from outside it.
@@ -472,6 +478,12 @@ RESOURCES = (
                 ("id", "info", "tables", "roles", "events"),
             ),
             Group("See who has access", "who-has-access", _APPS, ("members", "member_roles")),
+            Group(
+                "Change who has a role",
+                "change-roles",
+                _APPS,
+                ("add_role_assignments", "remove_role_assignments", "change_role_assignments"),
+            ),
             Group("Work with code pages", "code-pages", _CODE_PAGES, ("code_pages", "code_page")),
             Group("Get a table", "get-a-table", _READING, ("table",)),
             Group(_LINKS, "links", _AGENTS, ("url", "settings_url")),
@@ -756,6 +768,12 @@ SYMBOL_PAGES = (
             Group("Apps", "apps", _APPS, ("AppSummary", "AppInfo", "Role", "AppEvent")),
             Group("People", "people", _APPS, ("UserProfile", "AppMember", "MemberRole")),
             Group(
+                "Role changes",
+                "role-changes",
+                _APPS,
+                ("RoleAssignment", "RoleChange", "RoleChangeResult", "RoleChangeFailure"),
+            ),
+            Group(
                 "Code pages",
                 "code-pages",
                 _CODE_PAGES,
@@ -788,7 +806,12 @@ SYMBOL_PAGES = (
                 _SCHEMA,
                 ("CreateTable", "UpdateTable", "DeleteTable"),
             ),
-            Group("Fields", "fields", _SCHEMA, ("CreateField", "UpdateField", "DeleteField")),
+            Group(
+                "Fields",
+                "fields",
+                _SCHEMA,
+                ("CreateField", "UpdateField", "DeleteField", "SetKeyField"),
+            ),
             Group(
                 "Relationships",
                 "relationships",

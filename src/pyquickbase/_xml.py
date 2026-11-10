@@ -117,6 +117,13 @@ READ_PAGE = _read(
     "code_pages",
     notes={23: "Only code pages can be read and written this way, and this is a home page."},
 )
+SET_KEY_FIELD = XmlCall(
+    action="API_SetKeyField",
+    target="table",
+    read=False,
+    safe_to_repeat=True,
+    policy_action="set_key_field",
+)
 WRITE_PAGE = XmlCall(
     action="API_AddReplaceDBPage",
     target="app",
@@ -136,6 +143,7 @@ XML_CALLS: tuple[XmlCall, ...] = (
     LIST_PAGES,
     READ_PAGE,
     WRITE_PAGE,
+    SET_KEY_FIELD,
 )
 """Everything the SDK can send in the XML format."""
 

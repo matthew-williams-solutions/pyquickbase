@@ -45,6 +45,7 @@ _ACTION_VERBS = {
     "create_field": "add_field",
     "update_field": "change_field",
     "delete_field": "delete_field",
+    "set_key_field": "set_key",
     "create_relationship": "link",
     "create_lookup_field": "lookup",
     "create_summary_field": "summary",
@@ -204,6 +205,13 @@ def _change_schemas(allowed: SchemaAllowed) -> list[dict[str, Any]]:
             "delete_field",
             "Delete a field and all its values.",
             {"table": table, "field": _field_ref("The field to delete")},
+            ["table", "field"],
+        ),
+        "set_key_field": _action_schema(
+            "set_key_field",
+            "Make a field the table's key. It must be unique, or Record ID# to go back to the "
+            "usual key.",
+            {"table": table, "field": _field_ref("The field to make the key")},
             ["table", "field"],
         ),
         "create_relationship": _action_schema(

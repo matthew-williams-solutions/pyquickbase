@@ -76,7 +76,7 @@ Things to know:
 - **Roles can't be allowed.** No policy can list who holds a role, or change it, as an agent that could change
   roles could give itself anything the policy withholds. Use a client without a policy.
 - **`insert` alone can't be limited to creating records on a table with a custom key field.** If
-  someone has changed a table's key field in the Quickbase UI, a row with an existing value in that
+  someone has changed a table's key field, a row with an existing value in that
   field [changes that record](../api-notes.md#writes). `table.insert()` refuses those tables, so use
   `upsert()`, which needs both `insert` and `update`. `qb.request()` can't look up a table's key
   field, so any write through it without a merge field needs both.

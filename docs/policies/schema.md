@@ -11,6 +11,7 @@
 | `summary` | Adding a summary, which also needs `read` on the child's field, and `filter` on every field its filter uses | The parent |
 | `link`, `unlink` | Making or deleting a relationship | **Both tables**, as Quickbase adds a link field and an "Add" record formula to the parent. `unlink` also needs `delete_field` wherever its lookups and summaries are |
 | `change_table`, `delete_table` | Renaming the table, or deleting it and its records | The table |
+| `set_key` | Changing which field is the table's key, with a `SetKeyField` change | The table |
 
 For a relationship, the grant goes where the new field appears:
 

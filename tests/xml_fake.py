@@ -111,6 +111,7 @@ RESPONSES = {
     "API_ListDBPages": '<pages><page id="6" type="Text">a.html</page></pages>',
     "API_GetDBPage": "<pagebody>plain</pagebody>",
     "API_AddReplaceDBPage": "<pageID>6</pageID>",
+    "API_SetKeyField": "",
 }
 
 

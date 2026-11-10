@@ -34,6 +34,8 @@ WriteAction = Literal[
     "copy_app",
     "delete_app",
     "write_code_page",
+    "change_role_assignments",
+    "set_key_field",
     "other",
 ]
 """What a write does. See `WriteRequest`."""
@@ -56,6 +58,7 @@ _TABLE_PATH = re.compile(r"/tables/([A-Za-z0-9]+)")
 _APP_PATH = re.compile(r"/apps/([A-Za-z0-9]+)")
 _APP_COPY_PATH = re.compile(r"/apps/([A-Za-z0-9]+)/copy")
 _FIELD_PATH = re.compile(r"/fields/([1-9][0-9]*)")
+_TRUSTEES_PATH = re.compile(r"/app/([A-Za-z0-9]+)/trustees")
 _RELATIONSHIP_PATH = re.compile(r"/tables/([A-Za-z0-9]+)/relationship(?:/([1-9][0-9]*))?")
 _FIELD_KEY = re.compile(r"[1-9][0-9]*")
 _RECORD_ID_KEY = str(RECORD_ID_FIELD)
@@ -78,7 +81,9 @@ class WriteRequest:
             `delete_field`, `create_relationship`, `update_relationship`, and
             `delete_relationship` change the schema. `update_relationship` adds lookup or summary
             fields. `write_code_page` creates or replaces a code page, which only
-            `allow.code_pages(write=True)` permits. `other` is any other write.
+            `allow.code_pages(write=True)` permits. `change_role_assignments` gives or takes away a
+            role, which no policy can allow. `set_key_field` changes a table's key field. `other`
+            is any other write.
         table_id: The table it writes to. For a relationship, the child table.
         field_ids: The fields whose values it sets, or for `update_field` and `delete_field`, the
             fields it changes or deletes. For `update`, this leaves out `Record ID#`, which only
@@ -199,6 +204,17 @@ def describe_write(
     app = _describe_app(method, path)
     if app is not None:
         return app
+    trustees = _TRUSTEES_PATH.fullmatch(path)
+    if trustees and method in ("POST", "PATCH", "DELETE"):
+        return WriteRequest(
+            action="change_role_assignments",
+            table_id=None,
+            field_ids=None,
+            row_count=None,
+            method=method,
+            path=path,
+            app_id=trustees[1],
+        )
     schema = _describe_schema(method, path, body, params or {}, parent_table_id)
     return _other(method, path) if schema is None else schema
 

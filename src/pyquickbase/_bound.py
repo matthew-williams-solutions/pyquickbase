@@ -682,6 +682,12 @@ class BoundPolicy:
                 "update",
                 None,
             )
+        if action == "change_role_assignments":
+            reason = (
+                "A client that could change roles could give itself anything a policy withholds, "
+                "so no policy can allow it. Use a client without a policy"
+            )
+            return self._decision(_Verdict(False, reason=reason), "update", None)
         if action == "write_code_page":
             verdict = self._app_check(request.app_id, "write_code_pages")
             reason = CODE_PAGE_WARNING
@@ -721,6 +727,8 @@ class BoundPolicy:
             return self._all([("delete", table_id, None)])
         if action == "delete_file":
             return self._all([("delete_file", table_id, item) for item in sorted(ids or ())])
+        if action == "set_key_field":
+            return self._all([("set_key", table_id, None)])
         if action == "update_table":
             return self._all([("change_table", table_id, None)])
         if action == "delete_table":
@@ -1042,6 +1050,7 @@ class BoundPolicy:
             "lookup",
             "summary",
             "link",
+            "set_key",
         ):
             if self._check(verb, table_id, None).allowed:
                 return True
@@ -1582,6 +1591,7 @@ _SCHEMA_TABLE_VERBS = (
     "unlink",
     "change_table",
     "delete_table",
+    "set_key",
 )
 
 

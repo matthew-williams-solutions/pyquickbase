@@ -255,6 +255,81 @@ class CodePageWrite:
     created: bool
 
 
+@dataclass(frozen=True, slots=True)
+class RoleAssignment:
+    """A user or group holding a role, for `app.add_role_assignments()` and
+    `app.remove_role_assignments()`.
+
+    Args:
+        member_id: The user's or group's ID, from `app.members()` or `client.find_user()`.
+        role_id: The role's ID, from `app.roles()`.
+        kind: `user` or `group`.
+    """
+
+    member_id: str
+    role_id: int
+    kind: Literal["user", "group"] = "user"
+
+
+@dataclass(frozen=True, slots=True)
+class RoleChange:
+    """Moving a user or group from one role to another, for `app.change_role_assignments()`.
+
+    Args:
+        member_id: The user's or group's ID.
+        from_role_id: The role they have now.
+        to_role_id: The role they should have.
+        kind: `user` or `group`.
+    """
+
+    member_id: str
+    from_role_id: int
+    to_role_id: int
+    kind: Literal["user", "group"] = "user"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RoleChangeFailure:
+    """A role change Quickbase refused.
+
+    Attributes:
+        change: The change that was refused.
+        error: Quickbase's reason, such as `Trustee already has this role`.
+    """
+
+    change: RoleAssignment | RoleChange
+    error: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RoleChangeResult:
+    """What a batch of role changes did.
+
+    Attributes:
+        changed: The changes Quickbase made.
+        failed: The ones it refused. If there are any, `WriteError` raises with this as `result`.
+    """
+
+    changed: tuple[RoleAssignment | RoleChange, ...] = ()
+    failed: tuple[RoleChangeFailure, ...] = ()
+
+
+def _trustee(item: Mapping[str, Any]) -> RoleAssignment | RoleChange:
+    if "oldRoleId" in item:
+        return RoleChange(item["id"], item["oldRoleId"], item["roleId"], item.get("type", "user"))
+    return RoleAssignment(item["id"], item["roleId"], item.get("type", "user"))
+
+
+def role_change_result_from_api(data: Mapping[str, Any]) -> RoleChangeResult:
+    return RoleChangeResult(
+        changed=tuple(_trustee(item) for item in data.get("success") or ()),
+        failed=tuple(
+            RoleChangeFailure(change=_trustee(item["trustee"]), error=item["error"])
+            for item in data.get("failure") or ()
+        ),
+    )
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class TableInfo:
     """A table's metadata.

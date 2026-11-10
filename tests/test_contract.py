@@ -264,3 +264,24 @@ def test_negative_field_ids_sort_descending() -> None:
 
     assert first_sort(-6) == {"fieldId": 6, "order": "DESC"}
     assert first_sort(6) == {"fieldId": 6, "order": "ASC"}
+
+
+def test_listing_apps_never_widens_past_one_realm() -> None:
+    import inspect
+
+    from pyquickbase import Quickbase
+    from pyquickbase._xml import GRANTED_APPS
+
+    assert list(inspect.signature(Quickbase.apps).parameters) == ["self", "admin_only"]
+    assert GRANTED_APPS.action == "API_GrantedDBs"
+
+
+def test_a_policy_cant_allow_a_role_change() -> None:
+    from pyquickbase import Policy
+    from pyquickbase._write_request import describe_write
+
+    everything = Policy.read_only().bind_offline()
+    for method in ("POST", "PATCH", "DELETE"):
+        request = describe_write(method, "/app/bq123/trustees", [{"id": "1"}])
+        assert request.action == "change_role_assignments"
+        assert not everything.decide(request).allowed

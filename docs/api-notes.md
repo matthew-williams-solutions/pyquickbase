@@ -623,6 +623,7 @@ a user token for a Basic Access role. Each request was a POST to `https://<realm
 | The same `POST` again | **207**, with `Trustee already has this role` |
 | `DELETE`, one valid role and one that doesn't exist | **207.** The valid one is removed, and `failure` holds `error` and `trustee` for the other, `Role does not exist` |
 | A Basic Access role | 403 |
+| What success and failure return | `{"success": [...], "failure": [...]}`, in both a 200 and a 207. Items in `success` echo `id`, `roleId`, `type`, and for `PATCH`, `oldRoleId`. Each `failure` has `error` and `trustee` |
 | `POST /users` with `appIds` | Needs a realm or account admin. Returned 2 users for an app with 3 trustees |
 
 **Code pages**

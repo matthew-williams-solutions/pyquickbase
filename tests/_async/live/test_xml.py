@@ -15,13 +15,19 @@ from pyquickbase import (
     BadRequestError,
     CodePageChangedError,
     ConfirmationError,
+    InvalidValueError,
     NotFoundError,
     PermissionDeniedError,
     Policy,
     PolicyRefusedError,
+    RoleAssignment,
+    RoleChange,
+    SchemaMismatchError,
+    SetKeyField,
+    WriteError,
     allow,
 )
-from pyquickbase._xml import ROLE_INFO, roles_from_xml
+from pyquickbase._xml import ROLE_INFO, SET_KEY_FIELD, roles_from_xml
 
 pytestmark = pytest.mark.anyio
 
@@ -257,3 +263,104 @@ async def test_xml_code_page_a_policy_without_the_grant_is_refused(scratch: Any)
     async with AsyncQuickbase(realm=scratch.realm, token=token, policy=Policy.read_only()) as qb:
         with pytest.raises(PolicyRefusedError):
             await qb.app(scratch.app_id).code_page(PAGE).read()
+
+
+async def trustees(qb: AsyncQuickbase, app_id: str) -> list[dict[str, Any]]:
+    return await qb.request("GET", f"/app/{app_id}/trustees")
+
+
+@pytest.fixture
+async def role_nine_user(qb: AsyncQuickbase, scratch: Any) -> AsyncIterator[str]:
+    """The Integration Tests user that has no access, put back at role 9 even if a test fails."""
+    found = [
+        item
+        for item in await trustees(qb, scratch.app_id)
+        if item["roleId"] == 9 and item["type"] == "user"
+    ]
+    if len(found) != 1:
+        pytest.skip("This needs exactly one user at role 9.")
+    member = found[0]["id"]
+    try:
+        yield member
+    finally:
+        now = [
+            item["roleId"] for item in await trustees(qb, scratch.app_id) if item["id"] == member
+        ]
+        extra = [RoleAssignment(member, role) for role in now if role != 9]
+        if extra:
+            await qb.app(scratch.app_id).remove_role_assignments(extra)
+        if 9 not in now:
+            await qb.app(scratch.app_id).add_role_assignments([RoleAssignment(member, 9)])
+        final = [
+            item["roleId"] for item in await trustees(qb, scratch.app_id) if item["id"] == member
+        ]
+        assert final == [9], "the role-9 user wasn't restored"
+
+
+async def test_xml_role_changes_add_change_remove_and_partial_failure(
+    qb: AsyncQuickbase, scratch: Any, role_nine_user: str
+) -> None:
+    app = qb.app(scratch.app_id)
+    moved = await app.change_role_assignments([RoleChange(role_nine_user, 9, 10)])
+    assert moved.changed == (RoleChange(role_nine_user, 9, 10),)
+    await app.change_role_assignments([RoleChange(role_nine_user, 10, 9)])
+    added = await app.add_role_assignments([RoleAssignment(role_nine_user, 10)])
+    assert added.changed == (RoleAssignment(role_nine_user, 10),)
+    with pytest.raises(WriteError) as duplicate:
+        await app.add_role_assignments([RoleAssignment(role_nine_user, 10)])
+    assert duplicate.value.result.failed[0].error == "Trustee already has this role"
+    with pytest.raises(WriteError) as partial:
+        await app.remove_role_assignments(
+            [RoleAssignment(role_nine_user, 10), RoleAssignment(role_nine_user, 99999)]
+        )
+    assert partial.value.result.changed == (RoleAssignment(role_nine_user, 10),)
+    assert partial.value.result.failed[0].error == "Role does not exist"
+
+
+async def test_xml_role_changes_are_refused_for_a_restricted_role(
+    restricted: AsyncQuickbase, scratch: Any, role_nine_user: str
+) -> None:
+    with pytest.raises(PermissionDeniedError):
+        await restricted.app(scratch.app_id).add_role_assignments(
+            [RoleAssignment(role_nine_user, 10)]
+        )
+
+
+async def test_xml_role_changes_are_refused_by_any_policy(
+    scratch: Any, role_nine_user: str
+) -> None:
+    token = os.environ["QB_USER_TOKEN"]
+    async with AsyncQuickbase(realm=scratch.realm, token=token, policy=Policy.read_only()) as qb:
+        with pytest.raises(PolicyRefusedError):
+            await qb.app(scratch.app_id).add_role_assignments([RoleAssignment(role_nine_user, 10)])
+
+
+async def test_xml_key_field_is_set_through_a_plan(qb: AsyncQuickbase, scratch: Any) -> None:
+    table = scratch.table(("Title", "text"), ("Code", "text", {"unique": True}))
+    table_id = table.info().id
+    app = qb.app(scratch.app_id)
+    plan = await app.preview_schema_changes([SetKeyField(table=table_id, field="Code")])
+    assert plan.changes[0].status == "ready"
+    await app.apply_schema_changes(plan)
+    live = qb.app(scratch.app_id).table(table_id)
+    code_id = (await live.resolve_field_ids(["Code"]))[0]
+    assert (await live.info()).key_field_id == code_id
+    with pytest.raises(InvalidValueError):
+        await live.insert([{"Code": "A-1"}])
+    # A plan made against the old state is refused once the key has moved on.
+    stale = await app.preview_schema_changes([SetKeyField(table=table_id, field="Record ID#")])
+    await app.apply_schema_changes(stale)
+    assert (await live.info()).key_field_id == 3
+    with pytest.raises(SchemaMismatchError):
+        await app.apply_schema_changes(stale)
+
+
+async def test_xml_key_field_is_refused_for_a_restricted_role(
+    qb: AsyncQuickbase, restricted: AsyncQuickbase, scratch: Any
+) -> None:
+    table = scratch.table(("Code", "text", {"unique": True}))
+    table_id = table.info().id
+    # The role can't see this table, so `Table` couldn't find it. The refusal is what matters.
+    with pytest.raises(PermissionDeniedError):
+        await restricted._transport.xml.call(SET_KEY_FIELD, table_id, {"fid": 6})  # pyright: ignore[reportPrivateUsage]
+    assert (await qb.app(scratch.app_id).table(table_id).info()).key_field_id == 3

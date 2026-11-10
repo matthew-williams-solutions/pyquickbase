@@ -174,6 +174,22 @@ class DeleteField:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class SetKeyField:
+    """Change which field is a table's key. A plan treats a field that's already the key as done.
+
+    The field must be unique, or be `Record ID#` to go back to the usual key. Once a table has
+    a custom key, `insert()` refuses it, as a row with an existing key value updates that record.
+
+    Args:
+        table: The table, by name or ID.
+        field: The field, by label or ID.
+    """
+
+    table: str
+    field: FieldRefValue
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class CreateRelationship:
     """Link a child table to a parent, with a new field on the child that holds the parent's
     Record ID#. A plan treats a link with this foreign key as already made.
@@ -251,6 +267,7 @@ SchemaChange = (
     | CreateField
     | UpdateField
     | DeleteField
+    | SetKeyField
     | CreateRelationship
     | CreateLookupField
     | CreateSummaryField
@@ -260,8 +277,8 @@ SchemaChange = (
 
 SchemaAction = Literal[
     "create_table", "update_table", "delete_table", "create_field", "update_field",
-    "delete_field", "create_relationship", "create_lookup_field", "create_summary_field",
-    "delete_relationship",
+    "delete_field", "set_key_field", "create_relationship", "create_lookup_field",
+    "create_summary_field", "delete_relationship",
 ]  # fmt: skip
 """The `action` of a change in its JSON form."""
 
@@ -272,6 +289,7 @@ CHANGE_TYPES: dict[str, type[Any]] = {
     "create_field": CreateField,
     "update_field": UpdateField,
     "delete_field": DeleteField,
+    "set_key_field": SetKeyField,
     "create_relationship": CreateRelationship,
     "create_lookup_field": CreateLookupField,
     "create_summary_field": CreateSummaryField,
@@ -295,6 +313,7 @@ _RISKS: dict[str, Risk] = {
     "create_summary_field": "additive",
     "update_table": "modifying",
     "update_field": "modifying",
+    "set_key_field": "modifying",
     "delete_table": "destructive",
     "delete_field": "destructive",
     "delete_relationship": "destructive",
