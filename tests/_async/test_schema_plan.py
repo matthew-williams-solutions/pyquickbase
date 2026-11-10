@@ -91,7 +91,7 @@ async def test_applying_a_plan_makes_its_changes_in_order() -> None:
     assert [item.status for item in again.changes] == ["already_done"] * 5
     visits = next(item for item in fake.tables.values() if item["name"] == "Visits")
     labels = [item["label"] for item in fake.fields[visits["id"]]]
-    assert labels[-3:] == ["Notes", "Project", "Lookup 6"]
+    assert labels[-3:] == ["Notes", "Project", "Project - Name"]
     assert fake.fields[PROJECTS][-1]["label"] == "Visits"
 
 
@@ -735,3 +735,386 @@ async def test_a_failed_key_change_stops_the_plan() -> None:
                 await app.preview_schema_changes([SetKeyField(table="Tasks", field="Code")])
             )
     assert fake.tables[TASKS]["keyFieldId"] == 3
+
+
+# What a destructive change does when it's applied, and what stops one that can't be made
+
+
+async def test_applying_a_table_deletion_drops_exactly_that_table() -> None:
+    fake = FakeApp()
+    async with client(fake) as qb:
+        app = qb.app(APP)
+        plan = await app.preview_schema_changes([DeleteTable(table="Projects")])
+        result = await app.apply_schema_changes(plan)
+    assert fake.writes() == [("DELETE", f"/tables/{PROJECTS}")]
+    assert list(fake.tables) == [TASKS]
+    assert [item.change for item in result.applied] == [DeleteTable(table="Projects")]
+
+
+async def test_applying_a_field_deletion_removes_exactly_that_field() -> None:
+    fake = FakeApp()
+    before = [item["label"] for item in fake.fields[TASKS]]
+    async with client(fake) as qb:
+        app = qb.app(APP)
+        plan = await app.preview_schema_changes([DeleteField(table="Tasks", field="Code")])
+        await app.apply_schema_changes(plan)
+    assert [body for method, _, body in fake.sent if method == "DELETE"] == [{"fieldIds": [8]}]
+    assert [item["label"] for item in fake.fields[TASKS]] == [
+        label for label in before if label != "Code"
+    ]
+
+
+async def test_deleting_a_relationship_removes_what_quickbase_removes() -> None:
+    fake = FakeApp()
+    async with client(fake) as qb:
+        app = qb.app(APP)
+        await app.apply_schema_changes(
+            await app.preview_schema_changes(
+                [DeleteRelationship(child_table="Tasks", foreign_key="Project")]
+            )
+        )
+    labels = {item["label"] for item in fake.fields[TASKS]}
+    assert "Project" in labels
+    assert "Project - Name" not in labels
+    assert "Total Hours" not in {item["label"] for item in fake.fields[PROJECTS]}
+    assert fake.relationships == []
+
+
+async def test_the_key_field_cant_be_deleted() -> None:
+    fake = FakeApp()
+    fake.tables[TASKS]["keyFieldId"] = 8
+    async with client(fake) as qb:
+        app = qb.app(APP)
+        plan = await app.preview_schema_changes([DeleteField(table="Tasks", field="Code")])
+        assert plan.changes[0].status == "blocked"
+        assert plan.blockers == ("\"Code\" is the table's key field, so it can't be deleted.",)
+        with pytest.raises(InvalidValueError, match="nothing was changed"):
+            await app.apply_schema_changes(plan)
+    assert not fake.writes()
+
+
+@pytest.mark.parametrize("field", ["Date Created", "Date Modified", "Record ID#", "Record Owner"])
+async def test_a_built_in_field_cant_be_changed(field: str) -> None:
+    fake = FakeApp()
+    async with client(fake) as qb:
+        app = qb.app(APP)
+        plan = await app.preview_schema_changes(
+            [UpdateField(table="Tasks", field=field, label="X")]
+        )
+        assert plan.changes[0].status == "blocked"
+        assert plan.blockers == (f'"{field}" is built into every table, so it can\'t be changed.',)
+        with pytest.raises(InvalidValueError, match="nothing was changed"):
+            await app.apply_schema_changes(plan)
+    assert not fake.writes()
+
+
+# Making a field unique
+
+
+def unique_code(fake: FakeApp, values: list[Any]) -> UpdateField:
+    fake.values[(TASKS, 8)] = values
+    fake.counts[f"{TASKS} "] = len(values)
+    if len(set(values)) < len(values):
+        fake.duplicates.add((TASKS, 8))
+    return UpdateField(table="Tasks", field="Code", unique=True)
+
+
+@pytest.mark.parametrize(
+    ("values", "blocker"),
+    [
+        (["a", "a", "b"], "1 value is each held by more than one record, 2 records in all"),
+        (["a", "a", "b", "b", "b"], "2 values are each held by more than one record, 5 records"),
+    ],
+)
+async def test_a_field_holding_duplicates_cant_be_made_unique(
+    values: list[str], blocker: str
+) -> None:
+    fake = FakeApp()
+    change = unique_code(fake, values)
+    async with client(fake) as qb:
+        app = qb.app(APP)
+        plan = await app.preview_schema_changes([change])
+        assert plan.changes[0].status == "blocked"
+        assert blocker in plan.blockers[0]
+        with pytest.raises(InvalidValueError, match="nothing was changed"):
+            await app.apply_schema_changes(plan)
+    assert not fake.writes()
+
+
+async def test_a_field_with_different_values_can_be_made_unique() -> None:
+    fake = FakeApp()
+    change = unique_code(fake, ["a", "b", "c"])
+    async with client(fake) as qb:
+        app = qb.app(APP)
+        plan = await app.preview_schema_changes([change])
+        assert plan.changes[0].status == "ready"
+        assert not plan.changes[0].warnings
+        await app.apply_schema_changes(plan)
+    assert fake.fields[TASKS][7]["unique"] is True
+
+
+async def test_a_table_too_large_to_check_for_duplicates_says_so() -> None:
+    fake = FakeApp()
+    fake.counts[f"{TASKS} "] = 10_000_000
+    fake.values[(TASKS, 8)] = ["a", "a"]
+    async with client(fake) as qb:
+        plan = await qb.app(APP).preview_schema_changes(
+            [UpdateField(table="Tasks", field="Code", unique=True)]
+        )
+    assert plan.changes[0].status == "ready"
+    assert "wasn't checked" in plan.changes[0].warnings[0]
+    assert "{8.XEX.''}" not in fake.wheres
+
+
+async def test_a_failed_duplicate_check_says_so() -> None:
+    fake = FakeApp()
+    fake.fail = "POST /records/query"
+    async with client(fake) as qb:
+        plan = await qb.app(APP).preview_schema_changes(
+            [UpdateField(table="Tasks", field="Code", unique=True, required=True)]
+        )
+    assert plan.changes[0].status == "ready"
+    assert plan.changes[0].warnings == (
+        "Whether every record has a value wasn't checked.",
+        "Whether every value is different wasn't checked. Quickbase refuses the change if not.",
+    )
+
+
+# Changing a formula
+
+
+async def test_changing_a_formula_is_planned_and_applied() -> None:
+    fake = FakeApp()
+    change = UpdateField(table="Tasks", field="Double", formula="[Hours] * 3")
+    async with client(fake) as qb:
+        app = qb.app(APP)
+        plan = await app.preview_schema_changes([change])
+        (planned,) = plan.changes
+        assert planned.status == "ready"
+        assert planned.settings["formula"].before == "[Hours] * 2"
+        assert planned.settings["formula"].after == "[Hours] * 3"
+        assert "Every record's value is recalculated with the new formula." in planned.warnings
+        await app.apply_schema_changes(plan)
+    assert fake.fields[TASKS][9]["properties"]["formula"] == "[Hours] * 3"
+
+
+async def test_a_later_change_sees_the_new_formula() -> None:
+    async with client(FakeApp()) as qb:
+        plan = await qb.app(APP).preview_schema_changes(
+            [
+                UpdateField(table="Tasks", field="Double", formula="[Code] & 'x'"),
+                DeleteField(table="Tasks", field="Hours"),
+            ]
+        )
+    assert not any('"Double"' in item for item in plan.changes[1].warnings)
+
+
+async def test_a_new_formula_cant_read_a_hidden_field() -> None:
+    fake = FakeApp()
+    policy = fake.bind(allow.read(TASKS, [6, 7, 10]), ANY_SCHEMA)
+    async with client(fake, policy=policy) as qb:
+        plan = await qb.app(APP).preview_schema_changes(
+            [UpdateField(table="Tasks", field="Double", formula="[Code] & 'x'")]
+        )
+    assert "uses [Code]" in plan.changes[0].blockers[0]
+
+
+async def test_renaming_a_field_a_formula_uses_says_it_follows() -> None:
+    async with client(FakeApp()) as qb:
+        plan = await qb.app(APP).preview_schema_changes(
+            [UpdateField(table="Tasks", field="Hours", label="Time")]
+        )
+    assert (
+        "Quickbase updates the formulas that use it to the new label." in plan.changes[0].warnings
+    )
+
+
+# What a plan says when it can't find something out, and about tables it makes
+
+
+async def test_counts_that_fail_are_reported_as_unknown() -> None:
+    fake = FakeApp()
+    fake.fail = "POST /records/query"
+    async with client(fake) as qb:
+        plan = await qb.app(APP).preview_schema_changes(
+            [DeleteField(table="Tasks", field="Code"), DeleteTable(table="Projects")]
+        )
+    code, projects = plan.changes
+    assert code.affected_records is None
+    assert "How many records hold a value in it wasn't checked." in code.warnings
+    assert projects.affected_records is None
+    assert "How many records it has wasn't checked." in projects.warnings
+
+
+async def test_a_derived_field_loses_no_stored_values() -> None:
+    fake = FakeApp()
+    async with client(fake) as qb:
+        plan = await qb.app(APP).preview_schema_changes(
+            [DeleteField(table="Tasks", field="Double")]
+        )
+    assert plan.changes[0].affected_records is None
+    assert "It's a formula field, so no stored values are lost." in plan.changes[0].warnings
+
+
+async def test_deleting_a_foreign_key_says_what_it_links() -> None:
+    async with client(FakeApp()) as qb:
+        plan = await qb.app(APP).preview_schema_changes(
+            [DeleteField(table="Tasks", field="Project")]
+        )
+    assert any(item.startswith("It links Tasks to Projects.") for item in plan.changes[0].warnings)
+
+
+async def test_a_table_deleted_earlier_in_the_plan_isnt_searched() -> None:
+    async with client(FakeApp()) as qb:
+        plan = await qb.app(APP).preview_schema_changes(
+            [DeleteTable(table="Projects"), DeleteField(table="Tasks", field="Hours")]
+        )
+    assert not any("Summaries on Projects" in item for item in plan.changes[1].warnings)
+
+
+async def test_changes_to_a_new_table_are_planned_without_asking_quickbase() -> None:
+    fake = FakeApp()
+    async with client(fake) as qb:
+        plan = await qb.app(APP).preview_schema_changes(
+            [
+                CreateTable(name="Visits"),
+                CreateField(table="Visits", label="Note", type="text", required=True),
+                DeleteField(table="Visits", field="Note"),
+            ]
+        )
+    assert [item.status for item in plan.changes] == ["ready"] * 3, plan.blockers
+    assert not fake.writes()
+
+
+async def test_a_new_tables_changes_are_checked_when_applied_under_a_policy() -> None:
+    fake = FakeApp()
+    policy = fake.bind(allow.read(TASKS), ANY_SCHEMA)
+    async with client(fake, policy=policy) as qb:
+        plan = await qb.app(APP).preview_schema_changes(
+            [
+                CreateTable(name="Visits"),
+                CreateField(table="Visits", label="Twice", type="numeric", formula="1 * 2"),
+            ]
+        )
+    table, field = plan.changes
+    assert "when they're applied" in table.warnings[0]
+    assert field.policy_effects == (
+        "Visits is new, so its fields follow the rules for tables.created().",
+    )
+
+
+async def test_a_table_cant_link_to_one_that_doesnt_exist_yet() -> None:
+    async with client(FakeApp()) as qb:
+        plan = await qb.app(APP).preview_schema_changes(
+            [
+                CreateTable(name="Clients"),
+                CreateRelationship(child_table="Tasks", parent_table="Clients", foreign_key="Who"),
+            ]
+        )
+    assert "Clients must exist before a table can link to it." in plan.changes[1].blockers
+
+
+async def test_a_new_relationship_on_existing_tables_is_applied() -> None:
+    fake = FakeApp()
+    change = CreateRelationship(child_table="Tasks", parent_table="Projects", foreign_key="Second")
+    async with client(fake) as qb:
+        app = qb.app(APP)
+        plan = await app.preview_schema_changes([change])
+        assert plan.changes[0].status == "ready", plan.blockers
+        assert plan.changes[0].settings["foreign_key"].after == "Second"
+        await app.apply_schema_changes(plan)
+    assert fake.relationships[-1]["foreignKeyField"]["label"] == "Second"
+    assert fake.relationships[-1]["parentTableId"] == PROJECTS
+    assert fake.fields[PROJECTS][-1]["label"] == "Add Tasks"
+
+
+async def test_a_lookup_label_already_in_use_is_a_blocker() -> None:
+    async with client(FakeApp()) as qb:
+        plan = await qb.app(APP).preview_schema_changes(
+            [
+                CreateLookupField(
+                    child_table="Tasks",
+                    foreign_key="Project",
+                    parent_field="Total Hours",
+                    label="Code",
+                )
+            ]
+        )
+    assert plan.blockers == ('Tasks already has a field labeled "Code".',)
+
+
+async def test_an_unknown_summary_function_is_a_blocker() -> None:
+    async with client(FakeApp()) as qb:
+        plan = await qb.app(APP).preview_schema_changes(
+            [
+                CreateSummaryField(
+                    child_table="Tasks",
+                    foreign_key="Project",
+                    label="N",
+                    child_field="Hours",
+                    function="nope",
+                )
+            ]
+        )
+    assert plan.blockers[0].startswith("function must be one of:")
+
+
+async def test_a_table_change_with_nothing_new_is_no_change() -> None:
+    fake = FakeApp()
+    async with client(fake) as qb:
+        plan = await qb.app(APP).preview_schema_changes(
+            [UpdateTable(table="Tasks", name="Tasks", description="")]
+        )
+    assert plan.changes[0].status == "already_done"
+
+
+async def test_a_plan_for_another_app_is_refused() -> None:
+    fake = FakeApp()
+    async with client(fake) as qb:
+        plan = await qb.app(APP).preview_schema_changes(
+            [CreateField(table="Tasks", label="Due", type="date")]
+        )
+        with pytest.raises(InvalidValueError, match="This plan is for app"):
+            await qb.app("bqother12").apply_schema_changes(plan)
+    assert not fake.writes()
+
+
+async def test_a_formula_that_cant_be_read_doesnt_stop_the_plan() -> None:
+    fake = FakeApp()
+    fake.fields[TASKS][9]["properties"]["formula"] = "[Unclosed"
+    async with client(fake) as qb:
+        plan = await qb.app(APP).preview_schema_changes([DeleteField(table="Tasks", field="Hours")])
+    assert plan.changes[0].status == "ready"
+    assert not any('"Double"' in item for item in plan.changes[0].warnings)
+
+
+async def test_a_formula_a_client_cant_check_is_a_blocker() -> None:
+    fake = FakeApp()
+    policy = fake.bind(allow.read(TASKS), ANY_SCHEMA)
+    async with client(fake, policy=policy) as qb:
+        plan = await qb.app(APP).preview_schema_changes(
+            [
+                CreateField(
+                    table="Tasks", label="Odd", type="numeric",
+                    formula='Size(GetRecords("{3.GT.0}"))',
+                ),
+                CreateField(table="Tasks", label="Bad", type="numeric", formula="[Unclosed"),
+            ]
+        )  # fmt: skip
+    odd, bad = plan.changes
+    assert "calls GetRecords()" in odd.blockers[0]
+    assert "a field reference isn't closed" in bad.blockers[0]
+
+
+async def test_a_change_the_other_table_refuses_names_that_table() -> None:
+    fake = FakeApp()
+    policy = fake.bind(allow.read(tables.all()), allow.schema(TASKS, "summary", "lookup"))
+    async with client(fake, policy=policy) as qb:
+        plan = await qb.app(APP).preview_schema_changes(
+            [
+                CreateSummaryField(
+                    child_table="Tasks", foreign_key="Project", label="N", function="count"
+                )
+            ]
+        )
+    assert "This needs Projects to allow it too" in plan.blockers[0]
