@@ -103,7 +103,7 @@ Tested on 2026-11-02 against temporary tables in a sandbox app.
 | Row with an existing Record ID#, without `mergeFieldId` | Updates it, as it does with `mergeFieldId: 3`. Live API, 2026-11-05 |
 | `mergeFieldId` of `"3"` or `3.0` | Accepted, as field 3. Live API, 2026-11-05 |
 | A row's field key with padding, such as `"07"`, `" 7"`, or `"7 "` | **Accepted as field 7, and the value is written.** So check field IDs only in their usual form. Live API, 2026-11-05 |
-| `keyFieldId` in `POST /tables/{id}` | 200, and **ignored**, so the key field stays 3. A table's key field can't be changed through the API. In the UI, select the field on the table's fields page and click **Set key**. Live API, 2026-11-05 |
+| `keyFieldId` in `POST /tables/{id}` | 200, and **ignored**, so the key field stays 3. The JSON API can't change a table's key field. The [XML API](#xml-api) can, and in the UI, select the field on the table's fields page and click **Set key**. Live API, 2026-11-05 |
 | Custom key field: a row with an existing key value, without `mergeFieldId` | **Updates that record, and creates nothing.** A batch can do both, leaving `createdRecordIds` shorter than the rows. So `insert()` refuses these tables. Live API, 2026-11-05 |
 | Custom key field: a row with a new key value, without `mergeFieldId` | Creates a record. Live API, 2026-11-05 |
 | Custom key field: a row without the key field, without `mergeFieldId` | Row error, `Missing value for required field`, though it wasn't set as required. Live API, 2026-11-05 |
@@ -387,7 +387,9 @@ tables, and no delete rights. See also [record-level rules](#record-level-rules)
 
 `GET /apps/{id}/roles` with an administrator's token returns `id`, `name`, and `access`, including roles
 you made. We didn't find any endpoint for reading or changing a role's permissions:
-`/apps/{id}/roles/{id}` and `/apps/{id}/roles/{id}/permissions` return 404.
+`/apps/{id}/roles/{id}` and `/apps/{id}/roles/{id}/permissions` return 404, and the
+[XML API](#xml-api) has none either. Who holds each role is a separate matter, which
+`/app/{id}/trustees` reads and changes.
 
 ## Record-level rules
 
@@ -539,7 +541,7 @@ Tested on 2026-11-08 against the Integration Tests app and temporary apps the te
 | `POST /apps` with `assignToken: true` | 200, and the same token can read the new app at once |
 | `POST /apps/{id}/copy` | 200 with the copy's details and `ancestorId`. `keepData: true` copies the records, and without it the tables are empty |
 | `DELETE /apps/{id}` with `{"name": ...}` | 200, `{"deletedAppId": ...}` |
-| Listing apps | No endpoint, so an app left behind can only be found in the interface |
+| Listing apps | No JSON endpoint. The [XML API](#xml-api) can list them |
 | `GET /fields/usage` on a table of 10 fields | **Every field, built-in ones included, in one response**, as `{"field": {"id", "name", "type"}, "usage": {kind: {"count": n}}}`. `type` is lower case, such as `text` |
 | Kinds of use | `actions`, `appHomePages`, `customEmails`, `dashboards`, `defaultReports`, `documentTemplates`, `exactForms`, `fields`, `forms`, `notifications`, `personalReports`, `pipelines`, `relationships`, `reminders`, `reports`, `roles`, `tableImports`, `tableRules`, `webhooks`. `customEmails` and `documentTemplates` aren't in the published spec |
 | A new text field's usage | `reports: 2` and `defaultReports: 1` at once, and `forms: 1` a few seconds later, so **counts lag a change by a few seconds** |
@@ -561,6 +563,92 @@ Tested on 2026-11-08 on a temporary table.
 | A `multiuser` field set to a list of emails, or one email as text | Sets those users |
 | A `percent` field set to `"0.45"` | Reads as `0.45` |
 | **A `percent` field set to `"1,234.5"` or `"45%"`** | **200, and the field is emptied** |
+
+## XML API
+
+**The SDK doesn't use the XML API yet.** Tested on 2026-11-09 in a sandbox app, with an administrator's user token and
+a user token for a Basic Access role. Each request was a POST to `https://<realm>/db/<app ID, table ID, or main>`, with a
+`QUICKBASE-ACTION` header and a `<qdbapi>` body.
+
+**Requests and errors**
+
+| Behavior | Result |
+|---|---|
+| Host | The realm's own. `api.quickbase.com/db/...` returns 403 in plain text |
+| User token | **Accepted as `Authorization: QB-USER-TOKEN <token>`**, on app and table IDs and on `db/main`, for reads and writes. The documented `<usertoken>` element also works |
+| App tokens | Not needed with a user token |
+| Failures | **A real HTTP status with an XML body**, 400, 403, or 404, holding `errcode`, `errtext`, and often `errdetail`. Success is 200 with `errcode` 0. Every failure we saw followed this, and the help doesn't promise it |
+| A bad token, a made-up app, and an app the token isn't assigned to | All 400, errcode 83, `User token is invalid`, so they can't be told apart, as in the JSON API |
+| No credentials | 400, errcode 24, `An Application Token must be supplied.` |
+| No permission | 403, errcode 3 |
+| An unknown action | 404, errcode 5, `No Such Operation` |
+| Malformed XML | 400, errcode 11 |
+| Errcode 83's `errtext` | `Invalid error code: 83`. The useful text is in `errdetail` |
+| Response headers | `cf-ray` and `tid`. No `qb-api-ray` |
+| 40 `API_GetDBInfo` calls from 10 threads, at 59 per second | No errors. The help gives a limit of 10 per second per table, dynamically enforced, so this doesn't find the real limit |
+
+**Listing apps and finding who you are**
+
+| Behavior | Result |
+|---|---|
+| `API_GrantedDBs` on `db/main` | Lists names and IDs. With `withembeddedtables` of 0, only apps. Otherwise tables are included, named `App:Table` |
+| What it lists for a user token | **Only the apps the token is assigned to.** One user saw 1 app through a token and 4 by signing in with a ticket |
+| A role that gets 403 from `GET /apps/{id}` | Still gets the app's name from `API_GrantedDBs` |
+| A bad token | 400, errcode 83, while a good token gets a list, so a listing does show whether a token is valid |
+| `realmAppsOnly` | The help says that without it the call spans realms. Our apps were all in one realm, so this made no difference |
+| `API_GetUserInfo` with no email | The token's own user, including for a non-administrator |
+| `API_FindDBByName` | **A user token is refused**, 403, errcode 3, `User Tokens cannot be used to call this API`. A ticket works |
+
+**Roles and app details**
+
+| Behavior | Result |
+|---|---|
+| `API_GetRoleInfo` | Works for a Basic Access role, unlike `GET /apps/{id}/roles`, and returned the same IDs, names, and access levels |
+| `API_GetSchema` on an app | Works for a Basic Access role, and lists only the tables it can use |
+| `API_UserRoles` | Names, last access, and roles, for an administrator. 403, errcode 3, for a Basic Access role |
+| `API_GetUserRole` with no user | That user's own roles, for any role. Asking about someone else is 403, errcode 3, for a Basic Access role |
+| `inclgrps` of 1 on `API_GetUserRole` | Adds a `member` element with the type of assignment |
+| A role's permissions | **No XML call reads them.** `API_GetSchema` and `API_GetRoleInfo` have nothing on them, and no documented call changes them |
+| **`numRecords` from `API_GetDBInfo`** | **Ignores view rules.** A role whose View rule hid a third of a table's 6,000 records got 6000 |
+
+**Role assignments, through the JSON API**
+
+| Behavior | Result |
+|---|---|
+| `GET /app/{id}/trustees` | A list of `id`, `roleId`, and `type`, for an administrator. 403 for a Basic Access role |
+| Trustee IDs | The same IDs that `API_UserRoles` returns |
+| `PATCH` with `id`, `roleId`, `oldRoleId`, and `type` | 200, and moves the user, including to and from role 9, which is no access |
+| `POST` with `id`, `roleId`, and `type` | 200, and adds a role. A second role can be held alongside the first |
+| The same `POST` again | **207**, with `Trustee already has this role` |
+| `DELETE`, one valid role and one that doesn't exist | **207.** The valid one is removed, and `failure` holds `error` and `trustee` for the other, `Role does not exist` |
+| A Basic Access role | 403 |
+| `POST /users` with `appIds` | Needs a realm or account admin. Returned 2 users for an app with 3 trustees |
+
+**Code pages**
+
+| Behavior | Result |
+|---|---|
+| `API_ListDBPages` | **Works, but isn't in Quickbase's API guide.** Each `page` has an `id` and `type`, with its name as the text. A code page's type is `Text`, and a home page's is `Home Page`. A Basic Access role can use it |
+| `API_AddReplaceDBPage` with `pagename` | Creates the page, and returns `pageID`. **With a name already in use, it overwrites that page and keeps its ID** |
+| `API_AddReplaceDBPage` with `pageid` | Replaces the page. An ID that doesn't exist is 400, errcode 81 |
+| What a write reports | Only `pageID`, the same for a new page, a changed one, and identical text |
+| Writing with a Basic Access role | 403, errcode 3. Reading works |
+| `API_GetDBPage` | Takes `pageID` or `pagename`. A name in `pageID` is 400, errcode 81 |
+| **What a read returns** | **An XML envelope with a `pagebody` element, not the HTML the help describes** |
+| A page with line breaks | **Comes back wrapped, with each break as `<BR/>`**: `<pagebody>\r\nline1<BR/>\nline2<BR/>\n\r\n\t</pagebody>`. A page without any comes back as plain text. A `<BR/>` that's part of the page is escaped |
+| Line endings | **LF, CRLF, and a lone CR all read back as LF** |
+| Other text | Non-ASCII, `&`, `<`, `]]>`, tabs, trailing spaces, and an empty page all read back exactly. A body sent escaped or in CDATA reads back the same |
+| A home page | Listed, but `API_GetDBPage` refuses it, 400, errcode 23 |
+| Size | 1 MB saved. 5 MB is 400, errcode 1, `Unable to save page`. The limit is somewhere between |
+| Deleting a page | No documented call, and `API_DeleteDBPage` is errcode 5 |
+
+**Key fields**
+
+| Behavior | Result |
+|---|---|
+| `API_SetKeyField` | Changes the key field, and `keyFieldId` then reads it from the JSON API. Repeating it succeeds, and it can be set back to 3 |
+| A field without `unique` | **Accepted on an empty table**, though the help says it must be unique. A table with records wasn't tried |
+| A Basic Access role | 403, errcode 3 |
 
 ## Interface links
 

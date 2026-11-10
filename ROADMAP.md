@@ -6,8 +6,11 @@ to keep are explained in the guides, not here.
 
 ## Before 1.0
 
-- Release a candidate with schema plans, `feature/schema-changes`, then let it run for at least a week
-  with no code changes.
+- Add the XML-backed methods: listing apps, the token's user, members and their roles, code pages, role changes, and
+  setting a key field. What's been confirmed about them is in the
+  [API notes](docs/api-notes.md#xml-api).
+- Release a candidate with schema plans and those methods, then let it run for at least a week with no code
+  changes. Each new candidate restarts the week.
 - Check the formula functions a client with a policy allows, `SAFE_FUNCTIONS` in `_formula.py`,
   against Quickbase's function list. A missing one is refused by name, so this only widens what's
   allowed, but each one added must only read the record's own values.
@@ -55,8 +58,8 @@ Nothing here should break anyone.
 - `AppEvent` parsing is only tested against the published example. The test apps have no webhooks,
   actions, notifications, or automations, and the API can't make one, so confirm the shape on an app
   that has each kind, including whether an automation ever has a `name`.
-- A run killed during `tests/_async/live/test_apps.py` leaves an app named `ZZ Live App ...`, which
-  only the interface can delete, as Quickbase has no API that lists apps.
+- A run killed during `tests/_async/live/test_apps.py` leaves an app named `ZZ Live App ...`. The SDK can't list
+  apps yet, so it has to be found and deleted in the interface. Once it can, `scripts/clean_live_tables.py` can do it.
 - `field_usage()` asks again, field by field, for any field a response leaves out. A table larger
   than one response is untested, so it isn't known whether Quickbase ever leaves fields out.
 
@@ -71,7 +74,8 @@ else gets access, because the page writes with the viewer's own permissions:
   closes the frame after it navigates, which is too late to stop the data leaving.
 - Decide who gets access, and whether their writes should be limited. Anyone who can add and delete
   tasks can also run Reset tasks, which replaces the Tasks records for everyone.
-- Find out which roles can add a code page. The help only says "app builders".
+- Find out which roles can add a code page. An administrator can, and a Basic Access role can't. The roles between
+  them are untested.
 - Keep Overdue Tasks from drifting. The sample due dates are fixed, so the number climbs over time.
 
 ## Open questions
@@ -92,4 +96,5 @@ the result to `docs/api-notes.md`.
   `compile_where()`.
 
 - Is `api.quickbase.eu` the API host for EU realms? It answers without a token just as `api.quickbase.com`
-  does, and the help only says EU realms use `.quickbase.eu`. Confirming it needs a real EU realm.
+  does, and the help only says EU realms use `.quickbase.eu`. Confirming it needs a real EU realm, as does
+  confirming that XML calls go to `<realm>.quickbase.eu`.

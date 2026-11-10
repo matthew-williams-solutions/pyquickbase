@@ -1,7 +1,7 @@
 """Apps, field usage, events, and DataFrames against a real app, on temporary tables and apps.
 
-The app test makes its own apps, named `ZZ Live App ...`, and deletes exactly those. Quickbase has
-no API that lists apps, so one left by a run that was killed must be deleted in the interface.
+The app test makes its own apps, named `ZZ Live App ...`, and deletes exactly those. The SDK can't
+list apps yet, so one left by a run that was killed must be deleted in the interface.
 """
 
 import os
