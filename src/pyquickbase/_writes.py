@@ -152,12 +152,12 @@ def to_api_value(value: Any) -> Any:
         return ""
     if isinstance(value, User):
         return {"id": value.id}
-    if isinstance(value, list) and any(isinstance(item, User) for item in value):  # pyright: ignore[reportUnknownVariableType]
-        return [to_api_value(item) if isinstance(item, User) else item for item in value]  # pyright: ignore[reportUnknownVariableType]
     if isinstance(value, float) and not math.isfinite(value):
         raise InvalidValueError("A number must be finite, as JSON can't hold NaN or infinity.")
-    if isinstance(value, bool | int | float | str | list | dict):
-        return value  # pyright: ignore[reportUnknownVariableType]
+    if isinstance(value, bool | int | float | str):
+        return value
+    if isinstance(value, list | dict):
+        return _nested_value(value)
     if isinstance(value, Decimal):
         found = plain_number(value)
         if found is None:
@@ -171,6 +171,21 @@ def to_api_value(value: Any) -> Any:
     if isinstance(value, date):
         return value.isoformat()
     raise InvalidValueError(f"Can't write a value of type {type(value).__name__}.")
+
+
+def _nested_value(value: Any) -> Any:
+    """A value inside a list or object, checked like any other, as JSON couldn't hold some of them
+    and that would only show when its batch is sent. A null in here stays null."""
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return [_nested_value(item) for item in cast(list[Any], value)]
+    if isinstance(value, dict):
+        items = cast(dict[Any, Any], value)
+        if not all(isinstance(key, str) for key in items):
+            raise InvalidValueError("An object's keys must be text.")
+        return {key: _nested_value(item) for key, item in items.items()}
+    return to_api_value(value)
 
 
 def duration_value(value: Any, label: str) -> int | str:

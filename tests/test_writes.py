@@ -1,5 +1,7 @@
 """Tests for preparing writes and reading their results, which do no network access."""
 
+import json
+import math
 import pickle
 from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -57,6 +59,35 @@ INDEX = FieldIndex(
 )
 def test_to_api_value(value: Any, expected: Any) -> None:
     assert to_api_value(value) == expected
+
+
+STAMP = datetime(2027, 1, 2, 3, 4, 5, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ([Decimal("1E+3"), "a"], ["1000", "a"]),
+        ([STAMP], ["2027-01-02T03:04:05+00:00"]),
+        ({"a": [Decimal("2.5")]}, {"a": ["2.5"]}),
+        ([None, "a"], [None, "a"]),
+        ({"id": None}, {"id": None}),
+        ([User(id="1.a", name="n", email="e")], [{"id": "1.a"}]),
+    ],
+)
+def test_values_inside_lists_and_objects_are_converted(value: Any, expected: Any) -> None:
+    assert to_api_value(value) == expected
+    json.dumps(to_api_value(value), allow_nan=False)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [[math.nan], {"a": math.inf}, [[math.nan]], [object()], {1: "a"}, [date.today, "x"]],
+    ids=["nan", "inf-in-object", "nested", "object", "number-key", "function"],
+)
+def test_values_inside_lists_and_objects_are_refused_before_sending(value: Any) -> None:
+    with pytest.raises(InvalidValueError):
+        to_api_value(value)
 
 
 def test_to_api_value_writes_a_decimal_without_an_exponent() -> None:

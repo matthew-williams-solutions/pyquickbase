@@ -517,3 +517,12 @@ async def test_a_setting_of_the_wrong_type_is_refused(setting: str, value: Any) 
         with pytest.raises(InvalidValueError, match=setting):
             await qb.app(APP).table("Tasks").create_field("New", "text", **{setting: value})
     assert server.sent("POST", "/fields") == []
+
+
+async def test_a_bad_value_in_a_later_row_stops_the_write_before_anything_is_sent() -> None:
+    server = FakeQuickbase()
+    rows = [{"Title": f"T{n}"} for n in range(3)] + [{"Title": [float("nan")]}]
+    async with client(server) as qb:
+        with pytest.raises(InvalidValueError, match="finite"):
+            await qb.app("bq1234567").table("Tasks").insert(rows, batch_size=1)
+    assert server.writes == 0
