@@ -57,9 +57,8 @@ Nothing here should break anyone.
   `AsyncPlanner._duplicates()`.
 - `_find_relationship()` raises if a relationship disappears between planning and applying. That
   needs a change in Quickbase at exactly that moment, so it has no test.
-- `BoundPolicy.allows()` returns a `PolicyDecision`, which is always truthy, so `if bound.allows(...)`
-  is always true. `allows("read", table)` without a field also says no rule allows it, with a hint
-  that doesn't apply. Consider a `__bool__` on the decision, and a better answer for a whole table.
+- `allows("read", table)` without a field says no rule allows it, with a hint that doesn't apply,
+  even under `Policy.read_only()`. Consider a better answer for a whole table.
 
 ## Apps, events, and DataFrames
 

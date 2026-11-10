@@ -492,6 +492,7 @@ class Policy(object)
     property needs_app -> bool
     classmethod def read_only(cls) -> 'Policy'
 class PolicyDecision(object)
+    def __bool__(self) -> bool
     def __eq__(self, other)
     def __init__(self, *, allowed: bool, verb: Literal['read', 'filter', 'sort', 'insert', 'update', 'delete', 'download', 'delete_file', 'report', 'run_formula', 'create_field', 'update_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'update_table', 'delete_table', 'set_key_field', 'create_tables', 'read_code_pages', 'write_code_pages'], layer: Literal['policy', 'rows', 'derived'] = 'policy', rule: str | None = None, reason: str = '', hint: str | None = None, table: NamedItem | None = None, fields: tuple[NamedItem, ...] = ()) -> None
     field allowed: bool

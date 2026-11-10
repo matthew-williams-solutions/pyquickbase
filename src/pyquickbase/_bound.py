@@ -635,7 +635,7 @@ class BoundPolicy:
                 )
             else:
                 window = self._window(request, self.max_records(table_id), "max_paging_depth")
-            return window or decision
+            return decision if window is None else window
         if action == "delete":
             if request.filter_field_ids is None:
                 return self._all(
@@ -650,7 +650,7 @@ class BoundPolicy:
             if not verdict.allowed:
                 return self._decision(verdict, "report", table_id)
             window = self._window(request, self.max_records(table_id), "max_paging_depth")
-            return window or self._decision(verdict, "report", table_id)
+            return self._decision(verdict, "report", table_id) if window is None else window
         if action == "file":
             if not request.field_ids:
                 return self._all(
@@ -751,7 +751,8 @@ class BoundPolicy:
             decision = self._all(checks)
             if not decision.allowed:
                 return decision
-            return self._field_type(request) or decision
+            refused = self._field_type(request)
+            return decision if refused is None else refused
         if action == "update_field":
             if ids is None:
                 return self._all(

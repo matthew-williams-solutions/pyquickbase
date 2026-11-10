@@ -343,3 +343,26 @@ def test_a_query_cell_holding_other_details_is_left_alone() -> None:
     request_ = query("{6.EX.'x'}", 6)
     trimmed = policy.trim(request_, "POST", "/records/query", payload)
     assert trimmed["data"] == [{"6": {"value": {"a": 1}}}]
+
+
+def test_a_decision_is_true_only_when_it_allows() -> None:
+    policy = bind(allow.read(TASKS, [6]))
+    assert policy.allows("read", TASKS, field=6)
+    assert not policy.allows("read", TASKS, field=8)
+
+
+@pytest.mark.parametrize(
+    ("request_", "reason"),
+    [
+        (read("report", report_id="1", limit=500, skip=0), "records"),
+        (read("report", report_id="1", limit=1, skip=5000), "records"),
+    ],
+    ids=["too-many", "too-deep"],
+)
+def test_a_report_past_the_paging_limit_stays_refused(request_: Any, reason: str) -> None:
+    policy = bind(
+        allow.read(TASKS, max_records_scanned=100, max_paging_depth=100), allow.report(TASKS)
+    )
+    decision = policy.decide(request_)
+    assert not decision.allowed
+    assert reason in decision.reason

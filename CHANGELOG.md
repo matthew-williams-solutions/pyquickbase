@@ -72,6 +72,8 @@ All notable changes to this project are documented here. The format follows
 - A schema plan that deletes a parent table always warns about its child tables, not only when an
   earlier change in the plan used them.
 - `table.operation(..., reports="12")` is refused. It was read as reports 1 and 2.
+- A `PolicyDecision` is false when it refuses, so `if bound.allows(...)` means what it says. It was
+  always true.
 
 ## [1.0.0rc13] - 2026-11-08
 

@@ -144,6 +144,10 @@ class PolicyDecision:
     table: NamedItem | None = None
     fields: tuple[NamedItem, ...] = ()
 
+    def __bool__(self) -> bool:
+        """Whether it's allowed, so that `if bound.allows(...)` means what it says."""
+        return self.allowed
+
     @property
     def what(self) -> str:
         """What was asked, by name, such as `updating Labor Cost (6) in Job Tasks (bqtasks)`."""
