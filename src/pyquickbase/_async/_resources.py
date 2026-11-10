@@ -3301,8 +3301,6 @@ class AsyncTableOperation:
                     "nothing was done."
                 )
         if self._spec.context.require_preview:
-            if call.method == "delete" and matching is None:
-                matching = await table.count(call.arguments["where"])
             await self._check_confirmation(arguments, scope, matching)
         if call.report_id is not None:
             report = table.report(call.report_id)

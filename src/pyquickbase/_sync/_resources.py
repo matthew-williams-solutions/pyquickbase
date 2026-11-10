@@ -3290,8 +3290,6 @@ class TableOperation:
                     "nothing was done."
                 )
         if self._spec.context.require_preview:
-            if call.method == "delete" and matching is None:
-                matching = table.count(call.arguments["where"])
             self._check_confirmation(arguments, scope, matching)
         if call.report_id is not None:
             report = table.report(call.report_id)
