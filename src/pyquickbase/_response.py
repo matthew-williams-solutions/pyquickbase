@@ -20,9 +20,9 @@ from .errors import (
 )
 
 REQUEST_ID_HEADER = "qb-api-ray"
-_MAX_DETAIL_CHARS = 500
+MAX_DETAIL_CHARS = 500
 # Quickbase says "User token is invalid" for all of these, so the status alone can't separate them.
-_UNAUTHORIZED_HINT = (
+UNAUTHORIZED_HINT = (
     "Quickbase answers this way for a bad token, and also for an app or table that doesn't exist "
     "or that the token can't reach, so check the ID as well."
 )
@@ -44,7 +44,7 @@ def _error_details(response: httpx.Response) -> tuple[str | None, str | None]:
     try:
         body: Any = response.json()
     except ValueError:
-        return (response.text[:_MAX_DETAIL_CHARS] or None), None
+        return (response.text[:MAX_DETAIL_CHARS] or None), None
     if not isinstance(body, dict):
         return None, None
     details: dict[str, Any] = body  # pyright: ignore[reportUnknownVariableType]
@@ -54,8 +54,8 @@ def _error_details(response: httpx.Response) -> tuple[str | None, str | None]:
         details.get("description"),
     )
     return (
-        message[:_MAX_DETAIL_CHARS] if isinstance(message, str) and message else None,
-        description[:_MAX_DETAIL_CHARS] if isinstance(description, str) and description else None,
+        message[:MAX_DETAIL_CHARS] if isinstance(message, str) and message else None,
+        description[:MAX_DETAIL_CHARS] if isinstance(description, str) and description else None,
     )
 
 
@@ -70,7 +70,7 @@ def error_from_response(response: httpx.Response, method: str, path: str) -> API
     if request_id:
         summary += f" (request ID: {request_id})"
     if status == 401:
-        summary += f" {_UNAUTHORIZED_HINT}"
+        summary += f" {UNAUTHORIZED_HINT}"
     if status == 400 and is_report_run(path) and "internal error" in detail.lower():
         summary += f" {_HIDDEN_REPORT_HINT}"
     common = {

@@ -20,10 +20,12 @@ from .._config import (
     validate_base_url,
     validate_token,
 )
+from .._models import AppSummary, UserProfile, parse
 from .._policy import Policy
 from .._retry import RetryPolicy
 from .._schema import SchemaCache
-from ..errors import ConfigurationError
+from .._xml import CURRENT_USER, FIND_USER, GRANTED_APPS, apps_from_xml, user_from_xml
+from ..errors import ConfigurationError, InvalidValueError
 from ._resources import App, app_from_payload, require_app_name
 from ._transport import Transport
 
@@ -158,6 +160,71 @@ class Quickbase:
         if not _APP_ID.fullmatch(app_id):
             raise ConfigurationError("An app ID contains only letters and numbers.")
         return App(self._transport, self._schema, app_id)
+
+    def apps(self, *, admin_only: bool = False) -> list[AppSummary]:
+        """List the apps in this realm that the token can reach.
+
+        A token assigned to some apps lists only those, even if its user can reach more. Each app
+        comes with its name, including for a role that can't read the app's details. An app that
+        isn't listed doesn't exist or isn't assigned to the token, and Quickbase can't say which.
+
+        Args:
+            admin_only: List only the apps the token's user administers.
+
+        Returns:
+            An `AppSummary` for each app.
+
+        Raises:
+            AuthenticationError: The token isn't valid.
+            ConfigurationError: The realm isn't on `quickbase.com` or `quickbase.eu`, or the client
+                has a custom `base_url`. Nothing was sent.
+            PolicyRefusedError: The client has a policy, which covers one app. Nothing was sent.
+        """
+        fields: dict[str, str | int] = {
+            "realmAppsOnly": "true",
+            "withembeddedtables": 0,
+            "includeancestors": 1,
+        }
+        if admin_only:
+            fields["adminOnly"] = 1
+        root = self._transport.xml.call(GRANTED_APPS, "main", fields)
+        return parse(lambda found: apps_from_xml(found, self._realm), root, "apps")
+
+    def current_user(self) -> UserProfile:
+        """Get the user the token belongs to.
+
+        Returns:
+            A `UserProfile`.
+
+        Raises:
+            AuthenticationError: The token isn't valid.
+            ConfigurationError: The realm isn't on `quickbase.com` or `quickbase.eu`, or the client
+                has a custom `base_url`. Nothing was sent.
+            PolicyRefusedError: The client has a policy. Nothing was sent.
+        """
+        root = self._transport.xml.call(CURRENT_USER, "main")
+        return parse(user_from_xml, root, "user")
+
+    def find_user(self, email: str) -> UserProfile:
+        """Find a user by email address, such as to give them a role.
+
+        Args:
+            email: Their email address.
+
+        Returns:
+            A `UserProfile`.
+
+        Raises:
+            InvalidValueError: `email` is empty. Nothing was sent.
+            NotFoundError: No user has this email address.
+            ConfigurationError: The realm isn't on `quickbase.com` or `quickbase.eu`, or the client
+                has a custom `base_url`. Nothing was sent.
+            PolicyRefusedError: The client has a policy. Nothing was sent.
+        """
+        if not isinstance(email, str) or not email.strip():  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise InvalidValueError("find_user() needs an email address.")
+        root = self._transport.xml.call(FIND_USER, "main", {"email": email.strip()})
+        return parse(user_from_xml, root, "user")
 
     def create_app(
         self, name: str, *, description: str | None = None, assign_token: bool = True

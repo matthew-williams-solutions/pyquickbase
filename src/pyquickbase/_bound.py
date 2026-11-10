@@ -26,6 +26,7 @@ from ._read_request import (
     FIELD_KEYS,
     FIELD_PROPERTIES,
     FILE_PATH,
+    REFUSED_READS,
     REPORT_KEYS,
     TABLE_KEYS,
     USAGE_FIELD_KEYS,
@@ -549,6 +550,9 @@ class BoundPolicy:
 
     def _decide_read(self, request: ReadRequest) -> Decision:
         action, table_id = request.action, request.table_id
+        if action in REFUSED_READS:
+            reason = f"{REFUSED_READS[action]}. Use a client without a policy"
+            return self._decision(_Verdict(False, reason=reason), "read", None)
         if self._open_reads:
             # Policy.read_only() reads whatever the token can, as a client without one would.
             return Decision(allowed=True, verb="read", rule="Policy.read_only()", reason="Allowed")

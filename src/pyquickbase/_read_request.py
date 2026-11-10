@@ -37,6 +37,11 @@ ReadAction = Literal[
     "roles",
     "field_usage",
     "app_events",
+    "apps",
+    "current_user",
+    "find_user",
+    "members",
+    "member_roles",
     "other",
 ]
 """What a read does. See `ReadRequest`."""
@@ -46,6 +51,7 @@ _REPORT_RUN = re.compile(r"/reports/([0-9]+)/run")
 FILE_PATH = re.compile(rf"/files/{_TABLE_ID}/[0-9]+/([0-9]+)/[0-9]+")
 _APP = re.compile(rf"/apps/{_TABLE_ID}")
 _ROLES = re.compile(rf"/apps/{_TABLE_ID}/roles")
+_TRUSTEES = re.compile(rf"/app/{_TABLE_ID}/trustees")
 _RELATIONSHIPS = re.compile(rf"/tables/{_TABLE_ID}/relationships")
 _APP_EVENTS = re.compile(rf"/apps/{_TABLE_ID}/events")
 _FIELD_USAGE = re.compile(r"/fields/usage(?:/([1-9][0-9]*))?")
@@ -84,6 +90,15 @@ USER_KEYS = ("id", "name")
 USAGE_FIELD_KEYS = ("id", "name", "type")
 EVENT_KEYS = ("type", "name", "isActive", "tableId", "url")
 
+REFUSED_READS: dict[str, str] = {
+    "apps": "A policy covers one app, so it can't list the apps the token can reach",
+    "current_user": "A policy covers one app's tables, not who the token belongs to",
+    "find_user": "A policy covers one app's tables, not the realm's users",
+    "members": "Only tables can be read, not who has a role in the app",
+    "member_roles": "Only tables can be read, not who has a role in the app",
+}
+"""The reads a policy always refuses, even `Policy.read_only()`, and why."""
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ReadRequest:
@@ -100,11 +115,14 @@ class ReadRequest:
             `summary_report` a summary or chart report. `file` downloads a file, and `formula`
             runs one. `tables`, `fields`, `relationships`, `reports`, `app`, and `roles` read
             metadata. `field_usage` reads where fields are used, and `app_events` the app's
-            webhooks, notifications, and automations. `other` is anything else, including a
+            webhooks, notifications, and automations. `apps`, `current_user`, `find_user`,
+            `members`, and `member_roles` read about people and apps, which a policy always
+            refuses. `other` is anything else, including a
             report run through `request()`, which doesn't say what kind of report it is. A
             change to tables, fields, or relationships isn't a read.
         table_id: The table it reads, or None for `tables`, `app`, `roles`, `app_events`, and
             `other`.
+        app_id: For `members` and `member_roles`, the app.
         field_ids: The fields it returns. For `file`, the file field, and for `field_usage`, the
             one field it asks about. None for a report, whose columns are chosen in Quickbase,
             and for other metadata.
@@ -128,6 +146,7 @@ class ReadRequest:
     limit: int | None = None
     skip: int | None = None
     report_id: str | None = None
+    app_id: str | None = None
     method: str
     path: str
 
@@ -234,6 +253,8 @@ def _describe_get(path: str, params: Mapping[str, Any] | None) -> ReadRequest:
         )
     if _APP_EVENTS.fullmatch(path) and not params:
         return ReadRequest(action="app_events", method="GET", path=path)
+    if _TRUSTEES.fullmatch(path):
+        return ReadRequest(action="members", method="GET", path=path)
     if _ROLES.fullmatch(path):
         return ReadRequest(action="roles", method="GET", path=path)
     if _APP.fullmatch(path):

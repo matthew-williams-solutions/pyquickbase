@@ -69,6 +69,7 @@ from .errors import (
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
+    UnsupportedOperationError,
     UnsupportedReportError,
     WriteError,
     WritePermissionError,
@@ -97,6 +98,7 @@ ToolErrorCode = Literal[
     "rate_limited",
     "server_error",
     "api_error",
+    "unsupported_operation",
     "timeout",
     "network_error",
     "invalid_response",
@@ -157,6 +159,7 @@ _CODES: tuple[tuple[type[BaseException], ToolErrorCode], ...] = (
     (UnknownReportError, "unknown_report"),
     (UnsupportedReportError, "unsupported_report"),
     (SchemaMismatchError, "schema_mismatch"),
+    (UnsupportedOperationError, "unsupported_operation"),
     (AuthenticationError, "authentication"),
     (PermissionDeniedError, "permission_denied"),
     (NotFoundError, "not_found"),
@@ -198,6 +201,8 @@ _HINTS: dict[ToolErrorCode, str] = {
     "rate_limited": "Quickbase is limiting requests. Wait, then try again.",
     "server_error": "Quickbase failed. Check whether a change was made before trying again.",
     "api_error": "Quickbase refused the request. Tell the user if the message doesn't say why.",
+    "unsupported_operation": "Quickbase no longer offers this. Tell the user, as trying again "
+    "won't help.",
     "timeout": "There was no answer in time. Check whether a change was made before trying again.",
     "network_error": "Quickbase couldn't be reached. Check whether a change was made before trying "
     "again.",

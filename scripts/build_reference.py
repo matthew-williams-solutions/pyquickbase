@@ -43,6 +43,9 @@ TITLES: dict[str, dict[str, str]] = {
         "from_env": "Create a client from the environment",
         "close": "Close a client",
         "app": "Get an app",
+        "apps": "List apps",
+        "current_user": "Find out who the token belongs to",
+        "find_user": "Find a user by email",
         "create_app": "Create an app",
         "realm": "The client's realm",
         "policy": "The client's policy",
@@ -54,6 +57,8 @@ TITLES: dict[str, dict[str, str]] = {
         "info": "Get the app's details",
         "tables": "List tables",
         "roles": "List roles",
+        "members": "List members",
+        "member_roles": "List a member's roles",
         "events": "List webhooks and automations",
         "table": "Get a table",
         "url": "Link to the app",
@@ -308,6 +313,7 @@ NO_EXAMPLE = {
     "WritePermissionError": "this needs a second token with less access",
     "RateLimitError": "this needs a real burst of requests",
     "ServerError": "only a failure at Quickbase raises this",
+    "UnsupportedOperationError": "only Quickbase retiring a call raises this",
 }
 # Shown on the page, but not run by the live tests, because of what it needs.
 NOT_RUN_LIVE = {
@@ -417,6 +423,7 @@ RESOURCES = (
                 _CLIENTS,
                 ("app", "realm", "policy", "clear_schema_cache", "request"),
             ),
+            Group("Apps and users", "apps-and-users", _APPS, ("apps", "current_user", "find_user")),
             Group("Create an app", "create-an-app", _APPS, ("create_app",)),
         ),
     ),
@@ -439,6 +446,7 @@ RESOURCES = (
                 _READING,
                 ("id", "info", "tables", "roles", "events"),
             ),
+            Group("See who has access", "who-has-access", _APPS, ("members", "member_roles")),
             Group("Get a table", "get-a-table", _READING, ("table",)),
             Group(_LINKS, "links", _AGENTS, ("url", "settings_url")),
             Group("Create tables", "create-tables", _SCHEMA, ("ensure_table", "create_table")),
@@ -684,7 +692,8 @@ SYMBOL_PAGES = (
         f"{_SYMBOL_NOTE} {_PROJECTS}",
         *_setup(_TABLE_LINE),
         (
-            Group("Apps", "apps", _READING, ("AppInfo", "Role", "AppEvent")),
+            Group("Apps", "apps", _APPS, ("AppSummary", "AppInfo", "Role", "AppEvent")),
+            Group("People", "people", _APPS, ("UserProfile", "AppMember", "MemberRole")),
             Group(
                 "Tables and reports", "tables-and-reports", _READING, ("TableInfo", "ReportInfo")
             ),
@@ -866,6 +875,7 @@ SYMBOL_PAGES = (
                     "AuthenticationError",
                     "PermissionDeniedError",
                     "NotFoundError",
+                    "UnsupportedOperationError",
                     "RateLimitError",
                     "ServerError",
                 ),

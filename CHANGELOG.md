@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `client.apps()` lists the apps a token can reach, and `client.current_user()` and `client.find_user()` say who a
+  token belongs to and look up a user by email.
+- `app.members()` lists who holds a role in an app, with names and last access, and `app.member_roles()` lists one
+  user's roles.
+- `UnsupportedOperationError`, and `APIError.quickbase_code`.
+
+### Changed
+
+- `app.roles()` and `app.info()` work for any role. When Quickbase refuses them, the SDK asks its XML API, at the
+  cost of one more request.
+- A client with any policy, including `Policy.read_only()`, is refused the new reads about apps and people.
+- The trustees endpoints read as `members` to a policy, so `client.request()` can't reach them under `read_only()`.
+
 ### Fixed
 
 - `Policy.bind()` no longer fails for a role without "Edit app structure and permissions", which

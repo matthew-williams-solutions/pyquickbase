@@ -15,6 +15,7 @@ from .._response import error_from_response, error_from_transport, parse_respons
 from .._retry import RetryPolicy, parse_retry_after
 from .._write_request import describe_write
 from ..errors import PolicyRefusedError
+from ._xml_transport import AsyncXmlTransport
 
 # Failures where nothing reached Quickbase, so any request is safe to send again.
 _NOT_SENT = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
@@ -53,8 +54,10 @@ class AsyncTransport:
         )
         # Replaced, never changed, when this client creates a table.
         self.policy = policy
+        self.xml = AsyncXmlTransport(self)
+        self.base_url = base_url
+        self.user_agent = user_agent
         self._auth = auth
-        self._base_url = base_url
         self._retry = retry
         self._headers = {"QB-Realm-Hostname": realm, "User-Agent": user_agent}
         self._owns_http = http_client is None
@@ -263,40 +266,60 @@ class AsyncTransport:
         json: Any,
         timeout: float | None = None,
     ) -> httpx.Response:
-        url = build_url(self._base_url, path)
         # httpx reads timeout=None as "never time out", so only a value given is passed on.
         extra: dict[str, Any] = {} if timeout is None else {"timeout": timeout}
-        read = is_read(method, path)
+        return await self.send_with_retries(
+            method,
+            build_url(self.base_url, path),
+            path,
+            safe_to_repeat=is_read(method, path),
+            params=params,
+            json=json,
+            headers=self._headers,
+            **extra,
+        )
+
+    async def send_with_retries(
+        self,
+        method: str,
+        url: str,
+        path: str,
+        *,
+        safe_to_repeat: bool,
+        status_of: Callable[[httpx.Response], int] | None = None,
+        **request: Any,
+    ) -> httpx.Response:
+        """Send a request, repeating it as far as `safe_to_repeat` and rate limits allow.
+
+        `path` is what an error names. `status_of` is the status a response counts as for retrying,
+        for a wire format that reports failures in its body. The last response is returned, even
+        when it's a failure, for the caller to turn into an error.
+        """
         attempt = 0
         while True:
             try:
-                response = await self._http.request(
-                    method,
-                    url,
-                    params=params,
-                    json=json,
-                    headers=self._headers,
-                    auth=self._auth,
-                    **extra,
-                )
+                response = await self._http.request(method, url, auth=self._auth, **request)
             except httpx.RequestError as exc:
-                retryable = isinstance(exc, _NOT_SENT) or (read and isinstance(exc, _READ_FAILURES))
+                retryable = isinstance(exc, _NOT_SENT) or (
+                    safe_to_repeat and isinstance(exc, _READ_FAILURES)
+                )
                 if not retryable or attempt >= self._retry.max_retries:
                     raise error_from_transport(exc, method, path) from exc
                 delay = self._retry.backoff(attempt)
             else:
                 if attempt >= self._retry.max_retries:
                     return response
-                if read and response.status_code in _READ_RETRY_STATUSES:
+                status = response.status_code if status_of is None else status_of(response)
+                if safe_to_repeat and status in _READ_RETRY_STATUSES:
                     await anyio.sleep(self._retry.backoff(attempt))
                     attempt += 1
                     continue
-                if response.status_code != 429:
+                if status != 429:
                     return response
                 retry_after = parse_retry_after(response.headers.get("retry-after"))
                 wait = self._retry.rate_limit_delay(attempt, retry_after)
                 if wait is None:
-                    raise error_from_response(response, method, path)
+                    return response
                 delay = wait
             await anyio.sleep(delay)
             attempt += 1

@@ -566,7 +566,7 @@ Tested on 2026-11-08 on a temporary table.
 
 ## XML API
 
-**The SDK doesn't use the XML API yet.** Tested on 2026-11-09 in a sandbox app, with an administrator's user token and
+The SDK uses the XML API only behind methods such as `client.apps()`. Nothing public names it. Tested on 2026-11-09 in a sandbox app, with an administrator's user token and
 a user token for a Basic Access role. Each request was a POST to `https://<realm>/db/<app ID, table ID, or main>`, with a
 `QUICKBASE-ACTION` header and a `<qdbapi>` body.
 
@@ -597,6 +597,7 @@ a user token for a Basic Access role. Each request was a POST to `https://<realm
 | A bad token | 400, errcode 83, while a good token gets a list, so a listing does show whether a token is valid |
 | `realmAppsOnly` | The help says that without it the call spans realms. Our apps were all in one realm, so this made no difference |
 | `API_GetUserInfo` with no email | The token's own user, including for a non-administrator |
+| `API_GetUserInfo` with an email nobody has | **400, errcode 2**, `The user with the specified email address or user name does not exist.`, not one of the "unknown user" codes |
 | `API_FindDBByName` | **A user token is refused**, 403, errcode 3, `User Tokens cannot be used to call this API`. A ticket works |
 
 **Roles and app details**

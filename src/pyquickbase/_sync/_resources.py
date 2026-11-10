@@ -35,6 +35,7 @@ from .._models import (
     RECORD_ID_FIELD,
     AppEvent,
     AppInfo,
+    AppMember,
     DeletePreview,
     DeletePreviewPage,
     Field,
@@ -43,6 +44,7 @@ from .._models import (
     FieldUsage,
     FileDownload,
     FormulaResult,
+    MemberRole,
     Page,
     Record,
     Relationship,
@@ -146,6 +148,16 @@ from .._writes import (
     split_batches,
     write_failure,
 )
+from .._xml import (
+    APP_SCHEMA,
+    ROLE_INFO,
+    USER_ROLE,
+    USER_ROLES,
+    app_info_dict,
+    member_roles_from_xml,
+    members_from_xml,
+    roles_from_xml,
+)
 from ..errors import (
     APIError,
     ConfigurationError,
@@ -160,6 +172,7 @@ from ..errors import (
     UnknownFieldError,
     UnknownReportError,
     UnknownTableError,
+    UnsupportedOperationError,
     WriteError,
 )
 from ._planner import Planner, apply_checked, apply_plan
@@ -236,19 +249,28 @@ class App:
     def info(self) -> AppInfo:
         """Get the app's metadata, from the client's cache if it's there.
 
+        A role that can't edit the app's structure can still read these, through Quickbase's older
+        API, which costs one more request when nothing is cached.
+
         Returns:
             An `AppInfo`, with the app's `id`, `name`, `description`, `time_zone`, and
             `date_format`.
 
         Raises:
-            AuthenticationError: Quickbase doesn't recognize the app ID. It answers with a 401
-                here, rather than a 404.
-            PermissionDeniedError: The token's role can't edit the app's structure.
+            AuthenticationError: Quickbase doesn't recognize the app ID, or the token can't reach
+                it.
         """
         cached = self._cache.get(_app_key(self._id))
         if cached is not None:
             return cached
-        payload = self._transport.request("GET", f"/apps/{self._id}")
+        try:
+            payload = self._transport.request("GET", f"/apps/{self._id}")
+        except PermissionDeniedError as denied:
+            try:
+                root = self._transport.xml.call(APP_SCHEMA, self._id)
+            except UnsupportedOperationError:
+                raise denied from None
+            payload = parse(lambda found: app_info_dict(found, self._id), root, "app")
         info = parse(app_info_from_api, payload, "app")
         self._cache.set(_app_key(self._id), info)
         return info
@@ -282,7 +304,9 @@ class App:
     def roles(self, *, refresh: bool = False) -> list[Role]:
         """List the app's roles, from the cache unless `refresh` is set.
 
-        Quickbase has no API for reading or changing what a role can do.
+        A role that isn't an administrator can list these too, through Quickbase's older API,
+        which costs one more request when nothing is cached. Quickbase has no API for reading or
+        changing what a role can do.
 
         Args:
             refresh: Ask Quickbase instead of using the client's cache, which keeps metadata for
@@ -291,18 +315,65 @@ class App:
 
         Returns:
             A `Role` for each role in the app.
-
-        Raises:
-            PermissionDeniedError: The token isn't an administrator's.
         """
         key = f"roles:{self._id}"
         cached = None if refresh else self._cache.get(key)
         if cached is not None:
             return list(cached)
-        payload = self._transport.request("GET", f"/apps/{self._id}/roles")
-        roles = parse(lambda rows: tuple(role_from_api(row) for row in rows), payload, "roles")
+        try:
+            payload = self._transport.request("GET", f"/apps/{self._id}/roles")
+        except PermissionDeniedError as denied:
+            try:
+                root = self._transport.xml.call(ROLE_INFO, self._id)
+            except UnsupportedOperationError:
+                raise denied from None
+            roles = parse(roles_from_xml, root, "roles")
+        else:
+            roles = parse(lambda rows: tuple(role_from_api(row) for row in rows), payload, "roles")
         self._cache.set(key, roles)
         return list(roles)
+
+    def members(self) -> list[AppMember]:
+        """List the users and groups who hold a role in the app, with their last access.
+
+        Returns:
+            An `AppMember` for each user or group.
+
+        Raises:
+            PermissionDeniedError: The token isn't an administrator's.
+            ConfigurationError: The realm isn't on `quickbase.com` or `quickbase.eu`, or the client
+                has a custom `base_url`. Nothing was sent.
+            PolicyRefusedError: The client has a policy. Nothing was sent.
+        """
+        root = self._transport.xml.call(USER_ROLES, self._id)
+        return parse(members_from_xml, root, "members")
+
+    def member_roles(
+        self, member_id: str | None = None, *, include_groups: bool = True
+    ) -> list[MemberRole]:
+        """List one user's roles in the app, for the token's own user by default.
+
+        Args:
+            member_id: The user's ID, from `members()` or `find_user()`. Only an administrator can
+                ask about someone else.
+            include_groups: Include roles the user has through a group, and say how each was
+                assigned.
+
+        Returns:
+            A `MemberRole` for each role.
+
+        Raises:
+            PermissionDeniedError: The token isn't an administrator's, and `member_id` is someone
+                else's.
+            ConfigurationError: The realm isn't on `quickbase.com` or `quickbase.eu`, or the client
+                has a custom `base_url`. Nothing was sent.
+            PolicyRefusedError: The client has a policy. Nothing was sent.
+        """
+        fields: dict[str, str | int] = {"inclgrps": 1} if include_groups else {}
+        if member_id is not None:
+            fields["userid"] = member_id
+        root = self._transport.xml.call(USER_ROLE, self._id, fields)
+        return parse(member_roles_from_xml, root, "member roles")
 
     def events(self) -> list[AppEvent]:
         """List the app's webhooks, Quickbase actions, notifications, subscriptions, reminders,

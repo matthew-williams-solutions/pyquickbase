@@ -83,6 +83,13 @@ the response, as httpx does, rather than to the whole request.
 realms hasn't been confirmed, so pass `base_url` if yours differs. It must use HTTPS, except for
 loopback addresses.
 
+`apps()`, `current_user()`, `find_user()`, `members()`, `member_roles()`, and code pages use Quickbase's XML API, which
+is served from the realm's own host rather than from `base_url`. The token goes in the same header as every other
+request, and never in a URL or a request body, but that host has to be one Quickbase runs. So these methods raise
+`ConfigurationError` before sending anything unless the realm ends in `.quickbase.com` or `.quickbase.eu`, and
+with any custom `base_url` except a loopback address. They don't follow redirects, even with your own
+`http_client`. `.quickbase.eu` hasn't been tested, as no EU realm was available.
+
 ## Proxies, TLS, and logging
 
 Pass your own [httpx](https://www.python-httpx.org/) client for proxies, custom TLS, event hooks, or

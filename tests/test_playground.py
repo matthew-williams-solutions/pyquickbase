@@ -6,6 +6,8 @@ import importlib
 import io
 import json
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -574,3 +576,61 @@ def test_try_it_links_open_an_example_and_every_example_is_linked() -> None:
     ids = {example_id(path) for path in EXAMPLES}
     assert linked <= ids, sorted(linked - ids)
     assert ids <= linked, f"No guide links to {sorted(ids - linked)}"
+
+
+def test_the_xml_parser_works_in_the_vendored_pyodide(tmp_path: Path) -> None:
+    pyodide = APP / "vendor" / "pyodide" / "pyodide.mjs"
+    node = shutil.which("node")
+    if node is None or not pyodide.exists():
+        pytest.skip("Run scripts/build_playground.py, with Node installed, to check this.")
+    source = Path(pyquickbase.__file__).parent / "_xml.py"
+    script = tmp_path / "check.mjs"
+    script.write_text(
+        _PYODIDE_CHECK % {"pyodide": json.dumps(str(pyodide)), "source": json.dumps(str(source))}
+    )
+    done = subprocess.run([node, str(script)], capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip().endswith("xml parser ok"), done.stdout
+
+
+_PYODIDE_CHECK = """
+import { readFileSync } from "node:fs";
+import { loadPyodide } from %(pyodide)s;
+const pyodide = await loadPyodide();
+pyodide.FS.writeFile("/tmp/quickbase_xml_source.py", readFileSync(%(source)s, "utf8"));
+await pyodide.runPythonAsync(`
+import importlib.util, sys, types
+for name in ("httpx", "anyio", "pyquickbase", "pyquickbase._config", "pyquickbase._links",
+             "pyquickbase._models", "pyquickbase._read_request", "pyquickbase._response",
+             "pyquickbase._write_request", "pyquickbase.errors"):
+    sys.modules[name] = types.ModuleType(name)
+class Any_:
+    def __getattr__(self, name):
+        return Any_()
+    def __call__(self, *a, **k):
+        return Any_()
+class Mod(types.ModuleType):
+    __path__ = []
+    def __getattr__(self, name):
+        if name.startswith("__"):
+            raise AttributeError(name)
+        return type(name, (Exception,), {})
+for name in list(sys.modules):
+    if name == "httpx" or name.startswith("pyquickbase"):
+        sys.modules[name] = Mod(name)
+spec = importlib.util.spec_from_file_location("pyquickbase._xml", "/tmp/quickbase_xml_source.py")
+mod = importlib.util.module_from_spec(spec)
+sys.modules["pyquickbase._xml"] = mod
+spec.loader.exec_module(mod)
+root = mod.parse_xml(b"<a x='1'>one<BR/>two</a>")
+assert root.attributes == {"x": "1"} and root.text == "one" and root.children[0].tail == "two"
+for bad in (b"<!DOCTYPE a><a/>", b'<!DOCTYPE a [<!ENTITY x "y">]><a>&x;</a>'):
+    try:
+        mod.parse_xml(bad)
+    except Exception as exc:
+        assert type(exc).__name__ == "InvalidResponseError"
+    else:
+        raise AssertionError("a DTD was parsed")
+print("xml parser ok")
+`);
+"""

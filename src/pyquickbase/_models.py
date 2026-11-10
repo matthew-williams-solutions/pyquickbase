@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from dataclasses import fields as dataclass_fields
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 from urllib.parse import unquote
 
 from .errors import (
@@ -102,6 +102,81 @@ def app_info_from_api(data: Mapping[str, Any]) -> AppInfo:
         date_format=data.get("dateFormat"),
         raw=data,
     )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AppSummary:
+    """An app the token can reach, from `client.apps()`.
+
+    Attributes:
+        id: The app's ID.
+        name: The app's name.
+        ancestor_id: The app it was copied from, if any.
+        oldest_ancestor_id: The first app in the chain of copies, if any.
+        url: A link to the app in Quickbase.
+    """
+
+    id: str
+    name: str
+    ancestor_id: str | None
+    oldest_ancestor_id: str | None
+    url: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class UserProfile:
+    """A Quickbase user, from `client.current_user()` or `client.find_user()`.
+
+    Attributes:
+        id: The user's ID, which role changes use.
+        email: The user's email address.
+        first_name: The user's first name.
+        last_name: The user's last name.
+        screen_name: The user's screen name, if they set one.
+    """
+
+    id: str
+    email: str | None
+    first_name: str | None
+    last_name: str | None
+    screen_name: str | None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AppMember:
+    """A user or group with a role in an app, from `app.members()`.
+
+    Attributes:
+        id: Their ID, the same one role changes use.
+        kind: `user` or `group`.
+        name: Their name.
+        first_name: A user's first name.
+        last_name: A user's last name.
+        last_access: When they last used the app, or None if Quickbase doesn't say.
+        roles: The roles they hold in the app.
+    """
+
+    id: str
+    kind: Literal["user", "group"]
+    name: str
+    first_name: str | None
+    last_name: str | None
+    last_access: datetime | None
+    roles: tuple[Role, ...]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class MemberRole:
+    """One role a user holds in an app, from `app.member_roles()`.
+
+    Attributes:
+        role: The role.
+        assigned_through: How they got it: `user` directly, or through a `group` or
+            `domainGroup`. None when groups weren't asked about.
+    """
+
+    role: Role
+    assigned_through: str | None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

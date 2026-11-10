@@ -15,7 +15,7 @@ ENV_REALM = "QB_REALM"
 ENV_TOKEN = "QB_USER_TOKEN"
 
 _HOSTNAME = re.compile(r"[a-z0-9-]+(\.[a-z0-9-]+)+")
-_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 _READ_ONLY_POSTS = {"/records/query", "/formula/run"}
 _REPORT_RUN = re.compile(r"/reports/[0-9]+/run")
 
@@ -42,7 +42,7 @@ def validate_base_url(base_url: str) -> str:
     """Require HTTPS so a token can't be sent in clear text, except to the local machine."""
     parts = urlsplit(base_url)
     if parts.scheme != "https" and not (
-        parts.scheme == "http" and parts.hostname in _LOOPBACK_HOSTS
+        parts.scheme == "http" and parts.hostname in LOOPBACK_HOSTS
     ):
         raise ConfigurationError(f"base_url must use https, got {base_url!r}.")
     return base_url.rstrip("/")

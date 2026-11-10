@@ -12,7 +12,8 @@ minor release.
   signatures, return types, and defaults.
 - The `pyquickbase` command and its options.
 - The promise that a client with `Policy.read_only()` changes no records. It can still run reports,
-  which adds to their usage count in Quickbase, and formulas.
+  which adds to their usage count in Quickbase, and formulas. It doesn't cover every read: a client with any policy
+  is refused `apps()`, `current_user()`, `find_user()`, `members()`, and `member_roles()`.
 - The attributes of `User`, `FileAttachment`, and `FileVersion`, which file and user fields read as. A
   value a policy leaves out, such as an email address, is None.
 - A `Policy` refusing whatever its rules don't allow, a deny winning over any allow, and the policy
@@ -34,7 +35,9 @@ minor release.
   `qb.app()`, `app.table()`, and `table.report()` instead.
 - The wording of error messages and `repr`s, so don't parse them.
 - Quickbase's own behavior, including any change it makes to its responses, and the contents of `raw`
-  attributes.
+  attributes. This includes its XML API, which `apps()`, `current_user()`, `find_user()`, `members()`,
+  `member_roles()`, and the fallbacks in `roles()` and `info()` depend on. If Quickbase retires a call, the method
+  behind it raises `UnsupportedOperationError`.
 - Which metadata keys a policy keeps, as Quickbase's responses aren't covered either.
 
 ## Minor and patch releases

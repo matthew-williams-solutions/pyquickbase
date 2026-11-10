@@ -43,6 +43,13 @@ class PolicyRefusedError(QuickbaseError):
         self.decision = decision
 
 
+class CodePageChangedError(QuickbaseError):
+    """A code page isn't the version the caller expected, so nothing was written.
+
+    Read the page again, and decide from what's there now.
+    """
+
+
 class QueryError(QuickbaseError, ValueError):
     """A query can't be sent as written, so it wasn't sent to Quickbase."""
 
@@ -167,6 +174,8 @@ class APIError(QuickbaseError):
             showing it in a web page.
         description: Quickbase's further explanation, when it sent any.
         request_id: Include this when reporting a problem to Quickbase support.
+        quickbase_code: The numeric error code Quickbase reported, on the methods that get one,
+            such as `apps()`. None otherwise.
     """
 
     def __init__(
@@ -179,6 +188,7 @@ class APIError(QuickbaseError):
         message: str | None = None,
         description: str | None = None,
         request_id: str | None = None,
+        quickbase_code: int | None = None,
     ) -> None:
         super().__init__(summary)
         self.status_code = status_code
@@ -187,6 +197,7 @@ class APIError(QuickbaseError):
         self.message = message
         self.description = description
         self.request_id = request_id
+        self.quickbase_code = quickbase_code
 
 
 class BadRequestError(APIError):
@@ -206,6 +217,13 @@ class PermissionDeniedError(APIError):
 
 class NotFoundError(APIError):
     """404: what was asked for doesn't exist. An app that doesn't exist is a 401 instead."""
+
+
+class UnsupportedOperationError(APIError):
+    """Quickbase says this operation doesn't exist.
+
+    The methods that use Quickbase's older API raise it if Quickbase retires the call behind them.
+    """
 
 
 class RateLimitError(APIError):

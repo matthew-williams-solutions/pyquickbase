@@ -62,6 +62,10 @@ queries, report runs, and formula runs, and reads them as a client without a pol
 report adds to its usage count in Quickbase, but changes no records. It names no table, so a client
 takes it without binding.
 
+It doesn't cover everything a token can read. A client with any policy, including this one, can't list apps, ask who
+a token belongs to, look up users, or read an app's members or their roles, because those aren't about one app's tables.
+Use a client without a policy for those.
+
 ```python
 from pyquickbase import Policy, Quickbase
 

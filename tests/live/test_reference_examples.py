@@ -26,7 +26,6 @@ from pyquickbase import (
     FileUpload,
     InvalidValueError,
     NotFoundError,
-    PermissionDeniedError,
     Policy,
     PolicyRefusedError,
     Quickbase,
@@ -280,13 +279,12 @@ def test_a_token_without_access_to_an_app_gets_a_401_as_well(scratch: Any) -> No
             qb.app(scratch.second_app_id).info()
 
 
-def test_only_an_administrator_can_list_roles(scratch: Any) -> None:
+def test_any_role_can_list_roles(scratch: Any) -> None:
     restricted = os.environ.get("QB_RESTRICTED_TOKEN")
     if not restricted:
         pytest.skip("Set QB_RESTRICTED_TOKEN to run this.")
     with Quickbase(realm=scratch.realm, token=restricted) as qb:
-        with pytest.raises(PermissionDeniedError):
-            qb.app(scratch.app_id).roles()
+        assert qb.app(scratch.app_id).roles()
 
 
 def test_request_keeps_to_the_clients_limits(scratch: Any) -> None:

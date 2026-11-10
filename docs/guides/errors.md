@@ -141,7 +141,9 @@ with one field the role can't change is refused whole, so its other fields don't
 ## Errors from Quickbase
 
 These derive from `APIError`, which has `status_code`, `method`, `path`, `message`, `description`, and
-`request_id`. Include `request_id` when reporting a problem to Quickbase support.
+`request_id`. Include `request_id` when reporting a problem to Quickbase support. The methods that use Quickbase's
+XML API, such as `apps()`, also set `quickbase_code` to Quickbase's numeric error code. There the code decides which
+exception you get, and `status_code` is still the HTTP status.
 
 | Exception | Status |
 |---|---|
@@ -149,6 +151,7 @@ These derive from `APIError`, which has `status_code`, `method`, `path`, `messag
 | `AuthenticationError` | 401 |
 | `PermissionDeniedError` | 403 |
 | `NotFoundError` | 404 |
+| `UnsupportedOperationError` | 404, when Quickbase says the operation doesn't exist |
 | `RateLimitError` | 429, with `retry_after` |
 | `ServerError` | 5xx |
 
