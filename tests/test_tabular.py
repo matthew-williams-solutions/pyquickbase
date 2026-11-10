@@ -512,3 +512,44 @@ async def test_the_async_client_parses_on_a_worker_thread(
         rows = await qb.app("bq1234567").table("T").rows_from_file(io.StringIO("Title\nA\n"))
     assert len(rows) == 1
     assert used[0] is not threading.current_thread()
+
+
+TYPED_CELLS = [
+    ("Title", 5.0, "5"),
+    ("Title", date(2027, 1, 15), "2027-01-15"),
+    ("Due", date(2027, 1, 15), date(2027, 1, 15)),
+    ("Took", timedelta(minutes=1), timedelta(minutes=1)),
+]
+
+
+@pytest.mark.parametrize(("column", "cell", "expected"), TYPED_CELLS)
+def test_a_cell_excel_already_typed_is_read_as_that_type(
+    column: str, cell: Any, expected: Any
+) -> None:
+    found = read_rows(iter([[column], [cell]]), FIELDS)
+    assert found.ok, found.failed_rows
+    assert found.rows[0][column] == expected
+
+
+def test_a_date_cell_in_a_timestamp_field_is_midnight_in_its_zone() -> None:
+    tokyo = timezone(timedelta(hours=9))
+    found = read_rows(iter([["Started"], [date(2027, 1, 15)]]), FIELDS, time_zone=tokyo)
+    assert found.rows[0]["Started"] == datetime(2027, 1, 15, tzinfo=tokyo)
+
+
+@pytest.mark.parametrize(
+    ("cell", "message"),
+    [(True, "isn't a number"), (float("inf"), "isn't a finite number")],
+    ids=["checkbox-value", "infinity"],
+)
+def test_a_cell_that_isnt_a_usable_number_is_a_row_error(cell: Any, message: str) -> None:
+    found = read_rows(iter([["Hours"], [cell]]), FIELDS)
+    assert message in found.failed_rows[0].message
+
+
+def test_a_column_of_a_type_that_cant_be_written_is_refused() -> None:
+    address = field_from_api({"id": 40, "label": "Where", "fieldType": "address"})
+    with pytest.raises(
+        InvalidValueError, match="address field, which can't be written from a file"
+    ):
+        read_rows(iter([["Where"], ["x"]]), [address])
