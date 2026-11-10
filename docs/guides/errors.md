@@ -49,6 +49,7 @@ QuickbaseError
 ├── UnknownFieldError
 ├── UnknownReportError
 ├── UnsupportedReportError
+├── CodePageChangedError
 ├── NetworkError
 │   └── RequestTimeoutError
 ├── InvalidResponseError
@@ -61,11 +62,12 @@ QuickbaseError
     ├── PermissionDeniedError
     │   └── WritePermissionError
     ├── NotFoundError
+    ├── UnsupportedOperationError
     ├── RateLimitError
     └── ServerError
 ```
 
-The ten listed first, from `ConfigurationError` to `UnsupportedReportError`, mean the request wasn't
+The eleven listed first, from `ConfigurationError` to `CodePageChangedError`, mean the request wasn't
 sent, though the SDK may have read metadata or counted records first.
 
 `ConfigurationError`, `QueryError`, and `InvalidValueError` are also `ValueError`s, and the three
@@ -88,6 +90,7 @@ These mean the request wasn't sent, though the SDK may have read the table's met
 | `UnknownFieldError` | No field with that label or ID in this table, or the token's role or the client's policy hides it |
 | `UnknownReportError` | No report with that name or ID on this table, several with that name, or one the role can't use |
 | `UnsupportedReportError` | A report that can't be read as records, such as a summary or chart |
+| `CodePageChangedError` | A [code page](code-pages.md) isn't the version a write expected |
 | `PolicyRefusedError` | The client's [policy](../policies/index.md) doesn't allow this request |
 
 A `PolicyRefusedError`'s `decision` says what was refused, by name, which rule refused it, and what

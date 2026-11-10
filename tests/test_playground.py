@@ -593,6 +593,35 @@ def test_the_xml_parser_works_in_the_vendored_pyodide(tmp_path: Path) -> None:
     assert done.stdout.strip().endswith("xml parser ok"), done.stdout
 
 
+def test_the_simulator_answers_the_xml_calls() -> None:
+    async def check() -> None:
+        transport = httpx.MockTransport(simulator.SimulatedQuickbase())
+        http = httpx.AsyncClient(transport=transport)
+        async with pyquickbase.AsyncQuickbase(realm="acme", token="t", http_client=http) as qb:
+            assert [item.id for item in await qb.apps()] == [simulator.APP_ID]
+            assert (await qb.current_user()).email == "sam@example.com"
+            with pytest.raises(pyquickbase.NotFoundError):
+                await qb.find_user("nobody@example.com")
+            app = qb.app(simulator.APP_ID)
+            assert [role.name for role in await app.roles()]
+            assert (await app.info()).name
+            assert (await app.members())[0].kind == "user"
+            assert (await app.member_roles())[0].assigned_through == "user"
+            assert {item.type for item in await app.code_pages()} == {"Text", "Home Page"}
+            page = app.code_page("welcome.html")
+            assert (await page.read()).text == "<h1>Welcome</h1>\n"
+            written = await page.write("a\nb")
+            assert not written.created
+            assert (await page.read()).text == "a\nb"
+            assert (await app.code_page("new.html").write("x")).created
+            with pytest.raises(pyquickbase.BadRequestError):
+                await app.code_page("Dashboard").read()
+            with pytest.raises(pyquickbase.AuthenticationError):
+                await qb.app("bqother").code_pages()
+
+    asyncio.run(check())
+
+
 _PYODIDE_CHECK = """
 import { readFileSync } from "node:fs";
 import { loadPyodide } from %(pyodide)s;

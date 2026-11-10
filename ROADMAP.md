@@ -6,9 +6,6 @@ to keep are explained in the guides, not here.
 
 ## Before 1.0
 
-- Add the XML-backed methods: listing apps, the token's user, members and their roles, code pages, role changes, and
-  setting a key field. What's been confirmed about them is in the
-  [API notes](docs/api-notes.md#xml-api).
 - Release a candidate with schema plans and those methods, then let it run for at least a week with no code
   changes. Each new candidate restarts the week.
 - Check the formula functions a client with a policy allows, `SAFE_FUNCTIONS` in `_formula.py`,
@@ -99,3 +96,9 @@ the result to `docs/api-notes.md`.
 - Is `api.quickbase.eu` the API host for EU realms? It answers without a token just as `api.quickbase.com`
   does, and the help only says EU realms use `.quickbase.eu`. Confirming it needs a real EU realm, as does
   confirming that XML calls go to `<realm>.quickbase.eu`.
+- Does `/db/<app>?a=dbpage&pagename=...`, which `CodePage.url()` builds from the help's form, open the page in a
+  browser? A user token gets a redirect to sign in, so this needs a browser session.
+- Does a key field set on a table with records behave differently? `SetKeyField` was only tried on an empty table.
+- Do the roles between Basic Access and administrator get the same answers from the XML methods? Basic Access with
+  Share is untested too.
+- Do errcodes 77 and 100, 101, 104, and 105 retry as designed? None has come up in live testing.

@@ -649,7 +649,7 @@ a user token for a Basic Access role. Each request was a POST to `https://<realm
 
 | Behavior | Result |
 |---|---|
-| `API_SetKeyField` | Changes the key field, and `keyFieldId` then reads it from the JSON API. Repeating it succeeds, and it can be set back to 3 |
+| `API_SetKeyField` with `fid` | Changes the key field, and `keyFieldId` then reads it from the JSON API. Repeating it succeeds, and it can be set back to 3 |
 | A field without `unique` | **Accepted on an empty table**, though the help says it must be unique. A table with records wasn't tried |
 | A Basic Access role | 403, errcode 3 |
 
