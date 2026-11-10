@@ -64,6 +64,14 @@ All notable changes to this project are documented here. The format follows
 - `Policy.bind()` no longer fails for a role without "Edit app structure and permissions", which
   Quickbase doesn't show relationships to. If the policy hides a field or limits rows, every lookup
   and summary field is then hidden too, because what they read can't be traced.
+- A row limit can no longer be escaped through `client.request()`. A filter such as `{a})OR({b}` only
+  balanced once the limit was wrapped around it, so it reached every record. It's now refused.
+- A `NaN`, `Decimal`, or unsupported value inside a list or object is converted or refused before
+  anything is written, rather than raising a raw error partway through a write.
+- A garbled confirmation raises `InvalidConfirmationError` instead of a raw `TypeError` or `ValueError`.
+- A schema plan that deletes a parent table always warns about its child tables, not only when an
+  earlier change in the plan used them.
+- `table.operation(..., reports="12")` is refused. It was read as reports 1 and 2.
 
 ## [1.0.0rc13] - 2026-11-08
 
