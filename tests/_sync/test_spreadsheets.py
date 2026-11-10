@@ -1,8 +1,10 @@
 # Generated from the async code by scripts/generate_sync.py. Do not edit.
 """Importing and exporting files through a client."""
 
+import gc
 import io
 import json
+import warnings
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -11,7 +13,7 @@ import httpx
 import openpyxl
 import pytest
 
-from pyquickbase import FileTooLargeError, InvalidValueError, Quickbase, allow
+from pyquickbase import BadRequestError, FileTooLargeError, InvalidValueError, Quickbase, allow
 from tests.policy_helpers import bind
 
 TASKS = "bqtasks"
@@ -162,3 +164,39 @@ def test_an_export_larger_than_a_batch_keeps_every_record(
         written = qb.app("bq1234567").table("Tasks").query(select=["Title"]).to_csv(path)
     assert written == 5
     assert len(path.read_text(encoding="utf-8-sig").splitlines()) == 6
+
+
+class FailsOnSecondPage(Fake):
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        if (
+            request.url.path.endswith("/records/query")
+            and json.loads(request.content)["options"]["skip"]
+        ):
+            return httpx.Response(400, json={"message": "No"})
+        return super().__call__(request)
+
+
+def test_a_failed_export_raises_and_closes_the_file_it_opened(tmp_path: Path) -> None:
+    fake = FailsOnSecondPage()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ResourceWarning)
+        with client(fake) as qb:
+            with pytest.raises(BadRequestError):
+                (qb.app("bq1234567").table("Tasks").query(page_size=2).to_csv(tmp_path / "out.csv"))
+        gc.collect()
+
+
+def test_a_failed_export_leaves_a_file_it_was_given_open() -> None:
+    given = io.StringIO()
+    with client(FailsOnSecondPage()) as qb:
+        with pytest.raises(BadRequestError):
+            qb.app("bq1234567").table("Tasks").query(page_size=2).to_csv(given)
+    assert not given.closed
+
+
+@pytest.mark.parametrize("method", ["to_pandas", "to_polars"])
+def test_a_query_fills_a_frame_from_every_page(method: str) -> None:
+    with client(Fake()) as qb:
+        query = qb.app("bq1234567").table("Tasks").query(select=["Title"], page_size=2)
+        frame = getattr(query, method)()
+    assert list(frame["Title"]) == [f"T{n}" for n in range(1, 6)]

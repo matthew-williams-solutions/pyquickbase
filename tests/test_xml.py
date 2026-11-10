@@ -23,11 +23,16 @@ from pyquickbase._xml import (
     GRANTED_APPS,
     MAX_RESPONSE_BYTES,
     Element,
+    app_info_dict,
     build_body,
+    member_roles_from_xml,
+    members_from_xml,
     page_text_from_xml,
     pages_from_xml,
     parse_xml,
     read_envelope,
+    roles_from_xml,
+    user_from_xml,
     retry_status,
     target_url,
 )
@@ -281,3 +286,37 @@ def test_code_page_links_are_escaped() -> None:
     assert code_page_url("acme.quickbase.com", "bq1", 6) == (
         "https://acme.quickbase.com/db/bq1?a=dbpage&pageID=6"
     )
+
+
+@pytest.mark.parametrize(
+    ("read", "missing"),
+    [
+        (user_from_xml, "user"),
+        (roles_from_xml, "roles"),
+        (lambda root: app_info_dict(root, "bq1234567"), "app details"),
+        (members_from_xml, "users"),
+        (pages_from_xml, "pages"),
+        (page_text_from_xml, "page"),
+        (member_roles_from_xml, "user"),
+    ],
+)
+def test_a_response_missing_what_was_asked_for_is_reported(read: object, missing: str) -> None:
+    root = parse_xml(b"<qdbapi><errcode>0</errcode></qdbapi>")
+    with pytest.raises(InvalidResponseError, match=f"has no {missing}"):
+        read(root)  # type: ignore[operator]
+
+
+def test_a_user_without_an_id_is_reported() -> None:
+    root = parse_xml(b"<qdbapi><errcode>0</errcode><user><name>A</name></user></qdbapi>")
+    with pytest.raises(InvalidResponseError, match="has no user"):
+        user_from_xml(root)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [b"<html>Bad gateway</html>", b"<qdbapi><errcode>0</errcode></qdbapi>"],
+    ids=["not-quickbase", "no-error-code-but-a-failed-status"],
+)
+def test_a_failed_status_is_an_error_whatever_the_body_says(body: bytes) -> None:
+    with pytest.raises(ServerError):
+        read_envelope(httpx.Response(502, content=body), GRANTED_APPS, "main")
