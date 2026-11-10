@@ -12,6 +12,7 @@ from pyquickbase import (
     F,
     Policy,
     PolicyRefusedError,
+    ReadRequest,
     allow,
     limit,
     tables,
@@ -40,6 +41,7 @@ class Fake:
         self.sent: list[tuple[str, str, Any]] = []
         self.fields = {TASKS: list(TASK_FIELDS), PROJECTS: list(PROJECT_FIELDS)}
         self.matching = 2
+        self.relationship = RELATIONSHIP
 
     def bodies(self, method: str, path: str) -> list[Any]:
         return [body for m, p, body in self.sent if (m, p) == (method, path)]
@@ -56,13 +58,18 @@ class Fake:
                                              {"id": PROJECTS, "name": "Projects"}])  # fmt: skip
         if path == "/fields":
             return httpx.Response(200, json=self.fields[table])
+        if path == "/reports":
+            found = [{"id": "1", "name": "Open", "type": "table"},
+                     {"id": "2", "name": "Closed", "type": "table"}]  # fmt: skip
+            return httpx.Response(200, json=found)
         if path.endswith("/relationships"):
-            rows = [RELATIONSHIP] if path.split("/")[2] == TASKS else []
+            rows = [self.relationship] if path.split("/")[2] == TASKS else []
             metadata = {"totalRelationships": len(rows)}
             return httpx.Response(200, json={"relationships": rows, "metadata": metadata})
         if path == "/records/query":
             return httpx.Response(200, json={"data": [], "fields": [],
-                                             "metadata": {"totalRecords": self.matching, "numRecords": 0,
+                                             "metadata": {"totalRecords": self.matching,
+                                                          "numRecords": 0,
                                                           "skip": 0}})  # fmt: skip
         if path == "/records" and request.method == "DELETE":
             return httpx.Response(200, json={"numberDeleted": self.matching})
@@ -188,7 +195,7 @@ async def test_a_delete_is_refused_when_more_records_match_than_its_limit(
     async with client(fake, rules) as qb:
         tasks = qb.app(APP).table("Tasks")
         if refused:
-            with pytest.raises(PolicyRefusedError, match="2 records match.*at most 1 at once"):
+            with pytest.raises(PolicyRefusedError, match=r"2 records match.*at most 1 at once"):
                 await tasks.delete(F("Hours") > 2)
         else:
             assert await tasks.delete(F("Hours") > 2) == 2
@@ -236,3 +243,34 @@ async def test_a_real_or_stays_inside_the_row_limit() -> None:
         await qb.request("DELETE", "/records", json=body)
     (sent,) = fake.bodies("DELETE", "/records")
     assert sent["where"] == "({7.EX.'true'})AND({8.GT.'9'}OR{8.LT.'1'})"
+
+
+async def test_binding_to_an_app_reads_the_reports_a_rule_names() -> None:
+    fake = Fake()
+    http = httpx.AsyncClient(transport=httpx.MockTransport(fake))
+    async with AsyncQuickbase(realm="acme", token="t", http_client=http) as qb:
+        bound = await Policy(rules=[allow.report("Tasks", ["Open"])]).bind(qb.app(APP))
+    allowed, other = (
+        bound.decide(
+            ReadRequest(action="report", table_id=TASKS, report_id=item, limit=1, skip=0,
+                        method="POST", path=f"/reports/{item}/run")
+        )
+        for item in ("1", "2")
+    )  # fmt: skip
+    assert allowed.allowed
+    assert not other.allowed
+
+
+async def test_binding_to_an_app_learns_its_relationships() -> None:
+    fake = Fake()
+    properties = {"lookupReferenceFieldId": 9, "lookupTargetFieldId": 6}
+    fake.fields[TASKS].append(field(20, "Project Name", mode="lookup", properties=properties))
+    fake.relationship = link(9, PROJECTS, TASKS, 9, lookups=[20])
+    http = httpx.AsyncClient(transport=httpx.MockTransport(fake))
+    reads = allow.read(tables.all())
+    async with AsyncQuickbase(realm="acme", token="t", http_client=http) as qb:
+        rules = [reads, limit.rows(PROJECTS, F("Name") == "Mine")]
+        limited = await Policy(rules=rules).bind(qb.app(APP))
+    # Only the relationship says that this lookup shows Projects, which has the limit.
+    assert not limited.visible(TASKS, 20)
+    assert limited.visible(TASKS, 6)

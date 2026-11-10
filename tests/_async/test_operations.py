@@ -661,6 +661,13 @@ async def test_a_garbled_confirmation_is_refused_cleanly(garble: Any) -> None:
     assert fake.requests("POST /records") == []
 
 
+async def test_a_preview_warns_about_records_that_dont_exist() -> None:
+    async with client(Fake()) as qb:
+        preview = await qb.app("bq1234567").table("Tasks").operation("preview_update")
+        shown = tool_result(await preview.run({"records": [{"Record ID#": 99, "Title": "x"}]}))
+    assert any("Records [99] don't exist" in item for item in shown["warnings"])
+
+
 async def test_count_and_delete_say_what_their_number_is() -> None:
     async with client(Fake(matching=2)) as qb:
         tasks = qb.app("bq1234567").table("Tasks")

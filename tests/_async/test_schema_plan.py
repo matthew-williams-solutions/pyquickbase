@@ -1124,3 +1124,23 @@ async def test_a_change_the_other_table_refuses_names_that_table() -> None:
             ]
         )
     assert "This needs Projects to allow it too" in plan.blockers[0]
+
+
+async def test_a_duplicate_check_that_fails_partway_says_so() -> None:
+    fake = FakeApp()
+    fake.counts[f"{TASKS} "] = 3
+    fake.fail_where = "{8.XEX.''}"
+    async with client(fake) as qb:
+        plan = await qb.app(APP).preview_schema_changes(
+            [UpdateField(table="Tasks", field="Code", unique=True)]
+        )
+    assert plan.changes[0].status == "ready"
+    assert plan.changes[0].warnings == ("Whether every value is different wasn't checked.",)
+
+
+async def test_a_plans_result_shows_how_many_records_it_affects() -> None:
+    fake = FakeApp()
+    fake.counts = {f"{TASKS} {{8.XEX.''}}": 4}
+    async with client(fake) as qb:
+        plan = await qb.app(APP).preview_schema_changes([DeleteField(table="Tasks", field="Code")])
+    assert tool_result(plan)["changes"][0]["affected_records"] == 4

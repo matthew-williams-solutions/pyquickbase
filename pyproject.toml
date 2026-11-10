@@ -76,7 +76,7 @@ branch = true
 source = ["pyquickbase"]
 
 [tool.coverage.report]
-fail_under = 95
+fail_under = 98
 show_missing = true
 exclude_also = ["if TYPE_CHECKING:"]
 

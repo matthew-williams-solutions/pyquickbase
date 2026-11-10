@@ -739,3 +739,18 @@ def test_a_summary_row_shows_its_change_since_the_period_before() -> None:
     [group] = tool_result([row])["groups"]
     assert group["change"] == {"previous": "2027-01", "count": -1, "sum": {"Hours": 4.0}}
     assert "change" not in tool_result([SummaryRow(count=1)])["groups"][0]
+
+
+def test_a_download_that_isnt_text_shows_no_text() -> None:
+    shown = tool_result(FileDownload(file_name="a.bin", content_type=None, data=b"\xff\xfe"))
+    assert shown["file"]["text"] is None
+
+
+def test_something_that_isnt_a_record_is_refused() -> None:
+    with pytest.raises(TypeError, match="expected records, not int"):
+        tool_result(RecordPage(records=(5,), total=1, skip=0))  # type: ignore[arg-type]
+
+
+def test_a_download_holding_a_nul_byte_shows_no_text() -> None:
+    shown = tool_result(FileDownload(file_name="a.txt", content_type=None, data=b"a\x00b"))
+    assert shown["file"]["text"] is None

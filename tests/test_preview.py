@@ -272,3 +272,10 @@ def test_any_value_can_be_compared_on_any_type(value: Any) -> None:
         "file",
     ):
         assert isinstance(is_same(field(kind), value, value), bool)
+
+
+def test_a_user_compares_by_id_however_its_written() -> None:
+    held = User(id="1.a", name="Ann", email="ann@example.com")
+    assert is_same(field("user"), held, User(id="1.a", name="", email=None))
+    assert is_same(field("user"), held, {"id": "1.a"})
+    assert not is_same(field("user"), held, User(id="2.b", name="Ann", email="ann@example.com"))

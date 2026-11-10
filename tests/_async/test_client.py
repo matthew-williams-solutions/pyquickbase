@@ -11,6 +11,7 @@ from pyquickbase import (
     BadRequestError,
     ConfigurationError,
     InvalidResponseError,
+    InvalidValueError,
     NetworkError,
     NotFoundError,
     PermissionDeniedError,
@@ -459,3 +460,22 @@ async def test_rate_limit_error_includes_the_message_from_its_different_format()
         with pytest.raises(RateLimitError, match="Quota has been exceeded") as caught:
             await qb.request("GET", "/apps/abc")
     assert caught.value.retry_after == 9
+
+
+@pytest.mark.parametrize("email", ["", "   "])
+async def test_find_user_needs_an_email(email: str) -> None:
+    sent: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(200)
+
+    async with make_client(handler) as qb:
+        with pytest.raises(InvalidValueError, match="needs an email"):
+            await qb.find_user(email)
+    assert sent == []
+
+
+def test_policy_takes_only_a_policy() -> None:
+    with pytest.raises(ConfigurationError, match="takes a Policy or a BoundPolicy"):
+        AsyncQuickbase(realm="acme", token=TOKEN, policy="read_only")  # type: ignore[arg-type]

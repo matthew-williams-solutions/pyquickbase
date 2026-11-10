@@ -305,3 +305,41 @@ def test_refusing_raises_the_error_that_carries_the_decision() -> None:
     with pytest.raises(PolicyRefusedError) as caught:
         raise PolicyRefusedError(decision)
     assert caught.value.decision is decision
+
+
+def test_an_offline_policy_answers_by_name() -> None:
+    assert Policy.read_only().bind_offline().allows("read", "Tasks", field=6).allowed
+
+
+def test_a_table_made_after_binding_has_no_known_fields() -> None:
+    made = bind(allow.read(tables.all())).with_created("bqmade", "Made")
+    with pytest.raises(ConfigurationError, match="doesn't know 'Made'"):
+        made.offers("Made")
+
+
+def test_a_rule_without_a_report_grant_doesnt_stop_one_with_it() -> None:
+    policy = bind(allow.delete(TASKS), allow.report(TASKS))
+    assert policy.decide(read("report", report_id="1", limit=1, skip=0)).allowed
+
+
+def test_a_row_limit_isnt_counted_among_what_a_deletion_changes() -> None:
+    policy = bind(allow.read(TASKS, [6]), limit.rows(TASKS, F("Status") == "x"))
+    effects, blockers = policy.deletion_effects(TASKS, [6])
+    assert effects == (f"allow.read({TASKS!r}, [6]) loses Title (6).",)
+    assert len(blockers) == 1
+
+
+def test_a_table_selector_shows_its_name() -> None:
+    assert repr(allow.read(TASKS).tables[0]) == repr(TASKS)
+
+
+def test_a_query_cell_holding_other_details_is_left_alone() -> None:
+    policy = bind(allow.read(TASKS))
+    payload = {
+        "fields": [{"id": 6, "label": "Title", "type": "text"}],
+        "data": [{"6": {"value": {"a": 1}}}],
+        "metadata": {"totalRecords": 1, "skip": 0},
+    }
+    request_ = query("{6.EX.'x'}", 6)
+    trimmed = policy.trim(request_, "POST", "/records/query", payload)
+    assert trimmed["data"] == [{"6": {"value": {"a": 1}}}]

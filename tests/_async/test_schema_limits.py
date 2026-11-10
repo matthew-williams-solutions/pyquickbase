@@ -400,6 +400,15 @@ async def test_a_summary_needs_the_parents_grant() -> None:
             await tasks.ensure_summary_field(relationship, "Hours", "Total Hours")
 
 
+async def test_a_summary_with_an_unknown_function_is_refused() -> None:
+    fake = Fake()
+    async with client(fake) as qb:
+        tasks = qb.app(APP).table("Tasks")
+        relationship = (await tasks.relationships())[0]
+        with pytest.raises(InvalidValueError, match="function must be one of"):
+            await tasks.ensure_summary_field(relationship, "Hours", "Total", function="nope")
+
+
 # Confirmation keys
 
 

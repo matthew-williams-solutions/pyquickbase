@@ -31,10 +31,10 @@ from pyquickbase._xml import (
     pages_from_xml,
     parse_xml,
     read_envelope,
-    roles_from_xml,
-    user_from_xml,
     retry_status,
+    roles_from_xml,
     target_url,
+    user_from_xml,
 )
 from tests.xml_fake import envelope, failure
 

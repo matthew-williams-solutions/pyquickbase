@@ -553,3 +553,14 @@ def test_a_column_of_a_type_that_cant_be_written_is_refused() -> None:
         InvalidValueError, match="address field, which can't be written from a file"
     ):
         read_rows(iter([["Where"], ["x"]]), [address])
+
+
+def test_a_delimiter_can_be_given(tmp_path: Path) -> None:
+    source = tmp_path / "rows.csv"
+    source.write_text("Title;Hours\nA;1\n")
+    with source.open(newline="") as handle:
+        found = read_rows(
+            file_cells(handle, "csv", sheet=None, encoding="utf-8", delimiter=";"), FIELDS
+        )
+    assert found.ok
+    assert found.rows[0]["Title"] == "A"

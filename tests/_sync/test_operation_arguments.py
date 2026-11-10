@@ -14,6 +14,7 @@ from pyquickbase import (
     InvalidValueError,
     Quickbase,
     allow,
+    tables,
 )
 
 from ..policy_helpers import bind
@@ -156,3 +157,64 @@ def test_a_tool_offers_nothing_the_policy_doesnt_allow() -> None:
     with client(Fake(), policy=policy) as qb:
         operation = qb.app(APP).table("Tasks").operation("insert")
     assert list(operation.input_schema["properties"]["records"]["items"]["properties"]) == ["Title"]
+
+
+def test_comparing_periods_with_nothing_to_compare_is_empty() -> None:
+    with client(Fake()) as qb:
+        summarize = qb.app(APP).table("Tasks").operation("summarize")
+        found = summarize.run(
+            {"group_by": [{"field": "Due", "unit": "month"}], "compare_periods": True}
+        )
+    assert found.rows == ()
+    assert found.total == 0
+
+
+def test_a_tool_shows_only_fields_a_policy_lets_it_filter_select_and_sort() -> None:
+    policy = bind(allow.insert(TASKS, [6]), tables={TASKS: ("Tasks", FIELDS)}, app_id=APP)
+    with client(Fake(), policy=policy) as qb:
+        search = qb.app(APP).table("Tasks").operation("query")
+    assert not {"where", "select", "order_by"} & set(search.input_schema["properties"])
+
+
+def test_describe_schema_takes_a_list_of_table_names() -> None:
+    with client(Fake()) as qb:
+        describe = qb.app(APP).operation("describe_schema")
+        with pytest.raises(InvalidValueError, match="must be a list of table names"):
+            describe.run({"tables": "Tasks"})
+
+
+@pytest.mark.parametrize("max_changes", [0, True, 1.5])
+def test_max_changes_must_be_a_positive_whole_number(max_changes: Any) -> None:
+    with client(Fake()) as qb:
+        with pytest.raises(ConfigurationError, match="positive whole number"):
+            qb.app(APP).operation("preview_schema_changes", max_changes=max_changes)
+
+
+def test_a_client_that_can_create_tables_is_offered_that() -> None:
+    policy = bind(
+        allow.read(tables.all()), allow.create_tables(), tables={TASKS: ("Tasks", FIELDS)},
+        app_id=APP,
+    )  # fmt: skip
+    with client(Fake(), policy=policy) as qb:
+        plan = qb.app(APP).operation("preview_schema_changes")
+    assert "create_table" in str(plan.input_schema)
+
+
+def test_help_text_in_a_tools_change_must_be_text() -> None:
+    change = {"action": "update_field", "table": "Tasks", "field": "Title", "help_text": 5}
+    with client(Fake()) as qb:
+        plan = qb.app(APP).operation("preview_schema_changes")
+        with pytest.raises(InvalidValueError, match="must be text"):
+            plan.run({"changes": [change]})
+
+
+def test_reprs_name_what_they_are() -> None:
+    with client(Fake()) as qb:
+        app = qb.app(APP)
+        assert repr(app.table("Tasks").operation("query")).startswith(
+            "TableOperation('query', table="
+        )
+        assert repr(app.operation("describe_schema")).startswith(
+            f"AppOperation('describe_schema', app={APP!r})"
+        )
+        assert repr(app.code_page("a.html")) == f"CodePage('a.html', app={APP!r})"

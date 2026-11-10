@@ -59,6 +59,7 @@ class FakeApp:
         self.usage: dict[tuple[str, int], dict[str, int]] = {}
         self.wheres: list[str] = []
         self.fail: str | None = None
+        self.fail_where: str | None = None
         self.next_id = 100
 
     def bind(self, *rules: Any, **options: Any) -> Any:
@@ -122,6 +123,8 @@ class FakeApp:
     def _query(self, body: dict[str, Any]) -> httpx.Response:
         where = body.get("where", "")
         self.wheres.append(where)
+        if where == self.fail_where:
+            return httpx.Response(400, json={"message": "Bad Request", "description": "No."})
         read = re.fullmatch(r"\{(\d+)\.XEX\.''\}", where)
         held = None if read is None else self.values.get((body["from"], int(read[1])))
         if read is None or held is None:

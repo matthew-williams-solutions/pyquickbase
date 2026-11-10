@@ -399,6 +399,15 @@ def test_a_summary_needs_the_parents_grant() -> None:
             tasks.ensure_summary_field(relationship, "Hours", "Total Hours")
 
 
+def test_a_summary_with_an_unknown_function_is_refused() -> None:
+    fake = Fake()
+    with client(fake) as qb:
+        tasks = qb.app(APP).table("Tasks")
+        relationship = (tasks.relationships())[0]
+        with pytest.raises(InvalidValueError, match="function must be one of"):
+            tasks.ensure_summary_field(relationship, "Hours", "Total", function="nope")
+
+
 # Confirmation keys
 
 
