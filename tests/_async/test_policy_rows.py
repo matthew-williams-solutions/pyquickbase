@@ -207,3 +207,32 @@ async def test_a_delete_limit_counts_only_the_records_a_row_limit_reaches() -> N
         await qb.app(APP).table("Tasks").delete(F("Hours") > 2)
     (counted,) = fake.bodies("POST", "/records/query")
     assert counted["where"] == "({7.EX.'true'})AND({8.GT.'2'})"
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "extra"),
+    [
+        ("POST", "/records/query", {"select": [6], "sortBy": [], "options": {"top": 1}}),
+        ("DELETE", "/records", {}),
+    ],
+    ids=["query", "delete"],
+)
+async def test_a_filter_that_would_escape_a_row_limit_is_refused(
+    method: str, path: str, extra: dict[str, Any]
+) -> None:
+    fake = Fake()
+    body = {"from": TASKS, "where": "{8.GT.'0'})OR({8.GT.'0'}", **extra}
+    async with client(fake, policy(allow.delete(TASKS), BILLABLE)) as qb:
+        with pytest.raises(PolicyRefusedError, match="row limit can't be added") as caught:
+            await qb.request(method, path, json=body)
+    assert caught.value.decision.layer == "rows"
+    assert fake.bodies(method, path) == []
+
+
+async def test_a_real_or_stays_inside_the_row_limit() -> None:
+    fake = Fake()
+    body = {"from": TASKS, "where": "{8.GT.'9'}OR{8.LT.'1'}"}
+    async with client(fake, policy(allow.delete(TASKS), BILLABLE)) as qb:
+        await qb.request("DELETE", "/records", json=body)
+    (sent,) = fake.bodies("DELETE", "/records")
+    assert sent["where"] == "({7.EX.'true'})AND({8.GT.'9'}OR{8.LT.'1'})"

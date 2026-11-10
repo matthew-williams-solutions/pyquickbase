@@ -10,6 +10,7 @@ import httpx
 from .._bound import BoundPolicy
 from .._config import build_url, is_read
 from .._decision import PolicyDecision
+from .._query import where_field_ids
 from .._read_request import ReadRequest, describe_read
 from .._response import error_from_response, error_from_transport, parse_response
 from .._retry import RetryPolicy, parse_retry_after
@@ -170,10 +171,21 @@ class AsyncTransport:
         if limit is None:
             return body
         where = body.get("where")
-        combined = (
-            limit if not isinstance(where, str) or not where.strip() else f"({limit})AND({where})"
-        )
-        return {**body, "where": combined}
+        if not isinstance(where, str) or not where.strip():
+            return {**body, "where": limit}
+        # Checked alone, because text such as `{a})OR({b}` only balances once it's wrapped.
+        if where_field_ids(where) is None:
+            raise PolicyRefusedError(
+                PolicyDecision(
+                    allowed=False,
+                    verb="delete" if method == "DELETE" else "read",
+                    layer="rows",
+                    rule=self.policy.row_limit_rule(cast(str, table_id)),
+                    reason="Its filter can't be read, so the row limit can't be added to it",
+                    table=self.policy._named_table(cast(str, table_id)),  # pyright: ignore[reportPrivateUsage]
+                )
+            )
+        return {**body, "where": f"({limit})AND({where})"}
 
     def _check_write(
         self,
