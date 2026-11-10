@@ -2906,6 +2906,8 @@ class Table:
             raise ConfigurationError(
                 "reports takes report IDs. Describe them with report_descriptions={ID: text}."
             )
+        if isinstance(reports, str):
+            raise ConfigurationError("reports takes a list of report IDs, not a single string.")
         report_ids = None if reports is None else [str(item) for item in reports]
         report_notes = {str(key): str(text) for key, text in (report_descriptions or {}).items()}
         needs_reports = name in ("run_report", "run_summary_report")

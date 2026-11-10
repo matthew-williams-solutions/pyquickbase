@@ -1321,8 +1321,6 @@ def _offered_reports(
 ) -> list[ReportInfo]:
     if wanted is None:
         return list(reports)
-    if isinstance(wanted, str):
-        raise InvalidQueryError("reports takes a list of report IDs, not a single string.")
     by_id = {item.id: item for item in reports}
     missing = [ref for ref in wanted if ref not in by_id]
     if missing:
