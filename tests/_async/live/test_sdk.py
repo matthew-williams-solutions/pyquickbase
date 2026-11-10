@@ -411,7 +411,7 @@ async def test_a_row_failure_keeps_the_other_rows(
             ]
         )
     result = caught.value.result
-    assert [error.index for error in result.failed_rows] == [0]
+    assert [error.row_index for error in result.failed_rows] == [0]
     assert len(result.updated_ids) == 1
     assert (await one(table, "C1", "Title"))["Title"] == "Written"
     assert await table.count() == 5
