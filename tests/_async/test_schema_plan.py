@@ -964,6 +964,12 @@ async def test_deleting_a_foreign_key_says_what_it_links() -> None:
     assert any(item.startswith("It links Tasks to Projects.") for item in plan.changes[0].warnings)
 
 
+async def test_deleting_a_parent_table_names_its_children() -> None:
+    async with client(FakeApp()) as qb:
+        plan = await qb.app(APP).preview_schema_changes([DeleteTable(table="Projects")])
+    assert "It's the parent of Tasks, whose lookups of it go too." in plan.changes[0].warnings
+
+
 async def test_a_table_deleted_earlier_in_the_plan_isnt_searched() -> None:
     async with client(FakeApp()) as qb:
         plan = await qb.app(APP).preview_schema_changes(

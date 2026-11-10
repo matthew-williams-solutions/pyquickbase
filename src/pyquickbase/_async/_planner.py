@@ -556,6 +556,10 @@ class AsyncPlanner:
         else:
             held = "1 record is" if records == 1 else f"{records} records are"
             warnings = [f"Its {held} deleted with it."]
+        # A table's links are read when it's loaded, and any table could be a child of this one.
+        for other in self._tables:
+            if not other.dropped:
+                await self._load(other)
         parents = sorted({item.parent.name for item in table.links})
         children = sorted(
             {item.name for item in self._tables if any(link.parent is table for link in item.links)}
