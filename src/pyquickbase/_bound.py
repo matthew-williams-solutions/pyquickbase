@@ -425,9 +425,7 @@ class BoundPolicy:
             for grant in rule.grants:
                 if verb not in grant.verbs:
                     continue
-                if field_id is not None and grant.fields is None:
-                    continue
-                if field_id is None and grant.fields is not None:
+                if (field_id is None) != (grant.fields is None):
                     continue
                 if field_id == RECORD_ID_FIELD and verb in _READS:
                     return _Verdict(True, rule.text)
@@ -457,6 +455,8 @@ class BoundPolicy:
         if field_id is None:
             if verb in ("delete", "report"):
                 return f"add allow.{verb}({table})"
+            if verb == "read":
+                return f"add its fields to an allow.read({table}, ...) rule"
             return f"add allow.schema({table}, {json.dumps(verb)})"
         label = json.dumps(self._fields.get(table_id, {}).get(field_id, field_id))
         if verb in ("update_field", "delete_field"):
@@ -499,19 +499,17 @@ class BoundPolicy:
         )
 
     def _all(
-        self, checks: Sequence[tuple[str, str | None, int | None]], unknown: str | None = None
+        self, checks: Sequence[tuple[str, str, int | None]], unknown: str | None = None
     ) -> PolicyDecision:
         """Allowed only if every check is. `unknown` refuses, for a request that can't be read."""
-        last: tuple[_Verdict, str, str | None, list[int]] | None = None
+        # With nothing to check there's nothing to vouch for it, so it stays refused.
+        nothing = _Verdict(False, reason="It doesn't name anything the policy can check")
+        last: tuple[_Verdict, str, str | None, list[int]] = (nothing, "read", None, [])
         if unknown is not None:
             verb, table_id, _ = checks[0] if checks else ("read", None, None)
             return self._decision(_Verdict(False, reason=unknown), verb, table_id)
         touched: dict[str, list[int]] = {}
         for verb, table_id, field_id in checks:
-            if table_id is None:
-                return self._decision(
-                    _Verdict(False, reason="Its table can't be determined"), verb, None
-                )
             verdict = self._check(verb, table_id, field_id)
             if not verdict.allowed:
                 return self._decision(
@@ -521,8 +519,6 @@ class BoundPolicy:
             if field_id is not None:
                 ids.append(field_id)
             last = (verdict, verb, table_id, ids)
-        if last is None:
-            return PolicyDecision(allowed=True, verb="read", reason="Allowed")
         verdict, verb, table_id, ids = last
         return self._decision(verdict, verb, table_id, ids)
 
@@ -581,10 +577,6 @@ class BoundPolicy:
             # Both are trimmed to the tables the policy shows.
             return PolicyDecision(allowed=True, verb="read", reason="Allowed")
         if action in ("app", "roles", "other"):
-            if self._open_reads:
-                return PolicyDecision(
-                    allowed=True, verb="read", rule="Policy.read_only()", reason="Allowed"
-                )
             reason = {
                 "app": "Only tables can be read, not the app's details",
                 "roles": "Only tables can be read, not the app's roles",
@@ -736,14 +728,18 @@ class BoundPolicy:
         if action == "delete":
             return self._all([("delete", table_id, None)])
         if action == "delete_file":
-            return self._all([("delete_file", table_id, item) for item in sorted(ids or ())])
+            if not ids:
+                return self._all(
+                    [("delete_file", table_id, None)], "The file field can't be determined"
+                )
+            return self._all([("delete_file", table_id, item) for item in sorted(ids)])
         if action == "set_key_field":
             return self._all([("set_key_field", table_id, None)])
         if action == "update_table":
             return self._all([("update_table", table_id, None)])
         if action == "delete_table":
             return self._all([("delete_table", table_id, None)])
-        checks: list[tuple[str, str | None, int | None]] = []
+        checks: list[tuple[str, str, int | None]] = []
         if action == "create_field":
             checks.append(("create_field", table_id, None))
             if "formula" in request.derived:
@@ -754,7 +750,7 @@ class BoundPolicy:
             refused = self._field_type(request)
             return decision if refused is None else refused
         if action == "update_field":
-            if ids is None:
+            if not ids:
                 return self._all(
                     [("update_field", table_id, None)], "The field can't be determined"
                 )
@@ -763,7 +759,7 @@ class BoundPolicy:
                 checks.append(("formula", table_id, None))
             return self._all(checks)
         if action == "delete_field":
-            if ids is None:
+            if not ids:
                 return self._all(
                     [("delete_field", table_id, None)], "The fields can't be determined"
                 )
@@ -856,7 +852,8 @@ class BoundPolicy:
             verb: Such as `read`, `update`, or `lookup`.
             table: The table, by name or ID.
             field: One field, by label or ID.
-            fields: Several fields.
+            fields: Several fields. With neither, a verb that applies to fields, such as `read`,
+                is asked about every field in the table, and a refusal names the first refused.
             source: For `lookup` and `summary`, the other table's field the new one would show,
                 which needs `read`.
 
@@ -870,10 +867,11 @@ class BoundPolicy:
         if verb in APP_VERBS:
             return self._decision(self._app_check(table, verb), verb, table)
         table_id = self._table_id(table)
-        wanted = [*([] if field is None else [field]), *fields]
-        if verb in FIELD_VERBS and wanted:
+        if verb in FIELD_VERBS:
+            wanted = [*([] if field is None else [field]), *fields]
             ids = [self._field_id(table_id, item) for item in wanted]
-            return self._all([(verb, table_id, item) for item in ids])
+            every = sorted(self._fields.get(table_id) or (RECORD_ID_FIELD,))
+            return self._all([(verb, table_id, item) for item in ids or every])
         decision = self._all([(verb, table_id, None)])
         if decision.allowed and source is not None:
             other = self._table_id(source[0])
@@ -919,7 +917,8 @@ class BoundPolicy:
             verb: Such as `read`, `update`, or `lookup`.
             table: The table, by name or ID.
             field: One field, by label or ID.
-            fields: Several fields.
+            fields: Several fields. With neither, a verb that applies to fields, such as `read`,
+                is asked about every field in the table, and a refusal names the first refused.
             source: For `lookup` and `summary`, the other table's field the new one would show.
 
         Returns:
@@ -2117,10 +2116,6 @@ def bind_offline(policy: Policy) -> BoundPolicy:
         reports={},
         new_fields=policy.new_fields,
     )
-
-
-def refused(decision: PolicyDecision) -> PolicyRefusedError:
-    return PolicyRefusedError(decision)
 
 
 def derived_refusal(

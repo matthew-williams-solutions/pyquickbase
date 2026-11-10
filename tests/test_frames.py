@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any
 
 import httpx
+import numpy as np
 import pandas as pd
 import polars as pl
 import pytest
@@ -187,3 +188,16 @@ def test_a_frame_can_be_inserted() -> None:
         {"6": {"value": "a"}, "7": {"value": "2027-01-15"}},
         {"6": {"value": "b"}, "7": {"value": ""}},
     ]
+
+
+def test_a_numpy_number_in_an_object_column_becomes_a_python_number() -> None:
+    frame = pd.DataFrame({"A": [np.int64(5), "x"]}, dtype=object)
+    rows = frame_rows(frame)
+    assert rows == [{"A": 5}, {"A": "x"}]
+    assert rows is not None
+    assert type(rows[0]["A"]) is int
+
+
+def test_a_pandas_value_with_no_python_type_is_left_as_it_is() -> None:
+    wait = pd.Timedelta(hours=1)
+    assert frame_rows(pd.DataFrame({"A": [wait]})) == [{"A": wait}]

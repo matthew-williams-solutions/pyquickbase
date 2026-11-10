@@ -384,3 +384,8 @@ async def test_only_the_writing_tools_say_a_new_name_makes_a_page() -> None:
         preview = await qb.app(APP).operation("preview_code_page_change")
     assert "new name" not in read.input_schema["properties"]["code_page"]["description"]
     assert "new name" in preview.input_schema["properties"]["code_page"]["description"]
+
+
+async def test_a_code_page_link_needs_no_network() -> None:
+    async with client(FakePages()) as qb:
+        assert qb.app(APP).code_page("a.html").url().startswith("https://acme.quickbase.com/")

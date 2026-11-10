@@ -11,6 +11,7 @@ import pytest
 from pyquickbase import (
     BoundPolicy,
     ConfigurationError,
+    CustomRule,
     F,
     Policy,
     PolicyRefusedError,
@@ -23,6 +24,7 @@ from pyquickbase import (
     tables,
 )
 from pyquickbase._policy import FieldSelector
+from pyquickbase._query import Condition
 from pyquickbase._read_request import describe_read
 from pyquickbase._write_request import describe_write
 
@@ -366,3 +368,86 @@ def test_a_report_past_the_paging_limit_stays_refused(request_: Any, reason: str
     decision = policy.decide(request_)
     assert not decision.allowed
     assert reason in decision.reason
+
+
+def test_a_whole_table_means_every_field() -> None:
+    assert Policy.read_only().bind_offline().allows("read", TASKS)
+    assert bind(allow.read(TASKS, fields.all())).allows("read", TASKS)
+    decision = bind(allow.read(TASKS, [6])).allows("read", TASKS)
+    assert not decision
+    assert decision.reason == "No rule allows it"
+    assert decision.hint == 'add "Status" to an allow.read("Tasks", ...) rule'
+
+
+def test_naming_fields_still_asks_about_only_those() -> None:
+    policy = bind(allow.read(TASKS, [6]))
+    assert policy.allows("read", TASKS, field="Title")
+    assert not policy.allows("read", TASKS, fields=["Title", "Status"])
+
+
+@pytest.mark.parametrize(
+    ("request_", "reason"),
+    [
+        (write("delete_file"), "The file field can't be determined"),
+        (write("delete_file", field_ids=frozenset()), "The file field can't be determined"),
+        (write("update_field", field_ids=frozenset()), "The field can't be determined"),
+        (write("delete_field", field_ids=frozenset()), "The fields can't be determined"),
+    ],
+)
+def test_a_change_that_names_no_field_is_refused(request_: WriteRequest, reason: str) -> None:
+    decision = bind(allow.read(tables.all())).decide(request_)
+    assert not decision
+    assert decision.reason == reason
+
+
+def test_a_report_rule_for_another_table_is_passed_over() -> None:
+    assert bind(allow.report(NOTES), allow.report(TASKS)).decide(read("report", report_id="1"))
+
+
+def test_deleting_a_field_is_not_a_loss_for_a_row_limit() -> None:
+    policy = bind(
+        allow.read(tables.all()),
+        limit.rows(NOTES, F("Kind") == "Public"),
+        relationships=[link(9, NOTES, TASKS, 12, lookups=[6])],
+    )
+    effects, blockers = policy.deletion_effects(TASKS, [6])
+    assert not [item for item in (*effects, *blockers) if "limit.rows" in item]
+
+
+def test_every_field_denied_leaves_nothing_in_the_table() -> None:
+    every = [item["id"] for item in TASK_FIELDS]
+    policy = bind(deny.read(TASKS, every), allow.read(TASKS, fields.all()))
+    assert not policy.table_visible(TASKS)
+    decision = policy.decide(read("fields"))
+    assert decision.reason == "Nothing in the table is allowed"
+    assert decision.hint == 'add its fields to an allow.read("Tasks", ...) rule'
+
+
+def test_without_a_binding_a_table_is_visible_if_anything_can_be_read() -> None:
+    assert Policy(rules=[allow.read(tables.all())]).bind_offline().table_visible(TASKS)
+    assert not Policy(rules=[]).bind_offline().table_visible(TASKS)
+
+
+def test_reports_are_offered_only_with_a_way_to_identify_them() -> None:
+    offers = bind(READS_TITLE).offers_for(TASKS, [("Title", "text")], lambda _: 6, reports=["x"])
+    assert offers.reports == ()
+    assert offers.readable == ("Title",)
+
+
+def test_a_rule_written_as_text_shows_that_text() -> None:
+    assert limit.rows(TASKS, "{7.EX.'Open'}").text == (
+        f"limit.rows({TASKS!r}, \"{{7.EX.'Open'}}\")"
+    )
+
+
+def test_a_custom_rule_alone_does_not_need_an_app() -> None:
+    class Quiet(CustomRule):
+        def decide(self, request: Any) -> None:
+            return None
+
+    assert not Policy(rules=[Quiet(), allow.read(tables.all())]).needs_app
+
+
+def test_a_condition_with_no_python_spelling_shows_as_itself() -> None:
+    condition = Condition("Status", "TV", "x")
+    assert limit.rows(TASKS, condition).text == f"limit.rows({TASKS!r}, {condition!r})"

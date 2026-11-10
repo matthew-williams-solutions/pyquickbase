@@ -29,6 +29,7 @@ from pyquickbase._operations import (
     make_spec,
     unavailable,
 )
+from pyquickbase._query import Condition
 
 from .policy_helpers import bind
 
@@ -711,3 +712,12 @@ def test_what_plan_accepts_matches_the_schema() -> None:
 )
 def test_a_scope_is_described_in_words(scope: Any, words: str) -> None:
     assert describe_scope(scope, FieldIndex(FIELDS)) == words
+
+
+def test_a_scope_that_isnt_built_with_f_is_refused() -> None:
+    with pytest.raises(InvalidQueryError, match="built with F"):
+        describe_scope("{6.EX.'a'}", FieldIndex(FIELDS))  # pyright: ignore[reportArgumentType]
+
+
+def test_a_scope_without_its_original_value_shows_the_text_sent() -> None:
+    assert '"Open"' in describe_scope(Condition("Status", "EX", "Open"), FieldIndex(FIELDS))

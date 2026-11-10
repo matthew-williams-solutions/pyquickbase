@@ -61,6 +61,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `allows()` and `explain()` with no field, for a verb that applies to fields such as `read`, now ask about every field in the table. Before, they said no rule allowed it, even under `Policy.read_only()`, and suggested a rule that doesn't exist.
+- A policy now refuses a request that names no field to delete a file version, or to change or delete fields. Before, having nothing to check counted as allowed.
 - `Policy.bind()` no longer fails for a role without "Edit app structure and permissions", which
   Quickbase doesn't show relationships to. If the policy hides a field or limits rows, every lookup
   and summary field is then hidden too, because what they read can't be traced.

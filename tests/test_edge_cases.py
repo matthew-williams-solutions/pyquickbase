@@ -15,6 +15,7 @@ from pyquickbase import (
     User,
 )
 from pyquickbase._code_pages import check_text
+from pyquickbase._confirm import binding
 from pyquickbase._frames import frame_rows
 from pyquickbase._models import FieldIndex, field_from_api, file_from_api, page_from_api
 from pyquickbase._read_request import shows_only
@@ -101,3 +102,7 @@ def test_a_change_between_periods_is_only_for_numbers(
 )
 def test_a_relationship_request_that_isnt_a_change_is_unknown(method: str, body: Any) -> None:
     assert describe_write(method, "/tables/bqtasks/relationship/9", body).action == "other"
+
+
+def test_a_confirmation_for_records_that_arent_a_list_keeps_them_as_they_are() -> None:
+    assert binding("update", "t", {"records": "x"}, None, None)["arguments"] == "x"

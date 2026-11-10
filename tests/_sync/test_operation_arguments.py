@@ -34,6 +34,7 @@ FIELDS = [
 class Fake:
     def __init__(self) -> None:
         self.sent: list[str] = []
+        self.reports = [{"id": "1", "name": "List All", "type": "table"}]
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path.removeprefix("/v1")
@@ -42,7 +43,9 @@ class Fake:
         if path == "/fields":
             return httpx.Response(200, json=FIELDS)
         if path == "/reports":
-            return httpx.Response(200, json=[{"id": "1", "name": "List All", "type": "table"}])
+            return httpx.Response(200, json=self.reports)
+        if path.endswith("/events"):
+            return httpx.Response(200, json=[])
         self.sent.append(f"{request.method} {path}")
         body = json.loads(request.content) if request.content else {}
         if path == "/records/query":
@@ -218,3 +221,32 @@ def test_reprs_name_what_they_are() -> None:
             f"AppOperation('describe_schema', app={APP!r})"
         )
         assert repr(app.code_page("a.html")) == f"CodePage('a.html', app={APP!r})"
+
+
+def test_an_order_by_item_that_isnt_a_field_is_refused() -> None:
+    with client(Fake()) as qb:
+        query = qb.app(APP).table("Tasks").operation("query")
+        with pytest.raises(InvalidQueryError):
+            query.run({"order_by": [5]})
+
+
+def test_a_report_name_held_by_two_others_is_refused_like_any_other() -> None:
+    fake = Fake()
+    fake.reports = [
+        {"id": "1", "name": "Mine", "type": "table"},
+        {"id": "2", "name": "Twin", "type": "summary"},
+        {"id": "3", "name": "Twin", "type": "summary"},
+    ]
+    with client(fake) as qb:
+        tool = qb.app(APP).table("Tasks").operation("run_report", reports=["1", "2", "3"])
+        with pytest.raises(InvalidQueryError, match="isn't a report this tool may run"):
+            tool.run({"report": "Twin"})
+
+
+def test_a_delete_preview_can_choose_its_fields() -> None:
+    fake = Fake()
+    with client(fake) as qb:
+        tool = qb.app(APP).table("Tasks").operation("preview_delete")
+        where = {"field": "Title", "op": "==", "value": "x"}
+        tool.run({"where": where, "select": ["Title"]})
+    assert "POST /records/query" in fake.sent

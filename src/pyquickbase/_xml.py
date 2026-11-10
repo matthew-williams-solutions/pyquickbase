@@ -276,8 +276,6 @@ def parse_xml(body: bytes) -> Element:
         open_elements.pop()
 
     def text(data: str) -> None:
-        if not open_elements:
-            return
         current = open_elements[-1]
         if current.children:
             current.children[-1].tail += data

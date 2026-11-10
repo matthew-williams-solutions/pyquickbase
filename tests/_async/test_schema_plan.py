@@ -1,5 +1,6 @@
 """Planning schema changes and applying the plan, against a fake app that keeps its state."""
 
+from dataclasses import replace
 from typing import Any
 
 import httpx
@@ -16,6 +17,7 @@ from pyquickbase import (
     DeleteRelationship,
     DeleteTable,
     InvalidValueError,
+    PolicyRefusedError,
     SchemaChangeError,
     SchemaMismatchError,
     SetKeyField,
@@ -1144,3 +1146,72 @@ async def test_a_plans_result_shows_how_many_records_it_affects() -> None:
     async with client(fake) as qb:
         plan = await qb.app(APP).preview_schema_changes([DeleteField(table="Tasks", field="Code")])
     assert tool_result(plan)["changes"][0]["affected_records"] == 4
+
+
+async def test_a_relationship_gone_when_its_step_runs_stops_the_plan_there() -> None:
+    class Vanishing(FakeApp):
+        def __call__(self, request: httpx.Request) -> httpx.Response:
+            response = super().__call__(request)
+            if request.method == "POST" and request.url.path.endswith("/fields"):
+                self.relationships.clear()
+            return response
+
+    changes = [
+        CreateField(table="Tasks", label="Due", type="date"),
+        CreateLookupField(child_table="Tasks", foreign_key="Project", parent_field="Total Hours"),
+    ]
+    async with client(Vanishing()) as qb:
+        app = qb.app(APP)
+        plan = await app.preview_schema_changes(changes)
+        with pytest.raises(SchemaChangeError, match="no relationship") as caught:
+            await app.apply_schema_changes(plan)
+    assert [item.change for item in caught.value.result.applied] == changes[:1]
+    assert caught.value.result.failed is not None
+    assert caught.value.result.failed.change == changes[1]
+
+
+async def test_a_summary_filter_that_cant_be_read_counts_as_reading_every_child_field() -> None:
+    fake = FakeApp()
+    change = CreateSummaryField(
+        child_table="Tasks",
+        foreign_key="Project",
+        label="N",
+        function="count",
+        where="{6.EX.'_FID_6'}",
+    )
+    policy = fake.bind(
+        allow.read(tables.all()),
+        ANY_SCHEMA,
+        deny.read(TASKS, fields.tagged("sensitive")),
+        tags={"sensitive": [("Tasks", "Code")]},
+    )
+    async with client(fake, policy=policy) as qb:
+        plan = await qb.app(APP).preview_schema_changes([change])
+    assert "Once bound again, it's in tag sensitive." in plan.changes[0].policy_effects
+
+
+async def test_a_plan_without_a_link_still_plans() -> None:
+    class NoTables(FakeApp):
+        def __call__(self, request: httpx.Request) -> httpx.Response:
+            if request.url.path.endswith("/relationships"):
+                self.loaded = True
+            elif getattr(self, "loaded", False) and request.url.path.endswith("/tables"):
+                return httpx.Response(403, json={"message": "Denied", "description": "No."})
+            return super().__call__(request)
+
+    change = UpdateTable(table="Tasks", description="Work.")
+    async with client(NoTables(), metadata_cache_seconds=0) as qb:
+        plan = await qb.app(APP).preview_schema_changes([change])
+    assert plan.changes[0].status == "ready"
+    assert plan.changes[0].url is None
+
+
+async def test_a_lookup_on_a_relationship_with_no_key_field_is_refused_under_a_policy() -> None:
+    fake = FakeApp()
+    policy = fake.bind(allow.read(tables.all()), ANY_SCHEMA)
+    async with client(fake, policy=policy) as qb:
+        table = qb.app(APP).table("Tasks")
+        relationship = (await table.relationships())[0]
+        keyless = replace(relationship, foreign_key_field_id=None)
+        with pytest.raises(PolicyRefusedError):
+            await table.ensure_lookup_field(keyless, "Total Hours")

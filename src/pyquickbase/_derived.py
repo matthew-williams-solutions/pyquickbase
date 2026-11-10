@@ -81,15 +81,13 @@ def check_formula_against(
 
 
 def check_formula_sources(
-    formula: str, fields: Sequence[Field], policy: BoundPolicy | None, table_id: str
+    formula: str, fields: Sequence[Field], policy: BoundPolicy, table_id: str
 ) -> None:
     """Refuse a formula that reads a field the client can't return, or a user's details it hides.
 
     Raises:
         PolicyRefusedError: The message says which field or function.
     """
-    if policy is None:
-        return
     check_formula_against(
         formula,
         sources_of(fields, policy, table_id),

@@ -716,8 +716,13 @@ class AsyncPlanner:
                     f"{_records(empty)} no value in it, so it can't be required yet. Fill them in "
                     "first."
                 )
-        if change.unique and not target.unique and target.id is not None:
-            blockers += await self._duplicates(table, target, warnings)
+        if (
+            change.unique
+            and not target.unique
+            and target.id is not None
+            and table.handle is not None
+        ):
+            blockers += await self._duplicates(table, table.handle, target.id, warnings)
         if change.choices is not None and target.choices:
             removed = sorted(set(target.choices) - set(change.choices))
             if removed:
@@ -738,10 +743,10 @@ class AsyncPlanner:
             blockers=blockers, link=await self._link(table),
         )  # fmt: skip
 
-    async def _duplicates(self, table: _Table, target: _Field, warnings: list[str]) -> list[str]:
+    async def _duplicates(
+        self, table: _Table, handle: "AsyncTable", field_id: int, warnings: list[str]
+    ) -> list[str]:
         """Refuse making a field unique when it already holds the same value twice."""
-        if table.handle is None or target.id is None:
-            return []
         total = await self._count(table, None)
         if total is None or total > UNIQUE_CHECK_LIMIT:
             warnings.append(
@@ -750,9 +755,9 @@ class AsyncPlanner:
             )
             return []
         try:
-            rows = await table.handle.summarize(
-                [target.id],
-                where=_has_value(target.id),
+            rows = await handle.summarize(
+                [field_id],
+                where=_has_value(field_id),
                 max_records_scanned=UNIQUE_CHECK_LIMIT,
             )
         except QuickbaseError:

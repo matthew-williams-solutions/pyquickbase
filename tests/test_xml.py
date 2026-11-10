@@ -320,3 +320,8 @@ def test_a_user_without_an_id_is_reported() -> None:
 def test_a_failed_status_is_an_error_whatever_the_body_says(body: bytes) -> None:
     with pytest.raises(ServerError):
         read_envelope(httpx.Response(502, content=body), GRANTED_APPS, "main")
+
+
+def test_space_around_the_document_is_ignored() -> None:
+    root = parse_xml(b'<?xml version="1.0"?>\n\n<a>x</a>\n\n')
+    assert root.text == "x"

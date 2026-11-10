@@ -60,6 +60,7 @@ from pyquickbase import (
 )
 from pyquickbase._models import FieldsLeftOutPage, file_from_api
 from pyquickbase._output import GroupPage
+from pyquickbase._preview import ConfirmedUpdatePreview
 
 LABELS = {"Record ID#": 3, "Title": 6, "Due Date": 7, "Started": 8, "Owner": 9, "Spec": 10}
 USER = {"id": "1.ab", "name": "Ann"}
@@ -754,3 +755,22 @@ def test_something_that_isnt_a_record_is_refused() -> None:
 def test_a_download_holding_a_nul_byte_shows_no_text() -> None:
     shown = tool_result(FileDownload(file_name="a.txt", content_type=None, data=b"a\x00b"))
     assert shown["file"]["text"] is None
+
+
+def test_a_naive_datetime_stays_as_written() -> None:
+    naive = datetime(2026, 1, 2, 3, 4)
+    assert tool_result(record(Record_ID=1, Title=naive))["record"]["Title"] == "2026-01-02T03:04:00"
+
+
+def test_shortening_a_record_skips_limits_no_shorter_than_the_callers() -> None:
+    page = RecordPage(records=(record(Record_ID=1, Title="x" * 5000),), total=1, skip=0)
+    found = tool_result(page, max_chars=400, max_text_chars=100)
+    assert len(found["records"][0]["Title"]) <= 100 + 80
+
+
+def test_a_confirmed_update_warns_about_what_may_run() -> None:
+    hook = AppTrigger(
+        type="webhook", name="Sync", active=True, table_id="t", url=None, owner=None, raw={}
+    )
+    found = tool_result(ConfirmedUpdatePreview(triggers=(hook,), confirmation="c"))
+    assert any("1 active webhooks" in item for item in found["warnings"])

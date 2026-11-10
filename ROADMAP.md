@@ -50,16 +50,6 @@ Nothing here should break anyone.
   sections must exist first, so `docs/reference/errors.md` or a new errors page needs a stable
   anchor for each error, and a test that every error's anchor exists.
 
-## Tests
-
-- These look unreachable, so decide whether to remove them: the `_open_reads` check inside the
-  `app`, `roles`, and `other` branch of `BoundPolicy.decide()`, and the `table.handle is None` guard in
-  `AsyncPlanner._duplicates()`.
-- `_find_relationship()` raises if a relationship disappears between planning and applying. That
-  needs a change in Quickbase at exactly that moment, so it has no test.
-- `allows("read", table)` without a field says no rule allows it, with a hint that doesn't apply,
-  even under `Policy.read_only()`. Consider a better answer for a whole table.
-
 ## Apps, events, and DataFrames
 
 - `AppTrigger` parsing is only tested against the published example. The test apps have no webhooks,

@@ -147,3 +147,11 @@ def test_a_plan_gathers_its_blockers_and_warnings() -> None:
     assert (plan.blockers, plan.warnings, plan.has_changes) == (("b1",), ("w1",), True)
     assert "confirmation" not in repr(SchemaPlan(app_id="a", changes=(), fingerprint="f",
                                                  confirmation="secret"))  # fmt: skip
+
+
+def test_help_text_is_kept_as_written() -> None:
+    change = change_from_json(
+        {"action": "update_field", "table": "Tasks", "field": "Code", "help_text": "Text."}
+    )
+    assert isinstance(change, UpdateField)
+    assert change.help_text == "Text."

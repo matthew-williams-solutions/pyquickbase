@@ -1526,9 +1526,6 @@ def refused_operation(
     )
 
 
-_SCOPED_WRITES = frozenset({"insert", "update", "preview_update"})
-
-
 def _scope_conditions(scope: WhereExpression) -> list[Condition]:
     if isinstance(scope, Condition):
         return [scope]
@@ -1553,11 +1550,9 @@ def _scope_values(scope: WhereExpression, index: FieldIndex) -> dict[int, Any] |
     return values
 
 
-def scope_rows(call: Call, scope: WhereExpression | None, index: FieldIndex) -> Call:
+def scope_rows(call: Call, scope: WhereExpression, index: FieldIndex) -> Call:
     """Keep a write inside its scope: refuse rows that set a field the scope uses, as that could
     move a record out of it, and fill those fields into new records from an `==` scope."""
-    if scope is None or call.method not in _SCOPED_WRITES:
-        return call
     fixed = {index.resolve(item.field).id for item in _scope_conditions(scope)}
     rows: list[dict[str | int, Any]] = call.arguments["rows"]
     for position, row in enumerate(rows):

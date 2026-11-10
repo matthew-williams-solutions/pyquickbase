@@ -632,3 +632,9 @@ def test_where_schema_says_what_percent_and_duration_numbers_mean() -> None:
     assert "A percent is a fraction, so 50% is 0.5." in description
     assert "A duration is whole milliseconds, so an hour is 3600000." in description
     assert "A percent" not in where_schema(fields=["Done"])["description"]
+
+
+def test_descriptions_accept_field_objects() -> None:
+    status = field_from_api({"id": 7, "label": "Status", "fieldType": "text"})
+    schema = where_schema(fields=[status], field_descriptions={"Status": "Open or Done."})
+    assert "Open or Done." in json.dumps(schema)
