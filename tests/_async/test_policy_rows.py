@@ -39,6 +39,7 @@ class Fake:
     def __init__(self) -> None:
         self.sent: list[tuple[str, str, Any]] = []
         self.fields = {TASKS: list(TASK_FIELDS), PROJECTS: list(PROJECT_FIELDS)}
+        self.matching = 2
 
     def bodies(self, method: str, path: str) -> list[Any]:
         return [body for m, p, body in self.sent if (m, p) == (method, path)]
@@ -61,10 +62,10 @@ class Fake:
             return httpx.Response(200, json={"relationships": rows, "metadata": metadata})
         if path == "/records/query":
             return httpx.Response(200, json={"data": [], "fields": [],
-                                             "metadata": {"totalRecords": 2, "numRecords": 0,
+                                             "metadata": {"totalRecords": self.matching, "numRecords": 0,
                                                           "skip": 0}})  # fmt: skip
         if path == "/records" and request.method == "DELETE":
-            return httpx.Response(200, json={"numberDeleted": 2})
+            return httpx.Response(200, json={"numberDeleted": self.matching})
         if path.startswith(f"/tables/{TASKS}/relationship/"):
             for summary in body.get("summaryFields") or ():
                 self.fields[PROJECTS].append(
@@ -176,3 +177,33 @@ async def test_creating_a_table_gives_the_client_a_new_policy() -> None:
         saved = qb.policy.to_json()
     assert bound.created == ()
     assert BoundPolicy.from_json(saved).created == ("bqnew",)
+
+
+@pytest.mark.parametrize(("most", "refused"), [(1, True), (2, False), (3, False)])
+async def test_a_delete_is_refused_when_more_records_match_than_its_limit(
+    most: int, refused: bool
+) -> None:
+    fake = Fake()  # Two records match.
+    rules = policy(allow.delete(TASKS, max_records_per_delete=most))
+    async with client(fake, rules) as qb:
+        tasks = qb.app(APP).table("Tasks")
+        if refused:
+            with pytest.raises(PolicyRefusedError, match="2 records match.*at most 1 at once"):
+                await tasks.delete(F("Hours") > 2)
+        else:
+            assert await tasks.delete(F("Hours") > 2) == 2
+    (counted,) = fake.bodies("POST", "/records/query")
+    assert counted["where"] == "{8.GT.'2'}"
+    deletes = fake.bodies("DELETE", "/records")
+    assert deletes == ([] if refused else [{"from": TASKS, "where": "{8.GT.'2'}"}])
+    if not refused:
+        order = [method for method, path, _ in fake.sent if path.startswith("/records")]
+        assert order == ["POST", "DELETE"]
+
+
+async def test_a_delete_limit_counts_only_the_records_a_row_limit_reaches() -> None:
+    fake = Fake()
+    async with client(fake, policy(allow.delete(TASKS, max_records_per_delete=5), BILLABLE)) as qb:
+        await qb.app(APP).table("Tasks").delete(F("Hours") > 2)
+    (counted,) = fake.bodies("POST", "/records/query")
+    assert counted["where"] == "({7.EX.'true'})AND({8.GT.'2'})"

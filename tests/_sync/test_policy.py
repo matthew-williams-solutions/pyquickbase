@@ -224,7 +224,7 @@ def test_a_later_batch_refused_reports_what_was_written() -> None:
     assert fake.writes == ["POST /records"]
 
 
-def test_a_delete_with_a_limit_counts_first_and_request_cant_delete() -> None:
+def test_a_delete_with_a_limit_only_goes_through_table_delete() -> None:
     fake = Fake()
     with client(fake, rules(allow.delete(TASKS, max_records_per_delete=3))) as qb:
         assert qb.app("bq1234567").table("Tasks").delete(F("Title") == "x") == 1
