@@ -2,28 +2,66 @@
 
 from typing import Any, Literal
 
+DOCS_URL = "https://matthew-williams-solutions.github.io/pyquickbase/reference/errors/"
+
 
 class QuickbaseError(Exception):
-    """Base class for every exception this library defines."""
+    """Base class for every exception this library defines.
+
+    Each one links to its section of the docs, which says what causes it and how to fix it. A
+    traceback shows the link as a note after the message, and `str()` leaves it out.
+
+    Attributes:
+        doc_url: The link to this error's section of the docs.
+    """
 
     # Set when the SDK knows the failed call still changed something, for `tool_error()`.
     _changed: bool = False
 
+    def __init__(self, *args: object) -> None:
+        super().__init__(*args)
+        note = f"See {self.doc_url}"
+        if note not in getattr(self, "__notes__", ()):
+            self.add_note(note)
+
+    @property
+    def doc_url(self) -> str:
+        """The link to this error's section of the docs, or its nearest documented base's."""
+        for cls in type(self).__mro__:
+            if cls.__module__ == __name__:
+                return f"{DOCS_URL}#{cls.__name__}"
+        return DOCS_URL  # pragma: no cover - every QuickbaseError has one in its bases
+
 
 class ConfigurationError(QuickbaseError, ValueError):
-    """The client was given invalid or missing settings."""
+    """The client was given invalid or missing settings.
+
+    Fix the setting the message names. For `from_env()`, set the environment variable it names.
+    """
 
 
 class NetworkError(QuickbaseError):
-    """The request failed before a response was received."""
+    """The request failed before a response was received.
+
+    Check the network and the realm's name. A read is retried automatically, so this one ran out of
+    retries. Before sending a write again, check whether it was applied.
+    """
 
 
 class RequestTimeoutError(NetworkError):
-    """The request timed out. A timed-out write may still have been applied."""
+    """The request timed out. A timed-out write may still have been applied.
+
+    Raise `timeout` on the client for a slow call, or ask for less at once. Check whether a write
+    was applied before sending it again.
+    """
 
 
 class InvalidResponseError(QuickbaseError):
-    """Quickbase reported success, but the response body wasn't in the expected format."""
+    """Quickbase reported success, but the response body wasn't in the expected format.
+
+    This usually means Quickbase changed a response. Report it with the request's method and path,
+    and use `client.request()` for the raw body in the meantime.
+    """
 
 
 class PolicyRefusedError(QuickbaseError):
@@ -32,7 +70,7 @@ class PolicyRefusedError(QuickbaseError):
     The message says what was refused, by name, which rule refused it, and what would allow it,
     without repeating any values from the request. Quickbase's own permissions still apply to
     whatever the policy allows. A field the policy hides raises `UnknownFieldError` instead, as if
-    it didn't exist.
+    it didn't exist. Ask for less, or change the policy as the message's hint says.
 
     Attributes:
         decision: The `PolicyDecision`, with the rule, the reason, and the tables and fields
@@ -52,7 +90,11 @@ class CodePageChangedError(QuickbaseError):
 
 
 class InvalidQueryError(QuickbaseError, ValueError):
-    """A query can't be sent as written, so it wasn't sent to Quickbase."""
+    """A query can't be sent as written, so it wasn't sent to Quickbase.
+
+    Fix the filter or arguments as the message says. Building the filter with `F` avoids most of
+    these.
+    """
 
 
 class SummaryTooLargeError(InvalidQueryError):
@@ -86,11 +128,16 @@ class InvalidConfirmationError(QuickbaseError):
 
 
 class InvalidValueError(QuickbaseError, ValueError):
-    """A write can't be sent as written, so it wasn't sent to Quickbase."""
+    """A write can't be sent as written, so it wasn't sent to Quickbase.
+
+    Fix the row or value the message names, such as a value of the wrong type for its field.
+    """
 
 
 class FileTooLargeError(InvalidValueError):
     """A file is over a limit on how much of it may be read, so reading stopped.
+
+    Split the file, or raise `max_rows` or `max_unzipped_bytes` if you trust where it came from.
 
     Attributes:
         limit: The limit it went over.
@@ -113,6 +160,9 @@ class FileTooLargeError(InvalidValueError):
 
 class WriteError(QuickbaseError):
     """Part of a write failed, and the rest may have been applied.
+
+    `result.failed_rows` says why each row failed. Fix those rows and send only them again, as the
+    others were written.
 
     When a later batch of a large write fails, `__cause__` holds that batch's own error, such as a
     `RateLimitError` or `RequestTimeoutError`.
@@ -139,26 +189,42 @@ class SchemaChangeError(WriteError):
 
 
 class UnknownTableError(QuickbaseError, LookupError):
-    """The app has no table with that name or ID."""
+    """The app has no table with that name or ID.
+
+    Check the name against `app.tables()`. A client's policy can also hide a table, so that it
+    looks as if it doesn't exist.
+    """
 
 
 class UnknownFieldError(QuickbaseError, LookupError):
-    """The table has no field with that label or ID."""
+    """The table has no field with that label or ID.
+
+    Check the label against `table.fields()`. The token's role or the client's policy can also
+    hide a field, so that it looks as if it doesn't exist.
+    """
 
 
 class UnknownReportError(QuickbaseError, LookupError):
-    """The table has no report with that name or ID, or several reports share the name."""
+    """The table has no report with that name or ID, or several reports share the name.
+
+    Check the name against `table.reports()`, and use the report's ID if several share it.
+    Quickbase also hides a report from a role that can't read a field the report filters or sorts
+    on.
+    """
 
 
 class UnsupportedReportError(QuickbaseError):
-    """The report can't be read as records, such as a summary or chart report."""
+    """The report can't be read as records, such as a summary or chart report.
+
+    Use `report.run_summary()` for a summary report, or read the records with a query instead.
+    """
 
 
 class SchemaMismatchError(QuickbaseError):
     """A table doesn't match what the code expects, so nothing was changed.
 
     An `ensure_` method found a field that isn't what it was asked for, or the schema changed since
-    a plan was made.
+    a plan was made. Fix the field or the code so they agree, or plan again.
     """
 
 
@@ -202,33 +268,47 @@ class APIError(QuickbaseError):
 
 
 class BadRequestError(APIError):
-    """400: Quickbase rejected the request as malformed."""
+    """400: Quickbase rejected the request as malformed.
+
+    Its `message` and `description` say what Quickbase objected to. Fix that, and send it again.
+    """
 
 
 class AuthenticationError(APIError):
     """401: the token is invalid, or the app or table doesn't exist or is out of the token's reach.
 
-    Quickbase gives the same answer for all of these, so this can't say which one happened.
+    Quickbase gives the same answer for all of these, so this can't say which one happened. Check
+    the token, that it's assigned to the app, and the app and table IDs.
     """
 
 
 class PermissionDeniedError(APIError):
-    """403: the token's user may not perform this action."""
+    """403: the token's user may not perform this action.
+
+    Give the user a role that allows it, or use a token whose user has one.
+    """
 
 
 class NotFoundError(APIError):
-    """404: what was asked for doesn't exist. An app that doesn't exist is a 401 instead."""
+    """404: what was asked for doesn't exist. An app that doesn't exist is a 401 instead.
+
+    Check the ID, such as a record's, a file version's, or a relationship's.
+    """
 
 
 class NoLongerAvailableError(APIError):
     """Quickbase says this operation doesn't exist.
 
     The methods that use Quickbase's older API raise it if Quickbase retires the call behind them.
+    Trying again won't help, so look for a newer release of the SDK.
     """
 
 
 class RateLimitError(APIError):
     """429: retries ran out, or Quickbase asked for a longer wait than the retry policy allows.
+
+    Wait `retry_after` seconds before trying again, or send fewer requests at once. A
+    `RetryPolicy` with a higher `max_delay` waits longer on its own.
 
     Attributes:
         retry_after: The wait Quickbase asked for, in seconds, if it did.
@@ -240,7 +320,10 @@ class RateLimitError(APIError):
 
 
 class ServerError(APIError):
-    """5xx: Quickbase failed to process the request."""
+    """5xx: Quickbase failed to process the request.
+
+    Try again later. A write may have been applied, so check before sending it again.
+    """
 
 
 class WritePermissionDeniedError(WriteError, PermissionDeniedError):
@@ -250,7 +333,7 @@ class WritePermissionDeniedError(WriteError, PermissionDeniedError):
     response, depending on the role. Both raise this, so `except PermissionDeniedError` and
     `except WriteError` each catch it. `result` holds what earlier batches or rows did write.
     If some rows failed for other reasons as well, you get a plain `WriteError`, whose rows each
-    have a `kind`.
+    have a `kind`. Give the user a role that can write those fields, or leave them out.
 
     Attributes:
         status_code: 403 for a refused request, and 207 for row errors.

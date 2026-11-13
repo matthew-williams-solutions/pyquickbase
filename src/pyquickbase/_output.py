@@ -348,6 +348,8 @@ def tool_error(error: BaseException) -> dict[str, Any]:
       the data before repeating a call whose `data_changed` isn't `no`.
     - A `WriteError` adds `written`, with the IDs that were created, updated, and left unchanged,
       and `failed_rows`, with each row's `index`, `reason`, `field_id`, and Quickbase's `messages`.
+    - Every `QuickbaseError` adds `doc_url`, a link to the docs on what causes it and how to fix
+      it, for a person reading the result.
     - An `APIError` adds `status`, the HTTP status.
     - A `SummaryTooLargeError` adds `matched`, how many records match, and `limit`, the most the
       summary may read.
@@ -373,6 +375,8 @@ def tool_error(error: BaseException) -> dict[str, Any]:
         "retryable": code in _RETRYABLE,
         "data_changed": changed,
     }
+    if isinstance(error, QuickbaseError):
+        found["doc_url"] = error.doc_url
     if isinstance(error, RateLimitError) and error.retry_after is not None:
         found["retry_after"] = error.retry_after
     if isinstance(error, APIError) and error.status_code:

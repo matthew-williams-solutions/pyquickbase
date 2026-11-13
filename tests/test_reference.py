@@ -404,3 +404,20 @@ def test_a_split_union_is_put_in_parentheses() -> None:
         "    ) = None,\n"
         ")"
     )
+
+
+ERROR_CLASSES = [
+    item
+    for item in vars(pyquickbase.errors).values()
+    if isinstance(item, type) and issubclass(item, pyquickbase.QuickbaseError)
+]
+
+
+@pytest.mark.parametrize("error", ERROR_CLASSES, ids=lambda item: item.__name__)
+def test_every_errors_doc_url_points_to_an_anchor_on_the_errors_page(error: type) -> None:
+    (page,) = [item for item in SYMBOL_PAGES.values() if item.slug == "errors"]
+    site = re.search(r"^site_url: (\S+)$", (ROOT / "mkdocs.yml").read_text(), re.M)
+    assert site is not None
+    anchor = error.__name__
+    assert f"{site[1]}reference/{page.slug}/" == pyquickbase.errors.DOCS_URL
+    assert f"{{#{anchor}}}" in PAGES[page.name]

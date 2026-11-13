@@ -36,6 +36,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Every error links to its section of the docs, which now says how to fix it as well as what causes it. A traceback
+  shows the link as a note, `error.doc_url` holds it, and `tool_error()` results add it as `doc_url`.
 - `client.apps()` lists the apps a token can reach, and `client.current_user()` and `client.find_user()` say who a
   token belongs to and look up a user by email.
 - `app.members()` lists who holds a role in an app, with names and last access, and `app.member_roles()` lists one

@@ -130,8 +130,9 @@ async def test_table_outside_the_app_is_refused() -> None:
     async with client(server) as qb:
         with pytest.raises(UnknownTableError, match="Did you mean 'Tasks'"):
             await qb.app(APP).table("Task").fields()
-        with pytest.raises(UnknownTableError, match=r"no table 'bqother'\.$"):
+        with pytest.raises(UnknownTableError) as unknown:
             await qb.app(APP).table("bqother").count()
+        assert str(unknown.value).endswith("no table 'bqother'.")
     assert "/fields" not in server.paths()
     assert "/records/query" not in server.paths()
 

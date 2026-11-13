@@ -108,6 +108,7 @@ Every error has `"ok": false`, and an `error` with these keys:
 | `data_changed` | `no` if nothing was changed, `partly` if part of a write was, and `unknown` if a write may have been |
 | `retry_after` | For a rate limit, the seconds Quickbase asked to wait, when it said |
 | `status` | For an error from Quickbase, the HTTP status |
+| `doc_url` | For an error from the SDK, a link to the docs on what causes it and how to fix it, for a person reading the result |
 | `written`, `failed_rows` | For a write that failed, the IDs that were created, updated, and left unchanged, and each failed row's `index`, `reason`, `field_id`, and `messages` |
 
 ```json

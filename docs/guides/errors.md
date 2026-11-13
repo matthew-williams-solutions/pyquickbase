@@ -34,6 +34,15 @@ with Quickbase(realm="acme", token="your_user_token") as qb:
 
 The other examples on this page use `tasks`, a table from a client made in the same way.
 
+Every error links to its section of the [reference](../reference/errors.md), which says what causes it
+and how to fix it. A traceback shows the link after the message, and `error.doc_url` holds it, while
+`str(error)` leaves it out:
+
+```text
+pyquickbase.errors.UnknownTableError: App bq1234567 has no table 'Task'. Did you mean 'Tasks'?
+See https://matthew-williams-solutions.github.io/pyquickbase/reference/errors/#UnknownTableError
+```
+
 Catching a class catches everything under it. `WritePermissionDeniedError` is under both `WriteError` and
 `PermissionDeniedError`, so either one catches a refused write:
 

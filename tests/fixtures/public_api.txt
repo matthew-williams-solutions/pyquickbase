@@ -1,5 +1,6 @@
 class APIError(QuickbaseError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None, quickbase_code: int | None = None) -> None
+    property doc_url -> str
 class App(object)
     def apply_schema_changes(self, plan: SchemaPlan) -> SchemaChangeResult
     def code_page(self, name_or_id: str | int) -> 'CodePage'
@@ -184,8 +185,10 @@ class AsyncTableOperation(object)
     async def run(self, arguments: Mapping[str, Any], *, scope: WhereExpression | None = None) -> Any
 class AuthenticationError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None, quickbase_code: int | None = None) -> None
+    property doc_url -> str
 class BadRequestError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None, quickbase_code: int | None = None) -> None
+    property doc_url -> str
 class BoundPolicy(object)
     def __eq__(self, other: object) -> bool
     def __init__(self) -> None
@@ -209,6 +212,8 @@ class CodePage(object)
     def url(self) -> str
     def write(self, text: str, *, expected_sha256: str | None = None) -> CodePageWriteResult
 class CodePageChangedError(QuickbaseError)
+    def __init__(self, *args: object) -> None
+    property doc_url -> str
 class CodePageContent(object)
     def __eq__(self, other)
     def __init__(self, *, id: int | None, name: str | None, text: str, sha256: str) -> None
@@ -239,6 +244,8 @@ class CodePageWriteResult(object)
     field previous: CodePageContent | None
 value ColumnMap = Mapping[str, str | int | None]
 class ConfigurationError(QuickbaseError, ValueError)
+    def __init__(self, *args: object) -> None
+    property doc_url -> str
 class CreateField(object)
     def __eq__(self, other)
     def __init__(self, *, table: str, label: str, type: str, choices: tuple[str, ...] | None = None, required: bool | None = None, unique: bool | None = None, help_text: str | None = None, formula: str | None = None) -> None
@@ -401,6 +408,7 @@ class FileRows(object)
     field skipped: tuple[str, ...]
 class FileTooLargeError(InvalidValueError)
     def __init__(self, limit: int, unit: Literal['rows', 'bytes']) -> None
+    property doc_url -> str
 class FileUpload(object)
     def __eq__(self, other)
     def __init__(self, file_name: str, data: bytes) -> None
@@ -420,9 +428,17 @@ class FormulaResult(object)
     field type: str
     property value -> Any
 class InvalidConfirmationError(QuickbaseError)
+    def __init__(self, *args: object) -> None
+    property doc_url -> str
 class InvalidQueryError(QuickbaseError, ValueError)
+    def __init__(self, *args: object) -> None
+    property doc_url -> str
 class InvalidResponseError(QuickbaseError)
+    def __init__(self, *args: object) -> None
+    property doc_url -> str
 class InvalidValueError(QuickbaseError, ValueError)
+    def __init__(self, *args: object) -> None
+    property doc_url -> str
 class MemberRole(object)
     def __eq__(self, other)
     def __init__(self, *, role: Role, assigned_through: str | None) -> None
@@ -434,10 +450,14 @@ class NamedItem(object)
     field id: str | int
     field name: str
 class NetworkError(QuickbaseError)
+    def __init__(self, *args: object) -> None
+    property doc_url -> str
 class NoLongerAvailableError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None, quickbase_code: int | None = None) -> None
+    property doc_url -> str
 class NotFoundError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None, quickbase_code: int | None = None) -> None
+    property doc_url -> str
 class Period(object)
     def __eq__(self, other)
     def __init__(self, field: str | int | F, unit: Literal['day', 'week', 'month', 'quarter', 'year'], time_zone: datetime.tzinfo = datetime.timezone.utc) -> None
@@ -453,6 +473,7 @@ class PeriodChange(object)
 value PeriodUnit = Literal['day', 'week', 'month', 'quarter', 'year']
 class PermissionDeniedError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None, quickbase_code: int | None = None) -> None
+    property doc_url -> str
 class PlannedChange(object)
     def __eq__(self, other)
     def __init__(self, *, change: CreateTable | UpdateTable | DeleteTable | CreateField | UpdateField | DeleteField | SetKeyField | CreateRelationship | CreateLookupField | CreateSummaryField | DeleteRelationship, status: Literal['ready', 'already_done', 'blocked'], risk: Literal['additive', 'modifying', 'destructive'], description: str, settings: Mapping[str, ValueChange] = <factory>, warnings: tuple[str, ...] = (), blockers: tuple[str, ...] = (), affected_records: int | None = None, url: str | None = None, policy_effects: tuple[str, ...] = ()) -> None
@@ -510,6 +531,7 @@ class PolicyOffers(Generic)
     field user_emails: bool
 class PolicyRefusedError(QuickbaseError)
     def __init__(self, decision: Any) -> None
+    property doc_url -> str
 class PolicyRule(object)
     def __eq__(self, other)
     def __init__(self, *, effect: Literal['allow', 'deny', 'limit'], tables: tuple[TableSelector, ...] | None, grants: tuple[Grant, ...], options: Mapping[str, Any] = <factory>, text: str) -> None
@@ -536,8 +558,11 @@ class Quickbase(object)
     property realm -> str
     def request(self, method: str, path: str, *, params: Mapping[str, Any] | None = None, json: Any = None) -> Any
 class QuickbaseError(Exception)
+    def __init__(self, *args: object) -> None
+    property doc_url -> str
 class RateLimitError(APIError)
     def __init__(self, summary: str, *, retry_after: float | None = None, **kwargs: object) -> None
+    property doc_url -> str
 value ReadAction = Literal['query', 'summarize', 'delete', 'report', 'summary_report', 'file', 'formula', 'tables', 'fields', 'relationships', 'reports', 'app', 'roles', 'field_usage', 'app_triggers', 'apps', 'current_user', 'find_user', 'members', 'member_roles', 'code_pages', 'other']
 class ReadRequest(object)
     def __eq__(self, other)
@@ -611,6 +636,8 @@ class ReportInfo(object)
     field raw: Mapping[str, Any]
     field type: str
 class RequestTimeoutError(NetworkError)
+    def __init__(self, *args: object) -> None
+    property doc_url -> str
 class RetryPolicy(object)
     def __eq__(self, other)
     def __init__(self, *, max_retries: int = 4, base_delay: float = 1.0, max_delay: float = 30.0, max_retry_after: float = 60.0) -> None
@@ -654,6 +681,7 @@ value SchemaChange = CreateTable | UpdateTable | DeleteTable | CreateField | Upd
 value SchemaChangeAction = Literal['create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'set_key_field', 'create_relationship', 'create_lookup_field', 'create_summary_field', 'delete_relationship']
 class SchemaChangeError(WriteError)
     def __init__(self, summary: str, *, result: Any = None) -> None
+    property doc_url -> str
 class SchemaChangeResult(object)
     def __eq__(self, other)
     def __init__(self, *, applied: tuple[PlannedChange, ...] = (), already_done: tuple[PlannedChange, ...] = (), failed: PlannedChange | None = None, not_attempted: tuple[PlannedChange, ...] = (), error: str | None = None) -> None
@@ -663,6 +691,8 @@ class SchemaChangeResult(object)
     field failed: PlannedChange | None
     field not_attempted: tuple[PlannedChange, ...]
 class SchemaMismatchError(QuickbaseError)
+    def __init__(self, *args: object) -> None
+    property doc_url -> str
 class SchemaPlan(object)
     def __eq__(self, other)
     def __init__(self, *, app_id: str, changes: tuple[PlannedChange, ...], fingerprint: str, confirmation: str = '') -> None
@@ -675,6 +705,7 @@ class SchemaPlan(object)
     property warnings -> tuple[str, ...]
 class ServerError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None, quickbase_code: int | None = None) -> None
+    property doc_url -> str
 class SetKeyField(object)
     def __eq__(self, other)
     def __init__(self, *, table: str, field: str | int) -> None
@@ -699,6 +730,7 @@ class SummaryRow(object)
     field sum: Mapping[str, float]
 class SummaryTooLargeError(InvalidQueryError)
     def __init__(self, matched: int, limit: int) -> None
+    property doc_url -> str
 class Table(object)
     def compile_where(self, where: WhereExpression | str) -> str
     def count(self, where: WhereExpression | str | None = None) -> int
@@ -774,9 +806,17 @@ class TableSelector(object)
     field values: tuple[str, ...]
 value ToolErrorCode = Literal['misconfigured', 'needs_confirmation', 'invalid_arguments', 'summary_too_large', 'invalid_value', 'read_refused', 'write_refused', 'unknown_table', 'unknown_field', 'unknown_report', 'unsupported_report', 'schema_mismatch', 'partial_write', 'write_failed', 'write_permission_denied', 'authentication', 'permission_denied', 'not_found', 'bad_request', 'rate_limited', 'server_error', 'api_error', 'no_longer_available', 'code_page_changed', 'timeout', 'network_error', 'invalid_response', 'quickbase_error', 'internal']
 class UnknownFieldError(QuickbaseError, LookupError)
+    def __init__(self, *args: object) -> None
+    property doc_url -> str
 class UnknownReportError(QuickbaseError, LookupError)
+    def __init__(self, *args: object) -> None
+    property doc_url -> str
 class UnknownTableError(QuickbaseError, LookupError)
+    def __init__(self, *args: object) -> None
+    property doc_url -> str
 class UnsupportedReportError(QuickbaseError)
+    def __init__(self, *args: object) -> None
+    property doc_url -> str
 class UpdateField(object)
     def __eq__(self, other)
     def __init__(self, *, table: str, field: str | int, label: str | None = None, choices: tuple[str, ...] | None = None, required: bool | None = None, unique: bool | None = None, help_text: str | None = None, formula: str | None = None) -> None
@@ -837,8 +877,10 @@ class WhereExpression(object)
 value WriteAction = Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'create_lookup_field', 'create_summary_field', 'update_relationship', 'delete_relationship', 'create_app', 'copy_app', 'delete_app', 'write_code_page', 'write_role_assignments', 'set_key_field', 'other']
 class WriteError(QuickbaseError)
     def __init__(self, summary: str, *, result: Any = None) -> None
+    property doc_url -> str
 class WritePermissionDeniedError(WriteError, PermissionDeniedError)
     def __init__(self, summary: str, *, result: Any = None, status_code: int = 403, **kwargs: Any) -> None
+    property doc_url -> str
 class WriteRequest(object)
     def __eq__(self, other)
     def __init__(self, *, action: Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'create_lookup_field', 'create_summary_field', 'update_relationship', 'delete_relationship', 'create_app', 'copy_app', 'delete_app', 'write_code_page', 'write_role_assignments', 'set_key_field', 'other'], table_id: str | None, field_ids: frozenset[int] | None, row_count: int | None, method: str, path: str, app_id: str | None = None, parent_table_id: str | None = None, field_type: str | None = None, derived: frozenset[Literal['formula', 'lookup', 'summary']] = frozenset()) -> None

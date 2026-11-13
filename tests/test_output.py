@@ -774,3 +774,9 @@ def test_a_confirmed_update_warns_about_what_may_run() -> None:
     )
     found = tool_result(ConfirmedUpdatePreview(triggers=(hook,), confirmation="c"))
     assert any("1 active webhooks" in item for item in found["warnings"])
+
+
+def test_an_sdk_error_links_to_its_docs_and_another_doesnt() -> None:
+    found = tool_error(UnknownTableError("x"))["error"]
+    assert found["doc_url"].endswith("/reference/errors/#UnknownTableError")
+    assert "doc_url" not in tool_error(ValueError("x"))["error"]
