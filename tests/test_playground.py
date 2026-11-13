@@ -88,6 +88,14 @@ def test_home_page_shows_the_import_example_and_its_real_output() -> None:
     assert "playground-app/index.html#an-import-that-loses-a-row" in home
 
 
+def test_the_playground_page_embeds_the_app_from_where_it_links_to_it() -> None:
+    # Zensical rewrites relative URLs in raw HTML as it does Markdown links, relative to the
+    # source file, so the iframe needs the same form as the link or it points above the site.
+    text = (APP.parent / "playground.md").read_text()
+    assert 'src="playground-app/"' in text
+    assert "](playground-app/index.html)" in text
+
+
 def test_a_failed_row_returns_a_success_status_and_saves_the_rest(api: httpx.Client) -> None:
     rows = [{"6": {"value": "Good"}, "7": {"value": "Open"}}, {"7": {"value": "Finished"}}]
     response = api.post("/records", json={"to": TASKS, "data": rows})

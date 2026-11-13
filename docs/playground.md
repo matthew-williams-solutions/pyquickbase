@@ -7,7 +7,7 @@ description: "Try pyquickbase in your browser against a simulated Quickbase app,
 Try pyquickbase in your browser, with nothing to install. No account or token is needed.
 
 <iframe
-  src="../playground-app/"
+  src="playground-app/"
   title="pyquickbase playground"
   style="width: 100%; height: 44rem; border: 1px solid var(--md-default-fg-color--lightest); border-radius: 4px;"
 ></iframe>
