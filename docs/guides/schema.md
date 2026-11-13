@@ -288,6 +288,8 @@ if not plan.blockers:
     app.apply_schema_changes(plan)
 ```
 
+[Try it in the playground](../playground-app/index.html#preview-a-schema-change), with simulated data.
+
 To change a table's key field, use a [`SetKeyField`](../reference/schema-plans.md#SetKeyField) change in a plan. The field must be unique, or be `Record ID#`
 to go back to the usual key. `allow.schema(..., "set_key_field")` allows it for a client with a policy.
 

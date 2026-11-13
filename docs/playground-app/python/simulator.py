@@ -753,8 +753,8 @@ class SimulatedQuickbase:
         raise _ApiError(
             403,
             f"The playground doesn't simulate {request.method} {path} yet.",
-            "It covers reading records, schema, table reports, and adding, changing, and deleting "
-            "records so far.",
+            "It covers reading records, schema, table reports, apps, members, and code pages, and "
+            "adding, changing, and deleting records so far. Schema changes can be previewed.",
         )
 
     def _xml(self, request: httpx.Request) -> httpx.Response:

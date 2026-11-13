@@ -44,6 +44,8 @@ result = page.write(new_text, expected_sha256=preview.current.sha256)
 print(result.created, result.content.id)
 ```
 
+[Try it in the playground](../playground-app/index.html#change-a-code-page), with simulated data.
+
 A name that isn't in use creates a page, and a name that's in use replaces that page and keeps its ID. Passing an ID
 that doesn't exist raises [`NotFoundError`](../reference/errors.md#NotFoundError), because there's nothing to replace.
 

@@ -49,6 +49,8 @@ for member in qb.app("bq1234567").members():
     print(member.name, member.last_accessed_at, [role.name for role in member.roles])
 ```
 
+[Try it in the playground](../playground-app/index.html#see-who-can-reach-the-app), with simulated data.
+
 [`member_roles()`](../reference/apps.md#App-member_roles) lists one user's roles, the token's own by default, which works for any role. Only an
 administrator can ask about someone else. With `include_groups`, on by default, it also says whether each role
 was given directly or through a group.

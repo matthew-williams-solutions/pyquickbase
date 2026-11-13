@@ -62,6 +62,8 @@ with Quickbase.from_env() as setup:
 agent_client = Quickbase.from_env(policy=bound)
 ```
 
+[Try it in the playground](../playground-app/index.html#limit-what-an-agent-can-do), with simulated data.
+
 To the agent, a field or table the policy hides looks as if it doesn't exist. [`table.fields()`](../reference/fields.md#Table-fields) leaves
 it out, and naming it raises [`UnknownFieldError`](../reference/errors.md#UnknownFieldError). Anything else it refuses raises
 `PolicyRefusedError`, whose message says what was refused, by name, which rule refused it, and what
