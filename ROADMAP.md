@@ -38,9 +38,6 @@ Nothing here should break anyone.
 - `AppTrigger` parsing is only tested against the published example. The test apps have no webhooks,
   actions, notifications, or automations, and the API can't make one, so confirm the shape on an app
   that has each kind, including whether an automation ever has a `name`.
-- A run killed during `tests/_async/live/test_apps.py` leaves an app named `ZZ Live App ...`. `client.apps()`
-  can list it now, so `scripts/clean_live_tables.py` could find and delete it. None has existed yet to confirm that
-  the token lists it.
 - `field_usage()` asks again, field by field, for any field a response leaves out. A table larger
   than one response is untested, so it isn't known whether Quickbase ever leaves fields out.
 
