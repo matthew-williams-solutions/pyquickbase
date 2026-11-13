@@ -176,7 +176,12 @@ def schema(
         ("POST", f"/tables/{TASKS}/relationship", {"parentTableId": NOTES}, "create_relationship",
          TASKS),
         ("POST", f"/tables/{TASKS}/relationship/7", {"lookupFieldIds": [6]},
+         "create_lookup_field", TASKS),
+        ("POST", f"/tables/{TASKS}/relationship/7", {"summaryFields": [{}]},
+         "create_summary_field", TASKS),
+        ("POST", f"/tables/{TASKS}/relationship/7", {"lookupFieldIds": [6], "summaryFields": [{}]},
          "update_relationship", TASKS),
+        ("POST", f"/tables/{TASKS}/relationship/7", {}, "update_relationship", TASKS),
         ("DELETE", f"/tables/{TASKS}/relationship/7", None, "delete_relationship", TASKS),
     ],
 )  # fmt: skip

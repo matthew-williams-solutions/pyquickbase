@@ -834,15 +834,15 @@ class WhereExpression(object)
     def __bool__(self) -> bool
     def __or__(self, other: 'WhereExpression') -> 'Group'
     def compile(self, fields: FieldIndex) -> str
-value WriteAction = Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'update_relationship', 'delete_relationship', 'create_app', 'copy_app', 'delete_app', 'write_code_page', 'write_role_assignments', 'set_key_field', 'other']
+value WriteAction = Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'create_lookup_field', 'create_summary_field', 'update_relationship', 'delete_relationship', 'create_app', 'copy_app', 'delete_app', 'write_code_page', 'write_role_assignments', 'set_key_field', 'other']
 class WriteError(QuickbaseError)
     def __init__(self, summary: str, *, result: Any = None) -> None
 class WritePermissionDeniedError(WriteError, PermissionDeniedError)
     def __init__(self, summary: str, *, result: Any = None, status_code: int = 403, **kwargs: Any) -> None
 class WriteRequest(object)
     def __eq__(self, other)
-    def __init__(self, *, action: Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'update_relationship', 'delete_relationship', 'create_app', 'copy_app', 'delete_app', 'write_code_page', 'write_role_assignments', 'set_key_field', 'other'], table_id: str | None, field_ids: frozenset[int] | None, row_count: int | None, method: str, path: str, app_id: str | None = None, parent_table_id: str | None = None, field_type: str | None = None, derived: frozenset[Literal['formula', 'lookup', 'summary']] = frozenset()) -> None
-    field action: Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'update_relationship', 'delete_relationship', 'create_app', 'copy_app', 'delete_app', 'write_code_page', 'write_role_assignments', 'set_key_field', 'other']
+    def __init__(self, *, action: Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'create_lookup_field', 'create_summary_field', 'update_relationship', 'delete_relationship', 'create_app', 'copy_app', 'delete_app', 'write_code_page', 'write_role_assignments', 'set_key_field', 'other'], table_id: str | None, field_ids: frozenset[int] | None, row_count: int | None, method: str, path: str, app_id: str | None = None, parent_table_id: str | None = None, field_type: str | None = None, derived: frozenset[Literal['formula', 'lookup', 'summary']] = frozenset()) -> None
+    field action: Literal['insert', 'update', 'upsert', 'delete', 'delete_file', 'create_table', 'update_table', 'delete_table', 'create_field', 'update_field', 'delete_field', 'create_relationship', 'create_lookup_field', 'create_summary_field', 'update_relationship', 'delete_relationship', 'create_app', 'copy_app', 'delete_app', 'write_code_page', 'write_role_assignments', 'set_key_field', 'other']
     field app_id: str | None
     field derived: frozenset[Literal['formula', 'lookup', 'summary']]
     field field_ids: frozenset[int] | None

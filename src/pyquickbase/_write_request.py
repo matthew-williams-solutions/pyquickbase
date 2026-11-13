@@ -28,6 +28,8 @@ WriteAction = Literal[
     "update_field",
     "delete_field",
     "create_relationship",
+    "create_lookup_field",
+    "create_summary_field",
     "update_relationship",
     "delete_relationship",
     "create_app",
@@ -78,12 +80,15 @@ class WriteRequest:
             a table whose key field isn't `Record ID#`, or through `request()`, which can't tell.
             `delete` deletes records, and `delete_file` deletes a version of a file.
             `create_table`, `update_table`, `delete_table`, `create_field`, `update_field`,
-            `delete_field`, `create_relationship`, `update_relationship`, and
-            `delete_relationship` change the schema. `update_relationship` adds lookup or summary
-            fields. `write_code_page` creates or replaces a code page, which only
-            `allow.code_pages(write=True)` permits. `write_role_assignments` gives or takes away a
-            role, which no policy can allow. `set_key_field` changes a table's key field. `other`
-            is any other write.
+            `delete_field`, `create_relationship`, `create_lookup_field`, `create_summary_field`,
+            `update_relationship`, and `delete_relationship` change the schema.
+            `create_lookup_field` and `create_summary_field` add fields to an existing
+            relationship, as schema plans call them. `update_relationship` is a request to an
+            existing relationship that adds both kinds at once, or neither, which only `request()`
+            can send. `request.derived` says which kinds any of them adds. `write_code_page`
+            creates or replaces a code page, which only `allow.code_pages(write=True)` permits.
+            `write_role_assignments` gives or takes away a role, which no policy can allow.
+            `set_key_field` changes a table's key field. `other` is any other write.
         table_id: The table it writes to. For a relationship, the child table.
         field_ids: The fields whose values it sets, or for `update_field` and `delete_field`, the
             fields it changes or deletes. For `update`, this leaves out `Record ID#`, which only
@@ -349,9 +354,12 @@ def _describe_schema(
     if derived is None:
         return None
     if relationship_id:
-        return schema(
-            "update_relationship", table_id=child, parent_table_id=parent_table_id, derived=derived
-        )
+        action = "update_relationship"
+        if derived == frozenset[DerivedKind]({"lookup"}):
+            action = "create_lookup_field"
+        elif derived == frozenset[DerivedKind]({"summary"}):
+            action = "create_summary_field"
+        return schema(action, table_id=child, parent_table_id=parent_table_id, derived=derived)
     return schema(
         "create_relationship",
         table_id=child,
