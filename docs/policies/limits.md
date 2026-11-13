@@ -31,10 +31,9 @@
   `GetRecord()` and `GetRecords()`, and can return the realm and the token owner's email. Don't run
   formula text from a model or another person, even on a read-only client. See the [warning in
   Formulas](../guides/formulas.md#running-a-formula).
-- **They can't keep updates to certain records.** `limit.rows()` covers queries and deletes, but an
-  update names its record by ID. Use a role with
-  [record-level rules](../api-notes.md#record-level-rules), and [fix the scope](../agents/untrusted-input.md#filters-from-a-model)
-  of what it reads and writes in your code.
+- **Row limits check updates, but can't lock records.** `limit.rows()` checks that an update's records
+  match before sending it, but a record someone else changes in between can still slip through. Use a
+  role with [record-level rules](../api-notes.md#record-level-rules) for a firm boundary.
 - **They aren't a sandbox.** They apply to one client. If an agent can run code of its own, it can
   create another client with the same token, call the API directly, or reach inside the client to
   remove them.

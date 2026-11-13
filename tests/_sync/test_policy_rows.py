@@ -2,6 +2,7 @@
 """Row limits and created tables through a client: what reaches Quickbase."""
 
 import json
+import re
 from typing import Any
 
 import httpx
@@ -41,6 +42,8 @@ class Fake:
         self.fields = {TASKS: list(TASK_FIELDS), PROJECTS: list(PROJECT_FIELDS)}
         self.matching = 2
         self.relationship = RELATIONSHIP
+        # The records a row limit's check query finds, by Record ID#.
+        self.reachable: set[int] = set()
 
     def bodies(self, method: str, path: str) -> list[Any]:
         return [body for m, p, body in self.sent if (m, p) == (method, path)]
@@ -65,6 +68,16 @@ class Fake:
             rows = [self.relationship] if path.split("/")[2] == TASKS else []
             metadata = {"totalRelationships": len(rows)}
             return httpx.Response(200, json={"relationships": rows, "metadata": metadata})
+        if path == "/records/query" and "{3.EX." in body.get("where", ""):
+            asked = {int(item) for item in re.findall(r"\{3\.EX\.(\d+)\}", body["where"])}
+            rows = [{"3": {"value": item}} for item in sorted(asked & self.reachable)]
+            return httpx.Response(200, json={"data": rows, "fields": [], "metadata": {
+                "totalRecords": len(rows), "numRecords": len(rows), "skip": 0}})  # fmt: skip
+        if path == "/records" and request.method == "POST":
+            ids = [row["3"]["value"] for row in body["data"] if "3" in row]
+            return httpx.Response(200, json={"data": [], "metadata": {
+                "createdRecordIds": [], "updatedRecordIds": ids, "unchangedRecordIds": [],
+                "totalNumberOfRecordsProcessed": len(body["data"])}})  # fmt: skip
         if path == "/records/query":
             return httpx.Response(200, json={"data": [], "fields": [],
                                              "metadata": {"totalRecords": self.matching,
@@ -273,3 +286,92 @@ def test_binding_to_an_app_learns_its_relationships() -> None:
     # Only the relationship says that this lookup shows Projects, which has the limit.
     assert not limited._visible(TASKS, 20)
     assert limited._visible(TASKS, 6)
+
+
+UPDATE_TITLES = allow.update(TASKS, ["Title"])
+
+
+def test_an_update_by_record_id_is_checked_against_the_row_limit_first() -> None:
+    fake = Fake()
+    fake.reachable = {1, 2}
+    with client(fake, policy(UPDATE_TITLES, BILLABLE)) as qb:
+        tasks = qb.app(APP).table("Tasks")
+        tasks.update([{"Record ID#": 1, "Title": "a"}, {"Record ID#": 2, "Title": "b"}])
+    (check,) = fake.bodies("POST", "/records/query")
+    assert check["where"] == "({7.EX.'true'})AND({3.EX.1}OR{3.EX.2})"
+    assert check["select"] == [3]
+    assert len(fake.bodies("POST", "/records")) == 1
+
+
+def test_an_update_naming_a_record_outside_the_row_limit_is_refused() -> None:
+    fake = Fake()
+    fake.reachable = {1}
+    with client(fake, policy(UPDATE_TITLES, BILLABLE)) as qb:
+        tasks = qb.app(APP).table("Tasks")
+        with pytest.raises(PolicyRefusedError, match="Record ID# 5 isn't within") as caught:
+            tasks.update([{"Record ID#": 1, "Title": "a"}, {"Record ID#": 5, "Title": "b"}])
+    assert caught.value.decision.layer == "rows"
+    assert fake.bodies("POST", "/records") == []
+
+
+def test_a_raw_update_is_checked_and_many_records_take_several_queries() -> None:
+    fake = Fake()
+    fake.reachable = set(range(1, 151))
+    rows = [{"3": {"value": item}, "6": {"value": "x"}} for item in range(1, 151)]
+    with client(fake, policy(UPDATE_TITLES, BILLABLE)) as qb:
+        qb.request("POST", "/records", json={"to": TASKS, "data": rows, "mergeFieldId": 3})
+    assert len(fake.bodies("POST", "/records/query")) == 2
+    assert len(fake.bodies("POST", "/records")) == 1
+
+
+def test_more_than_five_records_outside_the_limit_are_counted() -> None:
+    fake = Fake()
+    rows = [{"3": {"value": item}, "6": {"value": "x"}} for item in range(1, 9)]
+    with client(fake, policy(UPDATE_TITLES, BILLABLE)) as qb:
+        with pytest.raises(PolicyRefusedError, match="1, 2, 3, 4, 5 and 3 more"):
+            qb.request("POST", "/records", json={"to": TASKS, "data": rows})
+
+
+@pytest.mark.parametrize("value", ["abc", None, True, 0, -2, {"x": 1}])
+def test_an_update_whose_record_ids_cant_be_read_is_refused(value: Any) -> None:
+    fake = Fake()
+    rows = [{"3": {"value": value}, "6": {"value": "x"}}]
+    with client(fake, policy(UPDATE_TITLES, BILLABLE)) as qb:
+        with pytest.raises(PolicyRefusedError, match="Record ID# values can't be read"):
+            qb.request("POST", "/records", json={"to": TASKS, "data": rows})
+    assert fake.sent == []
+
+
+def test_record_ids_written_as_digits_are_checked() -> None:
+    fake = Fake()
+    fake.reachable = {4}
+    rows = [{"3": {"value": "4"}, "6": {"value": "x"}}]
+    with client(fake, policy(UPDATE_TITLES, BILLABLE)) as qb:
+        qb.request("POST", "/records", json={"to": TASKS, "data": rows})
+    (check,) = fake.bodies("POST", "/records/query")
+    assert check["where"].endswith("({3.EX.4})")
+
+
+def test_an_upsert_on_a_row_limited_table_is_refused() -> None:
+    fake = Fake()
+    rows = [{"6": {"value": "x"}}]
+    body = {"to": TASKS, "data": rows, "mergeFieldId": 6}
+    bound = policy(allow.insert(TASKS, ["Title"]), UPDATE_TITLES, BILLABLE)
+    with client(fake, bound) as qb:
+        with pytest.raises(PolicyRefusedError, match="an upsert can change any record") as caught:
+            qb.request("POST", "/records", json=body)
+    assert caught.value.decision.layer == "rows"
+    assert fake.sent == []
+
+
+def test_inserts_and_tables_without_a_row_limit_send_no_check() -> None:
+    fake = Fake()
+    bound = policy(allow.insert(TASKS, ["Title"]), UPDATE_TITLES, allow.update(PROJECTS, ["Name"]),
+                   allow.insert(PROJECTS, ["Name"]), BILLABLE)  # fmt: skip
+    with client(fake, bound) as qb:
+        app = qb.app(APP)
+        app.table("Tasks").insert([{"Title": "new"}])
+        app.table("Projects").update([{"Record ID#": 9, "Name": "Roof"}])
+        app.table("Projects").upsert([{"Name": "Roof"}], merge_on="Name")
+    assert fake.bodies("POST", "/records/query") == []
+    assert len(fake.bodies("POST", "/records")) == 3

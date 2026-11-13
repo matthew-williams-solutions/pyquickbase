@@ -78,8 +78,8 @@ To a client with this policy, `Amount` and `Code` look as if they don't exist.
 
 ## 4. Keep it to some records
 
-`limit.rows()` ANDs a condition onto every query, summary, and delete, so the agent only reaches one
-project's tasks.
+`limit.rows()` ANDs a condition onto every query, summary, and delete, and checks the records an update
+names, so the agent only reaches one project's tasks.
 
 ```python
 from pyquickbase import F, Policy, Quickbase, allow, deny, fields, limit

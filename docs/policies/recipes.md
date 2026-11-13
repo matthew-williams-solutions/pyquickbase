@@ -59,8 +59,8 @@ policy = Policy(
 )
 ```
 
-`limit.rows()` doesn't check an update by `Record ID#`, so pair it with a role whose
-[record-level rules](../api-notes.md#record-level-rules) do.
+`limit.rows()` checks each update's records with a query first, and refuses upserts. For a firm
+boundary, pair it with a role whose [record-level rules](../api-notes.md#record-level-rules) do the same.
 
 ## A schema assistant
 

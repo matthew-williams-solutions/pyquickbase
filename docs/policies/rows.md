@@ -11,7 +11,12 @@
 | A lookup from a row-limited table | Hidden, and a new one is refused |
 | A lookup onto a row-limited table | Allowed |
 | Reports, file downloads, deleting file versions, and formulas | Refused |
-| Inserts, upserts, and updates by `Record ID#` | Not checked |
+| Updates by `Record ID#`, including through `qb.request()` | Checks first that every record matches, with one query per 100 records, and refuses the batch if any doesn't |
+| Upserts | Refused, since they can change any record their key matches |
+| Inserts | Not checked |
+
+The check before an update can't stop a record that someone else changes between the check and the write,
+and an update may change a field the condition uses, which moves the record outside the limit.
 
 It's defense in depth. Quickbase's [record-level rules](../api-notes.md#record-level-rules) for the
 token's role are the real boundary, so set those as well.

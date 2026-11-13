@@ -69,7 +69,8 @@ would allow it, without the values it sent. Return either one to the model as th
 - **Fields added after binding are read-only,** and follow the policy's `new_fields`, until you bind
   again.
 - **`limit.rows()` keeps it to some records,** by ANDing a condition onto every query, summary, and
-  delete the client sends. It's defense in depth behind the role's record-level rules.
+  delete the client sends, and checking the records each update names. It's defense in depth behind
+  the role's record-level rules.
 - **Email addresses are left out** of user values, and the uploader's details out of file values,
   unless a rule that reads the table passes `user_emails=True`.
 - **Formulas are refused** unless the policy is `Policy.read_only()`, because a formula can read any

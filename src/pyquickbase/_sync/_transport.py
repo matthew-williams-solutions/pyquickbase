@@ -15,7 +15,7 @@ from .._query import where_field_ids
 from .._read_request import ReadRequest, describe_read
 from .._response import error_from_response, error_from_transport, parse_response
 from .._retry import RetryPolicy, parse_retry_after
-from .._write_request import describe_write
+from .._write_request import WriteRequest, describe_write
 from ..errors import PolicyRefusedError
 from ._xml_transport import XmlTransport
 
@@ -26,7 +26,24 @@ _READ_FAILURES = (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtoc
 # A gateway or overloaded server, which only a read is safe to send again.
 _READ_RETRY_STATUSES = frozenset({502, 503, 504})
 
+# How many records one query checks against a row limit before an update.
+_IDS_PER_CHECK = 100
+
 _T = TypeVar("_T")
+
+
+def _record_ids(json: Any) -> set[int] | None:
+    """The Record ID# each row of an update names, or None if any can't be read."""
+    found: set[int] = set()
+    for row in cast(list[Mapping[str, Any]], cast(Mapping[str, Any], json)["data"]):
+        cell = row.get("3")
+        value = cast(Mapping[str, Any], cell).get("value") if isinstance(cell, Mapping) else None
+        if isinstance(value, str) and value.isascii() and value.isdigit():
+            value = int(value)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            return None
+        found.add(value)
+    return found
 
 
 def run_blocking(work: Callable[..., _T], *args: Any) -> _T:
@@ -90,7 +107,7 @@ class Transport:
         """
         method = method.upper()
         json = self._limit_rows(method, path, json)
-        self._check_write(
+        written = self._check_write(
             method,
             path,
             params,
@@ -101,6 +118,8 @@ class Transport:
             counted=counted,
         )
         read = self._check_read(method, path, params, json, report_type, summarizing)
+        if written is not None and written.action == "update":
+            self._check_rows_reached(written, json)
         response = self._send(method, path, params, json, timeout)
         payload = parse_response(response, method, path)
         if self.policy is not None:
@@ -199,11 +218,11 @@ class Transport:
         parent_table_id: str | None = None,
         sources_checked: bool = False,
         counted: bool = False,
-    ) -> None:
+    ) -> WriteRequest | None:
         """Apply the policy to a write, which comes first, so a refused write says so."""
         policy = self.policy
         if policy is None or is_read(method, path):
-            return
+            return None
         request = describe_write(
             method,
             path,
@@ -241,6 +260,71 @@ class Transport:
                         table=decision.table,
                     )
                 )
+        if request.action == "upsert" and table_id and policy.row_limit(table_id) is not None:
+            raise PolicyRefusedError(
+                PolicyDecision(
+                    allowed=False,
+                    verb="update",
+                    layer="rows",
+                    rule=policy._row_limit_rule(table_id),  # pyright: ignore[reportPrivateUsage]
+                    reason="The table has a row limit, and an upsert can change any record its "
+                    "key matches. Use insert(), or update() by Record ID#",
+                    table=decision.table,
+                )
+            )
+        return request
+
+    def _check_rows_reached(self, request: WriteRequest, json: Any) -> None:
+        """Refuse an update by Record ID# that names a record outside the table's row limit.
+
+        One query per hundred records asks which of them match the limit. A record someone else
+        changes between that query and the write can still slip through.
+        """
+        policy, table_id = self.policy, request.table_id
+        limit = None if policy is None or table_id is None else policy.row_limit(table_id)
+        if policy is None or table_id is None or limit is None:
+            return
+        found = _record_ids(json)
+        if found is None:
+            raise PolicyRefusedError(
+                PolicyDecision(
+                    allowed=False,
+                    verb="update",
+                    layer="rows",
+                    rule=policy._row_limit_rule(table_id),  # pyright: ignore[reportPrivateUsage]
+                    reason="Its Record ID# values can't be read, so the row limit can't be checked",
+                    table=policy._named_table(table_id),  # pyright: ignore[reportPrivateUsage]
+                )
+            )
+        named = sorted(found)
+        missing = set(named)
+        for start in range(0, len(named), _IDS_PER_CHECK):
+            chunk = named[start : start + _IDS_PER_CHECK]
+            ids = "OR".join(f"{{3.EX.{item}}}" for item in chunk)
+            body = {
+                "from": table_id,
+                "select": [3],
+                "where": f"({limit})AND({ids})",
+                "options": {"top": len(chunk)},
+            }
+            response = self._send("POST", "/records/query", None, body, None)
+            payload = parse_response(response, "POST", "/records/query")
+            for row in payload.get("data") or ():
+                missing.discard(int(row["3"]["value"]))
+        if missing:
+            shown = ", ".join(str(item) for item in sorted(missing)[:5])
+            more = f" and {len(missing) - 5} more" if len(missing) > 5 else ""
+            raise PolicyRefusedError(
+                PolicyDecision(
+                    allowed=False,
+                    verb="update",
+                    layer="rows",
+                    rule=policy._row_limit_rule(table_id),  # pyright: ignore[reportPrivateUsage]
+                    reason=f"Record ID# {shown}{more} isn't within the table's row limit, or "
+                    "doesn't exist",
+                    table=policy._named_table(table_id),  # pyright: ignore[reportPrivateUsage]
+                )
+            )
 
     def _check_read(
         self,

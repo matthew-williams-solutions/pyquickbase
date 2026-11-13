@@ -57,6 +57,9 @@ All notable changes to this project are documented here. The format follows
 - `BoundPolicy` has only the methods meant for you: `decide()`, `allows()`, `explain()`, `offers()`, `tags_of()`,
   `max_records()`, `row_limit()`, `to_json()`, and `from_json()`. The ones only the SDK used, such as `trim()` and
   `offers_for()`, are private, and a `BoundPolicy` comes only from `Policy.bind()` or `BoundPolicy.from_json()`.
+- `limit.rows()` checks the records an update names before sending it, with one query per 100 records, and refuses
+  the batch if any is outside the limit. It refuses upserts on the table, which can change any record their key
+  matches. Inserts are still unchecked.
 - A `WriteRequest` that adds lookups to an existing relationship is `create_lookup_field`, and one that adds
   summaries is `create_summary_field`, as schema plans call them. `update_relationship` now means only a
   `request()` that adds both at once, or neither. A custom rule that tested for `update_relationship` should test

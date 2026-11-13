@@ -13,9 +13,6 @@ to keep are explained in the guides, not here.
   allowed, but each one added must only read the record's own values.
 - A plan checks a table it creates against the client's policy only when it's applied, so a change to
   that table can still be refused partway through. Planning again resumes from there.
-- `limit.rows()` covers queries, summaries, and deletes, but not updates by `Record ID#`, which name a
-  record without a filter. Checking them would mean a count before each write batch, which could
-  race with another change.
 - `policy_effects` works from the bound policy, not by binding the original `Policy` against the
   schema the plan leaves, so it doesn't see a class losing its only named field. A deny rule left
   matching nothing that way isn't a blocker yet.

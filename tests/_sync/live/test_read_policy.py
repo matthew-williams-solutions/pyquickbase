@@ -21,6 +21,7 @@ from pyquickbase import (
     UnknownReportError,
     UnknownTableError,
     allow,
+    limit,
     tool_result,
 )
 from pyquickbase._bound import BoundPolicy
@@ -221,3 +222,25 @@ def test_write_only_fields_can_be_written_but_not_read(
         with pytest.raises(PolicyRefusedError, match="this client can't read"):
             tasks.create_field("Copy", "text", formula="[Notes]")
     assert "Copy" not in {field.label for field in table.fields(refresh=True)}
+
+
+def test_a_row_limit_checks_updates_and_refuses_upserts(
+    scratch: Any, table: Any, ids: dict[str, int]
+) -> None:
+    table_id = table.info().id
+    notes = allow.update(table_id, [ids["Notes"]])
+    insert = allow.insert(table_id, [ids["Notes"]])
+    rows = limit.rows(table_id, F("Status") == "Open")
+    with limited(scratch, policy(scratch, table, ids, notes, insert, rows)) as qb:
+        tasks = qb.app(scratch.app_id).table(table_id)
+        # Record 1 is Open and record 2 is Done, so only the first is within the limit.
+        result = tasks.update([{"Record ID#": 1, "Notes": "private one"}])
+        assert result.unchanged_ids == (1,)
+        with pytest.raises(PolicyRefusedError, match="Record ID# 2 isn't within"):
+            tasks.update([{"Record ID#": 1, "Notes": "x"}, {"Record ID#": 2, "Notes": "x"}])
+        with pytest.raises(PolicyRefusedError, match="an upsert can change any record"):
+            tasks.upsert([{"Notes": "private two"}], merge_on="Notes")
+    assert [record["Notes"] for record in table.query(select=["Notes"])] == [
+        "private one",
+        "private two",
+    ]
