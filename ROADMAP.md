@@ -8,11 +8,6 @@ to keep are explained in the guides, not here.
 
 - Release a candidate with schema plans and those methods, then let it run for at least a week with no code
   changes. Each new candidate restarts the week.
-- Check the formula functions a client with a policy allows, `SAFE_FUNCTIONS` in `_formula.py`,
-  against Quickbase's full function list, in its Formula Functions Reference app, which needs signing
-  in. The functions in the help's "Commonly used formula functions" were checked and added on
-  2026-11-12. A missing one is refused by name, so this only widens what's allowed, but each one added
-  must only read the record's own values.
 - A plan checks a table it creates against the client's policy only when it's applied, so a change to
   that table can still be refused partway through. Planning again resumes from there.
 - Run the full live suite against the new `Policy`. The four live tests its design asked for are in

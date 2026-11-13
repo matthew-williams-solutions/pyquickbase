@@ -87,3 +87,42 @@ def test_each_unsafe_function_is_named_once_as_written() -> None:
 )
 def test_functions_checked_against_quickbases_help_are_allowed(formula: str) -> None:
     check_formula(formula, ["Hours"])
+
+
+@pytest.mark.parametrize(
+    "formula",
+    [
+        'PadLeft(ToText([Hours]), 5, "0")',
+        'NameOfMonth(Today(), "short")',
+        "WeekOfYear(ToWeekdayN(Today()))",
+        "ToMSeconds(MSeconds([Hours]))",
+        'Join(Split("a;b", ";"), "-")',
+        'RegexExtract(ToText([Hours]), "\\\\d+")',
+        "Distance(1, 2, 3, 4) + PV(0.05, 1, [Hours])",
+    ],
+)
+def test_functions_from_quickbases_reference_are_allowed(formula: str) -> None:
+    check_formula(formula, ["Hours"])
+
+
+@pytest.mark.parametrize(
+    "function",
+    [
+        "IsUserEmail",
+        "UserToEmail",
+        "UserListToEmails",
+        "UserToID",
+        "GetFieldProperty",
+        "GetAccessKey",
+        "URLRoot",
+        "AppID",
+        "Dbid",
+        "GetRecordByUniqueField",
+        "StDev",
+        "MSecs",
+        "Truncate",
+    ],
+)
+def test_functions_that_reach_beyond_the_record_or_dont_exist_are_refused(function: str) -> None:
+    with pytest.raises(PolicyRefusedError, match=function):
+        check_formula(f"{function}(1)", [])

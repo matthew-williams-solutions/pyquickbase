@@ -56,8 +56,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- A client with a policy refuses turning on a field's `allowHTML` property, which would show a formula's result, or
+  any value written to it, as markup. `WriteRequest.allows_html` says when a write does.
 - The docs are built with Zensical instead of MkDocs and Material for MkDocs, whose maintenance ends in 2027.
-- A client with a policy can use `Sum()`, `Median()`, `ToBoolean()`, `ToUnixTime()`, and `ToWorkDate()` in formulas.
+- The formula functions a client with a policy may use were checked against Quickbase's Formula Functions Reference.
+  It can now use `Sum()`, `Median()`, `ToBoolean()`, `ToUnixTime()`, `ToWorkDate()`, `MSeconds()`, `ToMSeconds()`,
+  `MSecond()`, `NameOfMonth()`, `WeekOfYear()`, `ToWeekdayN()`, `ToWeekdayP()`, `WorkdayAdd()`, `IsLeapDay()`,
+  `IsLeapYear()`, `PadLeft()`, `PadRight()`, `Join()`, `RegexExtract()`, `RemoveNewlineCharacters()`, `HTMLToText()`,
+  `QB32Encode()`, `QB32Decode()`, `SHA256()`, `PV()`, and `Distance()`. `IsUserEmail()` is refused, as it confirms the
+  token owner's email address, which a policy hides. Seven names that aren't Quickbase functions were dropped from
+  the list.
 - `BoundPolicy` has only the methods meant for you: `decide()`, `allows()`, `explain()`, `offers()`, `tags_of()`,
   `max_records()`, `row_limit()`, `to_json()`, and `from_json()`. The ones only the SDK used, such as `trim()` and
   `offers_for()`, are private, and a `BoundPolicy` comes only from `Policy.bind()` or `BoundPolicy.from_json()`.

@@ -22,7 +22,8 @@ flowchart TD
     P -- "<code>link</code> and <code>unlink</code><br/>are granted on both" --- C
 ```
 
-A formula can't make a link or rich text (`url` or `rich-text`), as that acts as whoever clicks it.
+A formula can't make a link or rich text (`url` or `rich-text`), as that acts as whoever clicks it. For the
+same reason, no rule lets a client turn on a field's `allowHTML` property, which shows its values as markup.
 
 **Creating a table gives the client a new policy,** with the table in its `created` list, so that
 `tables.created()` covers it. `qb.policy` is always the current one, and nothing is changed in place.

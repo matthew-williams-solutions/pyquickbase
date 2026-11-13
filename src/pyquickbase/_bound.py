@@ -771,6 +771,8 @@ class BoundPolicy:
             if not decision.allowed:
                 return decision
             refused = self._field_type(request)
+            if refused is None:
+                refused = self._html(request)
             return decision if refused is None else refused
         if action == "update_field":
             if not ids:
@@ -780,7 +782,9 @@ class BoundPolicy:
             checks += [("update_field", table_id, item) for item in sorted(ids)]
             if "formula" in request.derived:
                 checks.append(("formula", table_id, None))
-            return self._all(checks)
+            decision = self._all(checks)
+            refused = self._html(request) if decision.allowed else None
+            return decision if refused is None else refused
         if action == "delete_field":
             if not ids:
                 return self._all(
@@ -813,6 +817,23 @@ class BoundPolicy:
         if not checks:
             return self._all([("lookup", table_id, None)], "It adds no lookup or summary")
         return self._all(checks)
+
+    def _html(self, request: WriteRequest) -> PolicyDecision | None:
+        """Refuse turning on `allowHTML`, which no rule can allow: a formula, or a value someone
+        writes, would then show as markup, which can act as whoever views it."""
+        if not request.allows_html:
+            return None
+        verb = "create_field" if request.action == "create_field" else "update_field"
+        return self._decision(
+            _Verdict(
+                False,
+                reason="It turns on allowHTML, so the field's values would show as markup, which "
+                "can act as whoever views them. Use a client without a policy",
+            ),
+            verb,
+            request.table_id or "",
+            list(request.field_ids or ()),
+        )
 
     def _field_type(self, request: WriteRequest) -> PolicyDecision | None:
         field_type, table_id = request.field_type, request.table_id or ""

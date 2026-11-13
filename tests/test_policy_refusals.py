@@ -496,3 +496,38 @@ def test_deleting_a_table_empties_the_tags_only_on_it() -> None:
     effects, blockers = policy._deletion_effects(TASKS, table=True)
     assert "Tag 'internal' loses Hours (8)." in effects
     assert any("every field in tag 'internal'" in item for item in blockers)
+
+
+@pytest.mark.parametrize(
+    ("properties", "expected"),
+    [
+        ({"allowHTML": True}, True),
+        ({"allowHTML": 1}, True),
+        ({"allowHTML": False}, False),
+        ({}, False),
+    ],
+)
+def test_a_field_write_says_whether_it_turns_on_html(properties: Any, expected: bool) -> None:
+    body = {"label": "Note", "fieldType": "text", "properties": properties}
+    created = describe_write("POST", "/fields", body, params={"tableId": TASKS})
+    updated = describe_write(
+        "POST", "/fields/9", {"properties": properties}, params={"tableId": TASKS}
+    )
+    assert (created.allows_html, updated.allows_html) == (expected, expected)
+
+
+def test_turning_on_html_is_refused_whatever_the_schema_grants() -> None:
+    policy = bind(
+        allow.read(TASKS),
+        allow.schema(TASKS, "create_field", "update_field", "formula"),
+    )
+    for request in (
+        write("create_field", field_type="text", allows_html=True),
+        write("create_field", field_type="text", derived=frozenset({"formula"}), allows_html=True),
+        write("update_field", field_ids=frozenset({9}), allows_html=True),
+    ):
+        decision = policy.decide(request)
+        assert not decision.allowed
+        assert "allowHTML" in decision.reason
+    assert policy.decide(write("create_field", field_type="text")).allowed
+    assert policy.decide(write("update_field", field_ids=frozenset({9}))).allowed

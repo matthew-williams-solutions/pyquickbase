@@ -45,8 +45,9 @@ Quickbase always returns the result as a string, so `"0"` would count as true in
 
 !!! warning "Don't run formula text you don't control"
 
-    A formula can read other tables with `GetRecord()` and `GetRecords()`, whichever table you run it on,
-    and can return the realm and the token owner's email. Treat formula text from users or other systems
+    A formula can read other tables with `GetRecord()`, `GetRecords()`, `GetRecordByUniqueField()`,
+    `GetFieldValues()`, and `SumValues()`, whichever table you run it on, and can return the realm with
+    `URLRoot()` and the token owner's email with `UserToEmail(User())`. Treat formula text from users or other systems
     like code. A client with a [policy](../policies/index.md) refuses
     formulas, unless it's `Policy.read_only()`.
 

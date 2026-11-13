@@ -14,10 +14,17 @@ from dataclasses import dataclass
 from ._decision import PolicyDecision
 from .errors import PolicyRefusedError
 
-# Functions that only work on the values they're given, the current user, or the date. Compared in
-# lowercase, as Quickbase doesn't mind case. Size() only counts a list it's given. Anything that
-# queries records, such as GetRecord(), GetRecords(), GetFieldValues(), and SumValues(), is left out
-# on purpose, and so are the ones that turn a user into an email address, which a policy can hide.
+# Functions that only work on the values they're given, the current user, or the date, checked
+# against Quickbase's Formula Functions Reference app on 2026-11-12, when the ones added were each
+# run live and seven names it doesn't have were removed, as Quickbase calls them unknown. Compared
+# in lowercase, as Quickbase doesn't mind case. `and`, `or`, and `not` are operators that can be
+# written like calls. Size() only counts a list it's given, and the aggregates read a record list
+# only from a query function, which is left out. Left out on purpose: the query functions,
+# GetRecord(), GetRecordByUniqueField(), GetRecords(), GetFieldValues(), SumValues(), and StDev(),
+# which read other records; UserToEmail(), UserListToEmails(), and IsUserEmail(), which reveal or
+# confirm an email address a policy can hide; UserToID() and UserListToIDs(); GetFieldProperty(),
+# which reads field settings; GetAccessKey(), which reads the page's address; and AppID(), Dbid(),
+# and URLRoot(), which describe the app and realm rather than the record.
 SAFE_FUNCTIONS = frozenset(
     name.lower()
     for name in [
@@ -38,7 +45,7 @@ SAFE_FUNCTIONS = frozenset(
         "DayOfWeek",
         "DayOfYear",
         "Days",
-        "Duration",
+        "Distance",
         "Ends",
         "Exp",
         "Find",
@@ -50,15 +57,15 @@ SAFE_FUNCTIONS = frozenset(
         "Frac",
         "Hour",
         "Hours",
+        "HTMLToText",
         "If",
-        "IfNull",
         "Includes",
         "Int",
-        "IsDigit",
-        "IsLetter",
+        "IsLeapDay",
+        "IsLeapYear",
         "IsNull",
-        "IsUserEmail",
         "IsWeekday",
+        "Join",
         "LastDayOfMonth",
         "LastDayOfPeriod",
         "LastDayOfWeek",
@@ -77,7 +84,9 @@ SAFE_FUNCTIONS = frozenset(
         "Minutes",
         "Mod",
         "Month",
-        "MSecs",
+        "MSecond",
+        "MSeconds",
+        "NameOfMonth",
         "NextDayOfWeek",
         "Not",
         "NotLeft",
@@ -85,16 +94,24 @@ SAFE_FUNCTIONS = frozenset(
         "Now",
         "Nz",
         "Or",
+        "PadLeft",
+        "PadRight",
         "Part",
         "PrevDayOfWeek",
+        "PV",
+        "QB32Decode",
+        "QB32Encode",
+        "RegexExtract",
         "RegexMatch",
         "RegexReplace",
         "Rem",
+        "RemoveNewlineCharacters",
         "Right",
         "Round",
         "SearchAndReplace",
         "Second",
         "Seconds",
+        "SHA256",
         "Size",
         "Split",
         "Sqrt",
@@ -106,7 +123,7 @@ SAFE_FUNCTIONS = frozenset(
         "ToFormattedText",
         "ToHours",
         "ToMinutes",
-        "ToMSecs",
+        "ToMSeconds",
         "ToNumber",
         "ToSeconds",
         "ToText",
@@ -115,10 +132,11 @@ SAFE_FUNCTIONS = frozenset(
         "ToUnixTime",
         "ToUser",
         "ToUserList",
+        "ToWeekdayN",
+        "ToWeekdayP",
         "ToWeeks",
         "ToWorkDate",
         "Trim",
-        "Truncate",
         "Upper",
         "URLDecode",
         "URLEncode",
@@ -128,7 +146,9 @@ SAFE_FUNCTIONS = frozenset(
         "UserToName",
         "WeekdayAdd",
         "WeekdaySub",
+        "WeekOfYear",
         "Weeks",
+        "WorkdayAdd",
         "Year",
     ]
 )

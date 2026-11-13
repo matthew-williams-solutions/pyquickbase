@@ -105,6 +105,8 @@ class WriteRequest:
         field_type: For `create_field`, the new field's type, such as `text`.
         derived: The formula, lookup, and summary fields it makes or changes, which read other
             fields. A summary is made on the parent table.
+        allows_html: For `create_field` and `update_field`, whether it turns on the field's
+            `allowHTML` setting, so that its values show as markup.
     """
 
     action: WriteAction
@@ -117,6 +119,7 @@ class WriteRequest:
     parent_table_id: str | None = None
     field_type: str | None = None
     derived: frozenset[DerivedKind] = frozenset()
+    allows_html: bool = False
 
 
 def _describe_rows(path: str, body: Mapping[str, Any], key_field_id: int | None) -> WriteRequest:
@@ -256,6 +259,14 @@ def _text(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _html_in(body: Mapping[str, Any]) -> bool:
+    """Whether a field's body turns on `allowHTML`. Anything but an explicit false counts."""
+    properties = body.get("properties")
+    if not isinstance(properties, Mapping) or "allowHTML" not in properties:
+        return False
+    return cast(Mapping[str, Any], properties)["allowHTML"] is not False
+
+
 def _formula_in(body: Mapping[str, Any]) -> frozenset[DerivedKind]:
     """A formula, if a field's body sets one, which even an empty one does."""
     properties = body.get("properties")
@@ -305,6 +316,7 @@ def _describe_schema(
         parent_table_id: str | None = None,
         field_type: str | None = None,
         derived: frozenset[DerivedKind] = frozenset(),
+        allows_html: bool = False,
     ) -> WriteRequest:
         return WriteRequest(
             action=action,
@@ -317,6 +329,7 @@ def _describe_schema(
             parent_table_id=parent_table_id,
             field_type=field_type,
             derived=derived,
+            allows_html=allows_html,
         )
 
     data = cast(Mapping[str, Any], body) if isinstance(body, Mapping) else None
@@ -332,6 +345,7 @@ def _describe_schema(
             table_id=table_param,
             field_type=_text(data.get("fieldType")),
             derived=_formula_in(data),
+            allows_html=_html_in(data),
         )
     if (found := _FIELD_PATH.fullmatch(path)) and method == "POST" and data is not None:
         return schema(
@@ -339,6 +353,7 @@ def _describe_schema(
             table_id=table_param,
             field_ids=frozenset({int(found[1])}),
             derived=_formula_in(data),
+            allows_html=_html_in(data),
         )
     if path == "/fields" and method == "DELETE" and data is not None:
         return schema("delete_field", table_id=table_param, field_ids=_id_set(data.get("fieldIds")))
