@@ -107,7 +107,7 @@ def operation_schema(name: str, policy: "BoundPolicy | None") -> dict[str, Any]:
         ConfigurationError: The client's policy doesn't allow what the operation does.
     """
     verb = "write_code_pages" if name in _WRITES else "read_code_pages"
-    if policy is not None and not policy.can_use_code_pages(verb):
+    if policy is not None and not policy._can_use_code_pages(verb):  # pyright: ignore[reportPrivateUsage]
         raise ConfigurationError(
             f"This client can't offer {name}: its policy doesn't allow "
             f"{'allow.code_pages(write=True)' if name in _WRITES else 'allow.code_pages()'}."

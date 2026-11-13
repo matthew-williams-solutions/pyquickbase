@@ -234,8 +234,29 @@ class BoundPolicy:
         "app_id",
     )
 
-    def __init__(
-        self,
+    app_id: str | None
+    _offline: bool
+    _tables: dict[str, str]
+    _fields: dict[str, dict[int, str]]
+    _field_types: dict[str, dict[int, str]]
+    _tags: dict[str, dict[int, frozenset[str]]]
+    _rules: tuple[_Rule, ...]
+    _custom: tuple[CustomRule, ...]
+    _rows: dict[str, tuple[str, str]]
+    _row_fields: dict[str, frozenset[int]]
+    _links: tuple[_Link, ...]
+    _reports: dict[str, dict[str, tuple[str, str]]]
+    _new_fields: str
+    _created: tuple[tuple[str, str], ...]
+    _open_reads: bool
+    _cache: dict[tuple[str, str, int | None], _Verdict]
+
+    def __init__(self) -> None:
+        raise TypeError("Create a BoundPolicy with Policy.bind() or BoundPolicy.from_json().")
+
+    @classmethod
+    def _create(
+        cls,
         *,
         app_id: str | None,
         offline: bool,
@@ -251,7 +272,8 @@ class BoundPolicy:
         reports: Mapping[str, Mapping[str, tuple[str, str]]],
         new_fields: str,
         created: Sequence[tuple[str, str]] = (),
-    ) -> None:
+    ) -> "BoundPolicy":
+        self = object.__new__(cls)
         self.app_id = app_id
         self._offline = offline
         self._tables = dict(tables)
@@ -274,7 +296,8 @@ class BoundPolicy:
             and any("run_formula" in grant.verbs for grant in item.grants)
             for item in self._rules
         )
-        self._cache: dict[tuple[str, str, int | None], _Verdict] = {}
+        self._cache = {}
+        return self
 
     # Names
 
@@ -593,7 +616,7 @@ class BoundPolicy:
         if action == "formula":
             return self._all([("run_formula", table_id, None)])
         if action in ("fields", "relationships", "reports", "field_usage"):
-            if self.table_visible(table_id):
+            if self._table_visible(table_id):
                 return PolicyDecision(
                     allowed=True, verb="read", table=self._named_table(table_id), reason="Allowed"
                 )
@@ -623,7 +646,7 @@ class BoundPolicy:
                 return decision
             if action == "summarize":
                 window = self._window(
-                    request, self.max_summary_records(table_id), "max_records_scanned"
+                    request, self._max_summary_records(table_id), "max_records_scanned"
                 )
             else:
                 window = self._window(request, self.max_records(table_id), "max_paging_depth")
@@ -809,7 +832,7 @@ class BoundPolicy:
                 "formula",
                 table_id,
             )
-        allowed = self.field_types(table_id)
+        allowed = self._creatable_types(table_id)
         if allowed is not None and field_type not in allowed:
             return self._decision(
                 _Verdict(
@@ -955,17 +978,17 @@ class BoundPolicy:
             lines.append(f"Tags: {', '.join(tags)}.")
         return "\n".join(lines)
 
-    def readable(self, table_id: str, field_id: int) -> bool:
+    def _readable(self, table_id: str, field_id: int) -> bool:
         return self._check("read", table_id, field_id).allowed
 
-    def filterable(self, table_id: str, field_id: int) -> bool:
+    def _filterable(self, table_id: str, field_id: int) -> bool:
         return self._check("filter", table_id, field_id).allowed
 
-    def visible(self, table_id: str, field_id: int) -> bool:
+    def _visible(self, table_id: str, field_id: int) -> bool:
         """Whether a field can be named. A hidden one acts as if it didn't exist."""
         return any(self._check(verb, table_id, field_id).allowed for verb in _SEEN_VERBS)
 
-    def new_field_effects(
+    def _new_field_effects(
         self, table_id: str, sources: Sequence[tuple[str, int]] | None = ()
     ) -> tuple[str, ...]:
         """What the policy would do with a field a plan adds, which reads `sources`, or every
@@ -999,7 +1022,7 @@ class BoundPolicy:
                     found.append(f"{rule.text} then hides it.")
         return tuple(found)
 
-    def deletion_effects(
+    def _deletion_effects(
         self, table_id: str, field_ids: Sequence[int] = (), *, table: bool = False
     ) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """Which rules lose what a plan deletes, and the blockers for any rule it leaves matching
@@ -1037,16 +1060,16 @@ class BoundPolicy:
                     blockers.append(_nothing_left(rule.text, labels))
         return tuple(dict.fromkeys(effects)), tuple(dict.fromkeys(blockers))
 
-    def hidden_labels(self, table_id: str) -> frozenset[str]:
+    def _hidden_labels(self, table_id: str) -> frozenset[str]:
         """The policy's names-only view: the labels, ignoring case, of a table's fields that the
         client can't see, as they were when it was bound. Nothing else about them is kept."""
         return frozenset(
             label.casefold()
             for field_id, label in self._fields.get(table_id, {}).items()
-            if not self.visible(table_id, field_id)
+            if not self._visible(table_id, field_id)
         )
 
-    def table_visible(self, table_id: str) -> bool:
+    def _table_visible(self, table_id: str) -> bool:
         """Whether a table can be named: something in it, or on it, is allowed."""
         if not self._known_table(table_id):
             return False
@@ -1072,7 +1095,7 @@ class BoundPolicy:
                 rule.effect == "allow" and self._rule_has_table(rule, table_id)
                 for rule in self._rules
             )
-        return any(self.visible(table_id, item) for item in known)
+        return any(self._visible(table_id, item) for item in known)
 
     def _limits(self, table_id: str, name: str, verb: str = "read") -> list[int | None]:
         return [
@@ -1092,24 +1115,24 @@ class BoundPolicy:
         found = self._limits(table_id, "max_records")
         return None if not found or None in found else max(cast(list[int], found))
 
-    def max_summary_records(self, table_id: str) -> int | None:
+    def _max_summary_records(self, table_id: str) -> int | None:
         """The most records `summarize()` may read from a table, or None for no limit."""
         found = self._limits(table_id, "max_summary_records")
         return None if not found or None in found else max(cast(list[int], found))
 
-    def max_delete(self, table_id: str) -> int | None:
+    def _max_delete(self, table_id: str) -> int | None:
         """The most records one delete may remove, or None for no limit."""
         found = self._limits(table_id, "max_delete", "delete")
         return None if not found or None in found else max(cast(list[int], found))
 
-    def user_emails(self, table_id: str) -> bool:
+    def _user_emails(self, table_id: str) -> bool:
         return any(
             rule.user_emails
             for rule in self._rules
             if rule.effect == "allow" and self._rule_has_table(rule, table_id)
         )
 
-    def field_types(self, table_id: str) -> frozenset[str] | None:
+    def _creatable_types(self, table_id: str) -> frozenset[str] | None:
         """The types `create_field` may create in a table, or None for any."""
         found: set[str] = set()
         for rule in self._rules:
@@ -1130,12 +1153,12 @@ class BoundPolicy:
         found = self._rows.get(table_id)
         return None if found is None else found[0]
 
-    def row_limit_rule(self, table_id: str) -> str | None:
+    def _row_limit_rule(self, table_id: str) -> str | None:
         found = self._rows.get(table_id)
         return None if found is None else found[1]
 
-    def emails_shown(self, table_id: str) -> bool:
-        return self.user_emails(table_id)
+    def _emails_shown(self, table_id: str) -> bool:
+        return self._user_emails(table_id)
 
     def offers(self, table: str) -> PolicyOffers[NamedItem]:
         """What the policy allows on a table, by field, as an operation's schema offers it.
@@ -1166,7 +1189,7 @@ class BoundPolicy:
         types = {
             report_id: kind for report_id, (_, kind) in self._reports.get(table_id, {}).items()
         }
-        return self.offers_for(
+        return self._offers_for(
             table_id,
             items,
             lambda item: int(item.id),
@@ -1174,7 +1197,7 @@ class BoundPolicy:
             lambda item: (str(item.id), types.get(str(item.id), "table")),
         )
 
-    def offers_for(
+    def _offers_for(
         self,
         table_id: str,
         items: Sequence[tuple[T, str]],
@@ -1259,14 +1282,16 @@ class BoundPolicy:
             can_delete=can_delete,
             reports=tuple(offered_reports),
             schema_verbs=schema,
-            field_types=self.field_types(table_id) if "create_field" in schema else frozenset(),
+            field_types=self._creatable_types(table_id)
+            if "create_field" in schema
+            else frozenset(),
             max_paging_depth=self.max_records(table_id),
-            max_records_scanned=self.max_summary_records(table_id),
-            max_records_per_delete=self.max_delete(table_id),
-            user_emails=self.user_emails(table_id),
+            max_records_scanned=self._max_summary_records(table_id),
+            max_records_per_delete=self._max_delete(table_id),
+            user_emails=self._user_emails(table_id),
             row_limit=self.row_limit(table_id),
-            can_read_code_pages=self.can_use_code_pages("read_code_pages"),
-            can_write_code_pages=self.can_use_code_pages("write_code_pages"),
+            can_read_code_pages=self._can_use_code_pages("read_code_pages"),
+            can_write_code_pages=self._can_use_code_pages("write_code_pages"),
         )
 
     def _schema_ok(self, verb: str, table_id: str) -> bool:
@@ -1283,7 +1308,7 @@ class BoundPolicy:
             return any(self._check(verb, table_id, item).allowed for item in known)
         return self._check(verb, table_id, None).allowed
 
-    def schema_tables(self) -> list[NamedItem]:
+    def _schema_tables(self) -> list[NamedItem]:
         """The tables any schema verb is allowed on."""
         return [
             NamedItem(table_id, name)
@@ -1291,23 +1316,23 @@ class BoundPolicy:
             if any(self._schema_ok(verb, table_id) for verb in _SCHEMA_TABLE_VERBS)
         ]
 
-    def can_create_tables(self, app_id: str) -> bool:
+    def _can_create_tables(self, app_id: str) -> bool:
         return self._app_check(app_id).allowed
 
-    def can_use_code_pages(self, verb: str) -> bool:
+    def _can_use_code_pages(self, verb: str) -> bool:
         """Whether a code page verb is allowed in the app this policy is bound to."""
         return self._app_check(self.app_id, verb).allowed
 
-    def with_created(self, table_id: str, name: str) -> "BoundPolicy":
+    def _with_created(self, table_id: str, name: str) -> "BoundPolicy":
         """A copy that knows a table this client just created."""
         state = self._state()
         state["created"] = [*state["created"], [table_id, name]]
         return BoundPolicy._from_state(state, self._custom)
 
     @property
-    def created_offers(self) -> frozenset[str]:
+    def _created_offers(self) -> frozenset[str]:
         """The schema verbs a table this client creates would get."""
-        probe = self.with_created("\x00new", "new table")
+        probe = self._with_created("\x00new", "new table")
         return frozenset(
             verb
             for verb in _SCHEMA_TABLE_VERBS
@@ -1316,7 +1341,9 @@ class BoundPolicy:
 
     # Trimming
 
-    def trim(self, request: ReadRequest | None, method: str, path: str, payload: Any) -> Any:
+    def _trim_response(
+        self, request: ReadRequest | None, method: str, path: str, payload: Any
+    ) -> Any:
         """Leave out of a response what the policy hides. A response of the wrong shape raises
         `InvalidResponseError`, rather than passing through unchecked."""
         if request is None:
@@ -1333,17 +1360,17 @@ class BoundPolicy:
     def _trim(self, request: ReadRequest, payload: Any) -> Any:
         action, table_id = request.action, request.table_id or ""
         if action == "tables":
-            return [pick(item, TABLE_KEYS) for item in payload if self.table_visible(item["id"])]
+            return [pick(item, TABLE_KEYS) for item in payload if self._table_visible(item["id"])]
         if action == "fields":
             readable = [
                 (item["label"], item["id"])
                 for item in payload
-                if self.readable(table_id, item["id"])
+                if self._readable(table_id, item["id"])
             ]
             return [
                 self._trim_field(table_id, item, readable)
                 for item in payload
-                if self.visible(table_id, item["id"])
+                if self._visible(table_id, item["id"])
             ]
         if action == "field_usage":
             return [
@@ -1356,14 +1383,14 @@ class BoundPolicy:
                     },
                 }
                 for item in payload
-                if self.visible(table_id, item["field"]["id"])
+                if self._visible(table_id, item["field"]["id"])
             ]
         if action == "app_triggers":
             # Owners are people, and the SDK doesn't need them to say what may run.
             return [
                 pick(item, EVENT_KEYS)
                 for item in payload
-                if isinstance(item.get("tableId"), str) and self.table_visible(item["tableId"])
+                if isinstance(item.get("tableId"), str) and self._table_visible(item["tableId"])
             ]
         if action == "reports":
             return [
@@ -1388,7 +1415,7 @@ class BoundPolicy:
         kept = pick(item, FIELD_KEYS)
         # A field that can't be returned mustn't be selected by default, or every default query
         # fails.
-        if not self.readable(table_id, item["id"]):
+        if not self._readable(table_id, item["id"]):
             kept["appearsByDefault"] = False
         properties = item.get("properties")
         if isinstance(properties, Mapping):
@@ -1418,24 +1445,24 @@ class BoundPolicy:
         used = where_field_ids(query)
         if child is None or used is None:
             return False
-        return all(self.readable(child, item) for item in used)
+        return all(self._readable(child, item) for item in used)
 
     def _trim_link(self, item: Mapping[str, Any]) -> dict[str, Any]:
         """Keep each relationship, so paging by count still works, but only its visible fields."""
         child, parent = item["childTableId"], item["parentTableId"]
         kept: dict[str, Any] = pick(item, ("id", "parentTableId", "childTableId", "isCrossApp"))
         key = item.get("foreignKeyField")
-        if key and self.visible(child, key["id"]):
+        if key and self._visible(child, key["id"]):
             kept["foreignKeyField"] = pick(key, ("id", "label"))
         kept["lookupFields"] = [
             pick(found, ("id", "label"))
             for found in item.get("lookupFields") or ()
-            if self.visible(child, found["id"])
+            if self._visible(child, found["id"])
         ]
         kept["summaryFields"] = [
             pick(found, ("id", "label"))
             for found in item.get("summaryFields") or ()
-            if self._known_table(parent) and self.visible(parent, found["id"])
+            if self._known_table(parent) and self._visible(parent, found["id"])
         ]
         return kept
 
@@ -1445,9 +1472,9 @@ class BoundPolicy:
         keep = {
             int(item["id"])
             for item in payload["fields"]
-            if keep_all or self.readable(table_id, int(item["id"]))
+            if keep_all or self._readable(table_id, int(item["id"]))
         }
-        emails = self.user_emails(table_id)
+        emails = self._user_emails(table_id)
         return {
             **payload,
             "fields": [pick(item, COLUMN_KEYS) for item in payload["fields"] if item["id"] in keep],
@@ -1542,7 +1569,7 @@ class BoundPolicy:
 
     @classmethod
     def _from_state(cls, state: Mapping[str, Any], custom: Sequence[CustomRule]) -> "BoundPolicy":
-        return cls(
+        return cls._create(
             app_id=state["app_id"],
             offline=bool(state["offline"]),
             tables=dict(state["tables"]),
@@ -2018,7 +2045,7 @@ def bind_snapshot(policy: Policy, snapshot: Snapshot) -> BoundPolicy:
             f"{snapshot.app_id}:\n" + "\n".join(f"- {item}" for item in binder.problems)
         )
     tags = _carry(seed, snapshot.fields, links)
-    return BoundPolicy(
+    return BoundPolicy._create(  # pyright: ignore[reportPrivateUsage]
         app_id=snapshot.app_id,
         offline=False,
         tables={item.id: item.name for item in snapshot.tables},
@@ -2101,7 +2128,7 @@ def bind_offline(policy: Policy) -> BoundPolicy:
         )
     binder = _Binder(policy, None)
     rules, custom, _ = _bind_rules(policy, binder)
-    return BoundPolicy(
+    return BoundPolicy._create(  # pyright: ignore[reportPrivateUsage]
         app_id=policy.app_id,
         offline=True,
         tables={},

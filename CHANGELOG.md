@@ -54,6 +54,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- `BoundPolicy` has only the methods meant for you: `decide()`, `allows()`, `explain()`, `offers()`, `tags_of()`,
+  `max_records()`, `row_limit()`, `to_json()`, and `from_json()`. The ones only the SDK used, such as `trim()` and
+  `offers_for()`, are private, and a `BoundPolicy` comes only from `Policy.bind()` or `BoundPolicy.from_json()`.
 - `app.roles()` and `app.info()` work for any role. When Quickbase refuses them, the SDK asks its XML API, at the
   cost of one more request.
 - A client with any policy, including `Policy.read_only()`, is refused the new reads about apps and people.

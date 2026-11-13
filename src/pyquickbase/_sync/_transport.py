@@ -104,7 +104,7 @@ class Transport:
         response = self._send(method, path, params, json, timeout)
         payload = parse_response(response, method, path)
         if self.policy is not None:
-            payload = self.policy.trim(read, method, path, payload)
+            payload = self.policy._trim_response(read, method, path, payload)  # pyright: ignore[reportPrivateUsage]
         return payload
 
     @property
@@ -119,7 +119,7 @@ class Transport:
 
     def summary_limit(self, table_id: str) -> int | None:
         """The most records the policy lets `summarize()` read from a table, if any."""
-        return None if self.policy is None else self.policy.max_summary_records(table_id)
+        return None if self.policy is None else self.policy._max_summary_records(table_id)  # pyright: ignore[reportPrivateUsage]
 
     def record_limit(self, table_id: str) -> int | None:
         """The most records the policy lets one query reach in a table, if any."""
@@ -127,7 +127,7 @@ class Transport:
 
     def delete_limit(self, table_id: str) -> int | None:
         """The most records the policy lets one delete remove from a table, if any."""
-        return None if self.policy is None else self.policy.max_delete(table_id)
+        return None if self.policy is None else self.policy._max_delete(table_id)  # pyright: ignore[reportPrivateUsage]
 
     def check_write(
         self,
@@ -156,7 +156,7 @@ class Transport:
     def table_created(self, table_id: str, name: str) -> None:
         """Give the client a new policy that knows the table it just created."""
         if self.policy is not None:
-            self.policy = self.policy.with_created(table_id, name)
+            self.policy = self.policy._with_created(table_id, name)  # pyright: ignore[reportPrivateUsage]
 
     def _limit_rows(self, method: str, path: str, json: Any) -> Any:
         """AND the policy's row limit onto a query or delete."""
@@ -181,7 +181,7 @@ class Transport:
                     allowed=False,
                     verb="delete" if method == "DELETE" else "read",
                     layer="rows",
-                    rule=self.policy.row_limit_rule(cast(str, table_id)),
+                    rule=self.policy._row_limit_rule(cast(str, table_id)),  # pyright: ignore[reportPrivateUsage]
                     reason="Its filter can't be read, so the row limit can't be added to it",
                     table=self.policy._named_table(cast(str, table_id)),  # pyright: ignore[reportPrivateUsage]
                 )
@@ -229,7 +229,7 @@ class Transport:
             raise PolicyRefusedError(decision)
         table_id = request.table_id
         if request.action == "delete" and table_id and not counted:
-            most = policy.max_delete(table_id)
+            most = policy._max_delete(table_id)  # pyright: ignore[reportPrivateUsage]
             if most is not None:
                 raise PolicyRefusedError(
                     PolicyDecision(

@@ -24,9 +24,6 @@ to keep are explained in the guides, not here.
   them `create_lookup_field` and `create_summary_field`. Giving `WriteAction` those values means
   deciding what a request that adds both is called, changing the checks in `_bound.py`, and breaking
   custom rules that test for `update_relationship`.
-- `BoundPolicy` has public methods that only the SDK uses, such as `trim()` and `offers_for()`, and a
-  public constructor. Move them behind a private interface, so the public API is only `decide()`,
-  `allows()`, `explain()`, `offers()`, and saving.
 - Run the live tests against the new `Policy`, and add the ones the design asks for: a hidden label
   collision, a summary over a row-limited table, a lookup with only read access on the parent, and a
   created table after `from_json()`.

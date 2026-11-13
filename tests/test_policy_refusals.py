@@ -142,13 +142,13 @@ def test_explain_names_the_row_limit_and_tags() -> None:
 
 def test_what_a_plan_says_about_a_new_field() -> None:
     hidden = bind(allow.read(TASKS), new_fields="hidden")
-    assert hidden.new_field_effects(TASKS)[0].startswith("It's hidden, as new_fields is 'hidden'")
+    assert hidden._new_field_effects(TASKS)[0].startswith("It's hidden, as new_fields is 'hidden'")
     named = bind(READS_TITLE)
     assert (
-        named.new_field_effects(TASKS)[0]
+        named._new_field_effects(TASKS)[0]
         == "No rule reads it, so it's hidden until a rule names it."
     )
-    assert bind(allow.read(TASKS)).new_field_effects("bqmade") == (
+    assert bind(allow.read(TASKS))._new_field_effects("bqmade") == (
         "bqmade is new, so its fields follow the rules for tables.created().",
     )
 
@@ -163,12 +163,12 @@ def test_an_offline_policy_treats_any_table_as_a_name() -> None:
 
 
 def test_a_new_table_gets_the_offers_for_created_tables() -> None:
-    assert "create_field" in bind(allow.schema(tables.created(), "create_field")).created_offers
-    assert not bind(allow.schema(TASKS, "create_field")).created_offers
+    assert "create_field" in bind(allow.schema(tables.created(), "create_field"))._created_offers
+    assert not bind(allow.schema(TASKS, "create_field"))._created_offers
 
 
 def test_tables_with_a_schema_grant_are_listed() -> None:
-    listed = bind(allow.schema(TASKS, "create_field")).schema_tables()
+    listed = bind(allow.schema(TASKS, "create_field"))._schema_tables()
     assert [item.id for item in listed] == [TASKS]
 
 
@@ -274,11 +274,11 @@ def test_a_summary_whose_filter_cant_be_read_counts_as_reading_every_child_field
     links = [link(9, NOTES, TASKS, 12)]
     tags = {"pay": [("Tasks", "Hours")]}
     open_ = bind(allow.read(tables.all()), tables=data, relationships=links, tags=tags)
-    assert open_.readable(NOTES, 30)
+    assert open_._readable(NOTES, 30)
     denied = deny.read(tables.all(), fields.tagged("pay"))
     closed = bind(allow.read(tables.all()), denied, tables=data, relationships=links, tags=tags)
     assert "pay" in closed.tags_of(NOTES, 30)
-    assert not closed.readable(NOTES, 30)
+    assert not closed._readable(NOTES, 30)
 
 
 @pytest.mark.parametrize(
@@ -298,7 +298,7 @@ def test_a_summarys_filter_is_only_shown_when_its_fields_are_readable(
         tables=data,
         relationships=[link(9, NOTES, TASKS, 12)],
     )
-    trimmed = policy.trim(read("fields", NOTES), "GET", "/fields", [item])
+    trimmed = policy._trim_response(read("fields", NOTES), "GET", "/fields", [item])
     assert ("summaryQuery" in trimmed[0]["properties"]) is shown
 
 
@@ -314,7 +314,7 @@ def test_an_offline_policy_answers_by_name() -> None:
 
 
 def test_a_table_made_after_binding_has_no_known_fields() -> None:
-    made = bind(allow.read(tables.all())).with_created("bqmade", "Made")
+    made = bind(allow.read(tables.all()))._with_created("bqmade", "Made")
     with pytest.raises(ConfigurationError, match="doesn't know 'Made'"):
         made.offers("Made")
 
@@ -326,7 +326,7 @@ def test_a_rule_without_a_report_grant_doesnt_stop_one_with_it() -> None:
 
 def test_a_row_limit_isnt_counted_among_what_a_deletion_changes() -> None:
     policy = bind(allow.read(TASKS, [6]), limit.rows(TASKS, F("Status") == "x"))
-    effects, blockers = policy.deletion_effects(TASKS, [6])
+    effects, blockers = policy._deletion_effects(TASKS, [6])
     assert effects == (f"allow.read({TASKS!r}, [6]) loses Title (6).",)
     assert len(blockers) == 1
 
@@ -343,7 +343,7 @@ def test_a_query_cell_holding_other_details_is_left_alone() -> None:
         "metadata": {"totalRecords": 1, "skip": 0},
     }
     request_ = query("{6.EX.'x'}", 6)
-    trimmed = policy.trim(request_, "POST", "/records/query", payload)
+    trimmed = policy._trim_response(request_, "POST", "/records/query", payload)
     assert trimmed["data"] == [{"6": {"value": {"a": 1}}}]
 
 
@@ -410,26 +410,26 @@ def test_deleting_a_field_is_not_a_loss_for_a_row_limit() -> None:
         limit.rows(NOTES, F("Kind") == "Public"),
         relationships=[link(9, NOTES, TASKS, 12, lookups=[6])],
     )
-    effects, blockers = policy.deletion_effects(TASKS, [6])
+    effects, blockers = policy._deletion_effects(TASKS, [6])
     assert not [item for item in (*effects, *blockers) if "limit.rows" in item]
 
 
 def test_every_field_denied_leaves_nothing_in_the_table() -> None:
     every = [item["id"] for item in TASK_FIELDS]
     policy = bind(deny.read(TASKS, every), allow.read(TASKS, fields.all()))
-    assert not policy.table_visible(TASKS)
+    assert not policy._table_visible(TASKS)
     decision = policy.decide(read("fields"))
     assert decision.reason == "Nothing in the table is allowed"
     assert decision.hint == 'add its fields to an allow.read("Tasks", ...) rule'
 
 
 def test_without_a_binding_a_table_is_visible_if_anything_can_be_read() -> None:
-    assert Policy(rules=[allow.read(tables.all())]).bind_offline().table_visible(TASKS)
-    assert not Policy(rules=[]).bind_offline().table_visible(TASKS)
+    assert Policy(rules=[allow.read(tables.all())]).bind_offline()._table_visible(TASKS)
+    assert not Policy(rules=[]).bind_offline()._table_visible(TASKS)
 
 
 def test_reports_are_offered_only_with_a_way_to_identify_them() -> None:
-    offers = bind(READS_TITLE).offers_for(TASKS, [("Title", "text")], lambda _: 6, reports=["x"])
+    offers = bind(READS_TITLE)._offers_for(TASKS, [("Title", "text")], lambda _: 6, reports=["x"])
     assert offers.reports == ()
     assert offers.readable == ("Title",)
 

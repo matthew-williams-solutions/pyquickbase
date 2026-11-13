@@ -188,38 +188,19 @@ class BadRequestError(APIError)
     def __init__(self, summary: str, *, status_code: int = 0, method: str = '', path: str = '', message: str | None = None, description: str | None = None, request_id: str | None = None, quickbase_code: int | None = None) -> None
 class BoundPolicy(object)
     def __eq__(self, other: object) -> bool
-    def __init__(self, *, app_id: str | None, offline: bool, tables: Mapping[str, str], fields: Mapping[str, Mapping[int, str]], field_types: Mapping[str, Mapping[int, str]], tags: Mapping[str, Mapping[int, frozenset[str]]], rules: Sequence[pyquickbase._bound._Rule], custom: Sequence[CustomRule], rows: Mapping[str, tuple[str, str]], row_fields: Mapping[str, frozenset[int]], links: Sequence[pyquickbase._bound._Link], reports: Mapping[str, Mapping[str, tuple[str, str]]], new_fields: str, created: Sequence[tuple[str, str]] = ()) -> None
+    def __init__(self) -> None
     def allows(self, verb: Literal['read', 'filter', 'sort', 'insert', 'update', 'delete', 'download', 'delete_file', 'report', 'run_formula', 'create_field', 'update_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'update_table', 'delete_table', 'set_key_field', 'create_tables', 'read_code_pages', 'write_code_pages'], table: str, *, field: str | int | None = None, fields: Sequence[str | int] = (), source: tuple[str, str | int] | None = None) -> PolicyDecision
-    def can_create_tables(self, app_id: str) -> bool
-    def can_use_code_pages(self, verb: str) -> bool
+    field app_id: str | None
     property created -> tuple[str, ...]
-    property created_offers -> frozenset[str]
     def decide(self, request: ReadRequest | WriteRequest) -> PolicyDecision
-    def deletion_effects(self, table_id: str, field_ids: Sequence[int] = (), *, table: bool = False) -> tuple[tuple[str, ...], tuple[str, ...]]
-    def emails_shown(self, table_id: str) -> bool
     def explain(self, verb: Literal['read', 'filter', 'sort', 'insert', 'update', 'delete', 'download', 'delete_file', 'report', 'run_formula', 'create_field', 'update_field', 'delete_field', 'formula', 'lookup', 'summary', 'link', 'unlink', 'update_table', 'delete_table', 'set_key_field', 'create_tables', 'read_code_pages', 'write_code_pages'], table: str, *, field: str | int | None = None, fields: Sequence[str | int] = (), source: tuple[str, str | int] | None = None) -> str
-    def field_types(self, table_id: str) -> frozenset[str] | None
-    def filterable(self, table_id: str, field_id: int) -> bool
     classmethod def from_json(cls, text: str, *, rules: Sequence[CustomRule] = ()) -> 'BoundPolicy'
     property hash -> str
-    def hidden_labels(self, table_id: str) -> frozenset[str]
-    def max_delete(self, table_id: str) -> int | None
     def max_records(self, table_id: str) -> int | None
-    def max_summary_records(self, table_id: str) -> int | None
-    def new_field_effects(self, table_id: str, sources: Sequence[tuple[str, int]] | None = ()) -> tuple[str, ...]
     def offers(self, table: str) -> PolicyOffers[NamedItem]
-    def offers_for(self, table_id: str, items: Sequence[tuple[~T, str]], field_id: Callable[[~T], int], reports: Sequence[Any] = (), report_key: Callable[[Any], tuple[str, str]] | None = None) -> PolicyOffers[~T]
-    def readable(self, table_id: str, field_id: int) -> bool
     def row_limit(self, table_id: str) -> str | None
-    def row_limit_rule(self, table_id: str) -> str | None
-    def schema_tables(self) -> list[NamedItem]
-    def table_visible(self, table_id: str) -> bool
     def tags_of(self, table_id: str, field_id: int) -> frozenset[str]
     def to_json(self) -> str
-    def trim(self, request: ReadRequest | None, method: str, path: str, payload: Any) -> Any
-    def user_emails(self, table_id: str) -> bool
-    def visible(self, table_id: str, field_id: int) -> bool
-    def with_created(self, table_id: str, name: str) -> 'BoundPolicy'
 value ChangeRisk = Literal['additive', 'modifying', 'destructive']
 class CodePage(object)
     def __init__(self, transport: Transport, app_id: str, ref: str | int) -> None

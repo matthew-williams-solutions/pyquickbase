@@ -122,13 +122,13 @@ def test_a_formula_that_reads_other_records_counts_as_reading_the_whole_app() ->
 
 def test_denying_a_class_hides_everything_derived_from_it() -> None:
     policy = app(allow.read(tables.all()), deny.all(fields.tagged("pay")), tags=PAY_CLASS)
-    hidden = [fid for fid in (20, 21, 22, 23, 25, 26, 27) if not policy.visible(TASKS, fid)]
+    hidden = [fid for fid in (20, 21, 22, 23, 25, 26, 27) if not policy._visible(TASKS, fid)]
     assert hidden == [20, 21, 22, 23, 25, 26, 27]
-    assert policy.visible(TASKS, 29)
-    assert not policy.visible(NOTES, 30)
-    assert not policy.visible(NOTES, 31)
-    assert policy.visible(NOTES, 32)
-    assert policy.hidden_labels(TASKS) >= {"rate", "cost", "broken"}
+    assert policy._visible(TASKS, 29)
+    assert not policy._visible(NOTES, 30)
+    assert not policy._visible(NOTES, 31)
+    assert policy._visible(NOTES, 32)
+    assert policy._hidden_labels(TASKS) >= {"rate", "cost", "broken"}
 
 
 def test_classes_can_be_matched_by_label_pattern_across_tables() -> None:
@@ -179,21 +179,21 @@ def test_a_new_field_is_read_only_by_default() -> None:
 
 def test_a_new_field_can_be_hidden_or_given_a_class() -> None:
     hidden = app(allow.read(TASKS), new_fields="hidden")
-    assert not hidden.visible(TASKS, 99)
+    assert not hidden._visible(TASKS, 99)
     tagged = app(
         allow.read(TASKS),
         deny.read(TASKS, fields.tagged("unreviewed")),
         tags={"unreviewed": [("Tasks", "Title")]},
         new_fields="unreviewed",
     )
-    assert not tagged.visible(TASKS, 99)
+    assert not tagged._visible(TASKS, 99)
     assert tags_of(tagged, TASKS, 99) == {"unreviewed"}
 
 
 def test_fields_new_matches_only_fields_added_later() -> None:
     policy = app(allow.read(TASKS, fields.new()))
-    assert policy.readable(TASKS, 99)
-    assert not policy.readable(TASKS, 6)
+    assert policy._readable(TASKS, 99)
+    assert not policy._readable(TASKS, 6)
 
 
 # Row limits
@@ -202,9 +202,9 @@ def test_fields_new_matches_only_fields_added_later() -> None:
 def test_a_summary_of_a_row_limited_child_without_the_limit_is_hidden() -> None:
     policy = app(allow.read(tables.all()), limit.rows(TASKS, F("Rate") > 5))
     assert policy.row_limit(TASKS) == "{20.GT.'5'}"
-    assert not policy.visible(NOTES, 30)
-    assert not policy.visible(NOTES, 32)
-    assert policy.visible(NOTES, 31), "its filter holds the limit"
+    assert not policy._visible(NOTES, 30)
+    assert not policy._visible(NOTES, 32)
+    assert policy._visible(NOTES, 31), "its filter holds the limit"
     decision = policy.decide(query(NOTES, 30))
     assert decision.layer == "rows"
     assert decision.rule == "limit.rows('bqtasks', F('Rate') > 5)"
@@ -214,13 +214,13 @@ def test_a_lookup_from_a_row_limited_parent_is_hidden_but_onto_a_limited_child_i
     from_limited = app(
         allow.read(tables.all()), allow.schema(TASKS, "lookup"), limit.rows(NOTES, F("Text") == "x")
     )
-    assert not from_limited.visible(TASKS, 28)
+    assert not from_limited._visible(TASKS, 28)
     decision = from_limited.allows("lookup", "Tasks", source=("Notes", "Text"))
     assert (decision.allowed, decision.layer) == (False, "rows")
     onto_limited = app(
         allow.read(tables.all()), allow.schema(TASKS, "lookup"), limit.rows(TASKS, F("Hours") > 1)
     )
-    assert onto_limited.visible(TASKS, 28)
+    assert onto_limited._visible(TASKS, 28)
     assert onto_limited.allows("lookup", "Tasks", source=("Notes", "Text")).allowed
 
 
@@ -231,26 +231,28 @@ def unknown_links(*rules: Any, **options: Any) -> BoundPolicy:
 
 def test_unknown_relationships_change_nothing_when_nothing_is_hidden() -> None:
     policy = unknown_links()
-    assert policy.visible(TASKS, 28)
-    assert policy.visible(NOTES, 30)
+    assert policy._visible(TASKS, 28)
+    assert policy._visible(NOTES, 30)
 
 
 def test_unknown_relationships_hide_every_lookup_and_summary_from_a_hiding_policy() -> None:
     policy = unknown_links(deny.all(fields.tagged("pay")), tags=PAY_CLASS)
-    assert not policy.visible(TASKS, 20)
-    assert not policy.visible(TASKS, 28), "this lookup doesn't read Rate, but that can't be known"
-    assert not policy.visible(NOTES, 30)
-    assert not policy.visible(NOTES, 32)
-    assert policy.visible(TASKS, 6)
-    assert policy.visible(TASKS, 29), "a formula of a plain field can still be traced"
+    assert not policy._visible(TASKS, 20)
+    assert not policy._visible(TASKS, 28), "this lookup doesn't read Rate, but that can't be known"
+    assert not policy._visible(NOTES, 30)
+    assert not policy._visible(NOTES, 32)
+    assert policy._visible(TASKS, 6)
+    assert policy._visible(TASKS, 29), "a formula of a plain field can still be traced"
 
 
 def test_unknown_relationships_hide_every_lookup_and_summary_from_a_row_limit() -> None:
     policy = unknown_links(limit.rows(NOTES, F("Text") == "x"))
-    assert not policy.visible(TASKS, 28)
-    assert not policy.visible(NOTES, 30)
-    assert not policy.visible(NOTES, 31), "a filter can't show it holds a limit on an unknown table"
-    assert policy.visible(TASKS, 6)
+    assert not policy._visible(TASKS, 28)
+    assert not policy._visible(NOTES, 30)
+    assert not policy._visible(NOTES, 31), (
+        "a filter can't show it holds a limit on an unknown table"
+    )
+    assert policy._visible(TASKS, 6)
 
 
 def test_a_row_limited_table_refuses_what_the_limit_cant_be_added_to() -> None:
@@ -269,7 +271,7 @@ def test_a_row_limited_table_refuses_what_the_limit_cant_be_added_to() -> None:
     for request in (report, download):
         decision = policy.decide(request)
         assert (decision.allowed, decision.layer) == (False, "rows")
-    assert policy.filterable(TASKS, 8), "fields the limit uses may be filtered on"
+    assert policy._filterable(TASKS, 8), "fields the limit uses may be filtered on"
 
 
 def test_several_row_limits_on_a_table_are_all_applied() -> None:
@@ -291,7 +293,7 @@ def test_a_saved_policy_decides_the_same() -> None:
         deny.all(fields.tagged("pay")),
         limit.rows(TASKS, F("Hours") > 1),
         tags=PAY_CLASS,
-    ).with_created("bqnew", "New")
+    )._with_created("bqnew", "New")
     loaded = BoundPolicy.from_json(policy.to_json())
     assert loaded == policy
     assert loaded.hash == policy.hash

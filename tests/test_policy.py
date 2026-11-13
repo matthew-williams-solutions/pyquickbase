@@ -194,8 +194,8 @@ def test_refusals_never_repeat_values() -> None:
 def test_writing_a_field_needs_no_read_access() -> None:
     policy = bind(allow.update(TASKS, ["Hours"]))
     assert allows(policy, records([row(3, 8)], mergeFieldId=3))
-    assert policy.visible(TASKS, 8)
-    assert not policy.readable(TASKS, 8)
+    assert policy._visible(TASKS, 8)
+    assert not policy._readable(TASKS, 8)
 
 
 def test_a_deny_always_wins() -> None:
@@ -318,7 +318,7 @@ def test_created_tables_get_their_own_rules_in_a_new_policy() -> None:
     assert not allows(policy, describe_write("POST", "/tables", {}, params={"appId": "other"}))
     add = schema("POST", "/fields", {"fieldType": "text"}, table="bqnew")
     assert not allows(policy, add)
-    created = policy.with_created("bqnew", "New")
+    created = policy._with_created("bqnew", "New")
     assert allows(created, add)
     assert not allows(policy, add), "the old policy is unchanged"
     assert created.created == ("bqnew",)
@@ -652,7 +652,7 @@ def test_a_policy_that_names_tables_must_be_bound_before_a_client_takes_it() -> 
 def trim(policy: BoundPolicy, request: ReadRequest | None, payload: Any, **kw: Any) -> Any:
     method = kw.get("method", request.method if request else "POST")
     path = kw.get("path", request.path if request else "/records")
-    return policy.trim(request, method, path, payload)
+    return policy._trim_response(request, method, path, payload)
 
 
 def test_tables_are_left_out_unless_something_in_them_is_allowed() -> None:
@@ -845,7 +845,7 @@ def test_a_response_of_the_wrong_shape_is_an_error_not_passed_through() -> None:
 
 def test_a_hidden_field_acts_as_if_it_didnt_exist() -> None:
     policy = reads(fields=[6])
-    assert not policy.visible(TASKS, 9)
+    assert not policy._visible(TASKS, 9)
     with pytest.raises(UnknownFieldError):
         policy.allows("read", "Tasks", field="Salary")
 
@@ -908,7 +908,7 @@ def test_trimmed_records_only_hold_readable_fields(ids: list[int]) -> None:
 def test_row_limits_bind_by_label() -> None:
     policy = bind(allow.read(TASKS), limit.rows(TASKS, F("Status") == "Open"))
     assert policy.row_limit(TASKS) == "{7.EX.'Open'}"
-    assert policy.filterable(TASKS, 7)
+    assert policy._filterable(TASKS, 7)
     with pytest.raises(ConfigurationError, match="Missing"):
         bind(limit.rows(TASKS, F("Missing") == 1))
 
@@ -919,3 +919,8 @@ def test_an_empty_formula_on_a_plain_field_is_left_out() -> None:
     assert trim(reads(), request, payload) == [
         {"id": 6, "label": "Title", "fieldType": "text", "properties": {}}
     ]
+
+
+def test_a_bound_policy_comes_only_from_bind_or_from_json() -> None:
+    with pytest.raises(TypeError, match=r"Policy\.bind\(\) or BoundPolicy\.from_json\(\)"):
+        BoundPolicy()

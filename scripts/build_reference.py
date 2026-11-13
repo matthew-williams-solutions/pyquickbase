@@ -118,7 +118,7 @@ TITLES: dict[str, dict[str, str]] = {
         "Policy.read_only": "Make a read-only policy",
         "Policy.bind": "Bind to an app",
         "Policy.bind_offline": "Bind without an app",
-        "BoundPolicy.tags_of": "Get a field's classes",
+        "BoundPolicy.tags_of": "Get a field's tags",
         "BoundPolicy.decide": "Decide a request",
         "BoundPolicy.allows": "Check what's allowed",
         "BoundPolicy.explain": "Explain what's allowed",
@@ -263,29 +263,7 @@ HAS_PUBLIC_CONSTRUCTOR = {
     "RetryPolicy",
 }
 # Public so that the SDK can call them across modules, and of no use from outside it.
-INTERNAL_METHODS = {
-    "WhereExpression.compile",
-    "BoundPolicy.readable",
-    "BoundPolicy.filterable",
-    "BoundPolicy.visible",
-    "BoundPolicy.table_visible",
-    "BoundPolicy.hidden_labels",
-    "BoundPolicy.max_summary_records",
-    "BoundPolicy.max_delete",
-    "BoundPolicy.user_emails",
-    "BoundPolicy.field_types",
-    "BoundPolicy.row_limit_rule",
-    "BoundPolicy.emails_shown",
-    "BoundPolicy.offers_for",
-    "BoundPolicy.schema_tables",
-    "BoundPolicy.can_create_tables",
-    "BoundPolicy.can_use_code_pages",
-    "BoundPolicy.with_created",
-    "BoundPolicy.created_offers",
-    "BoundPolicy.trim",
-    "BoundPolicy.new_field_effects",
-    "BoundPolicy.deletion_effects",
-}
+INTERNAL_METHODS = {"WhereExpression.compile"}
 # Type aliases have no docstrings of their own.
 ALIASES = {
     "FieldRef": "A field, by label (`str`) or ID (`int`).",

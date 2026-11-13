@@ -76,18 +76,18 @@ def schema_allowed(
             field_types=FIELD_TYPES,
             formulas=True,
         )
-    create_tables = policy.can_create_tables(app_id)
+    create_tables = policy._can_create_tables(app_id)  # pyright: ignore[reportPrivateUsage]
     grants: list[tuple[frozenset[str], frozenset[str] | None]] = []
     changeable: list[str] = []
     for item in tables:
         none: list[tuple[int, str]] = []
-        offered = policy.offers_for(item.id, none, lambda found: found)
+        offered = policy._offers_for(item.id, none, lambda found: found)  # pyright: ignore[reportPrivateUsage]
         if offered.schema_verbs:
             changeable.append(item.name)
             grants.append((offered.schema_verbs, offered.field_types))
     if create_tables:
-        created = policy.with_created("\x00new", "new table")
-        grants.append((policy.created_offers, created.field_types("\x00new")))
+        created = policy._with_created("\x00new", "new table")  # pyright: ignore[reportPrivateUsage]
+        grants.append((policy._created_offers, created._creatable_types("\x00new")))  # pyright: ignore[reportPrivateUsage]
     verbs = frozenset(verb for found, _ in grants for verb in found)
     actions = {action for action, verb in _ACTION_VERBS.items() if verb in verbs}
     if create_tables:

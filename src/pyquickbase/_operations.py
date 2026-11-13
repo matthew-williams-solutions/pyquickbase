@@ -1273,7 +1273,7 @@ def allowed_for(
             reports=tuple(runnable),
         )
     else:
-        found = policy.offers_for(
+        found = policy._offers_for(  # pyright: ignore[reportPrivateUsage]
             table_id,
             [(item, item.type) for item in fields],
             lambda item: item.id,

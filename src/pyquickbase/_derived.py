@@ -32,7 +32,7 @@ class Source:
 
 def sources_of(fields: Sequence[Field], policy: BoundPolicy, table_id: str) -> list[Source]:
     return [
-        Source(item.label, item.type, item.id, policy.readable(table_id, item.id))
+        Source(item.label, item.type, item.id, policy._readable(table_id, item.id))  # pyright: ignore[reportPrivateUsage]
         for item in fields
     ]
 
@@ -91,7 +91,7 @@ def check_formula_sources(
     check_formula_against(
         formula,
         sources_of(fields, policy, table_id),
-        emails_shown=policy.emails_shown(table_id),
+        emails_shown=policy._emails_shown(table_id),  # pyright: ignore[reportPrivateUsage]
         table=_table(policy, table_id),
     )
 
@@ -104,7 +104,7 @@ def check_readable(
     Raises:
         PolicyRefusedError: It can't, so a field showing it would reveal it.
     """
-    if policy is None or policy.readable(table_id, field.id):
+    if policy is None or policy._readable(table_id, field.id):  # pyright: ignore[reportPrivateUsage]
         return
     table = _table(policy, table_id)
     raise derived_refusal(
@@ -128,7 +128,7 @@ def check_lookup_parent(policy: BoundPolicy | None, parent_id: str, what: str) -
         "lookup",
         f"{what} would show {table}'s records, which has a row limit, on records outside it",
         table=table,
-        rule=policy.row_limit_rule(parent_id),
+        rule=policy._row_limit_rule(parent_id),  # pyright: ignore[reportPrivateUsage]
         layer="rows",
     )
 
@@ -152,7 +152,7 @@ def check_filterable(where: str, policy: BoundPolicy | None, table_id: str, what
             "uses can't be checked. Compare with values instead",
             table=table,
         )
-    hidden = sorted(item for item in used if not policy.filterable(table_id, item))
+    hidden = sorted(item for item in used if not policy._filterable(table_id, item))  # pyright: ignore[reportPrivateUsage]
     if hidden:
         listed = ", ".join(str(item) for item in hidden)
         raise derived_refusal(

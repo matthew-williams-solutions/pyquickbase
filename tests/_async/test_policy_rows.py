@@ -167,9 +167,9 @@ async def test_a_role_that_cant_read_relationships_can_still_bind() -> None:
         app = qb.app(APP)
         everything = await Policy(rules=[reads]).bind(app)
         limited = await Policy(rules=[reads, limit.rows(PROJECTS, F("Name") == "Mine")]).bind(app)
-    assert everything.visible(TASKS, 20)
-    assert not limited.visible(TASKS, 20)
-    assert limited.visible(TASKS, 6)
+    assert everything._visible(TASKS, 20)
+    assert not limited._visible(TASKS, 20)
+    assert limited._visible(TASKS, 6)
 
 
 async def test_creating_a_table_gives_the_client_a_new_policy() -> None:
@@ -272,5 +272,5 @@ async def test_binding_to_an_app_learns_its_relationships() -> None:
         rules = [reads, limit.rows(PROJECTS, F("Name") == "Mine")]
         limited = await Policy(rules=rules).bind(qb.app(APP))
     # Only the relationship says that this lookup shows Projects, which has the limit.
-    assert not limited.visible(TASKS, 20)
-    assert limited.visible(TASKS, 6)
+    assert not limited._visible(TASKS, 20)
+    assert limited._visible(TASKS, 6)

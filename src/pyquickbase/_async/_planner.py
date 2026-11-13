@@ -322,7 +322,7 @@ class AsyncPlanner:
         known = None if sources is None else [
             (other, field) for other, field in sources if other is not None and field is not None
         ]  # fmt: skip
-        return policy.new_field_effects(table.id, known)
+        return policy._new_field_effects(table.id, known)  # pyright: ignore[reportPrivateUsage]
 
     def _formula_sources(
         self, table: _Table, formula: str
@@ -348,7 +348,7 @@ class AsyncPlanner:
         if policy is None or table.id is None:
             return (), ()
         ids = [item for item in field_ids if item is not None]
-        return policy.deletion_effects(table.id, ids, table=whole)
+        return policy._deletion_effects(table.id, ids, table=whole)  # pyright: ignore[reportPrivateUsage]
 
     async def _set_key(self, change: SetKeyField) -> PlannedChange:
         table = await self._table(change.table)
@@ -447,7 +447,7 @@ class AsyncPlanner:
                 item.label,
                 item.type,
                 item.id,
-                policy.readable(table_id, _NEW_FIELD if item.id is None else item.id),
+                policy._readable(table_id, _NEW_FIELD if item.id is None else item.id),  # pyright: ignore[reportPrivateUsage]
             )
             for item in table.fields
             if item is not own
@@ -456,7 +456,7 @@ class AsyncPlanner:
             lambda: check_formula_against(
                 formula,
                 sources,
-                emails_shown=policy.emails_shown(table_id),
+                emails_shown=policy._emails_shown(table_id),  # pyright: ignore[reportPrivateUsage]
                 table=policy._named_table(table_id),  # pyright: ignore[reportPrivateUsage]
             )
         )
@@ -663,7 +663,7 @@ class AsyncPlanner:
         policy = self._transport.policy
         if policy is None or table.id is None:
             return False
-        return label.casefold() in policy.hidden_labels(table.id)
+        return label.casefold() in policy._hidden_labels(table.id)  # pyright: ignore[reportPrivateUsage]
 
     async def _update_field(self, change: UpdateField) -> PlannedChange:
         table = await self._table(change.table)
