@@ -6,8 +6,8 @@ description: "Named groups of fields, formulas that read them, and new fields."
 
 ## Tags, and what derived fields read
 
-A tag names a group of fields, such as everything about pay, for `fields.tagged()`. Each entry is
-`"Table.Field"`, `("Table", "Field")` when a name holds a dot, `fields.all()`, or
+A tag names a group of fields, such as everything about pay, for [`fields.tagged()`](../reference/rules.md#fields-tagged). Each entry is
+`"Table.Field"`, `("Table", "Field")` when a name holds a dot, [`fields.all()`](../reference/rules.md#fields-all), or
 `fields.labeled_like(...)`, which matches in every table.
 
 **A formula, lookup, or summary is in every tag of the fields it reads,** through any chain of
@@ -37,7 +37,7 @@ Every field in the chain is in `pay`, so `deny.all(fields.tagged("pay"))` hides 
 three tables.
 
 **A new formula, lookup, or summary may only read what the client may read,** as anyone who can read
-it sees what it shows. The SDK's methods check this before sending one, and `qb.request()` can't make
+it sees what it shows. The SDK's methods check this before sending one, and [`qb.request()`](../reference/client.md#Quickbase-request) can't make
 one.
 
 ## Fields added after binding
@@ -48,7 +48,7 @@ again. A field added after binding gets `new_fields`:
 
 | `new_fields` | A new field is |
 |---|---|
-| `"read"`, the default | Read, filtered, and sorted wherever a rule reads `fields.all()` or `fields.new()` |
+| `"read"`, the default | Read, filtered, and sorted wherever a rule reads [`fields.all()`](../reference/rules.md#fields-all) or [`fields.new()`](../reference/rules.md#fields-new) |
 | `"hidden"` | Hidden |
 | A tag's name | In that tag, so the rules for the tag apply |
 

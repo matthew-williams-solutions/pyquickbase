@@ -50,7 +50,7 @@ in applications that already use asyncio or Trio.
     ```
 
 To keep the token out of your code, set `QB_REALM` and `QB_USER_TOKEN` in the environment and use
-`Quickbase.from_env()`.
+[`Quickbase.from_env()`](reference/client.md#Quickbase-from_env).
 
 ```python
 from pyquickbase import Quickbase

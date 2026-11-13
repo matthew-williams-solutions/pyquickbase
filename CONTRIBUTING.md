@@ -91,6 +91,10 @@ and the average of that field. The chart is a bar chart of the same total.
 Preview the docs site with `uv run --group docs zensical serve`. Every page needs a `description` in
 its front matter, which search engines show and `llms.txt` lists.
 
+After writing a page, run `uv run scripts/link_names.py`, which links the first mention of each
+public name or method in each section to the API reference, such as `` `upsert()` `` or
+`` `WriteResult` ``. A test fails until it's been run.
+
 The playground in `docs/playground-app/` needs `uv run scripts/build_playground.py` once before
 previewing it, and again after changing the SDK or an example. It downloads pinned copies of Pyodide
 and CodeMirror and builds the SDK's wheel, none of which is committed. Its simulator copies what's in

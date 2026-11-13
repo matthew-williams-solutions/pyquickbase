@@ -83,7 +83,7 @@ def preview_delete_tasks(project: str, where: dict) -> dict:
     return tool_result(page)
 ```
 
-The delete preview's `page.total` is how many tasks the delete would remove. Add `tool_error()` as in
+The delete preview's `page.total` is how many tasks the delete would remove. Add [`tool_error()`](../reference/operations.md#tool_error) as in
 [Returning results to a model](results.md#returning-results-to-a-model) to return a refusal too.
 
 Both previews' results also have `triggers`: the table's active webhooks, Quickbase actions, email
@@ -98,7 +98,7 @@ result with the preview's `total`, and tell the user if they differ.
 
 ## Changing the schema from an agent
 
-`app.operation()` offers three schema tools. `describe_schema` lists the tables and fields the client
+[`app.operation()`](../reference/operations.md#App-operation) offers three schema tools. `describe_schema` lists the tables and fields the client
 can read. `preview_schema_changes` says what a list of changes would do. `apply_schema_changes` makes them, but only with
 the `confirmation` that `preview_schema_changes` returned for exactly those changes, within 15 minutes, while the
 schema is as it was. Unlike `require_preview` for records, this can't be turned off.
@@ -158,16 +158,16 @@ as `SUM` or `STD-DEV`, or words like `total` and `average`. The result lists eac
   and write a new field, the tags a new formula, lookup, or summary would get, and which rules lose
   a deleted field or table. A deletion that would leave a rule matching nothing is a blocker, and so
   is a label a field the client can't see already uses.
-- **Tables the client creates are covered by `tables.created()`.** Creating one gives the client a
+- **Tables the client creates are covered by [`tables.created()`](../reference/rules.md#tables-created).** Creating one gives the client a
   new policy that includes it, so a table the model creates is off limits unless a rule names
-  `tables.created()` or `tables.all()`.
+  `tables.created()` or [`tables.all()`](../reference/rules.md#tables-all).
 - **Use a separate token for schema changes.** Changing the schema needs more rights than reading and
   writing records, so keep those on a token with less.
 - **A confirmation is signed with the client's key, and tied to its policy.** Give clients in several
   processes the same `confirmation_key`, and the same bound policy, if a plan may be applied by
   another one.
 
-A plan's `tool_result()` has `plan.changes`, each with its `description`, `risk`, `settings`, `warnings`,
+A plan's [`tool_result()`](../reference/operations.md#tool_result) has `plan.changes`, each with its `description`, `risk`, `settings`, `warnings`,
 `blockers`, any `policy_effects`, and a `url` to check it in Quickbase, then `blockers`, `warnings`, `confirmation`, and
 `expires_at`. Show the person the summaries and warnings, and send `apply_schema_changes` the same changes with
 the confirmation once they approve. It makes sure a plan happened, not that a person saw it, so ask
@@ -175,15 +175,15 @@ your client to show each change for approval too.
 
 ## Code pages from an agent
 
-`app.operation()` makes four tools for an app's code pages. They need a client whose policy has
-`allow.code_pages()`, or `allow.code_pages(write=True)` for the two that write.
+[`app.operation()`](../reference/operations.md#App-operation) makes four tools for an app's code pages. They need a client whose policy has
+[`allow.code_pages()`](../reference/rules.md#allow-code_pages), or `allow.code_pages(write=True)` for the two that write.
 
 | Operation | The model sends | Returns |
 |---|---|---|
-| `list_code_pages` | Nothing | A list of `CodePageInfo` |
-| `read_code_page` | `code_page`, by name or ID | `CodePageContent` |
-| `preview_code_page_change` | `code_page`, `text` | `CodePagePreview`, with a diff and a `confirmation` |
-| `apply_code_page_change` | `code_page`, `text`, `confirmation` | `CodePageWriteResult`, with what the page held before |
+| `list_code_pages` | Nothing | A list of [`CodePageInfo`](../reference/code-pages.md#CodePageInfo) |
+| `read_code_page` | `code_page`, by name or ID | [`CodePageContent`](../reference/code-pages.md#CodePageContent) |
+| `preview_code_page_change` | `code_page`, `text` | [`CodePagePreview`](../reference/code-pages.md#CodePagePreview), with a diff and a `confirmation` |
+| `apply_code_page_change` | `code_page`, `text`, `confirmation` | [`CodePageWriteResult`](../reference/code-pages.md#CodePageWriteResult), with what the page held before |
 
 A write only runs with the confirmation its preview returned, for exactly that page and text, within 15 minutes, while
 the page is as it was. Show the person the preview before they approve it.
@@ -196,7 +196,7 @@ the page is as it was. Show the person the preview before they approve it.
 ## Writes
 
 Quickbase writes the rows it can and reports the rest, so a failed write can still have changed
-data. Check `WriteError`, which [lists both](../guides/writing.md#when-rows-fail):
+data. Check [`WriteError`](../reference/errors.md#WriteError), which [lists both](../guides/writing.md#when-rows-fail):
 
 ```python
 from pyquickbase import WriteError
@@ -215,13 +215,13 @@ may already have applied, so an agent should check the data before trying again.
 
 | Exception | What it means for a write |
 |---|---|
-| [Mistakes caught before sending](../guides/errors.md#mistakes-caught-before-sending), such as `InvalidQueryError`, `InvalidValueError`, and `PolicyRefusedError` | This request wasn't sent |
+| [Mistakes caught before sending](../guides/errors.md#mistakes-caught-before-sending), such as [`InvalidQueryError`](../reference/errors.md#InvalidQueryError), [`InvalidValueError`](../reference/errors.md#InvalidValueError), and [`PolicyRefusedError`](../reference/errors.md#PolicyRefusedError) | This request wasn't sent |
 | `WriteError` | Some rows may have been written. If a large write stopped at a later batch, `result` covers only the earlier batches, `errors` can be empty, and the failed batch may have been written |
-| `NetworkError`, `RequestTimeoutError`, `ServerError`, `InvalidResponseError` | Unknown, so check the data first |
-| Other `APIError`s, such as `BadRequestError` | Quickbase answered with an error, so fix the cause rather than repeating the request |
+| [`NetworkError`](../reference/errors.md#NetworkError), [`RequestTimeoutError`](../reference/errors.md#RequestTimeoutError), [`ServerError`](../reference/errors.md#ServerError), [`InvalidResponseError`](../reference/errors.md#InvalidResponseError) | Unknown, so check the data first |
+| Other [`APIError`](../reference/errors.md#APIError)s, such as [`BadRequestError`](../reference/errors.md#BadRequestError) | Quickbase answered with an error, so fix the cause rather than repeating the request |
 
-`create_field()` with `required` or `unique` takes two requests, so if it raises an error, the field
+[`create_field()`](../reference/fields.md#Table-create_field) with `required` or `unique` takes two requests, so if it raises an error, the field
 [may already exist](../guides/schema.md). This includes `PolicyRefusedError`, when only the first is allowed.
 
-Repeating an `update()`, or an `upsert()` on a unique field, reports the record as unchanged rather
-than adding another, but repeating an `insert()` can add a duplicate.
+Repeating an [`update()`](../reference/writes.md#Table-update), or an [`upsert()`](../reference/writes.md#Table-upsert) on a unique field, reports the record as unchanged rather
+than adding another, but repeating an [`insert()`](../reference/writes.md#Table-insert) can add a duplicate.

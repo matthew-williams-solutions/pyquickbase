@@ -38,7 +38,7 @@ with Quickbase(realm="acme", token="your_user_token") as qb:
 
 -   **Errors that say what happened**
 
-    A failed row raises `WriteError`, listing what was written and what wasn't.
+    A failed row raises [`WriteError`](reference/errors.md#WriteError), listing what was written and what wasn't.
 
 -   **[Policies](policies/index.md)**
 
@@ -59,7 +59,7 @@ writing `null` to a field does nothing. This SDK turns those into errors or corr
 |---|---|
 | Numeric field IDs everywhere | Field labels and table names, or IDs if you prefer |
 | `{7.EX.'Done'}AND{9.BF.'today'}` | `(F("Status") == "Done") & (F("Due Date") < date.today())` |
-| Broken queries return plausible results | Broken queries raise `InvalidQueryError` before sending |
+| Broken queries return plausible results | Broken queries raise [`InvalidQueryError`](reference/errors.md#InvalidQueryError) before sending |
 | Manual `skip` and `top` paging | `for record in table.query(...)` |
 | Rows like `{"7": {"value": "Done"}}` | `record["Status"]`, with real `date` and `datetime` values |
 | Failed rows inside a successful response | `WriteError`, listing what failed and what was written |

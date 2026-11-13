@@ -59,7 +59,7 @@ plausible result instead of an error.
 
 | Text in a value | Result |
 |---|---|
-| `\'` or an unescaped `'` | Matches a stored apostrophe, but the unescaped form is ambiguous, so `F` and the string validator use `\'` |
+| `\'` or an unescaped `'` | Matches a stored apostrophe, but the unescaped form is ambiguous, so [`F`](reference/queries.md#F) and the string validator use `\'` |
 | `''` | Doesn't match a stored apostrophe |
 | `\\` | Matches a stored backslash; a single `\` before another character doesn't |
 | `{` or `}` | 400, `Criteria is invalid.`, so values containing braces can't be searched for |
@@ -109,7 +109,7 @@ Tested on 2026-11-02 against temporary tables in a sandbox app.
 | `mergeFieldId` of `"3"` or `3.0` | Accepted, as field 3. Live API, 2026-11-05 |
 | A row's field key with padding, such as `"07"`, `" 7"`, or `"7 "` | **Accepted as field 7, and the value is written.** So check field IDs only in their usual form. Live API, 2026-11-05 |
 | `keyFieldId` in `POST /tables/{id}` | 200, and **ignored**, so the key field stays 3. The JSON API can't change a table's key field. The [XML API](#xml-api) can, and in the UI, select the field on the table's fields page and click **Set key**. Live API, 2026-11-05 |
-| Custom key field: a row with an existing key value, without `mergeFieldId` | **Updates that record, and creates nothing.** A batch can do both, leaving `createdRecordIds` shorter than the rows. So `insert()` refuses these tables. Live API, 2026-11-05 |
+| Custom key field: a row with an existing key value, without `mergeFieldId` | **Updates that record, and creates nothing.** A batch can do both, leaving `createdRecordIds` shorter than the rows. So [`insert()`](reference/writes.md#Table-insert) refuses these tables. Live API, 2026-11-05 |
 | Custom key field: a row with a new key value, without `mergeFieldId` | Creates a record. Live API, 2026-11-05 |
 | Custom key field: a row without the key field, without `mergeFieldId` | Row error, `Missing value for required field`, though it wasn't set as required. Live API, 2026-11-05 |
 | Custom key field: a row with a Record ID#, without `mergeFieldId` | **500**, `You cannot include the record ID if it is not the key field`. Live API, 2026-11-05 |
@@ -117,7 +117,7 @@ Tested on 2026-11-02 against temporary tables in a sandbox app.
 | `mergeFieldId` on a unique field, value doesn't match | **Creates a record** |
 | `mergeFieldId` on a non-unique field, or a row without the merge field | 400 for the whole request |
 | Unknown field, formula field, built-in field | Row error |
-| A batch where every row sets the same one field, and a row's value is empty | **That row is silently skipped, with no error**, so `createdRecordIds` no longer lines up with the rows. A batch of one row, or using two or more fields, creates it. `insert()` and `upsert()` refuse these rows |
+| A batch where every row sets the same one field, and a row's value is empty | **That row is silently skipped, with no error**, so `createdRecordIds` no longer lines up with the rows. A batch of one row, or using two or more fields, creates it. `insert()` and [`upsert()`](reference/writes.md#Table-upsert) refuse these rows |
 | A value outside a field's choices | Accepted when `allowNewChoices` is on, which is the default for a field made through the API, otherwise a row error |
 | The row error for an invalid choice | `The field with ID '7' has an invalid choice.` Confirmed again in a three-row import: 207, `raise_for_status()` passes, and the other two rows are saved |
 | Empty `data` | 400 |
@@ -279,7 +279,7 @@ Tested on 2026-11-02 with short bursts from 12 threads against temporary tables.
 | Behavior | Result |
 |---|---|
 | `retry-after` on a real 429 | **Whole seconds**, seen from `0` to `10`. After waiting that long, the next request succeeded |
-| 450 calls from 12 threads, with the default 4 retries | Took about 30 seconds and hit 24 to 53 real 429s. **All 450 succeeded in most runs, but in 1 of 7, a call used up its retries and raised `RateLimitError`.** With retries off, about 300 of the 450 raised it |
+| 450 calls from 12 threads, with the default 4 retries | Took about 30 seconds and hit 24 to 53 real 429s. **All 450 succeeded in most runs, but in 1 of 7, a call used up its retries and raised [`RateLimitError`](reference/errors.md#RateLimitError).** With retries off, about 300 of the 450 raised it |
 | The same burst with `1.0.0rc3`, which waits before retrying on a `retry-after` of 0 | 10 runs on 2026-11-03: **all 450 succeeded every time**, with 24 to 42 real 429s, in 27 to 37 seconds. That fits an improvement over 1 failure in 7 runs, but a sample this small can't prove one |
 | `retry-after: 0` | Sent while still limiting, so an immediate retry can get another 429 |
 | 429 body | `{"error": "Quota has been exceeded"}`, **not the usual `message` and `description`** |
@@ -290,7 +290,7 @@ Tested on 2026-11-02 with short bursts from 12 threads against temporary tables.
 **The SDK doesn't support temporary tokens.** Their main use is browser code pages, a script can't get
 one, and the SDK's table lookup needs `GET /tables`, which a table-scoped token can't call. These
 findings are kept for when that's revisited. Supporting them would need a `temporary_token` client
-option that treats `app.table()` as an ID and skips that lookup, for a backend acting for a logged-in
+option that treats [`app.table()`](reference/tables.md#App-table) as an ID and skips that lookup, for a backend acting for a logged-in
 user.
 
 Tested on 2026-11-02 against temporary tables in a sandbox app, with tokens fetched from a logged-in
@@ -421,7 +421,7 @@ available to that role, and nothing about the hidden field is revealed:
 
 | Behavior | Result |
 |---|---|
-| `GET /reports` | **Leaves the report out**, so the SDK raises `UnknownReportError`, by name or ID |
+| `GET /reports` | **Leaves the report out**, so the SDK raises [`UnknownReportError`](reference/errors.md#UnknownReportError), by name or ID |
 | `POST /reports/{id}/run` | **400, `Invalid request: Internal error`.** A report ID that doesn't exist returns 404, so this shows that the report exists |
 | A report that only shows the hidden field as a column | Listed, and runs without that column |
 | `GET /reports/{id}` | 403 for every report we tried with this role, even ones it can run |

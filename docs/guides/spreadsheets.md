@@ -13,7 +13,7 @@ CSV needs nothing extra. Excel needs `openpyxl`, which `pip install 'pyquickbase
 ## Exporting records
 
 `to_csv()` and `to_excel()` write what a query matches to a file, with a header row of field labels.
-They're on `query()`, a report's `run()`, and any page, and return how many records they wrote.
+They're on [`query()`](../reference/records.md#Table-query), a report's `run()`, and any page, and return how many records they wrote.
 
 ```python
 from pyquickbase import F
@@ -39,7 +39,7 @@ Record ID# is always a column, so a file you export can be imported back to upda
 
 **Text that a spreadsheet would run as a formula is made safe.** A value starting with `=`, `+`, `-`,
 or `@` can run when the file is opened in a spreadsheet, so `to_csv()` writes it with a leading `'`,
-which spreadsheets show without it, and `rows_from_file()` removes again. Pass `spreadsheet_safe=False`
+which spreadsheets show without it, and [`rows_from_file()`](../reference/files.md#Table-rows_from_file) removes again. Pass `spreadsheet_safe=False`
 for a file only programs will read. In Excel, text is always stored as text, so nothing is added.
 
 `to_csv()` writes UTF-8 with a byte order mark, which Excel needs to show accented letters correctly. Pass
@@ -47,9 +47,9 @@ for a file only programs will read. In Excel, text is always stored as text, so 
 
 ## Importing a file
 
-`rows_from_file()` reads a CSV or Excel file and converts each value for its field. Nothing is written
-yet, so you can check what it found, and then pass it to `insert()`, `update()`, `upsert()`, or
-`preview_update()`.
+[`rows_from_file()`](../reference/files.md#Table-rows_from_file) reads a CSV or Excel file and converts each value for its field. Nothing is written
+yet, so you can check what it found, and then pass it to [`insert()`](../reference/writes.md#Table-insert), [`update()`](../reference/writes.md#Table-update), [`upsert()`](../reference/writes.md#Table-upsert), or
+[`preview_update()`](../reference/writes.md#Table-preview_update).
 
 ```python
 from pathlib import Path
@@ -70,7 +70,7 @@ else:
 The first row names each column's field by its exact label. A blank cell leaves a field empty in
 `insert()`, and clears it in `update()` and `upsert()`. A row whose cells are all blank is skipped.
 
-| `FileRows` attribute | What it holds |
+| [`FileRows`](../reference/files.md#FileRows) attribute | What it holds |
 |---|---|
 | `rows` | Each row, as `{field label: value}`, ready to write |
 | `row_numbers` | Each row's number in the file, counting the header as row 1, as a spreadsheet does |
@@ -104,7 +104,7 @@ Excel's own dates, times, numbers, and true or false values are used as they are
 
 ### Columns that don't match
 
-A column that isn't a field raises `InvalidValueError` before any row is read, suggesting a close
+A column that isn't a field raises [`InvalidValueError`](../reference/errors.md#InvalidValueError) before any row is read, suggesting a close
 label if there is one. `columns` maps a column to a field, by label or ID, or skips it with `None`:
 
 ```python
@@ -155,7 +155,7 @@ stop the event loop. For a very large import, split the file, or read it in chun
 Set limits on a file someone else gave you. `max_rows` stops reading once the file has more rows with
 values than that, so a file with millions of rows is never held in memory. `max_unzipped_bytes` limits
 what an Excel file may unpack to, as it's a zip, and a small file can unpack to something huge. It
-defaults to 1 GB. Both raise `FileTooLargeError`, an `InvalidValueError`, with the `limit` it went over
+defaults to 1 GB. Both raise [`FileTooLargeError`](../reference/errors.md#FileTooLargeError), an `InvalidValueError`, with the `limit` it went over
 and its `unit`.
 
 ```python
@@ -173,10 +173,10 @@ except FileTooLargeError as error:
 
 ## Writes that would have lost data
 
-Writing a record with a value Quickbase accepts but loses now raises `InvalidValueError`, whether it
+Writing a record with a value Quickbase accepts but loses now raises [`InvalidValueError`](../reference/errors.md#InvalidValueError), whether it
 comes from a file or not:
 
 - Text that isn't a plain number, such as `"1,234.5"`, for a number field, which Quickbase leaves
   empty. Plain numbers as text, such as `"0.45"`, still work.
 - A user as `{"email": ...}`, which Quickbase ignores, leaving the field as it was. Write
-  `{"id": ...}`, a `User`, or an email address.
+  `{"id": ...}`, a [`User`](../reference/records.md#User), or an email address.

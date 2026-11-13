@@ -9,7 +9,7 @@ A client takes one `policy`, which says what it may read and change.
 | Policy | What the client can do | Use it for |
 |---|---|---|
 | None | Whatever the token can | Your own scripts |
-| `Policy.read_only()` | Read whatever the token can, and change nothing | Reports, dashboards, and anything that only looks |
+| [`Policy.read_only()`](../reference/policies.md#Policy-read_only) | Read whatever the token can, and change nothing | Reports, dashboards, and anything that only looks |
 | `Policy(rules=[...])`, bound to an app | Only what its rules allow | An AI agent, or a job with a narrow purpose |
 
 A policy protects against bugs in your code and mistakes by a model. See
@@ -19,7 +19,7 @@ as [Code pages](rules.md#code-pages) explains.
 
 ## How a policy decides
 
-A policy works on both sides of each request, including one sent through `qb.request()`:
+A policy works on both sides of each request, including one sent through [`qb.request()`](../reference/client.md#Quickbase-request):
 
 ```mermaid
 flowchart TD
@@ -40,11 +40,11 @@ refused it:
 | `derived` | A formula, lookup, or summary would read something the client can't |
 
 A confirmation that `require_preview` asks for isn't part of the policy. A missing or mismatched one
-raises `InvalidConfirmationError`.
+raises [`InvalidConfirmationError`](../reference/errors.md#InvalidConfirmationError).
 
 ## Binding a policy
 
-1. **Write a `Policy`** of rules, by table name and field label.
+1. **Write a [`Policy`](../reference/policies.md#Policy)** of rules, by table name and field label.
 2. **Bind it to the app** once. Binding looks up every name, reports every problem at once, and
    pins each table and field by ID.
 3. **Give the bound policy to a client.** From then on, every request is checked against it.
@@ -58,18 +58,18 @@ flowchart TD
 
 A bound policy holds tables and fields by ID, so renaming one doesn't change what a rule means. A
 field added after binding follows `new_fields` until you bind again, and a table the client creates
-gives it a new policy, `qb.policy`, that includes it.
+gives it a new policy, [`qb.policy`](../reference/client.md#Quickbase-policy), that includes it.
 
 ## Making a client read-only
 
-`Policy.read_only()` guarantees a client can't change data. It only sends GET requests, record
+[`Policy.read_only()`](../reference/policies.md#Policy-read_only) guarantees a client can't change data. It only sends GET requests, record
 queries, report runs, and formula runs, and reads them as a client without a policy would. Running a
 report adds to its usage count in Quickbase, but changes no records. It names no table, so a client
 takes it without binding.
 
 It doesn't cover everything a token can read. A client with any policy, including this one, can't list apps, ask who
 a token belongs to, look up users, or read an app's members or their roles, because those aren't about one app's tables,
-and only `allow.code_pages()` opens code pages. Use a client without a policy for those.
+and only [`allow.code_pages()`](../reference/rules.md#allow-code_pages) opens code pages. Use a client without a policy for those.
 
 ```python
 from pyquickbase import Policy, Quickbase

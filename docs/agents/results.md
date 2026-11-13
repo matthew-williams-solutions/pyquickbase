@@ -21,7 +21,7 @@ delete unchecked.
 
 ## Returning results to a model
 
-A tool's result goes back to the model as JSON. `tool_result()` and `tool_error()` turn the SDK's
+A tool's result goes back to the model as JSON. [`tool_result()`](../reference/operations.md#tool_result) and [`tool_error()`](../reference/operations.md#tool_error) turn the SDK's
 results and errors into plain data in the same shapes every time, so a model can tell whether it has every
 record, what went wrong, and whether anything changed. They work with any tool-calling framework, as
 `json.dumps()` always accepts what they return, and they don't need the network.
@@ -48,16 +48,16 @@ Every result has `"ok": true`, and a key for what it holds:
 
 | You pass | It holds |
 |---|---|
-| A `RecordPage`, from `query_page()` | `records`, or `columns` and `rows` with `compact=True`, and `page` |
-| A list of records or dictionaries, such as from `query()` or `run_summary()` | The same, with `page.total` as null, as it isn't known |
-| A `Record` or None, from `get()` or `first()` | `record`, which is null for None |
-| A `WriteResult` | `created_ids`, `updated_ids`, and `unchanged_ids` |
-| A list of `SummaryRow`, from `summarize()` | `groups`, each with `group`, `count`, and the totals it has |
-| An `UpdatePreview` | `changes`, with `before` and `after` for each field, `unchanged_ids`, and `missing_ids` |
-| A `FormulaResult` | `value` and `type` |
+| A [`RecordPage`](../reference/records.md#RecordPage), from [`query_page()`](../reference/records.md#Table-query_page) | `records`, or `columns` and `rows` with `compact=True`, and `page` |
+| A list of records or dictionaries, such as from [`query()`](../reference/records.md#Table-query) or [`run_summary()`](../reference/reports.md#Report-run_summary) | The same, with `page.total` as null, as it isn't known |
+| A [`Record`](../reference/records.md#Record) or None, from [`get()`](../reference/records.md#Table-get) or [`first()`](../reference/records.md#Table-first) | `record`, which is null for None |
+| A [`WriteResult`](../reference/writes.md#WriteResult) | `created_ids`, `updated_ids`, and `unchanged_ids` |
+| A list of [`SummaryRow`](../reference/summaries.md#SummaryRow), from [`summarize()`](../reference/summaries.md#Table-summarize) | `groups`, each with `group`, `count`, and the totals it has |
+| An [`UpdatePreview`](../reference/writes.md#UpdatePreview) | `changes`, with `before` and `after` for each field, `unchanged_ids`, and `missing_ids` |
+| A [`FormulaResult`](../reference/summaries.md#FormulaResult) | `value` and `type` |
 | A `count` operation's result | `count` |
 | A `delete` operation's result | `deleted_count` |
-| Text, a number, a date, or a bool, such as from `count()` | `value` |
+| Text, a number, a date, or a bool, such as from [`count()`](../reference/records.md#Table-count) | `value` |
 
 Records are keyed by field label. Values are written the same way whatever their field:
 
@@ -177,7 +177,7 @@ bug's details, and any values in them, don't reach the model. Log it yourself be
 
 | What happened | Exception | What's left behind |
 |---|---|---|
-| `tool_result()` got something it can't describe, such as an `AppInfo`, a dictionary, or a set | `TypeError` | Nothing was returned |
+| `tool_result()` got something it can't describe, such as an [`AppInfo`](../reference/apps.md#AppInfo), a dictionary, or a set | `TypeError` | Nothing was returned |
 | A record holds a value of a type JSON can't hold, such as `bytes` | `TypeError` | Nothing was returned |
 | `max_records`, `max_text_chars`, or `max_chars` isn't a positive whole number | `ValueError` | Nothing was returned |
 
@@ -214,14 +214,14 @@ async def list_open_tasks(tasks: AsyncTable) -> dict:
 Send the pattern once, rather than a link for each record, and say in the tool's description that
 `{record_id}` is replaced by a record's `Record ID#`. [`record_url()`](../reference/links.md#Table-record_url)
 builds one record's link, and `url()` a table's, app's, or report's. Others link to the pages a
-change to the schema sends a person to, such as `field_url()` and `fields_url()` for a table's
-fields, `relationships_url()`, and `Report.url(edit=True)` for a report's settings. To show which records a query asked for, `compile_where()` returns a condition as
+change to the schema sends a person to, such as [`field_url()`](../reference/links.md#Table-field_url) and [`fields_url()`](../reference/links.md#Table-fields_url) for a table's
+fields, [`relationships_url()`](../reference/links.md#Table-relationships_url), and `Report.url(edit=True)` for a report's settings. To show which records a query asked for, [`compile_where()`](../reference/queries.md#Table-compile_where) returns a condition as
 Quickbase's query text, such as `{7.EX.'Open'}`.
 
 ## Counts and totals
 
 Don't have a model count or add up records itself, because it can miss some or get the arithmetic wrong. Give
-it a tool that calls [`summarize()`](../guides/reading.md#summarizing-records), and always set `max_records_scanned`, so that a
+it a tool that calls [`summarize()`](../guides/summaries.md), and always set `max_records_scanned`, so that a
 broad request can't read a whole large table. If the limit is exceeded, nothing is returned but the error, so
 a model can't report a total from only part of the data.
 
@@ -253,6 +253,6 @@ def task_totals(project: str, where: dict | None = None) -> dict:
         return tool_error(error)
 ```
 
-`tool_result()` writes dates in `min` and `max` as text, as it does everywhere. A `max_records_scanned`
+[`tool_result()`](../reference/operations.md#tool_result) writes dates in `min` and `max` as text, as it does everywhere. A `max_records_scanned`
 that's exceeded is a `summary_too_large`, with `matched` and `limit`. A summary that only counts reads no
 records, so it's never refused this way.

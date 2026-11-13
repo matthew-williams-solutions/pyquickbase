@@ -5,8 +5,8 @@ description: "Refusing requests with logic of your own."
 # Rules of your own
 
 For logic the rules can't express, add an object with a `decide(request)` method to `rules`. It sees
-each request the built-in rules allow, as a `ReadRequest` or `WriteRequest`, which holds no values,
-so it's safe to log. It returns None to leave the request alone, or a `PolicyDecision` with
+each request the built-in rules allow, as a [`ReadRequest`](../reference/rules.md#ReadRequest) or [`WriteRequest`](../reference/rules.md#WriteRequest), which holds no values,
+so it's safe to log. It returns None to leave the request alone, or a [`PolicyDecision`](../reference/policies.md#PolicyDecision) with
 `allowed=False` to refuse it. **It can only refuse,** so a bug in it can't allow more than the rules
 do.
 
@@ -24,10 +24,10 @@ class SmallBatches:
 policy = Policy(rules=[allow.insert("Job Tasks", fields.all()), SmallBatches()])
 ```
 
-`offers()` asks about one field and verb at a time, so a rule that decides each field on its own is
+[`offers()`](../reference/policies.md#BoundPolicy-offers) asks about one field and verb at a time, so a rule that decides each field on its own is
 offered exactly what it allows. It runs once per request, so a write split into batches is checked
 batch by batch, and it sees each batch's own `row_count`. A custom rule can't be saved with
-`to_json()`, so pass it to `from_json(rules=[...])` again.
+[`to_json()`](../reference/policies.md#BoundPolicy-to_json), so pass it to `from_json(rules=[...])` again.
 
 A `WriteRequest` says what a write would do:
 
@@ -59,7 +59,7 @@ if a row writes a field ID in an unusual form, such as `07`, which Quickbase rea
 query without `sortBy` has `None` for `sort_field_ids`, because the table's default sort would apply.
 Have your rule ignore an `action` it doesn't recognize, as a later version can add one.
 
-`upsert` means a write that may do either, which isn't only `table.upsert()`. Any merge on a field
+`upsert` means a write that may do either, which isn't only [`table.upsert()`](../reference/writes.md#Table-upsert). Any merge on a field
 other than `Record ID#` is one, because Quickbase creates a record when the value doesn't match. So is
-a write without a merge field that goes through `qb.request()` or to a table with a different key
+a write without a merge field that goes through [`qb.request()`](../reference/client.md#Quickbase-request) or to a table with a different key
 field, because it can change an existing record.

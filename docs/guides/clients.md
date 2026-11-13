@@ -5,7 +5,7 @@ description: "Sync or async, tokens, retries, proxies, and other settings."
 # Configuring clients
 
 This page covers choosing a client, limiting what it can read and write, retries, and connection
-settings. `Quickbase` and `AsyncQuickbase` take the same options. Use them as context managers so that
+settings. [`Quickbase`](../reference/client.md#Quickbase) and `AsyncQuickbase` take the same options. Use them as context managers so that
 connections get closed.
 
 ## Sync or async
@@ -37,7 +37,7 @@ One sync client can be shared across threads. The async client works with both a
 
 ## Using several tokens
 
-`Quickbase.from_env()` reads `QB_REALM` and `QB_USER_TOKEN`. A program with more than one token can
+[`Quickbase.from_env()`](../reference/client.md#Quickbase-from_env) reads `QB_REALM` and `QB_USER_TOKEN`. A program with more than one token can
 name the variable, such as a setup token and a restricted one:
 
 ```python
@@ -47,7 +47,7 @@ qb = Quickbase.from_env(token_env="QB_SERVICE_TOKEN")
 ## Limiting what a client can do
 
 A client takes one `policy`, which says what it may read and change, such as
-`Policy.read_only()`. Every request is checked before it's sent. See [Policies](../policies/index.md)
+[`Policy.read_only()`](../reference/policies.md#Policy-read_only). Every request is checked before it's sent. See [Policies](../policies/index.md)
 for how to write one, and what it does and doesn't protect against.
 
 ## Retries
@@ -60,7 +60,7 @@ qb = Quickbase(realm="acme", token="your_user_token", retry=policy)
 ```
 
 `max_retry_after` is the longest `Retry-After` the client will wait for. Past that, it raises
-`RateLimitError`. A missing `Retry-After`, or one of 0, uses the backoff from `base_delay`
+[`RateLimitError`](../reference/errors.md#RateLimitError). A missing `Retry-After`, or one of 0, uses the backoff from `base_delay`
 instead, because Quickbase can send 0 while still limiting. Use `max_retries=0` to disable retrying.
 
 Each retry counts toward `max_retries`. Once they're used up, the last error is raised.
@@ -87,10 +87,10 @@ the response, as httpx does, rather than to the whole request.
 realms hasn't been confirmed, so pass `base_url` if yours differs. It must use HTTPS, except for
 loopback addresses.
 
-`apps()`, `current_user()`, `find_user()`, `members()`, `member_roles()`, and code pages use Quickbase's XML API, which
+[`apps()`](../reference/apps.md#Quickbase-apps), [`current_user()`](../reference/apps.md#Quickbase-current_user), [`find_user()`](../reference/apps.md#Quickbase-find_user), [`members()`](../reference/apps.md#App-members), [`member_roles()`](../reference/apps.md#App-member_roles), and code pages use Quickbase's XML API, which
 is served from the realm's own host rather than from `base_url`. The token goes in the same header as every other
 request, and never in a URL or a request body, but that host has to be one Quickbase runs. So these methods raise
-`ConfigurationError` before sending anything unless the realm ends in `.quickbase.com` or `.quickbase.eu`, and
+[`ConfigurationError`](../reference/errors.md#ConfigurationError) before sending anything unless the realm ends in `.quickbase.com` or `.quickbase.eu`, and
 with any custom `base_url` except a loopback address. They don't follow redirects, even with your own
 `http_client`. `.quickbase.eu` hasn't been tested, as no EU realm was available.
 
@@ -117,7 +117,7 @@ HTTP, except to your own machine.
 
 ## Calling any endpoint
 
-For endpoints without a dedicated method, `request()` returns the decoded JSON body.
+For endpoints without a dedicated method, [`request()`](../reference/client.md#Quickbase-request) returns the decoded JSON body.
 
 ```python
 reports = qb.request("GET", "/reports", params={"tableId": "bq7654321"})

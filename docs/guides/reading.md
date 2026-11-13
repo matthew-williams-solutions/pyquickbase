@@ -1,11 +1,12 @@
 ---
-description: "Tables, fields, queries with F, paging, record values, reports, DataFrames, and what each refusal raises."
+description: "Tables, fields, queries with F, paging, record values, DataFrames, and what each refusal raises."
 ---
 
 # Reading records
 
-This page covers finding tables and fields, querying records, reading their values, and running
-reports. To write records, see [Writing records](writing.md).
+This page covers finding tables and fields, querying records, and reading their values. To total or
+count them, see [Summaries](summaries.md), and to run a report built in Quickbase, see
+[Reports](reports.md). To write records, see [Writing records](writing.md).
 
 ```python
 from pyquickbase import Quickbase
@@ -16,15 +17,15 @@ with Quickbase(realm="acme", token="your_user_token") as qb:
 ```
 
 The other examples on this page use `qb` and `tasks`, made in the same way, with the sync client. With
-the async client, use `await` on each call and `async for` on `query()`.
+the async client, use `await` on each call and `async for` on [`query()`](../reference/records.md#Table-query).
 
 !!! tip "Try it without installing anything"
     The [playground](../playground.md) runs these in your browser, against simulated sample data.
 
 ## Tables and fields
 
-`qb.app()` and `app.table()` don't contact Quickbase. A table is found by name or ID when you first
-use it, and only within that app, so a table in another app raises `UnknownTableError`.
+[`qb.app()`](../reference/client.md#Quickbase-app) and [`app.table()`](../reference/tables.md#App-table) don't contact Quickbase. A table is found by name or ID when you first
+use it, and only within that app, so a table in another app raises [`UnknownTableError`](../reference/errors.md#UnknownTableError).
 
 ```python
 app = qb.app("bq1234567")
@@ -37,14 +38,14 @@ print(tasks.relationships())  # Only those where this table is the child
 ```
 
 Metadata is cached for five minutes. Set `metadata_cache_seconds` on the client to change that, or call
-`qb.clear_metadata_cache()` after changing a table outside this client. A name or label that isn't in
+[`qb.clear_metadata_cache()`](../reference/client.md#Quickbase-clear_metadata_cache) after changing a table outside this client. A name or label that isn't in
 the cache triggers one refresh before it counts as unknown.
 
 [Try it in the playground](../playground-app/index.html#explore-the-app), with simulated data.
 
 ## Getting one record
 
-`first()` returns the first match, and `get()` finds a record by its Record ID#. Each returns None if
+[`first()`](../reference/records.md#Table-first) returns the first match, and [`get()`](../reference/records.md#Table-get) finds a record by its Record ID#. Each returns None if
 there's no such record, rather than raising an error.
 
 ```python
@@ -54,7 +55,7 @@ same_task = tasks.get(7, select=["Title"])
 
 ## Writing queries
 
-Build conditions with `F`, naming a field by label or ID. Combine them with `&` and `|`, and wrap
+Build conditions with [`F`](../reference/queries.md#F), naming a field by label or ID. Combine them with `&` and `|`, and wrap
 each one in parentheses, because Python gives those operators high precedence.
 
 ```python
@@ -78,7 +79,7 @@ print(tasks.count(where))
 | `F("Due Date").op("IR", "last 7 days")` | Any other Quickbase operator |
 | `F("Owner") == "a@example.com"` | A `user` or `multiuser` field, by email or user ID |
 
-Using `and`, `or`, or a chained comparison like `1 < F("x") < 5` raises `InvalidQueryError`, because
+Using `and`, `or`, or a chained comparison like `1 < F("x") < 5` raises [`InvalidQueryError`](../reference/errors.md#InvalidQueryError), because
 Python would otherwise silently drop part of the condition.
 
 A `datetime` needs a timezone. On a date field, Quickbase reads text such as `today` or `1 day ago` as a
@@ -113,7 +114,7 @@ accept, such as a lowercase operator or an unknown field. It can't tell an injec
 a real one, so don't build these strings from text you don't control. In a value, write an apostrophe
 as `\'`.
 
-To add checks of your own, `parse_where()` returns the conditions in a string.
+To add checks of your own, [`parse_where()`](../reference/queries.md#parse_where) returns the conditions in a string.
 
 ```python
 from pyquickbase import parse_where
@@ -124,7 +125,7 @@ for condition in parse_where("{7.EX.'Done'}", tasks.fields()):
 
 ### Filters as plain data
 
-An AI model or a web form can't send `F`, only JSON. `where_from_dict()` turns that into the same kind
+An AI model or a web form can't send `F`, only JSON. [`where_from_dict()`](../reference/queries.md#where_from_dict) turns that into the same kind
 of condition, and works anywhere `F` does.
 
 ```python
@@ -151,7 +152,7 @@ It's stricter than `F`, because plain data can't hold a `date` object. For a mod
 
 ## Fetching records
 
-`query()` fetches further pages as you iterate, so you can stop at any point.
+[`query()`](../reference/records.md#Table-query) fetches further pages as you iterate, so you can stop at any point.
 
 ```python
 for task in tasks.query(
@@ -165,7 +166,7 @@ for task in tasks.query(
 
 | Argument | Meaning |
 |---|---|
-| `where` | A condition built with `F`, or a query string |
+| `where` | A condition built with [`F`](../reference/queries.md#F), or a query string |
 | `select` | Field labels, IDs, or field objects. Defaults to the table's default fields |
 | `order_by` | Field labels, IDs, or field objects. Prefix a label with `-`, or negate an ID, to sort descending |
 | `page_size` | Records to request per call to Quickbase. Defaults to 1,000 |
@@ -183,7 +184,7 @@ Breaking out of the loop fetches no more pages.
 Paging uses offsets, so if records are deleted while you read, others can be skipped without any error.
 Avoid deleting from the set you're reading, or read it all first.
 
-To count without fetching, use `count()`.
+To count without fetching, use [`count()`](../reference/records.md#Table-count).
 
 Field objects such as `F("Status")` name exactly that field, so a leading `-` in one is part of the
 label.
@@ -192,8 +193,8 @@ label.
 
 ## Fetching one page at a time
 
-`query_page()` fetches a single page, for when you control the paging yourself, such as behind a list
-endpoint. It takes the same arguments as `query()`, with `limit` and `skip` in place of `page_size` and
+[`query_page()`](../reference/records.md#Table-query_page) fetches a single page, for when you control the paging yourself, such as behind a list
+endpoint. It takes the same arguments as [`query()`](../reference/records.md#Table-query), with `limit` and `skip` in place of `page_size` and
 `max_total`.
 
 ```python
@@ -224,7 +225,7 @@ Skipping past the end returns no records rather than raising an error, with `tot
 ## DataFrames
 
 `to_pandas()` and `to_polars()` fetch what a query matches into a DataFrame, with a column for each
-field it returns. They're on `query()`, a report's `run()`, and any page. Install the library you use
+field it returns. They're on [`query()`](../reference/records.md#Table-query), a report's `run()`, and any page. Install the library you use
 with the SDK's extra, such as `pip install 'pyquickbase[pandas]'` or `pip install 'pyquickbase[polars]'`.
 
 ```python
@@ -236,11 +237,11 @@ print(frame.columns.tolist())  # ['Record ID#', 'Title', 'Due Date']
 
 - Dates, timestamps, numbers, and lists keep their types, so a timestamp column is timezone-aware.
 - A user field holds the user's email, or their ID if the client's policy hides emails, and a file field
-  holds the latest version's file name. Use `query()` for the `User` and `FileAttachment` objects.
+  holds the latest version's file name. Use `query()` for the [`User`](../reference/records.md#User) and [`FileAttachment`](../reference/files.md#FileAttachment) objects.
 - A query with no matches still gives a DataFrame with its columns.
 - It reads every page first, so set `max_total` on a large table.
 
-To write a DataFrame back, pass it to `insert()`, `update()`, or `upsert()`, as
+To write a DataFrame back, pass it to [`insert()`](../reference/writes.md#Table-insert), [`update()`](../reference/writes.md#Table-update), or [`upsert()`](../reference/writes.md#Table-upsert), as
 [Writing records](writing.md#writing-a-dataframe) shows.
 
 ## Reading values
@@ -266,210 +267,19 @@ a built-in field such as `Record Owner` may be missing. Reading a missing field 
 
 [Try it in the playground](../playground-app/index.html#read-values), with simulated data.
 
-## Summarizing records
-
-`summarize()` counts records and finds totals, without needing a report built in the UI. Pass the fields to
-group by, and what to calculate. Every result is keyed by field label.
-
-```python
-from pyquickbase import F, Period
-
-rows = tasks.summarize(
-    group_by=["Status", Period("Due Date", "month")],
-    where=F("Project") == "Roof",
-    sum="Amount",
-    avg="Amount",
-    max="Due Date",
-)
-for row in rows:
-    print(row.group["Status"], row.group["Due Date"], row.count, row.sum["Amount"])
-```
-
-Leave out `group_by` for one row covering every matching record:
-
-```python
-overall = tasks.summarize(sum="Amount", where=F("Status") == "Open")[0]
-print(overall.count, overall.sum["Amount"])
-```
-
-| `SummaryRow` attribute | What it holds |
-|---|---|
-| `group` | The values that define the group. Empty without `group_by`. A user is their email, and an empty value is `None` |
-| `count` | How many records are in the group, including those with empty values |
-| `sum` | The sum of each field, which is `0` if every value is empty |
-| `avg`, `median`, `min`, `max` | Each field's result, or `None` if every value is empty. Empty values are left out |
-| `std_dev` | Each field's sample standard deviation, or `None` with fewer than two values |
-| `distinct_count` | How many different values each field has, leaving out empty ones |
-| `change` | With `compare_periods`, how the group changed since the period before |
-
-Groups are sorted by their values, with empty ones last. If nothing matches, you get an empty list, or one
-row with a `count` of 0 without `group_by`.
-
-`sum`, `avg`, `median`, and `std_dev` take numeric fields. `min` and `max` also take dates, timestamps,
-and times of day. `distinct_count` takes any field you can group by, such as how many clients have open
-tasks. You can't group by a multi-select, multi-user, or file field, because a record can hold several
-of those values at once. `row.statistic("median")` reads any statistic by name.
-
-A median keeps every value of its field in memory until the summary ends, so set `max_records_scanned`
-on a large table. The others keep only running totals.
-
-[Try it in the playground](../playground-app/index.html#add-up-time-across-tables), with simulated data.
-
-### Grouping dates by period
-
-`Period` groups a date or timestamp field by `day`, `week`, `month`, `quarter`, or `year`, labeled `2026-03-14`,
-`2026-W11`, `2026-03`, `2026-Q1`, and `2026`, so they sort in order. Which day a timestamp falls on depends on
-the time zone, so pass `time_zone` if you don't want UTC:
-
-```python
-from zoneinfo import ZoneInfo
-
-from pyquickbase import Period
-
-by_week = Period("Date Created", "week", time_zone=ZoneInfo("America/New_York"))
-print(tasks.summarize(group_by=by_week))
-```
-
-### Comparing each period with the one before
-
-With `compare_periods=True`, each row's `change` says how its group changed since the period before, so
-you don't have to line up the rows and subtract. `group_by` needs exactly one `Period`. Any other field in
-it stays fixed, so each owner's months are compared with their own.
-
-```python
-from pyquickbase import Period
-
-rows = tasks.summarize(
-    group_by=[Period("Due Date", "month"), "Status"],
-    sum="Amount",
-    compare_periods=True,
-)
-for row in rows:
-    if row.change:
-        print(row.group["Due Date"], row.change.previous, row.change.count, row.change.values)
-```
-
-| `PeriodChange` attribute | What it holds |
-|---|---|
-| `previous` | The period it's compared with, such as `2026-02` |
-| `count` | How many more records there are, negative for fewer |
-| `values` | How much each numeric statistic rose, as `{"sum": {"Amount": 120.0}}`, or `None` where either period has no value |
-
-A period with no records still counts: its count and `sum` are 0, and it has no average or median. The
-first period in the result has no `change`, since nothing before it was summarized. A filter that starts or
-ends partway through a period makes that period look smaller, so filter on whole periods.
-
-### Large tables
-
-A summary that only counts, with no `group_by` or statistics, asks Quickbase how many records match,
-in one request, and reads none, so it takes the same time at any size.
-
-Any other summary reads every matching record, in pages of up to 25,000. A page holds fewer records when the summary
-reads more fields, so that it takes about 25 MB of memory however wide it is. Totalling one field of 250,000 records by
-month takes about 11 requests and 6 seconds. A report built in the UI does the calculating in Quickbase, and is faster
-still. See [Reading summary and chart reports](#reading-summary-and-chart-reports).
-
-To refuse a scan larger than you expect, set `max_records_scanned`. If more records match, it raises
-`SummaryTooLargeError`, a `InvalidQueryError`, without reading them, and its `matched` and `limit` say by how much. A count isn't
-limited by it, as it reads no records. It never returns a total from only part of the data.
-
-```python
-from pyquickbase import SummaryTooLargeError
-
-try:
-    rows = tasks.summarize(group_by="Status", max_records_scanned=50_000)
-except SummaryTooLargeError as error:
-    print(error.matched, error.limit)
-```
-
-Records can change between pages, so on a table in use, the result may not match any one moment.
-
-## Running reports
-
-Find a report on its table by name or ID. Like tables, it's checked when first used. The API can't
-create reports, so build them in Quickbase.
-
-```python
-print([(report.id, report.name, report.type) for report in tasks.reports()])
-
-for row in tasks.report("Open tasks").run(max_total=50):
-    print(row["Title"])
-
-page = tasks.report("12").run_page(limit=100, skip=0)
-print(len(page.records), page.total, page.has_more)
-```
-
-Which method reads a report depends on its type, which `report.info().type` gives:
-
-| `report.info().type` | Read it with | Rows are |
-|---|---|---|
-| `table` | `run()` or `run_page()` | Records, as from `query()` |
-| `summary` or `chart` | `run_summary()` | Keyed by column label |
-
-Calling the other method raises `UnsupportedReportError`, as does every method on a report of another
-type, or one whose `incomplete` is true, such as one that asks the user for a value. The report isn't
-run.
-
-The report decides the filter, sort, and columns:
-
-- **Record ID# may be missing.** `record.id` raises `KeyError` if the report doesn't include that
-  column, and the default `List All` report doesn't. To check first, use `3 in record`, because
-  `hasattr(record, "id")` raises `KeyError` too.
-- **Pages may not be stable.** `query()` adds Record ID# as the last sort key to keep pages stable,
-  but a report's sort can't be changed. Ties stayed in Record ID# order in a 1,200-record test, but
-  that isn't confirmed for larger tables or while records change. If it matters, prefer `query()`.
-- **Columns can be missing for restricted users.** A column the user's role can't see is left out with
-  no error, so `record["Salary"]` raises `KeyError` for them.
-- **Report IDs are only unique within a table.** Different tables reuse the same IDs, so always get a
-  report from its own table.
-- **Names can repeat.** A repeated name raises `UnknownReportError`, which lists the IDs to choose
-  from. An ID takes priority over a name.
-
-Only table reports can be read as records. Summary, chart, and ask-the-user reports raise
-`UnsupportedReportError` before anything runs, because a summary's column IDs are positions rather than
-fields, so a total could read as a Record ID#.
-
-Running a report adds to its usage count in Quickbase, but changes no records.
-Report details come from the same cache as other metadata, so `usedCount` in `raw` can be out of
-date, and so can the details used to check that a report is a table report. Quickbase's UI doesn't let
-you change a saved report's type.
-
-[Try it in the playground](../playground-app/index.html#run-reports), with simulated data.
-
-### Reading summary and chart reports
-
-`run_summary()` reads a report built in the UI as `{column label: value}` rows, with Quickbase doing the
-calculating. A summary report labels its columns with the kind of total, such as `Hours (tot)`.
-
-```python
-rows = tasks.report("Hours by Project").run_summary()
-for row in rows:
-    print(row["Project"], row["Hours (tot)"])
-```
-
-Values are what Quickbase returns, so unlike `run()`, dates aren't converted, and a chart's dates are text
-in the app's format, such as `01-01-2026`. A report that asks the user for a value can't run through the API
-at all, and a report with two columns of the same label raises `UnsupportedReportError`, as a row could only
-hold one of them. Each run adds to the report's usage count.
-
 ## When something is refused
 
 These all raise before the query is sent, though the SDK may read table metadata first to check them.
 
 | What happened | Exception |
 |---|---|
-| The app has no such table, or the table is in another app | `UnknownTableError` |
-| `select`, `order_by`, or `where` names a field the table doesn't have, or the token can't see | `UnknownFieldError` |
-| `where` can't be sent as written, such as a lowercase operator in a query string, or `_curuser_` on a user field through `F` | `InvalidQueryError` |
-| `where_from_dict()` got data it can't use, such as an unknown operator, a missing `value`, or `today` on a date field | `InvalidQueryError` |
+| The app has no such table, or the table is in another app | [`UnknownTableError`](../reference/errors.md#UnknownTableError) |
+| `select`, `order_by`, or `where` names a field the table doesn't have, or the token can't see | [`UnknownFieldError`](../reference/errors.md#UnknownFieldError) |
+| `where` can't be sent as written, such as a lowercase operator in a query string, or `_curuser_` on a user field through [`F`](../reference/queries.md#F) | [`InvalidQueryError`](../reference/errors.md#InvalidQueryError) |
+| [`where_from_dict()`](../reference/queries.md#where_from_dict) got data it can't use, such as an unknown operator, a missing `value`, or `today` on a date field | `InvalidQueryError` |
 | `limit`, `page_size`, or `max_total` below 1, or a negative `skip` | `InvalidQueryError` |
 | `select` or `order_by` isn't a field or a list of them | `InvalidQueryError` |
-| `get()` with something other than a positive integer | `InvalidValueError` |
+| [`get()`](../reference/records.md#Table-get) with something other than a positive integer | [`InvalidValueError`](../reference/errors.md#InvalidValueError) |
 | Reading a field the record doesn't hold | `KeyError` |
-| The table has no such report, or several with that name | `UnknownReportError` |
-| `run()` on a summary, chart, or ask-the-user report, or `run_summary()` on a table or ask-the-user report, or one with two columns of the same label | `UnsupportedReportError` |
-| `summarize()` with a field it can't use, such as text in `sum`, or a multi-select field in `group_by` | `InvalidQueryError` |
-| `summarize()` finds more records than `max_records_scanned` | `SummaryTooLargeError`, a `InvalidQueryError`, and no records are read |
-| `summarize()` finds a value that isn't what its field's type says | `InvalidResponseError`, and there's no partial result |
 
 See [Handling errors](errors.md) for failures that come from Quickbase, such as a refused token.

@@ -10,7 +10,7 @@ on the async client, where you `await` it. To stop a client from changing the sc
 
 ## Creating a table and its fields
 
-`create_table()` returns the new table, and `create_field()` takes a label and a
+[`create_table()`](../reference/tables.md#App-create_table) returns the new table, and [`create_field()`](../reference/fields.md#Table-create_field) takes a label and a
 [field type](../field-types.md).
 
 ```python
@@ -45,7 +45,7 @@ To run the same script more than once, use the `ensure_` methods in
 ## Making a field required or unique
 
 Quickbase sets `required` and `unique` in a second request, after creating the field. If that request
-fails, the field exists without them, so run `ensure_field()` to repair it once the problem is fixed.
+fails, the field exists without them, so run [`ensure_field()`](../reference/fields.md#Table-ensure_field) to repair it once the problem is fixed.
 
 ```python
 tasks = qb.app("bq1234567").table("Tasks")
@@ -61,11 +61,11 @@ What's already in the table decides whether Quickbase allows this:
 | `required=True` | Any record has this field empty. **That includes every new field on a table with records**, so create the field, fill it in, and then make it required |
 | `unique=True` | The field already holds duplicate values. A new, empty field is allowed |
 
-Inserting a record without a required field's value then raises `WriteError`.
+Inserting a record without a required field's value then raises [`WriteError`](../reference/errors.md#WriteError).
 
 ## Linking tables with a relationship
 
-Call `create_relationship()` on the child table and pass the parent. This example makes each task
+Call [`create_relationship()`](../reference/fields.md#Table-create_relationship) on the child table and pass the parent. This example makes each task
 belong to a project.
 
 ```python
@@ -85,10 +85,10 @@ link = tasks.create_relationship(projects, foreign_key="Project", lookup_fields=
 
 - `lookup_fields` are the parent's fields. `link.lookup_field_ids` lists the lookups that resulted,
   which are on the child, so don't pass one back in.
-- `tasks.relationships()` lists a relationship. `projects.relationships()` doesn't, because Quickbase
+- [`tasks.relationships()`](../reference/fields.md#Table-relationships) lists a relationship. `projects.relationships()` doesn't, because Quickbase
   only lists one on its child.
 - Calling `create_relationship()` again makes another relationship, even with the same label.
-  `ensure_relationship()` finds the existing one.
+  [`ensure_relationship()`](../reference/fields.md#Table-ensure_relationship) finds the existing one.
 
 [Try it in the playground](../playground-app/index.html#follow-links-between-tables), with simulated data.
 
@@ -97,9 +97,9 @@ link = tasks.create_relationship(projects, foreign_key="Project", lookup_fields=
 Use these three methods to add to a relationship, including one that already exists. Call each on the
 child table.
 
-- `ensure_lookup_field()` shows a parent's field on the child.
-- `ensure_summary_field()` calculates a value from the child's records, and puts it on the parent.
-- `ensure_count_field()` counts the child's records, and puts the count on the parent.
+- [`ensure_lookup_field()`](../reference/fields.md#Table-ensure_lookup_field) shows a parent's field on the child.
+- [`ensure_summary_field()`](../reference/fields.md#Table-ensure_summary_field) calculates a value from the child's records, and puts it on the parent.
+- [`ensure_count_field()`](../reference/fields.md#Table-ensure_count_field) counts the child's records, and puts the count on the parent.
 
 ```mermaid
 erDiagram
@@ -148,8 +148,8 @@ projects.ensure_field("Hours Or Zero", "numeric", formula="Nz([Total Hours])")
 | `combined_user` | `user` | `multiuser` |
 
 We tested these combinations, and others may work. Quickbase refused `sum` of a `checkbox` and `max` of
-`text`, with `BadRequestError`. `count` takes no field, so it has its own method, `ensure_count_field()`,
-and `ensure_summary_field()` raises `InvalidValueError` for it.
+`text`, with [`BadRequestError`](../reference/errors.md#BadRequestError). `count` takes no field, so it has its own method, `ensure_count_field()`,
+and `ensure_summary_field()` raises [`InvalidValueError`](../reference/errors.md#InvalidValueError) for it.
 
 **A summary with no child records is empty, not 0**, except a count, which is 0. Code that expects a number should read a formula
 that uses `Nz()`, such as `Hours Or Zero` in the example here, rather than the summary.
@@ -157,7 +157,7 @@ that uses `Nz()`, such as `Hours Or Zero` in the example here, rather than the s
 ### Summarizing only some child records
 
 Pass `where` to either method to combine only the child records that match. It's a condition on the
-child table, built with `F` or written as a string, as in a query:
+child table, built with [`F`](../reference/queries.md#F) or written as a string, as in a query:
 
 ```python
 tasks.ensure_summary_field(link, "Hours", "Open Hours", where=F("Status") == "Open")
@@ -166,20 +166,20 @@ tasks.ensure_count_field(link, "Done Tasks", where="{7.EX.'Done'}")
 
 - **The filter is checked before anything is sent.** Quickbase saves a filter it can't use, such as one
   with a typo or a field that doesn't exist, without an error, and the summary then always reads as
-  empty. The SDK raises `InvalidQueryError` instead.
+  empty. The SDK raises [`InvalidQueryError`](../reference/errors.md#InvalidQueryError) instead.
 - **It's part of what makes a summary the same.** If a summary with that label exists with a different
-  filter, or none, the method raises `SchemaMismatchError`. `Field.summary_query` holds a summary's
+  filter, or none, the method raises [`SchemaMismatchError`](../reference/errors.md#SchemaMismatchError). `Field.summary_query` holds a summary's
   filter.
 - **On a client with a policy,** the filter may only use fields the client can filter on, since the
   summary shows how many records match. A summary's filter is shown only when every field it uses is
   readable on the child, and then an existing summary is compared with it. Otherwise `summary_query`
   is None, and an existing summary is matched without its filter.
-- **A child with a row limit gets it in the filter.** The policy's `limit.rows()` for the child is
+- **A child with a row limit gets it in the filter.** The policy's [`limit.rows()`](../reference/rules.md#limit-rows) for the child is
   ANDed into the filter, so the summary counts only what the client may reach, and an existing
   summary of that child whose filter doesn't hold the limit is hidden.
 - **Deleting a field a filter uses** stops the summary working. A plan lists it with the summaries that
   stop working.
-- `CreateSummaryField` takes the same `where`, as a string.
+- [`CreateSummaryField`](../reference/schema-plans.md#CreateSummaryField) takes the same `where`, as a string.
 
 [Try it in the playground](../playground-app/index.html#watch-computed-fields-update), with simulated data.
 
@@ -206,12 +206,12 @@ projects.ensure_field("Total Hours", "numeric", formula="Nz([Hours Sum])")
 
 | Method | Finds what's there by | If it exists |
 |---|---|---|
-| `ensure_table()` | Its name, ignoring case | Returns it unchanged |
-| `ensure_field()` | Its label, ignoring case | Changes only what you passed that differs, including `formula`. Raises `SchemaMismatchError` rather than changing its type |
-| `ensure_relationship()` | The parent, and the foreign key's label ignoring case | Returns it unchanged |
-| `ensure_lookup_field()` | The parent's field it points at, so a renamed lookup is still found | Applies `label` if you passed one |
-| `ensure_summary_field()` | Its label on the parent, ignoring case | Returns it. Raises `SchemaMismatchError` if that field isn't this same summary, with the same `where` |
-| `ensure_count_field()` | Its label on the parent, ignoring case | Returns it. Raises `SchemaMismatchError` if that field isn't a count of this relationship, with the same `where` |
+| [`ensure_table()`](../reference/tables.md#App-ensure_table) | Its name, ignoring case | Returns it unchanged |
+| [`ensure_field()`](../reference/fields.md#Table-ensure_field) | Its label, ignoring case | Changes only what you passed that differs, including `formula`. Raises [`SchemaMismatchError`](../reference/errors.md#SchemaMismatchError) rather than changing its type |
+| [`ensure_relationship()`](../reference/fields.md#Table-ensure_relationship) | The parent, and the foreign key's label ignoring case | Returns it unchanged |
+| [`ensure_lookup_field()`](../reference/fields.md#Table-ensure_lookup_field) | The parent's field it points at, so a renamed lookup is still found | Applies `label` if you passed one |
+| [`ensure_summary_field()`](../reference/fields.md#Table-ensure_summary_field) | Its label on the parent, ignoring case | Returns it. Raises `SchemaMismatchError` if that field isn't this same summary, with the same `where` |
+| [`ensure_count_field()`](../reference/fields.md#Table-ensure_count_field) | Its label on the parent, ignoring case | Returns it. Raises `SchemaMismatchError` if that field isn't a count of this relationship, with the same `where` |
 
 `required=True` in `ensure_field()` follows
 [the same rules as anywhere else](#making-a-field-required-or-unique), so a script that adds a required
@@ -219,7 +219,7 @@ field to a table with records needs to fill it in first.
 
 ## Changing a field
 
-`update_field()` changes only what you pass, and takes a label or an ID. If Quickbase refuses, the
+[`update_field()`](../reference/fields.md#Table-update_field) changes only what you pass, and takes a label or an ID. If Quickbase refuses, the
 field stays as it was.
 
 ```python
@@ -243,13 +243,13 @@ tasks.delete_fields(["Old Field", "Older Field"])
 tasks.drop(confirm="Tasks")
 ```
 
-`delete_fields()` deletes the fields' data too. It raises `WriteError` if any field couldn't be
+[`delete_fields()`](../reference/fields.md#Table-delete_fields) deletes the fields' data too. It raises [`WriteError`](../reference/errors.md#WriteError) if any field couldn't be
 deleted, such as a built-in field, **though the others in the list will have been**. If one doesn't
-exist, it raises `UnknownFieldError` and deletes nothing.
+exist, it raises [`UnknownFieldError`](../reference/errors.md#UnknownFieldError) and deletes nothing.
 
 `drop()` deletes the table and all its records, so it requires the table's exact name.
 
-Before deleting a field, `field_usage()` shows where Quickbase uses it, as its Usage page does: in
+Before deleting a field, [`field_usage()`](../reference/fields.md#Table-field_usage) shows where Quickbase uses it, as its Usage page does: in
 reports, forms, formulas, pipelines, notifications, and more.
 
 ```python
@@ -257,7 +257,7 @@ for usage in tasks.field_usage(["Old Field", "Older Field"]):
     print(usage.label, usage.describe())  # Old Field 2 reports and 1 default report
 ```
 
-`describe()` puts the counts in words, `counts` holds them by kind, such as `{"reports": 2}`, and
+[`describe()`](../reference/fields.md#FieldUsage-describe) puts the counts in words, `counts` holds them by kind, such as `{"reports": 2}`, and
 `total` adds them up. Leave out the fields to get every field in the table. Quickbase counts a field in
 the reports it makes for every table, so a new field already has a few uses. Only an app
 administrator's token can read these, as with the Usage page. A
@@ -265,8 +265,8 @@ administrator's token can read these, as with the Usage page. A
 
 ## Planning changes before making them
 
-`preview_schema_changes()` checks a list of changes against the app as it is, and says what each would do without
-making it. `apply_schema_changes()` then makes them, in order, if the app hasn't changed since.
+[`preview_schema_changes()`](../reference/schema-plans.md#App-preview_schema_changes) checks a list of changes against the app as it is, and says what each would do without
+making it. [`apply_schema_changes()`](../reference/schema-plans.md#App-apply_schema_changes) then makes them, in order, if the app hasn't changed since.
 
 ```python
 from pyquickbase import CreateField, CreateRelationship, CreateSummaryField, DeleteField
@@ -288,10 +288,10 @@ if not plan.blockers:
     app.apply_schema_changes(plan)
 ```
 
-To change a table's key field, use a `SetKeyField` change in a plan. The field must be unique, or be `Record ID#`
+To change a table's key field, use a [`SetKeyField`](../reference/schema-plans.md#SetKeyField) change in a plan. The field must be unique, or be `Record ID#`
 to go back to the usual key. `allow.schema(..., "set_key_field")` allows it for a client with a policy.
 
-Each `PlannedChange` has:
+Each [`PlannedChange`](../reference/schema-plans.md#PlannedChange) has:
 
 - **`status`:** `ready`, `already_done` if the app already has it, or `blocked`.
 - **`risk`:** `additive`, `modifying`, or `destructive`.
@@ -312,11 +312,11 @@ flowchart TD
 ```
 
 **Applying is checked again.** `apply_schema_changes()` plans the same changes again first. If the tables and
-fields they touch have changed, it raises `SchemaMismatchError`. If anything blocks them, it raises
-`InvalidValueError`. Either way, nothing is sent. Record counts aren't part of that check, as they
+fields they touch have changed, it raises [`SchemaMismatchError`](../reference/errors.md#SchemaMismatchError). If anything blocks them, it raises
+[`InvalidValueError`](../reference/errors.md#InvalidValueError). Either way, nothing is sent. Record counts aren't part of that check, as they
 change all the time.
 
-**Quickbase can't undo a change.** If one fails, `apply_schema_changes()` raises `SchemaChangeError`, whose
+**Quickbase can't undo a change.** If one fails, `apply_schema_changes()` raises [`SchemaChangeError`](../reference/errors.md#SchemaChangeError), whose
 `result` lists the changes made, the one that failed, and the ones not attempted. A change already made
 counts as `already_done`, so planning the same list again shows only what's left.
 
@@ -327,23 +327,23 @@ To give a model these steps as tools, see
 
 | What happened | Exception | What's left behind |
 |---|---|---|
-| Unknown field type, a label already in use, or `choices` on the wrong type | `BadRequestError` | Nothing was created |
+| Unknown field type, a label already in use, or `choices` on the wrong type | [`BadRequestError`](../reference/errors.md#BadRequestError) | Nothing was created |
 | An unknown key in `properties` | `BadRequestError` | Nothing was created or changed |
 | `required` or `unique` refused while creating a field | `BadRequestError` | **The field exists without them** |
 | `required` or `unique` refused while updating a field | `BadRequestError` | The field is unchanged |
-| `create_table()` with a name that's in use | `BadRequestError` | Nothing was created |
-| `ensure_field()` with a different type | `SchemaMismatchError` | The field is unchanged |
-| `ensure_summary_field()` with a label that's in use | `SchemaMismatchError` | The field is unchanged |
-| A field label or ID that doesn't exist | `UnknownFieldError` | Nothing was changed |
-| `update_field()` with nothing to change, `delete_fields([])`, or the wrong `confirm` | `InvalidValueError` | Nothing was sent |
-| `delete_fields()` with a field that can't be deleted | `WriteError` | The other fields were deleted |
-| `apply_schema_changes()` after the schema changed | `SchemaMismatchError` | Nothing was sent |
+| [`create_table()`](../reference/tables.md#App-create_table) with a name that's in use | `BadRequestError` | Nothing was created |
+| [`ensure_field()`](../reference/fields.md#Table-ensure_field) with a different type | [`SchemaMismatchError`](../reference/errors.md#SchemaMismatchError) | The field is unchanged |
+| [`ensure_summary_field()`](../reference/fields.md#Table-ensure_summary_field) with a label that's in use | `SchemaMismatchError` | The field is unchanged |
+| A field label or ID that doesn't exist | [`UnknownFieldError`](../reference/errors.md#UnknownFieldError) | Nothing was changed |
+| [`update_field()`](../reference/fields.md#Table-update_field) with nothing to change, `delete_fields([])`, or the wrong `confirm` | [`InvalidValueError`](../reference/errors.md#InvalidValueError) | Nothing was sent |
+| [`delete_fields()`](../reference/fields.md#Table-delete_fields) with a field that can't be deleted | [`WriteError`](../reference/errors.md#WriteError) | The other fields were deleted |
+| [`apply_schema_changes()`](../reference/schema-plans.md#App-apply_schema_changes) after the schema changed | `SchemaMismatchError` | Nothing was sent |
 | `apply_schema_changes()` with a plan that has blockers | `InvalidValueError` | Nothing was sent |
-| A change in `apply_schema_changes()` that fails | `SchemaChangeError` | **The changes before it were made**, as `result` lists |
+| A change in `apply_schema_changes()` that fails | [`SchemaChangeError`](../reference/errors.md#SchemaChangeError) | **The changes before it were made**, as `result` lists |
 
 See [Handling errors](errors.md) for how these exceptions relate.
 
 ## The metadata cache
 
 These methods refresh the client's cached metadata for you. After changing the schema some other way,
-such as in the Quickbase interface, call `qb.clear_metadata_cache()`.
+such as in the Quickbase interface, call [`qb.clear_metadata_cache()`](../reference/client.md#Quickbase-clear_metadata_cache).

@@ -318,6 +318,8 @@ _JOB_TASKS = (
     "`Attachment`. It starts with three records, and each example starts from those again."
 )
 _READING = ("Reading records", "../guides/reading.md")
+_SUMMARIES = ("Summarizing records", "../guides/summaries.md")
+_REPORTS = ("Running reports", "../guides/reports.md")
 _WRITING = ("Writing records", "../guides/writing.md")
 _SCHEMA = ("Changing the schema", "../guides/schema.md")
 _CLIENTS = ("Configuring clients", "../guides/clients.md")
@@ -663,7 +665,7 @@ PAGES = (
             Group(
                 "Summarize records",
                 "summarize",
-                _READING,
+                _SUMMARIES,
                 (
                     "Table.summarize",
                     "SummaryRow",
@@ -719,13 +721,13 @@ PAGES = (
             Group(
                 "Find a report",
                 "find-a-report",
-                _READING,
+                _REPORTS,
                 ("Report", "Table.reports", "Table.report", "Report.info", "ReportInfo"),
             ),
             Group(
                 "Run a report",
                 "run-a-report",
-                _READING,
+                _REPORTS,
                 ("Report.run", "Report.run_page", "Report.run_summary"),
             ),
         ),
@@ -2031,11 +2033,17 @@ def _shown_parameters(parameters: list[Parameter], methods: dict[str, str]) -> l
     ]
 
 
-def _describe(method: Method, methods: dict[str, str], *, two_columns: bool = False) -> list[str]:
+def _describe(
+    method: Method,
+    methods: dict[str, str],
+    *,
+    two_columns: bool = False,
+    returned: list[str] | None = None,
+) -> list[str]:
     """Write a method's description, parameters, return value, and errors as Markdown.
 
     With `two_columns`, the signature is left out, as it goes beside the description with the
-    example, and long parameter lists are folded.
+    example, and long parameter lists are folded. `returned` goes after the return value.
     """
     doc = method.doc
     lines = _prose_lines(doc, methods)
@@ -2057,7 +2065,7 @@ def _describe(method: Method, methods: dict[str, str], *, two_columns: bool = Fa
         )
         lines += ["**Parameters**", "", *listed]
     if not method.is_property:
-        lines += _return_lines(method.returns, doc, methods)
+        lines += _return_lines(method.returns, doc, methods) + (returned or [])
     return lines + _raises_lines(doc, methods)
 
 
@@ -2327,7 +2335,7 @@ def _is_called(name: str, symbol: Symbol) -> bool:
     return bool(symbol.signature) and not name[0].isupper()
 
 
-def _is_namespace(symbol: Symbol) -> bool:
+def is_namespace(symbol: Symbol) -> bool:
     """Whether a public name is a namespace of functions, such as `allow`."""
     return not inspect.isclass(getattr(pyquickbase, symbol.name)) and bool(symbol.methods)
 
@@ -2355,7 +2363,44 @@ def _heading(level: str, title: str, label: str, anchor: str) -> str:
     return f'{level} {title} <code class="ref-call">{label}</code> {{#{anchor}}}'
 
 
-def _two_column_method(method: Method, title: str, label: str) -> list[str]:
+# Pages that show, under a method's return value, what the returned object holds, so a reader
+# needn't leave the page. A trial on one page, as it makes each method's entry longer.
+INLINE_RETURNS = {"reports"}
+
+
+def _holds(symbol: Symbol) -> str:
+    if symbol.attributes and symbol.methods:
+        return "holds, and what it can do"
+    return "holds" if symbol.attributes else "can do"
+
+
+def returned_lines(method: Method, reference: Reference) -> list[str]:
+    """Write a folded list of what each object a method returns holds, linked to its own entry."""
+    lines: list[str] = []
+    for name in dict.fromkeys(_NAME.findall(method.returns)):
+        symbol = reference.symbols.get(name)
+        if symbol is None or is_namespace(symbol) or not (symbol.attributes or symbol.methods):
+            continue
+        page = NAME_LINKS[name].partition("#")[0]
+        lines += [
+            '<details class="ref-more ref-returned" markdown>',
+            f"<summary>What a <code>{name}</code> {_holds(symbol)}</summary>",
+            "",
+        ]
+        if symbol.attributes:
+            lines += _attribute_lines(symbol.attributes, {})
+        for item in symbol.methods:
+            title = TITLES[item.heading.removesuffix("()")]
+            lines.append(f"- [`{item.name}()`]({page}#{item.anchor}): {title}")
+        if symbol.methods:
+            lines.append("")
+        lines += [f"See [`{name}`]({NAME_LINKS[name]}) for more.", "", "</details>", ""]
+    return lines
+
+
+def _two_column_method(
+    method: Method, title: str, label: str, returned: list[str] | None = None
+) -> list[str]:
     """Write a method as two columns: what it does on the left, and its code on the right."""
     code = [f"```python\n{method.signature}\n```", ""]
     code += _example_lines(method.sync_code, method.async_code, method.output)
@@ -2363,7 +2408,7 @@ def _two_column_method(method: Method, title: str, label: str) -> list[str]:
     text = [
         _heading("###", title, label, method.anchor),
         "",
-        *_describe(method, scope, two_columns=True),
+        *_describe(method, scope, two_columns=True, returned=returned),
     ]
     return _row(text, code)
 
@@ -2408,7 +2453,7 @@ def _symbol_rows(symbol: Symbol) -> list[str]:
         else f"### `{name}` {{#{name}}}"
     )
     lines = _row([heading, "", *_symbol_text(symbol)], code)
-    namespace = _is_namespace(symbol)
+    namespace = is_namespace(symbol)
     for method in symbol.methods:
         title = TITLES[method.heading.removesuffix("()")]
         label = method.heading if namespace else f"{method.name}()"
@@ -2494,7 +2539,10 @@ def build_page(page: Page, reference: Reference) -> str:
             split = _split(member)
             if split is not None:
                 method = reference.methods[split[0]][split[1]]
-                lines += _two_column_method(method, TITLES[member], labels[member])
+                returned = (
+                    returned_lines(method, reference) if page.slug in INLINE_RETURNS else None
+                )
+                lines += _two_column_method(method, TITLES[member], labels[member], returned)
             elif member in CLASS_BY_NAME:
                 lines += _class_row(CLASS_BY_NAME[member])
             else:

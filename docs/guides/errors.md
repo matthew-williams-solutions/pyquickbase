@@ -5,12 +5,12 @@ description: "Every exception, and which ones mean a request wasn't sent."
 # Handling errors
 
 This page covers what the SDK raises, what each error means for your data, and what's retried for you.
-Every exception this library defines derives from `QuickbaseError`, and the async client raises the same
+Every exception this library defines derives from [`QuickbaseError`](../reference/errors.md#QuickbaseError), and the async client raises the same
 ones.
 
 ## Catching errors
 
-Catch the specific errors you can act on, and `QuickbaseError` for the rest.
+Catch the specific errors you can act on, and [`QuickbaseError`](../reference/errors.md#QuickbaseError) for the rest.
 
 ```python
 from pyquickbase import (
@@ -47,8 +47,8 @@ pyquickbase.errors.UnknownTableError: App bq1234567 has no table 'Task'. Did you
 See https://matthew-williams-solutions.github.io/pyquickbase/reference/errors/#UnknownTableError
 ```
 
-Catching a class catches everything under it. `WritePermissionDeniedError` is under both `WriteError` and
-`PermissionDeniedError`, so either one catches a refused write:
+Catching a class catches everything under it. [`WritePermissionDeniedError`](../reference/errors.md#WritePermissionDeniedError) is under both [`WriteError`](../reference/errors.md#WriteError) and
+[`PermissionDeniedError`](../reference/errors.md#PermissionDeniedError), so either one catches a refused write:
 
 ```text
 QuickbaseError
@@ -80,13 +80,13 @@ QuickbaseError
     └── ServerError
 ```
 
-The eleven listed first, from `ConfigurationError` to `CodePageChangedError`, mean the request wasn't
+The eleven listed first, from [`ConfigurationError`](../reference/errors.md#ConfigurationError) to [`CodePageChangedError`](../reference/errors.md#CodePageChangedError), mean the request wasn't
 sent, though the SDK may have read metadata or counted records first.
 
-`ConfigurationError`, `InvalidQueryError`, and `InvalidValueError` are also `ValueError`s, and the three
+`ConfigurationError`, [`InvalidQueryError`](../reference/errors.md#InvalidQueryError), and [`InvalidValueError`](../reference/errors.md#InvalidValueError) are also `ValueError`s, and the three
 `Unknown...Error`s are also `LookupError`s.
 
-Reading a missing key from a `Record` raises Python's `KeyError`, as any mapping does. That includes
+Reading a missing key from a [`Record`](../reference/records.md#Record) raises Python's `KeyError`, as any mapping does. That includes
 `record.id` on a report row without a Record ID# column.
 
 ## Mistakes caught before sending
@@ -95,16 +95,16 @@ These mean the request wasn't sent, though the SDK may have read the table's met
 
 | Exception | Cause |
 |---|---|
-| `ConfigurationError` | Invalid client settings, or missing environment variables |
-| `InvalidQueryError` | A query that can't be sent as written, such as a lowercase operator in a hand-written string |
-| `InvalidValueError` | A row, value, or file request that can't be sent |
-| `SchemaMismatchError` | An `ensure_` method found a field that isn't what it was asked for, or the schema changed since a plan was made |
-| `UnknownTableError` | No table with that name or ID in this app, or the client's policy hides it |
-| `UnknownFieldError` | No field with that label or ID in this table, or the token's role or the client's policy hides it |
-| `UnknownReportError` | No report with that name or ID on this table, several with that name, or one the role can't use |
-| `UnsupportedReportError` | A report that can't be read as records, such as a summary or chart |
-| `CodePageChangedError` | A [code page](code-pages.md) isn't the version a write expected |
-| `PolicyRefusedError` | The client's [policy](../policies/index.md) doesn't allow this request |
+| [`ConfigurationError`](../reference/errors.md#ConfigurationError) | Invalid client settings, or missing environment variables |
+| [`InvalidQueryError`](../reference/errors.md#InvalidQueryError) | A query that can't be sent as written, such as a lowercase operator in a hand-written string |
+| [`InvalidValueError`](../reference/errors.md#InvalidValueError) | A row, value, or file request that can't be sent |
+| [`SchemaMismatchError`](../reference/errors.md#SchemaMismatchError) | An `ensure_` method found a field that isn't what it was asked for, or the schema changed since a plan was made |
+| [`UnknownTableError`](../reference/errors.md#UnknownTableError) | No table with that name or ID in this app, or the client's policy hides it |
+| [`UnknownFieldError`](../reference/errors.md#UnknownFieldError) | No field with that label or ID in this table, or the token's role or the client's policy hides it |
+| [`UnknownReportError`](../reference/errors.md#UnknownReportError) | No report with that name or ID on this table, several with that name, or one the role can't use |
+| [`UnsupportedReportError`](../reference/errors.md#UnsupportedReportError) | A report that can't be read as records, such as a summary or chart |
+| [`CodePageChangedError`](../reference/errors.md#CodePageChangedError) | A [code page](code-pages.md) isn't the version a write expected |
+| [`PolicyRefusedError`](../reference/errors.md#PolicyRefusedError) | The client's [policy](../policies/index.md) doesn't allow this request |
 
 A `PolicyRefusedError`'s `decision` says what was refused, by name, which rule refused it, and what
 would allow it. Its message follows one form: `Refused by <layer>: <what>. <reason>. (rule: <rule>)
@@ -123,7 +123,7 @@ except InvalidQueryError as error:
 
 ## Writes that fail partway
 
-Quickbase writes the rows it can and reports the rest, so a `WriteError` doesn't mean nothing changed.
+Quickbase writes the rows it can and reports the rest, so a [`WriteError`](../reference/errors.md#WriteError) doesn't mean nothing changed.
 Its `result` holds what was written and each failed row, and `result.row_ids` matches an insert's new
 records to your rows.
 
@@ -141,35 +141,35 @@ except WriteError as error:
 ```
 
 When a later batch of a large write fails, the error's `__cause__` is that batch's own error, such as a
-`RateLimitError`, and `result` holds the batches before it. See [When rows fail](writing.md#when-rows-fail)
+[`RateLimitError`](../reference/errors.md#RateLimitError), and `result` holds the batches before it. See [When rows fail](writing.md#when-rows-fail)
 for each row's `reason`.
 
 ## Refused writes
 
 Quickbase refuses a write in two ways, depending on the role. A role with neither add nor modify rights on
 the table gets a 403. Any other refusal, including a field the role can only view, is a row error in a
-successful response. `WritePermissionDeniedError` covers both. It's a `WriteError` and a
-`PermissionDeniedError`, so either one catches it, and its `status_code` is 403 or 207.
+successful response. [`WritePermissionDeniedError`](../reference/errors.md#WritePermissionDeniedError) covers both. It's a [`WriteError`](../reference/errors.md#WriteError) and a
+[`PermissionDeniedError`](../reference/errors.md#PermissionDeniedError), so either one catches it, and its `status_code` is 403 or 207.
 
 If some rows failed for another reason too, you get a plain `WriteError`, so check each row's `reason`. A row
 with one field the role can't change is refused whole, so its other fields don't change either.
 
 ## Errors from Quickbase
 
-These derive from `APIError`, which has `status_code`, `method`, `path`, `message`, `description`, and
+These derive from [`APIError`](../reference/errors.md#APIError), which has `status_code`, `method`, `path`, `message`, `description`, and
 `request_id`. Include `request_id` when reporting a problem to Quickbase support. The methods that use Quickbase's
-XML API, such as `apps()`, also set `quickbase_code` to Quickbase's numeric error code. There the code decides which
+XML API, such as [`apps()`](../reference/apps.md#Quickbase-apps), also set `quickbase_code` to Quickbase's numeric error code. There the code decides which
 exception you get, and `status_code` is still the HTTP status.
 
 | Exception | Status |
 |---|---|
-| `BadRequestError` | 400 |
-| `AuthenticationError` | 401 |
-| `PermissionDeniedError` | 403 |
-| `NotFoundError` | 404 |
-| `NoLongerAvailableError` | 404, when Quickbase says the operation doesn't exist |
-| `RateLimitError` | 429, with `retry_after` |
-| `ServerError` | 5xx |
+| [`BadRequestError`](../reference/errors.md#BadRequestError) | 400 |
+| [`AuthenticationError`](../reference/errors.md#AuthenticationError) | 401 |
+| [`PermissionDeniedError`](../reference/errors.md#PermissionDeniedError) | 403 |
+| [`NotFoundError`](../reference/errors.md#NotFoundError) | 404 |
+| [`NoLongerAvailableError`](../reference/errors.md#NoLongerAvailableError) | 404, when Quickbase says the operation doesn't exist |
+| [`RateLimitError`](../reference/errors.md#RateLimitError) | 429, with `retry_after` |
+| [`ServerError`](../reference/errors.md#ServerError) | 5xx |
 
 !!! note "A missing app is a 401"
     Quickbase answers with a 401 rather than a 404 for an app or table that doesn't exist, or that the
@@ -186,10 +186,10 @@ These errors don't say whether Quickbase applied a write, so check the data befo
 
 | Exception | Cause |
 |---|---|
-| `NetworkError` | The request failed before a response arrived |
-| `RequestTimeoutError` | The request timed out, a kind of `NetworkError` |
-| `ServerError` | Quickbase failed while handling it |
-| `InvalidResponseError` | Quickbase reported success, but the response wasn't in the expected format |
+| [`NetworkError`](../reference/errors.md#NetworkError) | The request failed before a response arrived |
+| [`RequestTimeoutError`](../reference/errors.md#RequestTimeoutError) | The request timed out, a kind of `NetworkError` |
+| [`ServerError`](../reference/errors.md#ServerError) | Quickbase failed while handling it |
+| [`InvalidResponseError`](../reference/errors.md#InvalidResponseError) | Quickbase reported success, but the response wasn't in the expected format |
 
 ## Retries
 
@@ -203,10 +203,10 @@ The client retries these for you, so an error you catch means the retries ran ou
 | 502, 503, or 504 | Yes | No |
 
 Reads are GET requests, record queries, report runs, and formula runs. A long burst of requests can still
-use up a call's retries and raise `RateLimitError`, so handle it if you make many calls at once. See
+use up a call's retries and raise [`RateLimitError`](../reference/errors.md#RateLimitError), so handle it if you make many calls at once. See
 [Configuring clients](clients.md#retries) to change the retries.
 
 ## Errors for a model
 
-`tool_error()` turns any of these into plain data with a fixed `code`, whether any data changed, and
+[`tool_error()`](../reference/operations.md#tool_error) turns any of these into plain data with a fixed `code`, whether any data changed, and
 whether it's `retryable`. See [Returning results to a model](../agents/results.md#returning-results-to-a-model).

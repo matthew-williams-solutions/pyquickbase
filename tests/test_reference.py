@@ -584,3 +584,20 @@ def test_the_error_overview_says_what_tool_error_reports() -> None:
     assert "| [`UnknownFieldError`](#UnknownFieldError) | `unknown_field` | No |" in overview
     assert "WritePermissionDeniedError  (also PermissionDeniedError)" in overview
     assert "## Every error" in MARKDOWN["errors"]
+
+
+def test_a_trial_page_shows_what_each_returned_object_holds() -> None:
+    page = PAGES["reports"]
+    assert "<summary>What a <code>RecordIterator</code> can do</summary>" in page
+    assert "<summary>What a <code>ReportInfo</code> holds</summary>" in page
+    assert (
+        "- [`to_pandas()`](records.md#RecordIterator-to_pandas): Fetch records into pandas" in page
+    )
+    assert "ref-returned" not in PAGES["writes"]
+    assert "ref-returned" not in MARKDOWN["reports"]
+
+
+def test_a_returned_list_or_namespace_is_shown_by_what_it_holds() -> None:
+    lines = build_reference.returned_lines(METHODS["Table"]["summarize"], REFERENCE)
+    assert "<summary>What a <code>SummaryRow</code> holds, and what it can do</summary>" in lines
+    assert build_reference.returned_lines(METHODS["Table"]["count"], REFERENCE) == []

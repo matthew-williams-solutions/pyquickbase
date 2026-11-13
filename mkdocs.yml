@@ -55,16 +55,21 @@ nav:
   - Home: index.md
   - Guides:
       - Getting started: getting-started.md
-      - Reading records: guides/reading.md
-      - Writing records: guides/writing.md
-      - File attachments: guides/files.md
-      - CSV and Excel files: guides/spreadsheets.md
-      - Formulas: guides/formulas.md
-      - Changing the schema: guides/schema.md
-      - Working with apps: guides/apps.md
-      - Code pages: guides/code-pages.md
-      - Handling errors: guides/errors.md
-      - Configuring clients: guides/clients.md
+      - Working with data:
+          - Reading records: guides/reading.md
+          - Summarizing records: guides/summaries.md
+          - Running reports: guides/reports.md
+          - Writing records: guides/writing.md
+          - File attachments: guides/files.md
+          - CSV and Excel files: guides/spreadsheets.md
+          - Formulas: guides/formulas.md
+      - Apps and schema:
+          - Changing the schema: guides/schema.md
+          - Working with apps: guides/apps.md
+          - Code pages: guides/code-pages.md
+      - Running in production:
+          - Handling errors: guides/errors.md
+          - Configuring clients: guides/clients.md
   - AI agents:
       - Using pyquickbase from an AI agent: agents/index.md
       - Untrusted input: agents/untrusted-input.md
@@ -72,16 +77,17 @@ nav:
       - Results and errors: agents/results.md
       - Previews and schema changes: agents/changes.md
   - Policies:
-      - Policies: policies/index.md
-      - Your first policy: policies/tutorial.md
-      - Writing rules: policies/rules.md
-      - Tags and new fields: policies/tags.md
-      - Limiting rows: policies/rows.md
-      - Schema changes: policies/schema.md
-      - Rules of your own: policies/custom-rules.md
-      - Debugging refusals: policies/debugging.md
-      - Recipes: policies/recipes.md
-      - What a policy doesn't do: policies/limits.md
+      - Start here:
+          - Policies: policies/index.md
+          - Your first policy: policies/tutorial.md
+      - Writing a policy:
+          - Writing rules: policies/rules.md
+          - Tags and new fields: policies/tags.md
+          - Rules of your own: policies/custom-rules.md
+      - Using a policy:
+          - Debugging refusals: policies/debugging.md
+          - Recipes: policies/recipes.md
+          - What a policy doesn't do: policies/limits.md
   - Reference:
       - Overview: reference/index.md
       - Client and errors:
@@ -124,6 +130,8 @@ plugins:
   - search
   - redirects:
       redirect_maps:
+        policies/rows.md: policies/rules.md#limiting-rows
+        policies/schema.md: policies/rules.md#schema-changes
         reference/quickbase.md: reference/client.md
         reference/app.md: reference/apps.md
         reference/table.md: reference/records.md

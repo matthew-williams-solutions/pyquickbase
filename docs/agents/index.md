@@ -37,10 +37,10 @@ def open_tasks(project: str) -> list[dict]:
 ## Limiting access
 
 Give an agent a client with a [policy](../policies/index.md) that allows only
-what its job needs. `Policy.read_only()` is the place to start, and it only sends GET requests,
+what its job needs. [`Policy.read_only()`](../reference/policies.md#Policy-read_only) is the place to start, and it only sends GET requests,
 record queries, report runs, and formula runs. If the agent also needs to write, or shouldn't see
-everything the token can, write a `Policy` and bind it to the app. Anything it doesn't allow raises
-`PolicyRefusedError` and is never sent, which also applies to `qb.request()`. The SDK enforces it
+everything the token can, write a [`Policy`](../reference/policies.md#Policy) and bind it to the app. Anything it doesn't allow raises
+[`PolicyRefusedError`](../reference/errors.md#PolicyRefusedError) and is never sent, which also applies to [`qb.request()`](../reference/client.md#Quickbase-request). The SDK enforces it
 itself, so it doesn't depend on the model following its instructions.
 
 ```python
@@ -62,8 +62,8 @@ with Quickbase.from_env() as setup:
 agent_client = Quickbase.from_env(policy=bound)
 ```
 
-To the agent, a field or table the policy hides looks as if it doesn't exist. `table.fields()` leaves
-it out, and naming it raises `UnknownFieldError`. Anything else it refuses raises
+To the agent, a field or table the policy hides looks as if it doesn't exist. [`table.fields()`](../reference/fields.md#Table-fields) leaves
+it out, and naming it raises [`UnknownFieldError`](../reference/errors.md#UnknownFieldError). Anything else it refuses raises
 `PolicyRefusedError`, whose message says what was refused, by name, which rule refused it, and what
 would allow it, without the values it sent. Return either one to the model as the tool's result, with
 [`tool_error()`](results.md#errors).
@@ -72,7 +72,7 @@ would allow it, without the values it sent. Return either one to the model as th
   tag is in the tag too, so denying the tag hides them all, whatever table they're on.
 - **Fields added after binding are read-only,** and follow the policy's `new_fields`, until you bind
   again.
-- **`limit.rows()` keeps it to some records,** by ANDing a condition onto every query, summary, and
+- **[`limit.rows()`](../reference/rules.md#limit-rows) keeps it to some records,** by ANDing a condition onto every query, summary, and
   delete the client sends, and checking the records each update names. It's defense in depth behind
   the role's record-level rules.
 - **Email addresses are left out** of user values, and the uploader's details out of file values,
@@ -111,7 +111,7 @@ The first two run in your process, and the role is enforced by Quickbase, whiche
 
 - Use a token whose user has a role with only the access the agent needs, and give the token access
   to as few apps as possible. Use a sandbox app while you're trying things out.
-- Use `Quickbase.from_env()` rather than putting a token in code or a prompt. This keeps it away
+- Use [`Quickbase.from_env()`](../reference/client.md#Quickbase-from_env) rather than putting a token in code or a prompt. This keeps it away
   from the model, but not from code the agent runs in the same environment.
 - Temporary tokens are deliberately [not in the SDK](../api-notes.md#temporary-tokens).
 

@@ -4,8 +4,8 @@ description: "Every field type, what to write, what it reads as, and field setti
 
 # Field types
 
-These are the values `create_field()` and `ensure_field()` accept as `type`, and what each type
-takes and returns. Quickbase refuses any other type with `BadRequestError`. To create fields, see
+These are the values [`create_field()`](reference/fields.md#Table-create_field) and [`ensure_field()`](reference/fields.md#Table-ensure_field) accept as `type`, and what each type
+takes and returns. Quickbase refuses any other type with [`BadRequestError`](reference/errors.md#BadRequestError). To create fields, see
 [Changing the schema](guides/schema.md).
 
 ```python
@@ -38,10 +38,10 @@ tasks.create_field("Priority", "text-multiple-choice", choices=["Low", "High"])
 | `currency` | An amount of money | `float` or `int` | `float` | `None` | Yes |
 | `percent` | A percentage: write `0.5` and it reads as `0.5` | `float` or `int` | `float` | `None` | Yes |
 | `rating` | A rating | `float` or `int` | `float` | `None` | Yes |
-| `duration` | A length of time, in milliseconds | Whole milliseconds as an `int`, or a `timedelta`. A fraction raises `InvalidValueError`, as Quickbase would drop it | `int` | `None` | Yes |
+| `duration` | A length of time, in milliseconds | Whole milliseconds as an `int`, or a `timedelta`. A fraction raises [`InvalidValueError`](reference/errors.md#InvalidValueError), as Quickbase would drop it | `int` | `None` | Yes |
 
 **In a query, numbers mean the same as when writing**, though Quickbase reads them differently, so
-`F` converts them: `F("Done") >= 0.5` is 50%, and `F("Budget") > timedelta(hours=8)` or
+[`F`](reference/queries.md#F) converts them: `F("Done") >= 0.5` is 50%, and `F("Budget") > timedelta(hours=8)` or
 `> 28_800_000` is 8 hours. A hand-written string is sent as written, where Quickbase compares a percent
 in whole percent, `{f.GTE.'50'}`, and needs a duration as text, `{f.GT.'8 hours'}`.
 
@@ -62,9 +62,9 @@ field made through the API. See [API notes](api-notes.md#formulas).
 | `type` | Holds | Write | Reads as | Empty reads as | Takes a formula |
 |---|---|---|---|---|---|
 | `checkbox` | True or false | `bool` | `bool` | `False`, so empty and unchecked look the same | Yes |
-| `user` | One Quickbase user | A `User`, or `{"id": ...}` | `User` | `None` | Not tested |
+| `user` | One Quickbase user | A [`User`](reference/records.md#User), or `{"id": ...}` | `User` | `None` | Not tested |
 | `multiuser` | Several users | A list of `User`, or of `{"id": ...}` | A list of `User` | `[]` | Not tested |
-| `file` | An attachment | [`FileUpload`](guides/files.md) | `FileAttachment` | `None` | Not tested |
+| `file` | An attachment | [`FileUpload`](guides/files.md) | [`FileAttachment`](reference/files.md#FileAttachment) | `None` | Not tested |
 | `address` | An address, as display text | Read-only: write its subfields | `str` | `""` | Not tested |
 
 A query only returns a table's default fields unless you pass `select`, and built-in fields such as
@@ -72,7 +72,7 @@ A query only returns a table's default fields unless you pass `select`, and buil
 
 ## Types you can't create
 
-Fields of these types exist, but `create_field()` refuses them:
+Fields of these types exist, but [`create_field()`](reference/fields.md#Table-create_field) refuses them:
 
 - `recordid` is the built-in `Record ID#` field.
 - `dblink` is the list of child records that a [relationship](guides/schema.md#linking-tables-with-a-relationship)
@@ -81,7 +81,7 @@ Fields of these types exist, but `create_field()` refuses them:
 ## Field settings
 
 `properties` holds any other settings, and is sent as it is. Quickbase refuses a key it doesn't know
-with `BadRequestError`, rather than ignoring it. These were accepted and kept, and Quickbase has more:
+with [`BadRequestError`](reference/errors.md#BadRequestError), rather than ignoring it. These were accepted and kept, and Quickbase has more:
 
 | Key | Tested on | Example |
 |---|---|---|
@@ -108,7 +108,7 @@ print(budget.decimal_places, budget.raw["properties"])
 no attribute for.
 
 A few settings go beside `properties` rather than inside it, and Quickbase refuses them inside it.
-`create_field()`, `update_field()`, and `ensure_field()` take them as arguments:
+[`create_field()`](reference/fields.md#Table-create_field), [`update_field()`](reference/fields.md#Table-update_field), and [`ensure_field()`](reference/fields.md#Table-ensure_field) take them as arguments:
 
 | Argument | Quickbase's name | What it does |
 |---|---|---|

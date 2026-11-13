@@ -8,11 +8,11 @@ This builds a policy for an agent that helps a crew keep their tasks up to date,
 time. The app has a `Tasks` table with `Title`, `Status`, `Notes`, `Due Date`, `Project`, `Amount`,
 which holds what a task costs, and `Code`, an internal reference.
 
-Each step asks the bound policy what it allows, with `allows()` and `explain()`, which send nothing.
+Each step asks the bound policy what it allows, with [`allows()`](../reference/policies.md#BoundPolicy-allows) and [`explain()`](../reference/policies.md#BoundPolicy-explain), which send nothing.
 
 ## 1. Start read-only
 
-`Policy.read_only()` reads whatever the token can and changes nothing. It names no table, so it needs
+[`Policy.read_only()`](../reference/policies.md#Policy-read_only) reads whatever the token can and changes nothing. It names no table, so it needs
 no binding. Start here, and loosen it only where the job needs to.
 
 ```python
@@ -75,14 +75,14 @@ print(bound.allows("read", "Tasks").allowed)  # False, since it covers every fie
 print(bound.explain("read", "Tasks", field="Amount"))
 ```
 
-With no field, `allows()` and `explain()` ask about every field in the table, so the whole table is
+With no field, [`allows()`](../reference/policies.md#BoundPolicy-allows) and [`explain()`](../reference/policies.md#BoundPolicy-explain) ask about every field in the table, so the whole table is
 no longer readable once any field is denied.
 
 To a client with this policy, `Amount` and `Code` look as if they don't exist.
 
 ## 4. Keep it to some records
 
-`limit.rows()` ANDs a condition onto every query, summary, and delete, and checks the records an update
+[`limit.rows()`](../reference/rules.md#limit-rows) ANDs a condition onto every query, summary, and delete, and checks the records an update
 names, so the agent only reaches one project's tasks.
 
 ```python
@@ -117,7 +117,7 @@ flowchart TD
 
 ## 5. Use it
 
-Give the bound policy to the agent's client. A refused request raises `PolicyRefusedError` before
+Give the bound policy to the agent's client. A refused request raises [`PolicyRefusedError`](../reference/errors.md#PolicyRefusedError) before
 anything is sent, and its message says what would allow it, so you can return it to the model as the
 tool's result.
 
