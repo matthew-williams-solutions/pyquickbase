@@ -73,3 +73,17 @@ def test_each_unsafe_function_is_named_once_as_written() -> None:
     with pytest.raises(PolicyRefusedError, match=r"calls GetRecords\(\), which") as caught:
         check_formula('Size(GetRecords("{3.GT.0}")) + Size(getrecords("x"))', [])
     assert "Size" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "formula",
+    [
+        "Sum([Hours], 2)",
+        "Median([Hours], 1, 2)",
+        'ToBoolean("true")',
+        "ToUnixTime(Now())",
+        "ToWorkDate(Now())",
+    ],
+)
+def test_functions_checked_against_quickbases_help_are_allowed(formula: str) -> None:
+    check_formula(formula, ["Hours"])

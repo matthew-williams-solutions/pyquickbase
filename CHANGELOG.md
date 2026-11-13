@@ -56,6 +56,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- A client with a policy can use `Sum()`, `Median()`, `ToBoolean()`, `ToUnixTime()`, and `ToWorkDate()` in formulas.
 - `BoundPolicy` has only the methods meant for you: `decide()`, `allows()`, `explain()`, `offers()`, `tags_of()`,
   `max_records()`, `row_limit()`, `to_json()`, and `from_json()`. The ones only the SDK used, such as `trim()` and
   `offers_for()`, are private, and a `BoundPolicy` comes only from `Policy.bind()` or `BoundPolicy.from_json()`.
