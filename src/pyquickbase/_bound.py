@@ -1058,7 +1058,45 @@ class BoundPolicy:
                 effects.append(f"{rule.text} loses {labels}.")
                 if empty:
                     blockers.append(_nothing_left(rule.text, labels))
+        self._tag_deletion_effects(table_id, gone, effects, blockers)
         return tuple(dict.fromkeys(effects)), tuple(dict.fromkeys(blockers))
+
+    def _tag_deletion_effects(
+        self, table_id: str, gone: set[int], effects: list[str], blockers: list[str]
+    ) -> None:
+        """Which tags lose what a plan deletes, and the blockers for any rule that selects only
+        tags left with no fields. A field that holds a tag through a formula or lookup counts as
+        keeping it, as this can't tell it from one the tag names, so this never blocks too much."""
+        held: dict[str, set[tuple[str, int]]] = {}
+        for key, value in self._tags.items():
+            for field_id, names in value.items():
+                for name in names - {_ROWS_CLASS}:
+                    held.setdefault(name, set()).add((key, field_id))
+        emptied: set[str] = set()
+        for name, members in sorted(held.items()):
+            lost = {field_id for key, field_id in members if key == table_id and field_id in gone}
+            if not lost:
+                continue
+            labels = ", ".join(str(item) for item in self._named_fields(table_id, lost))
+            effects.append(f"Tag {name!r} loses {labels}.")
+            if len(lost) == len(members):
+                emptied.add(name)
+        if not emptied:
+            return
+        for rule in self._rules:
+            if rule.effect not in ("allow", "deny") or rule.layer != "policy":
+                continue
+            for grant in rule.grants:
+                match = grant.fields
+                if match is None or not match.tags & emptied:
+                    continue
+                named = any(
+                    ids - gone if key == table_id else ids for key, ids in match.ids.items()
+                )
+                if match.all or match.new or named or match.tags - emptied:
+                    continue
+                tags = ", ".join(repr(name) for name in sorted(match.tags))
+                blockers.append(_nothing_left(rule.text, f"every field in tag {tags}"))
 
     def _hidden_labels(self, table_id: str) -> frozenset[str]:
         """The policy's names-only view: the labels, ignoring case, of a table's fields that the

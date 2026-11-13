@@ -451,3 +451,48 @@ def test_a_custom_rule_alone_does_not_need_an_app() -> None:
 def test_a_condition_with_no_python_spelling_shows_as_itself() -> None:
     condition = Condition("Status", "TV", "x")
     assert limit.rows(TASKS, condition).text == f"limit.rows({TASKS!r}, {condition!r})"
+
+
+def test_deleting_a_tags_only_field_blocks_a_rule_that_selects_only_that_tag() -> None:
+    policy = bind(
+        allow.read(TASKS),
+        deny.all(fields.tagged("internal")),
+        tags={"internal": [(TASKS, "Hours")]},
+    )
+    effects, blockers = policy._deletion_effects(TASKS, [8])
+    assert "Tag 'internal' loses Hours (8)." in effects
+    (blocker,) = blockers
+    assert blocker.startswith("deny.all(fields.tagged('internal')) would match nothing once")
+    assert "every field in tag 'internal'" in blocker
+
+
+def test_a_tag_with_fields_left_loses_one_without_a_blocker() -> None:
+    policy = bind(
+        allow.read(TASKS),
+        deny.all(fields.tagged("internal")),
+        tags={"internal": [(TASKS, "Hours"), (TASKS, "Notes")]},
+    )
+    effects, blockers = policy._deletion_effects(TASKS, [8])
+    assert effects == ("Tag 'internal' loses Hours (8).",)
+    assert blockers == ()
+
+
+def test_a_rule_that_also_names_fields_or_other_tags_keeps_matching() -> None:
+    policy = bind(
+        allow.read(TASKS, [fields.tagged("internal", "costs"), "Title"]),
+        allow.update(TASKS, fields.tagged("internal", "costs")),
+        tags={"internal": [(TASKS, "Hours")], "costs": [(TASKS, "Priority")]},
+    )
+    _, blockers = policy._deletion_effects(TASKS, [8])
+    assert blockers == ()
+
+
+def test_deleting_a_table_empties_the_tags_only_on_it() -> None:
+    policy = bind(
+        allow.read(tables.all()),
+        deny.all(fields.tagged("internal")),
+        tags={"internal": [(TASKS, "Hours")]},
+    )
+    effects, blockers = policy._deletion_effects(TASKS, table=True)
+    assert "Tag 'internal' loses Hours (8)." in effects
+    assert any("every field in tag 'internal'" in item for item in blockers)
