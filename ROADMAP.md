@@ -6,12 +6,10 @@ to keep are explained in the guides, not here.
 
 ## Before 1.0
 
-- Release a candidate with schema plans and those methods, then let it run for at least a week with no code
-  changes. Each new candidate restarts the week.
+- Let `1.0.0rc14` run for at least a week with no code changes, so until 2026-11-20 at the earliest. Each
+  new candidate restarts the week.
 - A plan checks a table it creates against the client's policy only when it's applied, so a change to
   that table can still be refused partway through. Planning again resumes from there.
-- Run the full live suite against the new `Policy`. The four live tests its design asked for are in
-  `tests/_async/live/test_policy_design.py`.
 - In the 1.0 release commit:
   - Change the classifier in `pyproject.toml` from Beta to Production/Stable.
   - Remove the release candidate warnings from `README.md` and `docs/index.md`, and the advice to pin

@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0rc14] - 2026-11-13
+
+This candidate adds code pages, role assignments, setting a table's key field, and reads about apps and
+the people in them, partly through Quickbase's XML API. Every error now links to its section of the docs.
+Policies check updates against row limits, refuse turning on `allowHTML`, and allow more formula
+functions.
+
 **Many names changed, so that each says what it is.** There are no aliases for the old names.
 
 | Before | After |
