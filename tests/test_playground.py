@@ -567,6 +567,29 @@ def test_computed_fields_example_shows_the_change() -> None:
     assert "After: 17.5 hours logged, over estimate: True" in output
 
 
+def test_policy_example_hides_a_field_refuses_a_write_and_allows_another() -> None:
+    output = run_example("17_limit_what_an_agent_can_do.py").splitlines()
+    assert "'Hours'" not in output[0]
+    assert output[1].startswith("Hidden field: This table has no field labeled 'Hours'")
+    assert output[2].startswith("Refused: Refused by policy: updating Title")
+    assert output[3] == "Allowed: (1,)"
+
+
+def test_schema_example_shows_each_status_and_changes_nothing() -> None:
+    output = run_example("18_preview_a_schema_change.py")
+    assert '[ready, additive] Add field "Reviewed"' in output
+    assert "[blocked, modifying]" in output
+    assert '[ready, destructive] Delete field "Hours"' in output
+    assert '"Over Estimate"' in output
+    assert output.endswith("Made yet: False\n")
+
+
+def test_code_page_example_shows_the_diff_and_saves() -> None:
+    output = run_example("20_change_a_code_page.py")
+    assert "+<h1>Welcome (updated)</h1>" in output
+    assert output.endswith("Saved page 2 - replaced\n")
+
+
 PLAYGROUND_LINK = re.compile(r"playground-app/index\.html#([a-z0-9-]+)")
 
 
