@@ -1,3 +1,7 @@
+---
+description: "Uploading, downloading, and deleting file attachments."
+---
+
 # File attachments
 
 This page covers uploading, downloading, listing, and deleting the files in file attachment fields. Every

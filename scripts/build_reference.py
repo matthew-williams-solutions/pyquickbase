@@ -14,6 +14,7 @@ description, if something has no example and isn't listed as not needing one, or
 differ.
 """
 
+import ast
 import dataclasses
 import functools
 import inspect
@@ -26,6 +27,8 @@ from typing import Any, NamedTuple, get_overloads
 import build_llms
 
 import pyquickbase
+import pyquickbase.errors
+from pyquickbase import _output  # pyright: ignore[reportPrivateUsage]
 
 ROOT = Path(__file__).resolve().parent.parent
 OUTPUT = ROOT / "docs" / "reference"
@@ -33,209 +36,180 @@ EXAMPLES = ROOT / "docs_src" / "reference"
 CONSTRUCTOR = "__init__"
 # Beyond this many parameters, a class's page folds the rest away.
 MAX_SHOWN_PARAMETERS = 3
-# What each method on a class's page is called in its heading and the sidebar: what it does, in
-# plain words, with the method itself in the signature beside it. The same verb means the same kind
-# of action on every page: "Get or create" for an ensure_ method, and "Link to" for a URL. A
-# property is named by what it is.
-TITLES: dict[str, dict[str, str]] = {
-    "quickbase": {
-        "__init__": "Create a client",
-        "from_env": "Create a client from the environment",
-        "close": "Close a client",
-        "app": "Get an app",
-        "apps": "List apps",
-        "current_user": "Find out who the token belongs to",
-        "find_user": "Find a user by email",
-        "create_app": "Create an app",
-        "realm": "The client's realm",
-        "policy": "The client's policy",
-        "clear_metadata_cache": "Clear the metadata cache",
-        "request": "Call any endpoint",
-    },
-    "app": {
-        "id": "The app's ID",
-        "info": "Get the app's details",
-        "tables": "List tables",
-        "roles": "List roles",
-        "members": "List members",
-        "code_pages": "List code pages",
-        "code_page": "Get a code page",
-        "member_roles": "List a member's roles",
-        "create_role_assignments": "Give roles",
-        "delete_role_assignments": "Take away roles",
-        "update_role_assignments": "Move members between roles",
-        "triggers": "List webhooks and automations",
-        "table": "Get a table",
-        "url": "Link to the app",
-        "settings_url": "Link to the app's settings",
-        "ensure_table": "Get or create a table",
-        "create_table": "Create a table",
-        "preview_schema_changes": "Preview schema changes",
-        "apply_schema_changes": "Apply schema changes",
-        "operation": "Make an app tool for a model",
-        "copy": "Copy the app",
-        "drop": "Delete the app",
-    },
-    "report": {
-        "run": "Run a report",
-        "run_page": "Fetch one page of a report",
-        "run_summary": "Get a summary report's rows",
-        "info": "Get the report's details",
-        "url": "Link to the report",
-    },
-    "table-operation": {
-        "input_schema": "The arguments' JSON Schema",
-        "name": "The operation's name",
-        "run": "Run a table operation",
-    },
-    "code-page": {
-        "read": "Read the page",
-        "preview_change": "Preview a change",
-        "write": "Write the page",
-        "url": "Link to the page",
-    },
-    "app-operation": {
-        "input_schema": "The arguments' JSON Schema",
-        "name": "The operation's name",
-        "run": "Run an app operation",
-    },
-    # Pages of public names: a function, or a method of an object, has a title. An object, error, or
-    # type keeps its name, as that's how it appears in signatures and tracebacks.
-    "queries": {
-        "F.contains": "Match text that contains",
-        "F.not_contains": "Match text that doesn't contain",
-        "F.starts_with": "Match text that starts with",
-        "F.not_starts_with": "Match text that doesn't start with",
-        "F.has": "Match one of a field's values",
-        "F.not_has": "Match none of a field's values",
-        "F.is_in": "Match any of several values",
-        "F.op": "Use any operator",
-        "where_from_dict": "Build a condition from JSON",
-        "where_schema": "Describe conditions as JSON Schema",
-        "parse_where": "Check a hand-written condition",
-    },
-    "policies": {
-        "Policy.read_only": "Make a read-only policy",
-        "Policy.bind": "Bind to an app",
-        "Policy.bind_offline": "Bind without an app",
-        "BoundPolicy.tags_of": "Get a field's tags",
-        "BoundPolicy.decide": "Decide a request",
-        "BoundPolicy.allows": "Check what's allowed",
-        "BoundPolicy.explain": "Explain what's allowed",
-        "BoundPolicy.max_records": "Get a table's record limit",
-        "BoundPolicy.row_limit": "Get a table's row limit",
-        "BoundPolicy.offers": "Get what an operation may offer",
-        "BoundPolicy.to_json": "Save a bound policy",
-        "BoundPolicy.from_json": "Load a bound policy",
-        "PolicyDecision.message": "Get the refusal's message",
-    },
-    "rules": {
-        "allow.filter": "Allow filtering",
-        "allow.sort": "Allow sorting",
-        "allow.insert": "Allow creating records",
-        "allow.update": "Allow updating records",
-        "allow.download": "Allow downloading files",
-        "allow.delete_file": "Allow deleting file versions",
-        "allow.schema": "Allow schema changes",
-        "allow.create_tables": "Allow creating tables",
-        "allow.read": "Allow reading",
-        "allow.delete": "Allow deleting records",
-        "allow.report": "Allow running reports",
-        "allow.code_pages": "Allow code pages",
-        "deny.filter": "Deny filtering",
-        "deny.sort": "Deny sorting",
-        "deny.insert": "Deny creating records",
-        "deny.update": "Deny updating records",
-        "deny.download": "Deny downloading files",
-        "deny.delete_file": "Deny deleting file versions",
-        "deny.schema": "Deny schema changes",
-        "deny.create_tables": "Deny creating tables",
-        "deny.read": "Deny reading",
-        "deny.delete": "Deny deleting records",
-        "deny.report": "Deny running reports",
-        "deny.code_pages": "Deny code pages",
-        "deny.all": "Deny everything",
-        "limit.rows": "Limit the rows",
-        "fields.all": "Select every field",
-        "fields.new": "Select new fields",
-        "fields.tagged": "Select fields by class",
-        "fields.labeled_like": "Select fields by label",
-        "tables.all": "Select every table",
-        "tables.created": "Select created tables",
-        "CustomRule.decide": "Refuse a request",
-    },
-    "metadata": {
-        "FieldUsage.describe": "Describe a field's uses in words",
-    },
-    "records": {
-        "RecordIterator.to_pandas": "Fetch records into pandas",
-        "RecordIterator.to_polars": "Fetch records into polars",
-        "RecordIterator.to_csv": "Write records to a CSV file",
-        "RecordIterator.to_excel": "Write records to an Excel file",
-        "RecordPage.to_csv": "Write a page to a CSV file",
-        "RecordPage.to_excel": "Write a page to an Excel file",
-        "FileRows.raise_for_failures": "Refuse a file with errors",
-        "RecordPage.to_pandas": "Turn a page into pandas",
-        "RecordPage.to_polars": "Turn a page into polars",
-        "SummaryRow.statistic": "Get one statistic's values",
-    },
-    "retries": {
-        "RetryPolicy.backoff": "Get the backoff delay",
-        "RetryPolicy.rate_limit_delay": "Get the wait after a 429",
-    },
-    "tools": {
-        "tool_result": "Return a result to a model",
-        "tool_error": "Return an error to a model",
-    },
-    "table": {
-        "query": "Query records",
-        "query_page": "Fetch one page of records",
-        "first": "Get the first matching record",
-        "get": "Get a record by ID",
-        "count": "Count records",
-        "compile_where": "Show a condition's query text",
-        "insert": "Create records",
-        "update": "Update records",
-        "upsert": "Create or update records",
-        "delete": "Delete records",
-        "preview_update": "Preview an update",
-        "preview_delete": "Preview a delete",
-        "summarize": "Summarize records",
-        "run_formula": "Run a formula",
-        "info": "Get the table's details",
-        "fields": "List fields",
-        "relationships": "List relationships",
-        "reports": "List reports",
-        "triggers": "List webhooks and automations",
-        "field_usage": "See where fields are used",
-        "rows_from_file": "Read rows from a CSV or Excel file",
-        "report": "Get a report",
-        "resolve_field_ids": "Turn field labels into IDs",
-        "download_file": "Download a file",
-        "delete_file_version": "Delete a file version",
-        "operation": "Make a tool for a model",
-        "url": "Link to the table",
-        "record_url": "Link to a record",
-        "record_url_template": "Link to any record",
-        "new_record_url": "Link to a new record",
-        "field_url": "Link to a field's settings",
-        "fields_url": "Link to the list of fields",
-        "relationships_url": "Link to the relationships",
-        "settings_url": "Link to the table's settings",
-        "form_url": "Link to a form",
-        "create_field": "Create a field",
-        "update_field": "Update a field",
-        "delete_fields": "Delete fields",
-        "ensure_field": "Create or update a field",
-        "create_relationship": "Create a relationship",
-        "ensure_relationship": "Get or create a relationship",
-        "ensure_lookup_field": "Get or create a lookup field",
-        "ensure_summary_field": "Get or create a summary field",
-        "ensure_count_field": "Get or create a count field",
-        "delete_relationship": "Delete a relationship",
-        "update_info": "Update the table's details",
-        "drop": "Delete the table",
-    },
+# What each method and function is called in its heading and the sidebar, by its qualified name:
+# what it does, in plain words, with its name beside it. The same verb means the same kind of
+# action on every page: "Get or create" for an ensure_ method, and "Link to" for a URL. A property
+# is named by what it is. An object, error, or type keeps its name, as that's how it appears in
+# signatures and tracebacks.
+TITLES: dict[str, str] = {
+    "Quickbase.__init__": "Create a client",
+    "Quickbase.from_env": "Create a client from the environment",
+    "Quickbase.close": "Close a client",
+    "Quickbase.app": "Get an app",
+    "Quickbase.apps": "List apps",
+    "Quickbase.current_user": "Find out who the token belongs to",
+    "Quickbase.find_user": "Find a user by email",
+    "Quickbase.create_app": "Create an app",
+    "Quickbase.realm": "The client's realm",
+    "Quickbase.policy": "The client's policy",
+    "Quickbase.clear_metadata_cache": "Clear the metadata cache",
+    "Quickbase.request": "Call any endpoint",
+    "App.id": "The app's ID",
+    "App.info": "Get the app's details",
+    "App.tables": "List tables",
+    "App.roles": "List roles",
+    "App.members": "List members",
+    "App.code_pages": "List code pages",
+    "App.code_page": "Get a code page",
+    "App.member_roles": "List a member's roles",
+    "App.create_role_assignments": "Give roles",
+    "App.delete_role_assignments": "Take away roles",
+    "App.update_role_assignments": "Move members between roles",
+    "App.triggers": "List webhooks and automations",
+    "App.table": "Get a table",
+    "App.url": "Link to the app",
+    "App.settings_url": "Link to the app's settings",
+    "App.ensure_table": "Get or create a table",
+    "App.create_table": "Create a table",
+    "App.preview_schema_changes": "Preview schema changes",
+    "App.apply_schema_changes": "Apply schema changes",
+    "App.operation": "Make an app tool for a model",
+    "App.copy": "Copy the app",
+    "App.drop": "Delete the app",
+    "Report.run": "Run a report",
+    "Report.run_page": "Fetch one page of a report",
+    "Report.run_summary": "Get a summary report's rows",
+    "Report.info": "Get the report's details",
+    "Report.url": "Link to the report",
+    "TableOperation.input_schema": "The arguments' JSON Schema",
+    "TableOperation.name": "The operation's name",
+    "TableOperation.run": "Run a table operation",
+    "CodePage.read": "Read the page",
+    "CodePage.preview_change": "Preview a change",
+    "CodePage.write": "Write the page",
+    "CodePage.url": "Link to the page",
+    "AppOperation.input_schema": "The arguments' JSON Schema",
+    "AppOperation.name": "The operation's name",
+    "AppOperation.run": "Run an app operation",
+    "F.contains": "Match text that contains",
+    "F.not_contains": "Match text that doesn't contain",
+    "F.starts_with": "Match text that starts with",
+    "F.not_starts_with": "Match text that doesn't start with",
+    "F.has": "Match one of a field's values",
+    "F.not_has": "Match none of a field's values",
+    "F.is_in": "Match any of several values",
+    "F.op": "Use any operator",
+    "where_from_dict": "Build a condition from JSON",
+    "where_schema": "Describe conditions as JSON Schema",
+    "parse_where": "Check a hand-written condition",
+    "Policy.read_only": "Make a read-only policy",
+    "Policy.bind": "Bind to an app",
+    "Policy.bind_offline": "Bind without an app",
+    "BoundPolicy.tags_of": "Get a field's tags",
+    "BoundPolicy.decide": "Decide a request",
+    "BoundPolicy.allows": "Check what's allowed",
+    "BoundPolicy.explain": "Explain what's allowed",
+    "BoundPolicy.max_records": "Get a table's record limit",
+    "BoundPolicy.row_limit": "Get a table's row limit",
+    "BoundPolicy.offers": "Get what an operation may offer",
+    "BoundPolicy.to_json": "Save a bound policy",
+    "BoundPolicy.from_json": "Load a bound policy",
+    "PolicyDecision.message": "Get the refusal's message",
+    "allow.filter": "Allow filtering",
+    "allow.sort": "Allow sorting",
+    "allow.insert": "Allow creating records",
+    "allow.update": "Allow updating records",
+    "allow.download": "Allow downloading files",
+    "allow.delete_file": "Allow deleting file versions",
+    "allow.schema": "Allow schema changes",
+    "allow.create_tables": "Allow creating tables",
+    "allow.read": "Allow reading",
+    "allow.delete": "Allow deleting records",
+    "allow.report": "Allow running reports",
+    "allow.code_pages": "Allow code pages",
+    "deny.filter": "Deny filtering",
+    "deny.sort": "Deny sorting",
+    "deny.insert": "Deny creating records",
+    "deny.update": "Deny updating records",
+    "deny.download": "Deny downloading files",
+    "deny.delete_file": "Deny deleting file versions",
+    "deny.schema": "Deny schema changes",
+    "deny.create_tables": "Deny creating tables",
+    "deny.read": "Deny reading",
+    "deny.delete": "Deny deleting records",
+    "deny.report": "Deny running reports",
+    "deny.code_pages": "Deny code pages",
+    "deny.all": "Deny everything",
+    "limit.rows": "Limit the rows",
+    "fields.all": "Select every field",
+    "fields.new": "Select new fields",
+    "fields.tagged": "Select fields by class",
+    "fields.labeled_like": "Select fields by label",
+    "tables.all": "Select every table",
+    "tables.created": "Select created tables",
+    "CustomRule.decide": "Refuse a request",
+    "FieldUsage.describe": "Describe a field's uses in words",
+    "RecordIterator.to_pandas": "Fetch records into pandas",
+    "RecordIterator.to_polars": "Fetch records into polars",
+    "RecordIterator.to_csv": "Write records to a CSV file",
+    "RecordIterator.to_excel": "Write records to an Excel file",
+    "RecordPage.to_csv": "Write a page to a CSV file",
+    "RecordPage.to_excel": "Write a page to an Excel file",
+    "FileRows.raise_for_failures": "Refuse a file with errors",
+    "RecordPage.to_pandas": "Turn a page into pandas",
+    "RecordPage.to_polars": "Turn a page into polars",
+    "SummaryRow.statistic": "Get one statistic's values",
+    "RetryPolicy.backoff": "Get the backoff delay",
+    "RetryPolicy.rate_limit_delay": "Get the wait after a 429",
+    "tool_result": "Return a result to a model",
+    "tool_error": "Return an error to a model",
+    "Table.query": "Query records",
+    "Table.query_page": "Fetch one page of records",
+    "Table.first": "Get the first matching record",
+    "Table.get": "Get a record by ID",
+    "Table.count": "Count records",
+    "Table.compile_where": "Show a condition's query text",
+    "Table.insert": "Create records",
+    "Table.update": "Update records",
+    "Table.upsert": "Create or update records",
+    "Table.delete": "Delete records",
+    "Table.preview_update": "Preview an update",
+    "Table.preview_delete": "Preview a delete",
+    "Table.summarize": "Summarize records",
+    "Table.run_formula": "Run a formula",
+    "Table.info": "Get the table's details",
+    "Table.fields": "List fields",
+    "Table.relationships": "List relationships",
+    "Table.reports": "List reports",
+    "Table.triggers": "List webhooks and automations",
+    "Table.field_usage": "See where fields are used",
+    "Table.rows_from_file": "Read rows from a CSV or Excel file",
+    "Table.report": "Get a report",
+    "Table.resolve_field_ids": "Turn field labels into IDs",
+    "Table.download_file": "Download a file",
+    "Table.delete_file_version": "Delete a file version",
+    "Table.operation": "Make a tool for a model",
+    "Table.url": "Link to the table",
+    "Table.record_url": "Link to a record",
+    "Table.record_url_template": "Link to any record",
+    "Table.new_record_url": "Link to a new record",
+    "Table.field_url": "Link to a field's settings",
+    "Table.fields_url": "Link to the list of fields",
+    "Table.relationships_url": "Link to the relationships",
+    "Table.settings_url": "Link to the table's settings",
+    "Table.form_url": "Link to a form",
+    "Table.create_field": "Create a field",
+    "Table.update_field": "Update a field",
+    "Table.delete_fields": "Delete fields",
+    "Table.ensure_field": "Create or update a field",
+    "Table.create_relationship": "Create a relationship",
+    "Table.ensure_relationship": "Get or create a relationship",
+    "Table.ensure_lookup_field": "Get or create a lookup field",
+    "Table.ensure_summary_field": "Get or create a summary field",
+    "Table.ensure_count_field": "Get or create a count field",
+    "Table.delete_relationship": "Delete a relationship",
+    "Table.update_info": "Update the table's details",
+    "Table.drop": "Delete the table",
 }
 # Methods that the async client names differently.
 ASYNC_NAMES = {"close": "aclose"}
@@ -323,50 +297,22 @@ NOT_RUN_LIVE = {
 }
 
 
-class Group(NamedTuple):
-    title: str
-    anchor: str
-    guide: tuple[str, str] | None
-    members: tuple[str, ...]
+class ClassSource(NamedTuple):
+    """A class whose methods the reference shows, with its examples in docs_src/reference/<slug>/.
 
-
-def _setup(last_line: str) -> tuple[str, str]:
-    """Return the setup code for each client."""
-    body = f'    realm="acme", token="your_user_token"\n) as qb:\n    {last_line}'
-    return (
-        f"from pyquickbase import Quickbase\n\nwith Quickbase(\n{body}",
-        f"from pyquickbase import AsyncQuickbase\n\nasync with AsyncQuickbase(\n{body}",
-    )
-
-
-class Resource(NamedTuple):
-    """A page about one class, with an example for each of its methods."""
+    Its methods can be on several pages, as each is shown where its subject is.
+    """
 
     name: str
     slug: str
     sync_class: type
     async_class: type
-    intro: str
-    note: str
-    setup: str
-    async_setup: str
-    groups: tuple[Group, ...]
-
-
-class SymbolPage(NamedTuple):
-    """A page about several public names, with an example for each name."""
-
-    name: str
-    slug: str
-    intro: str
-    note: str
-    setup: str
-    async_setup: str
-    groups: tuple[Group, ...]
+    about: str
+    # How to get one, for the async client, shown beside `about`.
+    get: str
 
 
 _LIVE_TEST = "A live test runs every example with both clients and checks its output."
-_PROJECTS = "`projects` is a table named `Job Projects`, with a `Name` field."
 _JOB_TASKS = (
     "`Job Tasks` has `Title`, `Status`, `Hours`, `Due Date`, `Code`, which is unique, and "
     "`Attachment`. It starts with three records, and each example starts from those again."
@@ -382,26 +328,21 @@ _DEBUGGING = ("Debugging refusals", "../policies/debugging.md")
 _FILES = ("File attachments", "../guides/files.md")
 _FORMULAS = ("Formulas", "../guides/formulas.md")
 _AGENTS = ("Using pyquickbase from an AI agent", "../agents/index.md")
+_OPERATIONS = ("Giving a model operations", "../agents/operations.md")
+_RESULTS = ("Results and errors", "../agents/results.md")
 _ERRORS = ("Handling errors", "../guides/errors.md")
 _APPS = ("Working with apps", "../guides/apps.md")
 _CODE_PAGES = ("Code pages", "../guides/code-pages.md")
 _SPREADSHEETS = ("CSV and Excel files", "../guides/spreadsheets.md")
-_LINKS = "Link to the Quickbase interface"
 
-_TABLE_LINE = 'tasks = qb.app("bq1234567").table("Job Tasks")'
-_PLAN_LINES = '\n    plan = await app.operation("preview_schema_changes")'
-_PAGE_LINE = 'page = qb.app("bq1234567").code_page(\n        "pyquickbase-live-test.html"\n    )'
 _CODE_PAGE_WARNING_TEXT = (
     "A code page runs in the browser of whoever opens it, with that person's permissions. A "
     "client's policy controls what the client may do, and has no say in what a page does once "
     "someone opens it."
 )
-_SEARCH_LINES = (
-    '\n    search = await tasks.operation(\n        "query", fields=["Title", "Status"]\n    )'
-)
 
-RESOURCES = (
-    Resource(
+CLASSES = (
+    ClassSource(
         "Quickbase",
         "quickbase",
         pyquickbase.Quickbase,
@@ -410,206 +351,63 @@ RESOURCES = (
         "so that its connections get closed. `AsyncQuickbase` takes the same options, except that "
         "`http_client` is an `httpx.AsyncClient`, and has the same methods, which you `await` "
         "where the examples show it.",
-        f"The examples below use `qb`, made as shown here. {_LIVE_TEST}",
-        *_setup("print(qb.realm)"),
-        (
-            Group(
-                "Create and close a client",
-                "create-and-close",
-                _CLIENTS,
-                (CONSTRUCTOR, "from_env", "close"),
-            ),
-            Group(
-                "Use a client",
-                "use-a-client",
-                _CLIENTS,
-                ("app", "realm", "policy", "clear_metadata_cache", "request"),
-            ),
-            Group("Apps and users", "apps-and-users", _APPS, ("apps", "current_user", "find_user")),
-            Group("Create an app", "create-an-app", _APPS, ("create_app",)),
-        ),
+        'async with AsyncQuickbase(\n    realm="acme", token="your_user_token"\n) as qb:\n'
+        "    print(qb.realm)",
     ),
-    Resource(
+    ClassSource(
         "App",
         "app",
         pyquickbase.App,
         pyquickbase.AsyncApp,
-        "An `App` lists an app's details and gives you its tables. Get one from "
+        "An `App` is one app: its details, tables, roles, and code pages. Get one from "
         "`Quickbase.app()`. Getting one doesn't contact Quickbase, so an ID that doesn't exist "
-        "only fails on first use.",
-        "The examples below use `app`, made as shown here, in an app that has a table named "
-        f"`Job Tasks` with three records. {_LIVE_TEST} `AsyncApp` has the same methods, which you "
-        "`await`, but `table()`, `url()`, and `settings_url()` are called without it.",
-        *_setup('app = qb.app("bq1234567")'),
-        (
-            Group(
-                "Look up the app's details",
-                "app-details",
-                _READING,
-                ("id", "info", "tables", "roles", "triggers"),
-            ),
-            Group("See who has access", "who-has-access", _APPS, ("members", "member_roles")),
-            Group(
-                "Change who has a role",
-                "change-roles",
-                _APPS,
-                ("create_role_assignments", "delete_role_assignments", "update_role_assignments"),
-            ),
-            Group("Work with code pages", "code-pages", _CODE_PAGES, ("code_pages", "code_page")),
-            Group("Get a table", "get-a-table", _READING, ("table",)),
-            Group(_LINKS, "links", _AGENTS, ("url", "settings_url")),
-            Group("Create tables", "create-tables", _SCHEMA, ("ensure_table", "create_table")),
-            Group(
-                "Change the schema with a plan",
-                "plan-schema",
-                _SCHEMA,
-                ("preview_schema_changes", "apply_schema_changes"),
-            ),
-            Group("Give a model the schema", "operations", _AGENTS, ("operation",)),
-            Group("Copy or delete the app", "copy-or-delete", _APPS, ("copy", "drop")),
-        ),
+        "only fails on first use. `AsyncApp` has the same methods.",
+        'app = qb.app("bq1234567")',
     ),
-    Resource(
+    ClassSource(
         "Table",
         "table",
         pyquickbase.Table,
         pyquickbase.AsyncTable,
-        "A `Table` reads and writes one table's records and changes its fields. Get one from "
+        "A `Table` is one table: its records, fields, reports, and files. Get one from "
         "`App.table()`, by name or ID. Getting one doesn't contact Quickbase, so a table that "
-        "doesn't exist raises `UnknownTableError` on first use.",
-        f"The examples below use `tasks`, made as shown here. {_JOB_TASKS} {_PROJECTS} "
-        f"{_LIVE_TEST} In the async client, `AsyncTable` has the same methods, which you `await`, "
-        "but `query()` and `report()` are called without it.",
-        *_setup(_TABLE_LINE),
-        (
-            Group(
-                "Read records",
-                "read-records",
-                _READING,
-                ("query", "query_page", "first", "get", "count", "compile_where"),
-            ),
-            Group(
-                "Write records", "write-records", _WRITING, ("insert", "update", "upsert", "delete")
-            ),
-            Group(
-                "Preview writes", "preview-writes", _WRITING, ("preview_update", "preview_delete")
-            ),
-            Group(
-                "Summarize and calculate",
-                "summarize-and-calculate",
-                _FORMULAS,
-                ("summarize", "run_formula"),
-            ),
-            Group(
-                "Look up the table's details",
-                "table-details",
-                _READING,
-                (
-                    "info",
-                    "fields",
-                    "field_usage",
-                    "relationships",
-                    "reports",
-                    "report",
-                    "triggers",
-                    "resolve_field_ids",
-                ),
-            ),
-            Group(
-                "Import a CSV or Excel file", "import-a-file", _SPREADSHEETS, ("rows_from_file",)
-            ),
-            Group("Work with files", "files", _FILES, ("download_file", "delete_file_version")),
-            Group("Offer an operation to a model", "operations", _AGENTS, ("operation",)),
-            Group(
-                _LINKS,
-                "links",
-                _AGENTS,
-                (
-                    "url",
-                    "record_url",
-                    "record_url_template",
-                    "new_record_url",
-                    "field_url",
-                    "fields_url",
-                    "relationships_url",
-                    "settings_url",
-                    "form_url",
-                ),
-            ),
-            Group(
-                "Change the schema",
-                "schema",
-                _SCHEMA,
-                (
-                    "create_field",
-                    "update_field",
-                    "delete_fields",
-                    "ensure_field",
-                    "create_relationship",
-                    "ensure_relationship",
-                    "ensure_lookup_field",
-                    "ensure_summary_field",
-                    "ensure_count_field",
-                    "delete_relationship",
-                    "update_info",
-                    "drop",
-                ),
-            ),
-        ),
+        "doesn't exist raises `UnknownTableError` on first use. `AsyncTable` has the same "
+        "methods.",
+        'tasks = qb.app("bq1234567").table("Job Tasks")',
     ),
-    Resource(
+    ClassSource(
         "Report",
         "report",
         pyquickbase.Report,
         pyquickbase.AsyncReport,
         "A `Report` runs a report that was built in the Quickbase interface. Get one from "
         "`Table.report()`, by name or ID. Getting one doesn't contact Quickbase, so a report that "
-        "doesn't exist raises `UnknownReportError` on first use.",
-        f"The examples below use `tasks`, made as shown here. Every new table has a report named "
-        f"`List All`. {_LIVE_TEST} The exception is `run_summary()`, because a summary report can "
-        "only be built in the interface. `AsyncReport` has the same methods, which you `await`, "
-        "but `run()` is called without it.",
-        *_setup(_TABLE_LINE),
-        (
-            Group("Run a report", "run-a-report", _READING, ("run", "run_page", "run_summary")),
-            Group("Look up the report's details", "report-details", _READING, ("info",)),
-            Group(_LINKS, "links", _AGENTS, ("url",)),
-        ),
+        "doesn't exist raises `UnknownReportError` on first use. `AsyncReport` has the same "
+        "methods.",
+        'report = tasks.report("List All")',
     ),
-    Resource(
+    ClassSource(
         "CodePage",
         "code-page",
         pyquickbase.CodePage,
         pyquickbase.AsyncCodePage,
         "A `CodePage` reads, previews, and writes one of an app's code pages. Get one from "
-        f"`App.code_page()`, by name or ID. {_CODE_PAGE_WARNING_TEXT}",
-        "The examples below use `page`, made as shown here, for a page the live tests keep. "
-        f"{_LIVE_TEST} `AsyncCodePage` has the same methods, which you `await`, but `url()` is "
-        "called without it.",
-        *_setup(_PAGE_LINE),
-        (
-            Group("Read a page", "read-a-page", _CODE_PAGES, ("read",)),
-            Group("Change a page", "change-a-page", _CODE_PAGES, ("preview_change", "write")),
-            Group(_LINKS, "links", _CODE_PAGES, ("url",)),
-        ),
+        f"`App.code_page()`, by name or ID. {_CODE_PAGE_WARNING_TEXT} `AsyncCodePage` has the "
+        "same methods.",
+        'page = app.code_page("pyquickbase-live-test.html")',
     ),
-    Resource(
+    ClassSource(
         "TableOperation",
         "table-operation",
         pyquickbase.TableOperation,
         pyquickbase.AsyncTableOperation,
-        "An `TableOperation` is one table operation offered to a model as a tool: a JSON Schema of "
+        "A `TableOperation` is one table operation offered to a model as a tool: a JSON Schema of "
         "the arguments it may send, and `run()`, which checks them against the same lists before "
-        "calling the table. Get one from `Table.operation()`.",
-        f"The examples below use `search`, made as shown here. {_JOB_TASKS} {_LIVE_TEST}",
-        _setup(_TABLE_LINE)[0] + _SEARCH_LINES.replace("await ", ""),
-        _setup(_TABLE_LINE)[1] + _SEARCH_LINES,
-        (
-            Group("Describe it to a model", "describe-it", _AGENTS, ("input_schema", "name")),
-            Group("Run it", "run-it", _AGENTS, ("run",)),
-        ),
+        "calling the table. Get one from `Table.operation()`. `AsyncTableOperation` has the same "
+        "methods.",
+        'search = await tasks.operation(\n    "query", fields=["Title", "Status"]\n)',
     ),
-    Resource(
+    ClassSource(
         "AppOperation",
         "app-operation",
         pyquickbase.AppOperation,
@@ -617,286 +415,110 @@ RESOURCES = (
         "An `AppOperation` is one app-wide operation offered to a model as a tool, for schema "
         "changes or code pages. Get one from `App.operation()`. The `apply_` operations only run "
         "with the confirmation their preview returned for the same arguments, while the app is as "
-        f"it was. {_CODE_PAGE_WARNING_TEXT}",
-        f"The examples below use `plan`, made as shown here. {_JOB_TASKS} {_LIVE_TEST}",
-        _setup('app = qb.app("bq1234567")')[0] + _PLAN_LINES.replace("await ", ""),
-        _setup('app = qb.app("bq1234567")')[1] + _PLAN_LINES,
-        (
-            Group("Describe it to a model", "describe-it", _AGENTS, ("input_schema", "name")),
-            Group("Run it", "run-it", _AGENTS, ("run",)),
-        ),
+        f"it was. {_CODE_PAGE_WARNING_TEXT} `AsyncAppOperation` has the same methods.",
+        'plan = await app.operation("preview_schema_changes")',
     ),
 )
+CLASS_BY_NAME = {source.name: source for source in CLASSES}
+# Folders of examples for public names other than these classes, each named `<name>.py`. The live
+# test's setup for each folder is keyed by its name, so an example stays in its folder whichever
+# page shows it.
+SYMBOL_DIRS = (
+    "queries",
+    "records",
+    "metadata",
+    "schema-changes",
+    "policies",
+    "rules",
+    "retries",
+    "tools",
+    "errors",
+)
+# Folders whose examples make their own client from the environment, rather than using the
+# page's setup.
+OWN_CLIENT_DIRS = {"policies", "rules", "retries", "tools"}
+EXAMPLE_DIRS = (*(source.slug for source in CLASSES), *SYMBOL_DIRS)
 
-_OWN_CLIENT_NOTE = (
-    "Each example makes its own client from the environment, with `bqtasks123` standing for "
-    f"the ID of the `Job Tasks` table. {_LIVE_TEST}"
-)
-_SYMBOL_NOTE = (
-    "The examples below use `tasks`, made as shown here, and `app`, which is "
-    f'`qb.app("bq1234567")`. {_JOB_TASKS} {_LIVE_TEST}'
-)
-SYMBOL_PAGES = (
-    SymbolPage(
-        "Queries",
-        "queries",
-        "Conditions choose which records a query, count, or delete applies to. Build them with "
-        "`F`, which escapes values for you, or with `where_from_dict()` for plain data from a "
-        "model or a web form.",
-        _SYMBOL_NOTE,
-        *_setup(_TABLE_LINE),
+# What a page's setup can make, for the async client, in order, and what each needs first. The live
+# test gives every example `qb`, `app`, `tasks`, and `projects`, and the rest by folder.
+SETUP_LINES = {
+    "app": 'app = qb.app("bq1234567")',
+    "tasks": 'tasks = app.table("Job Tasks")',
+    "projects": 'projects = app.table("Job Projects")',
+    "search": 'search = await tasks.operation(\n    "query", fields=["Title", "Status"]\n)',
+    "plan": 'plan = await app.operation("preview_schema_changes")',
+    "page": 'page = app.code_page("pyquickbase-live-test.html")',
+}
+SETUP_NEEDS = {
+    "tasks": "app",
+    "projects": "app",
+    "search": "tasks",
+    "plan": "app",
+    "page": "app",
+}
+
+
+class Group(NamedTuple):
+    """A section of a page: its methods and public names, in order, with the guide on them.
+
+    A member is a class's method as `Table.upsert`, its constructor as `Quickbase.__init__`, a
+    class itself as `Table`, or any other public name, such as `WriteResult`.
+    """
+
+    title: str
+    anchor: str
+    guide: tuple[str, str] | None
+    members: tuple[str, ...]
+
+
+class Page(NamedTuple):
+    """A page of the reference about one subject, with everything you call and get back for it."""
+
+    name: str
+    slug: str
+    intro: str
+    groups: tuple[Group, ...]
+    # Said about the examples, beyond what the generated note says.
+    note: str = ""
+
+
+_LINKS_GUIDE = ("Results and errors", "../agents/results.md")
+
+PAGES = (
+    Page(
+        "Client",
+        "client",
+        "The client is where everything starts: it holds the token, sends each request, retries "
+        "what it can, and caches what describes the app.",
         (
-            Group("Build a condition", "build-a-condition", _READING, ("F", "WhereExpression")),
             Group(
-                "Conditions from plain data",
-                "plain-data",
-                _AGENTS,
-                ("where_from_dict", "where_schema"),
+                "Create and close a client",
+                "create-and-close",
+                _CLIENTS,
+                ("Quickbase", "Quickbase.__init__", "Quickbase.from_env", "Quickbase.close"),
             ),
             Group(
-                "Check a hand-written condition",
-                "hand-written",
-                _READING,
-                ("parse_where", "WhereCondition"),
-            ),
-            Group("Ways to name a field", "naming-fields", _READING, ("FieldRef", "FieldRefs")),
-        ),
-    ),
-    SymbolPage(
-        "Records and results",
-        "records",
-        "These are what reads and writes give you back, and what you pass to write a file.",
-        _SYMBOL_NOTE,
-        *_setup(_TABLE_LINE),
-        (
-            Group(
-                "Read results",
-                "read-results",
-                _READING,
-                ("Record", "RecordIterator", "RecordPage", "User"),
-            ),
-            Group("Write results", "write-results", _WRITING, ("WriteResult", "WriteRowFailure")),
-            Group(
-                "Files",
-                "files",
-                _FILES,
-                ("FileUpload", "FileDownload", "FileAttachment", "FileVersion"),
-            ),
-            Group(
-                "CSV and Excel files",
-                "spreadsheets",
-                _SPREADSHEETS,
-                ("FileRows", "FileRowFailure", "FileFormat", "FileLike", "ColumnMap"),
-            ),
-            Group("Formula results", "formula-results", _FORMULAS, ("FormulaResult",)),
-            Group(
-                "Previews of writes",
-                "previews",
-                _WRITING,
-                ("UpdatePreview", "DeletePreview", "RecordChange", "ValueChange"),
-            ),
-            Group(
-                "Summaries",
-                "summaries",
-                _READING,
+                "Use a client",
+                "use-a-client",
+                _CLIENTS,
                 (
-                    "SummaryRow",
-                    "PeriodChange",
-                    "Period",
-                    "PeriodUnit",
-                    "StatisticName",
-                    "SummaryGroups",
+                    "Quickbase.app",
+                    "Quickbase.realm",
+                    "Quickbase.policy",
+                    "Quickbase.clear_metadata_cache",
+                    "Quickbase.request",
                 ),
             ),
+            Group("Retry requests", "retries", _CLIENTS, ("RetryPolicy",)),
         ),
     ),
-    SymbolPage(
-        "Metadata",
-        "metadata",
-        "These describe an app and what's in it. The client caches them for five minutes by "
-        "default, and each holds everything Quickbase returned in `raw`.",
-        f"{_SYMBOL_NOTE} {_PROJECTS}",
-        *_setup(_TABLE_LINE),
-        (
-            Group("Apps", "apps", _APPS, ("AppListing", "AppInfo", "Role", "AppTrigger")),
-            Group("People", "people", _APPS, ("UserAccount", "AppMember", "MemberRole")),
-            Group(
-                "Role changes",
-                "role-changes",
-                _APPS,
-                (
-                    "RoleAssignment",
-                    "RoleAssignmentUpdate",
-                    "RoleAssignmentResult",
-                    "RoleAssignmentFailure",
-                ),
-            ),
-            Group(
-                "Code pages",
-                "code-pages",
-                _CODE_PAGES,
-                ("CodePageInfo", "CodePageContent", "CodePagePreview", "CodePageWriteResult"),
-            ),
-            Group(
-                "Tables and reports", "tables-and-reports", _READING, ("TableInfo", "ReportInfo")
-            ),
-            Group(
-                "Fields and relationships",
-                "fields",
-                _SCHEMA,
-                ("Field", "FieldUsage", "Relationship", "TableSchema"),
-            ),
-        ),
-    ),
-    SymbolPage(
-        "Schema changes",
-        "schema-changes",
-        "Describe changes to an app's tables, fields, and relationships, then pass them to "
-        "`App.preview_schema_changes()`, which says what each would do without making it, and "
-        "`App.apply_schema_changes()`, which makes them if the app hasn't changed since. A change "
-        "the app already has counts as done.",
-        f"{_SYMBOL_NOTE} {_PROJECTS} The examples only plan, unless they say otherwise.",
-        *_setup(_TABLE_LINE),
-        (
-            Group(
-                "Tables",
-                "tables",
-                _SCHEMA,
-                ("CreateTable", "UpdateTable", "DeleteTable"),
-            ),
-            Group(
-                "Fields",
-                "fields",
-                _SCHEMA,
-                ("CreateField", "UpdateField", "DeleteField", "SetKeyField"),
-            ),
-            Group(
-                "Relationships",
-                "relationships",
-                _SCHEMA,
-                (
-                    "CreateRelationship",
-                    "CreateLookupField",
-                    "CreateSummaryField",
-                    "DeleteRelationship",
-                    "SummaryFieldFunction",
-                ),
-            ),
-            Group(
-                "Plans and results",
-                "plans",
-                _SCHEMA,
-                ("SchemaPlan", "PlannedChange", "SchemaChangeResult", "ChangeRisk"),
-            ),
-            Group("Any change", "any-change", _AGENTS, ("SchemaChange", "SchemaChangeAction")),
-        ),
-    ),
-    SymbolPage(
-        "Policies",
-        "policies",
-        "A `Policy` says what a client may read and change. Bind it to an app, which pins every "
-        "table and field by ID, and pass the `BoundPolicy` to `Quickbase()` as `policy`. It "
-        "protects against bugs in your code and mistakes by a model, so give your token access to "
-        "as little as possible as well, as Quickbase's own permissions are still the real "
-        "boundary.",
-        _OWN_CLIENT_NOTE,
-        "",
-        "",
-        (
-            Group("Write and bind a policy", "policies", _POLICIES, ("Policy", "BoundPolicy")),
-            Group(
-                "Decisions",
-                "decisions",
-                _DEBUGGING,
-                ("PolicyDecision", "NamedItem", "PolicyOffers"),
-            ),
-        ),
-    ),
-    SymbolPage(
-        "Rules",
-        "rules",
-        "A policy is a list of rules. `allow` and `deny` name what a client may do with tables "
-        "and fields, `limit` keeps it to some records, and a `CustomRule` of your own can refuse "
-        "anything else. Anything no rule allows is refused, and a deny always wins.",
-        _OWN_CLIENT_NOTE,
-        "",
-        "",
-        (
-            Group(
-                "Allow, deny, and limit",
-                "rules",
-                _RULES,
-                (
-                    "allow",
-                    "deny",
-                    "limit",
-                    "PolicyRule",
-                    "PolicyVerb",
-                    "PolicySchemaVerb",
-                    "DecisionLayer",
-                ),
-            ),
-            Group(
-                "Tables and fields",
-                "selectors",
-                _RULES,
-                ("fields", "tables", "FieldSelector", "TableSelector"),
-            ),
-            Group(
-                "Rules of your own",
-                "own-rules",
-                _CUSTOM_RULES,
-                (
-                    "CustomRule",
-                    "WriteRequest",
-                    "ReadRequest",
-                    "WriteAction",
-                    "DerivedKind",
-                    "ReadAction",
-                ),
-            ),
-        ),
-    ),
-    SymbolPage(
-        "Retries",
-        "retries",
-        "A `RetryPolicy` says how a client retries a request that hit a rate limit or a "
-        "connection failure, and how long it waits. Pass one to `Quickbase()` as `retry`.",
-        _OWN_CLIENT_NOTE,
-        "",
-        "",
-        (Group("Retrying requests", "retries", _CLIENTS, ("RetryPolicy",)),),
-    ),
-    SymbolPage(
-        "Tools for models",
-        "tools",
-        "These turn results and errors into plain data for the result of a model's tool call, in "
-        "the same shapes and value formats whatever the call. They work with any tool-calling "
-        "framework, as `json.dumps()` always accepts what they return. `Table.operation()` makes "
-        "the tools themselves.",
-        "Each example makes its own client from the environment, with `bqtasks123` standing for "
-        f"the ID of the `Job Tasks` table. {_JOB_TASKS} {_LIVE_TEST}",
-        "",
-        "",
-        (
-            Group("Results", "results", _AGENTS, ("tool_result",)),
-            Group("Errors", "errors", _AGENTS, ("tool_error", "ToolErrorCode")),
-            Group(
-                "Operations",
-                "operations",
-                _AGENTS,
-                ("TableOperationName", "AppOperationName"),
-            ),
-        ),
-    ),
-    SymbolPage(
+    Page(
         "Errors",
         "errors",
-        "Everything the SDK raises derives from `QuickbaseError`. Errors that mean a request "
-        "wasn't sent come first, then the ones for a request that failed. A timed-out write may "
-        "still have been applied.",
-        _SYMBOL_NOTE,
-        *_setup(_TABLE_LINE),
+        "Everything the SDK raises derives from `QuickbaseError`, and each error's `doc_url` links "
+        "to its section here, which says what causes it and how to fix it. Errors that mean a "
+        "request wasn't sent come first, then the ones for a request that failed. A timed-out "
+        "write may still have been applied.",
         (
             Group("The base class", "base", _ERRORS, ("QuickbaseError",)),
             Group(
@@ -955,8 +577,501 @@ SYMBOL_PAGES = (
             ),
         ),
     ),
+    Page(
+        "Records",
+        "records",
+        "Read a table's records, one page at a time or all of them, and what each record holds.",
+        (
+            Group(
+                "Read records",
+                "read-records",
+                _READING,
+                ("Table.query", "Table.query_page", "Table.first", "Table.get", "Table.count"),
+            ),
+            Group(
+                "What reads return",
+                "read-results",
+                _READING,
+                ("Record", "RecordIterator", "RecordPage", "User"),
+            ),
+        ),
+    ),
+    Page(
+        "Writes",
+        "writes",
+        "Create, update, and delete records, preview a change before making it, and what each "
+        "write reports back.",
+        (
+            Group(
+                "Write records",
+                "write-records",
+                _WRITING,
+                ("Table.insert", "Table.update", "Table.upsert", "Table.delete"),
+            ),
+            Group(
+                "What writes return", "write-results", _WRITING, ("WriteResult", "WriteRowFailure")
+            ),
+            Group(
+                "Preview writes",
+                "previews",
+                _WRITING,
+                (
+                    "Table.preview_update",
+                    "Table.preview_delete",
+                    "UpdatePreview",
+                    "DeletePreview",
+                    "RecordChange",
+                    "ValueChange",
+                ),
+            ),
+        ),
+    ),
+    Page(
+        "Queries",
+        "queries",
+        "Conditions choose which records a query, count, or delete applies to. Build them with "
+        "`F`, which escapes values for you, or with `where_from_dict()` for plain data from a "
+        "model or a web form.",
+        (
+            Group(
+                "Build a condition",
+                "build-a-condition",
+                _READING,
+                ("F", "WhereExpression", "Table.compile_where"),
+            ),
+            Group(
+                "Conditions from plain data",
+                "plain-data",
+                _AGENTS,
+                ("where_from_dict", "where_schema"),
+            ),
+            Group(
+                "Check a hand-written condition",
+                "hand-written",
+                _READING,
+                ("parse_where", "WhereCondition"),
+            ),
+            Group("Ways to name a field", "naming-fields", _READING, ("FieldRef", "FieldRefs")),
+        ),
+    ),
+    Page(
+        "Summaries and formulas",
+        "summaries",
+        "Totals, averages, and other statistics worked out by Quickbase, grouped by field or by "
+        "period, and formulas run against a table without a formula field.",
+        (
+            Group(
+                "Summarize records",
+                "summarize",
+                _READING,
+                (
+                    "Table.summarize",
+                    "SummaryRow",
+                    "PeriodChange",
+                    "Period",
+                    "PeriodUnit",
+                    "StatisticName",
+                    "SummaryGroups",
+                ),
+            ),
+            Group("Run a formula", "formulas", _FORMULAS, ("Table.run_formula", "FormulaResult")),
+        ),
+    ),
+    Page(
+        "Files and spreadsheets",
+        "files",
+        "Upload, download, and delete file attachments, and read rows from a CSV or Excel file "
+        "with each value checked before anything is written.",
+        (
+            Group(
+                "File attachments",
+                "attachments",
+                _FILES,
+                (
+                    "FileUpload",
+                    "Table.download_file",
+                    "Table.delete_file_version",
+                    "FileDownload",
+                    "FileAttachment",
+                    "FileVersion",
+                ),
+            ),
+            Group(
+                "CSV and Excel files",
+                "spreadsheets",
+                _SPREADSHEETS,
+                (
+                    "Table.rows_from_file",
+                    "FileRows",
+                    "FileRowFailure",
+                    "FileFormat",
+                    "FileLike",
+                    "ColumnMap",
+                ),
+            ),
+        ),
+    ),
+    Page(
+        "Reports",
+        "reports",
+        "Find and run the reports built in the Quickbase interface.",
+        (
+            Group(
+                "Find a report",
+                "find-a-report",
+                _READING,
+                ("Report", "Table.reports", "Table.report", "Report.info", "ReportInfo"),
+            ),
+            Group(
+                "Run a report",
+                "run-a-report",
+                _READING,
+                ("Report.run", "Report.run_page", "Report.run_summary"),
+            ),
+        ),
+        "Every new table has a report named `List All`.",
+    ),
+    Page(
+        "Apps",
+        "apps",
+        "Find, create, copy, and delete apps, and see and change who has which role.",
+        (
+            Group(
+                "Find an app",
+                "find-an-app",
+                _APPS,
+                ("App", "Quickbase.apps", "App.id", "App.info", "AppListing", "AppInfo"),
+            ),
+            Group(
+                "Create, copy, and delete apps",
+                "create-copy-delete",
+                _APPS,
+                ("Quickbase.create_app", "App.copy", "App.drop"),
+            ),
+            Group(
+                "Users and roles",
+                "users-and-roles",
+                _APPS,
+                (
+                    "Quickbase.current_user",
+                    "Quickbase.find_user",
+                    "App.roles",
+                    "App.members",
+                    "App.member_roles",
+                    "UserAccount",
+                    "Role",
+                    "AppMember",
+                    "MemberRole",
+                ),
+            ),
+            Group(
+                "Change who has a role",
+                "change-roles",
+                _APPS,
+                (
+                    "App.create_role_assignments",
+                    "App.delete_role_assignments",
+                    "App.update_role_assignments",
+                    "RoleAssignment",
+                    "RoleAssignmentUpdate",
+                    "RoleAssignmentResult",
+                    "RoleAssignmentFailure",
+                ),
+            ),
+            Group(
+                "Webhooks and automations",
+                "triggers",
+                _APPS,
+                ("App.triggers", "Table.triggers", "AppTrigger"),
+            ),
+        ),
+    ),
+    Page(
+        "Tables",
+        "tables",
+        "Get an app's tables, create them, and change or delete them.",
+        (
+            Group(
+                "Get a table",
+                "get-a-table",
+                _READING,
+                ("Table", "App.table", "App.tables", "Table.info", "TableInfo"),
+            ),
+            Group(
+                "Create and change tables",
+                "change-tables",
+                _SCHEMA,
+                ("App.ensure_table", "App.create_table", "Table.update_info", "Table.drop"),
+            ),
+        ),
+    ),
+    Page(
+        "Fields and relationships",
+        "fields",
+        "A table's fields, where each is used, and the relationships, lookups, and summaries that "
+        "link tables. [Field types](../field-types.md) lists what each type holds.",
+        (
+            Group(
+                "Look up fields",
+                "look-up-fields",
+                _SCHEMA,
+                (
+                    "Table.fields",
+                    "Table.resolve_field_ids",
+                    "Table.field_usage",
+                    "Field",
+                    "FieldUsage",
+                    "TableSchema",
+                ),
+            ),
+            Group(
+                "Change fields",
+                "change-fields",
+                _SCHEMA,
+                (
+                    "Table.create_field",
+                    "Table.update_field",
+                    "Table.ensure_field",
+                    "Table.delete_fields",
+                ),
+            ),
+            Group(
+                "Relationships",
+                "relationships",
+                _SCHEMA,
+                (
+                    "Table.relationships",
+                    "Relationship",
+                    "Table.create_relationship",
+                    "Table.ensure_relationship",
+                    "Table.delete_relationship",
+                ),
+            ),
+            Group(
+                "Lookups and summaries",
+                "lookups-and-summaries",
+                _SCHEMA,
+                (
+                    "Table.ensure_lookup_field",
+                    "Table.ensure_summary_field",
+                    "Table.ensure_count_field",
+                ),
+            ),
+        ),
+    ),
+    Page(
+        "Schema plans",
+        "schema-plans",
+        "Describe changes to an app's tables, fields, and relationships, then pass them to "
+        "`App.preview_schema_changes()`, which says what each would do without making it, and "
+        "`App.apply_schema_changes()`, which makes them if the app hasn't changed since. A change "
+        "the app already has counts as done.",
+        (
+            Group(
+                "Plan and apply",
+                "plans",
+                _SCHEMA,
+                (
+                    "App.preview_schema_changes",
+                    "App.apply_schema_changes",
+                    "SchemaPlan",
+                    "PlannedChange",
+                    "SchemaChangeResult",
+                    "ChangeRisk",
+                ),
+            ),
+            Group("Tables", "tables", _SCHEMA, ("CreateTable", "UpdateTable", "DeleteTable")),
+            Group(
+                "Fields",
+                "fields",
+                _SCHEMA,
+                ("CreateField", "UpdateField", "DeleteField", "SetKeyField"),
+            ),
+            Group(
+                "Relationships",
+                "relationships",
+                _SCHEMA,
+                (
+                    "CreateRelationship",
+                    "CreateLookupField",
+                    "CreateSummaryField",
+                    "DeleteRelationship",
+                    "SummaryFieldFunction",
+                ),
+            ),
+            Group("Any change", "any-change", _AGENTS, ("SchemaChange", "SchemaChangeAction")),
+        ),
+        "The examples only plan, unless they say otherwise.",
+    ),
+    Page(
+        "Code pages",
+        "code-pages",
+        f"Read, preview, and replace an app's code pages. {_CODE_PAGE_WARNING_TEXT}",
+        (
+            Group(
+                "Find a code page",
+                "find-a-page",
+                _CODE_PAGES,
+                ("CodePage", "App.code_pages", "App.code_page", "CodePageInfo"),
+            ),
+            Group(
+                "Read and change a page",
+                "read-and-change",
+                _CODE_PAGES,
+                (
+                    "CodePage.read",
+                    "CodePage.preview_change",
+                    "CodePage.write",
+                    "CodePageContent",
+                    "CodePagePreview",
+                    "CodePageWriteResult",
+                ),
+            ),
+        ),
+        "`pyquickbase-live-test.html` is a page the live tests keep.",
+    ),
+    Page(
+        "Links",
+        "links",
+        "Links to apps, tables, records, forms, and settings in the Quickbase interface, for a "
+        "person to open. Making one only contacts Quickbase to look up a table's or field's ID, "
+        "which the client's cache usually has, and doesn't check that a record or form exists.",
+        (
+            Group("Apps", "apps", _LINKS_GUIDE, ("App.url", "App.settings_url")),
+            Group(
+                "Tables and fields",
+                "tables-and-fields",
+                _LINKS_GUIDE,
+                (
+                    "Table.url",
+                    "Table.settings_url",
+                    "Table.fields_url",
+                    "Table.field_url",
+                    "Table.relationships_url",
+                ),
+            ),
+            Group(
+                "Records and forms",
+                "records-and-forms",
+                _LINKS_GUIDE,
+                (
+                    "Table.record_url",
+                    "Table.record_url_template",
+                    "Table.new_record_url",
+                    "Table.form_url",
+                ),
+            ),
+            Group(
+                "Reports and code pages",
+                "reports-and-code-pages",
+                _LINKS_GUIDE,
+                ("Report.url", "CodePage.url"),
+            ),
+        ),
+    ),
+    Page(
+        "Policies",
+        "policies",
+        "A `Policy` says what a client may read and change. Bind it to an app, which pins every "
+        "table and field by ID, and pass the `BoundPolicy` to `Quickbase()` as `policy`. It "
+        "protects against bugs in your code and mistakes by a model, so give your token access to "
+        "as little as possible as well, as Quickbase's own permissions are still the real "
+        "boundary.",
+        (
+            Group("Write and bind a policy", "policies", _POLICIES, ("Policy", "BoundPolicy")),
+            Group(
+                "Decisions",
+                "decisions",
+                _DEBUGGING,
+                ("PolicyDecision", "NamedItem", "PolicyOffers"),
+            ),
+        ),
+    ),
+    Page(
+        "Rules",
+        "rules",
+        "A policy is a list of rules. `allow` and `deny` name what a client may do with tables "
+        "and fields, `limit` keeps it to some records, and a `CustomRule` of your own can refuse "
+        "anything else. Anything no rule allows is refused, and a deny always wins.",
+        (
+            Group(
+                "Allow, deny, and limit",
+                "rules",
+                _RULES,
+                (
+                    "allow",
+                    "deny",
+                    "limit",
+                    "PolicyRule",
+                    "PolicyVerb",
+                    "PolicySchemaVerb",
+                    "DecisionLayer",
+                ),
+            ),
+            Group(
+                "Tables and fields",
+                "selectors",
+                _RULES,
+                ("fields", "tables", "FieldSelector", "TableSelector"),
+            ),
+            Group(
+                "Rules of your own",
+                "own-rules",
+                _CUSTOM_RULES,
+                (
+                    "CustomRule",
+                    "WriteRequest",
+                    "ReadRequest",
+                    "WriteAction",
+                    "DerivedKind",
+                    "ReadAction",
+                ),
+            ),
+        ),
+    ),
+    Page(
+        "Operations for models",
+        "operations",
+        "Operations offer a model a table's or an app's methods as tools, each with a JSON Schema "
+        "of the arguments it may send, checked again when it runs. `tool_result()` and "
+        "`tool_error()` turn what comes back into plain data, in the same shapes whatever the "
+        "call, which `json.dumps()` always accepts, so they work with any tool-calling framework.",
+        (
+            Group(
+                "Table operations",
+                "table-operations",
+                _OPERATIONS,
+                (
+                    "Table.operation",
+                    "TableOperation",
+                    "TableOperation.input_schema",
+                    "TableOperation.name",
+                    "TableOperation.run",
+                    "TableOperationName",
+                ),
+            ),
+            Group(
+                "App operations",
+                "app-operations",
+                _OPERATIONS,
+                (
+                    "App.operation",
+                    "AppOperation",
+                    "AppOperation.input_schema",
+                    "AppOperation.name",
+                    "AppOperation.run",
+                    "AppOperationName",
+                ),
+            ),
+            Group(
+                "Results and errors",
+                "results",
+                _RESULTS,
+                ("tool_result", "tool_error", "ToolErrorCode"),
+            ),
+        ),
+    ),
 )
-ALL_PAGES: tuple[Resource | SymbolPage, ...] = (*RESOURCES, *SYMBOL_PAGES)
 
 
 class Section(NamedTuple):
@@ -973,23 +1088,35 @@ class Section(NamedTuple):
 # which a test checks, and every page is in exactly one section.
 SECTIONS = (
     Section(
-        "Core",
-        "The client, and the apps, tables, and reports you reach through it.",
+        "Client and errors",
+        "The client, how it retries, and what it raises.",
         (
-            ("quickbase", "Create and close a client, and call any endpoint"),
-            ("app", "An app's details, its tables, and schema changes with a plan"),
-            ("table", "Read and write records and files, and change a table's fields"),
-            ("report", "Run reports built in the Quickbase interface"),
-            ("code-page", "Read, preview, and write an app's code pages"),
+            ("client", "Create and close a client, retry requests, and call any endpoint"),
+            ("errors", "Everything the SDK raises, what causes it, and how to fix it"),
         ),
     ),
     Section(
         "Data",
-        "The conditions you send, and what comes back.",
+        "Reading and writing records, and what comes back.",
         (
+            ("records", "Query records, and what each record holds"),
+            ("writes", "Create, update, delete, and preview, and what each write reports"),
             ("queries", "Build conditions with `F`, or from plain data"),
-            ("records", "What reads and writes return, files, previews, and summaries"),
-            ("metadata", "What describes apps, tables, fields, relationships, and reports"),
+            ("summaries", "Totals and other statistics by group or period, and formulas"),
+            ("files", "File attachments, and rows from CSV and Excel files"),
+            ("reports", "Find and run reports built in the Quickbase interface"),
+        ),
+    ),
+    Section(
+        "Apps and schema",
+        "Apps, their tables and fields, and changes to them.",
+        (
+            ("apps", "Find, create, copy, and delete apps, and who has which role"),
+            ("tables", "Get, create, change, and delete tables"),
+            ("fields", "Fields, where they're used, relationships, lookups, and summaries"),
+            ("schema-plans", "Changes to the schema, checked in a plan before they're made"),
+            ("code-pages", "Read, preview, and write an app's code pages"),
+            ("links", "Links to apps, tables, records, and settings in the Quickbase interface"),
         ),
         (
             (
@@ -997,14 +1124,6 @@ SECTIONS = (
                 "field-types.md",
                 "What to write to each field type, and what it reads as",
             ),
-        ),
-    ),
-    Section(
-        "Schema",
-        "Changes to tables, fields, and relationships, checked before they're made.",
-        (
-            ("schema-changes", "The changes, and the plans that check them"),
-            ("app-operation", "One schema or code page operation offered to a model"),
         ),
     ),
     Section(
@@ -1017,45 +1136,78 @@ SECTIONS = (
     ),
     Section(
         "AI agents",
-        "Operations and results for a model's tool calls.",
-        (
-            ("table-operation", "One table operation offered to a model"),
-            ("tools", "Results and errors as plain data for a tool call"),
-        ),
-    ),
-    Section(
-        "Errors and retries",
-        "What the SDK raises, and how a client retries.",
-        (
-            ("errors", "Everything the SDK raises, and what each one holds"),
-            ("retries", "How a client retries rate limits and failed connections"),
-        ),
+        "Tools for a model, and their results and errors as plain data.",
+        (("operations", "Table and app operations, and results and errors for a tool call"),),
     ),
 )
-PAGES_BY_SLUG = {page.slug: page for page in ALL_PAGES}
-CLASS_PAGES = {resource.name: f"{resource.slug}.md" for resource in RESOURCES}
+PAGES_BY_SLUG = {page.slug: page for page in PAGES}
+# Where the reference's pages were before it was arranged by subject, for mkdocs.yml's redirects.
+OLD_PAGES = {
+    "quickbase": "client",
+    "app": "apps",
+    "table": "records",
+    "report": "reports",
+    "code-page": "code-pages",
+    "metadata": "apps",
+    "schema-changes": "schema-plans",
+    "app-operation": "operations",
+    "table-operation": "operations",
+    "tools": "operations",
+    "retries": "client",
+}
+
+
+def _split(member: str) -> tuple[str, str] | None:
+    """Return `(class, method)` for a class's method, or None for anything else."""
+    owner, dot, name = member.partition(".")
+    return (owner, name) if dot and owner in CLASS_BY_NAME else None
+
+
+def anchor_of(member: str) -> str:
+    """Return a member's anchor: `Table-upsert` for a method, and the name for anything else."""
+    split = _split(member)
+    if split is None:
+        return member
+    owner, name = split
+    return f"{owner}-constructor" if name == CONSTRUCTOR else f"{owner}-{name}"
+
+
+def _members() -> list[tuple[str, str]]:
+    """Return every page's members, as `(slug, member)`."""
+    return [
+        (page.slug, member) for page in PAGES for group in page.groups for member in group.members
+    ]
+
+
+def _method_links() -> dict[tuple[str, str], str]:
+    """Return where each class's methods are, relative to a reference page."""
+    return {
+        split: f"{slug}.md#{anchor_of(member)}"
+        for slug, member in _members()
+        if (split := _split(member)) is not None
+    }
 
 
 def _name_links() -> dict[str, str]:
     """Return where each public name is documented, relative to a reference page."""
-    links = {page.name: f"{page.slug}.md" for page in RESOURCES}
-    for page in SYMBOL_PAGES:
-        for group in page.groups:
-            for name in group.members:
-                links[name] = f"{page.slug}.md#{name}"
-    # These are described with their sync versions, or with the class they belong to.
-    links["AsyncQuickbase"] = links["Quickbase"]
-    links["AsyncApp"] = links["App"]
-    links["AsyncTable"] = links["Table"]
-    links["AsyncReport"] = links["Report"]
-    links["AsyncTableOperation"] = links["TableOperation"]
-    links["AsyncCodePage"] = links["CodePage"]
-    links["AsyncAppOperation"] = links["AppOperation"]
-    links["AsyncRecordIterator"] = links["RecordIterator"]
+    links = {member: f"{slug}.md#{member}" for slug, member in _members() if _split(member) is None}
+    # The async classes are described with their sync versions.
+    for source in CLASSES:
+        if source.name in links:
+            links[source.async_class.__name__] = links[source.name]
+    if "RecordIterator" in links:
+        links["AsyncRecordIterator"] = links["RecordIterator"]
     return links
 
 
+METHOD_LINKS = _method_links()
 NAME_LINKS = _name_links()
+
+
+def scope_of(owner: str) -> dict[str, str]:
+    """Return where each of a class's methods is, for linking `name()` in its own docstrings."""
+    return {name: link for (cls, name), link in METHOD_LINKS.items() if cls == owner}
+
 
 _SECTIONS = {"Args:": "args", "Attributes:": "attrs", "Returns:": "returns", "Raises:": "raises"}
 _ENTRY = re.compile(r"\*{0,2}(\w+): (.*)")
@@ -1064,7 +1216,7 @@ _CALL = re.compile(r"`(\w+)\(\)`")
 _SEE = re.compile(r"See `(\w+)`")
 # Not a name that an earlier pass has already linked, as in [`Quickbase`](quickbase.md).
 _PUBLIC_CODE = re.compile(r"(?<!\[)`([A-Za-z]\w*)`")
-_QUALIFIED = re.compile(r"`(" + "|".join(CLASS_PAGES) + r")\.(\w+)(\(\))?`")
+_QUALIFIED = re.compile(r"`(" + "|".join(CLASS_BY_NAME) + r")\.(\w+)(\(\))?`")
 _SYNC_WORDS = (
     ("await ", ""),
     ("async for ", "for "),
@@ -1103,10 +1255,15 @@ class Method(NamedTuple):
     sync_code: str
     async_code: str
     output: str
+    # The class or public name it belongs to, whether the async client awaits it, and the folder
+    # of its example.
+    owner: str
+    awaited: bool
+    slug: str
 
 
 class Symbol(NamedTuple):
-    """One public name on a `SymbolPage`, whatever kind of thing it is."""
+    """One public name other than a class with methods, whatever kind of thing it is."""
 
     name: str
     doc: Docstring
@@ -1120,6 +1277,8 @@ class Symbol(NamedTuple):
     sync_code: str
     async_code: str
     output: str
+    # The folder of its example, if it has one.
+    slug: str
 
 
 def to_sync(code: str) -> str:
@@ -1384,27 +1543,30 @@ def _shape(cls: type, *, names: dict[str, str]) -> dict[str, list[str]]:
     }
 
 
-def _check_clients_match(resource: Resource) -> None:
-    expected = _shape(resource.sync_class, names=ASYNC_NAMES)
-    if expected != _shape(resource.async_class, names={}):
+def _check_clients_match(source: ClassSource) -> None:
+    expected = _shape(source.sync_class, names=ASYNC_NAMES)
+    if expected != _shape(source.async_class, names={}):
         raise SystemExit(
-            f"{resource.sync_class.__name__} and {resource.async_class.__name__} no longer have "
+            f"{source.sync_class.__name__} and {source.async_class.__name__} no longer have "
             "the same methods and arguments."
         )
-    if any(group for group in resource.groups if CONSTRUCTOR in group.members):
-        own = [p.name for p in _own_parameters(resource.sync_class)]
-        other = [p.name for p in _own_parameters(resource.async_class)]
-        if own != other:
-            raise SystemExit(f"The constructors of {resource.name} differ between clients.")
+    own = [p.name for p in _own_parameters(source.sync_class)]
+    other = [p.name for p in _own_parameters(source.async_class)]
+    if (source.name, CONSTRUCTOR) in METHOD_LINKS and own != other:
+        raise SystemExit(f"The constructors of {source.name} differ between clients.")
 
 
-def _check_groups(resource: Resource) -> None:
-    listed = [name for group in resource.groups for name in group.members]
-    public = set(_public_members(resource.sync_class))
+def listed_methods(source: ClassSource) -> list[str]:
+    """Return a class's methods in the order the pages list them, constructor included."""
+    return [name for cls, name in METHOD_LINKS if cls == source.name]
+
+
+def _check_methods_listed(source: ClassSource, listed: list[str]) -> None:
+    public = set(_public_members(source.sync_class))
     wanted = [name for name in listed if name != CONSTRUCTOR]
-    if len(listed) != len(set(listed)) or set(wanted) != public:
+    if set(wanted) != public:
         raise SystemExit(
-            f"The groups of {resource.name} don't match its public methods: "
+            f"The pages don't list exactly the public methods of {source.name}: "
             f"{sorted(public.symmetric_difference(wanted))}"
         )
 
@@ -1412,11 +1574,18 @@ def _check_groups(resource: Resource) -> None:
 def check_every_name_is_covered() -> None:
     """Stop the build if a public name has no page, or a page lists one that isn't public.
 
-    It also stops it if a page isn't in exactly one of `SECTIONS`.
+    It also stops it if a page isn't in exactly one of `SECTIONS`, if something is on two pages,
+    or if a class or one of its methods is on none.
     """
     listed = [slug for section in SECTIONS for slug, _ in section.pages]
     if sorted(listed) != sorted(PAGES_BY_SLUG):
         raise SystemExit(f"Each page needs to be in exactly one section: {sorted(listed)}")
+    members = [member for _, member in _members()]
+    twice = sorted({member for member in members if members.count(member) > 1})
+    if twice:
+        raise SystemExit(f"These are on more than one page: {twice}")
+    for source in CLASSES:
+        _check_methods_listed(source, listed_methods(source))
     public = set(pyquickbase.__all__) - {"__version__"}
     if set(NAME_LINKS) != public:
         raise SystemExit(
@@ -1436,35 +1605,44 @@ def read_example(slug: str, stem: str, owner: str) -> tuple[str, str]:
     )
 
 
-def read_method(resource: Resource, name: str, inherited: dict[str, str]) -> Method:
-    cls = resource.sync_class
-    owner = f"{resource.name}.{name}"
+def _awaited(source: ClassSource, name: str) -> bool:
+    """Whether the async client's version of a method is awaited."""
+    member = getattr(source.async_class, ASYNC_NAMES.get(name, name))
+    return inspect.iscoroutinefunction(member)
+
+
+def read_method(source: ClassSource, name: str, inherited: dict[str, str]) -> Method:
+    cls = source.sync_class
+    owner = f"{source.name}.{name}"
     if name == CONSTRUCTOR:
-        doc = parse_docstring(inspect.getdoc(cls), resource.name)
+        doc = parse_docstring(inspect.getdoc(cls), source.name)
         function: Any = cls.__init__
-        async_code, output = read_example(resource.slug, "constructor", resource.name)
+        async_code, output = read_example(source.slug, "constructor", source.name)
         return Method(
-            resource.name,
-            "constructor",
-            f"{resource.name}()",
+            source.name,
+            anchor_of(owner),
+            f"{source.name}()",
             False,
-            _signature(resource.name, function, ""),
+            _signature(source.name, function, ""),
             "None",
             doc,
-            _parameters(function, doc, resource.name),
+            _parameters(function, doc, source.name),
             to_sync(async_code),
             async_code,
             output,
+            source.name,
+            True,
+            source.slug,
         )
     member = vars(cls)[name]
     function = _function(member)
     doc = parse_docstring(inspect.getdoc(function), owner)
-    returns = _return_type(function, resource.name)
-    async_code, output = read_example(resource.slug, name, owner)
+    returns = _return_type(function, source.name)
+    async_code, output = read_example(source.slug, name, owner)
     is_property = isinstance(member, property)
     return Method(
         name,
-        name,
+        anchor_of(owner),
         name if is_property else f"{name}()",
         is_property,
         format_code(f"{name}: {returns}") if is_property else _signature(name, function, returns),
@@ -1474,6 +1652,9 @@ def read_method(resource: Resource, name: str, inherited: dict[str, str]) -> Met
         to_sync(async_code),
         async_code,
         output,
+        source.name,
+        is_property or _awaited(source, name),
+        source.slug,
     )
 
 
@@ -1483,22 +1664,23 @@ def _check_examples_belong(slug: str, stems: set[str]) -> None:
         raise SystemExit(f"These examples in {slug} aren't for anything public: {sorted(extra)}")
 
 
-def read_methods(resource: Resource) -> dict[str, Method]:
-    _check_clients_match(resource)
-    _check_groups(resource)
+def read_methods(source: ClassSource) -> dict[str, Method]:
+    """Read every method of a class that the pages list, by name."""
+    _check_clients_match(source)
+    listed = listed_methods(source)
+    _check_methods_listed(source, listed)
     # Options that from_env() shares with the constructor are described once, on the constructor.
-    listed = [name for group in resource.groups for name in group.members]
     inherited = (
-        parse_docstring(inspect.getdoc(resource.sync_class), resource.name).args
+        parse_docstring(inspect.getdoc(source.sync_class), source.name).args
         if CONSTRUCTOR in listed
         else {}
     )
-    methods = {name: read_method(resource, name, inherited) for name in listed}
+    methods = {name: read_method(source, name, inherited) for name in listed}
     missing = missing_descriptions(methods)
     if missing:
         raise SystemExit(f"These arguments have no description: {', '.join(missing)}")
     _check_examples_belong(
-        resource.slug, {"constructor" if name == CONSTRUCTOR else name for name in methods}
+        source.slug, {"constructor" if name == CONSTRUCTOR else name for name in methods}
     )
     return methods
 
@@ -1579,6 +1761,9 @@ def _symbol_methods(item: type) -> list[Method]:
                 "",
                 "",
                 "",
+                item.__name__,
+                True,
+                "",
             )
         )
     return methods
@@ -1609,34 +1794,53 @@ def _namespace_methods(name: str, cls: type) -> list[Method]:
             raise SystemExit(f"{owner} doesn't describe these arguments: {missing}")
         methods.append(
             Method(key, f"{name}-{key}", f"{name}.{key}()", False,
-                   _signature(key, function, returns), returns, doc, parameters, "", "", "")
+                   _signature(key, function, returns), returns, doc, parameters, "", "", "",
+                   name, True, "")
         )  # fmt: skip
     return methods
 
 
-def _symbol_example(slug: str, name: str) -> tuple[str, str, str]:
-    """Return an example's sync code, async code, and output, or nothing if it needn't have one."""
+@functools.cache
+def symbol_dirs() -> dict[str, str]:
+    """Return the folder of each public name's example, stopping the build if two have one."""
+    found: dict[str, str] = {}
+    for slug in SYMBOL_DIRS:
+        for path in sorted((EXAMPLES / slug).glob("*.py")):
+            if path.stem in found:
+                raise SystemExit(f"{path.stem} has examples in both {found[path.stem]} and {slug}.")
+            found[path.stem] = slug
+    return found
+
+
+def _symbol_example(name: str) -> tuple[str, str, str, str]:
+    """Return an example's sync code, async code, output, and folder, or nothing if it needn't."""
+    slug = symbol_dirs().get(name, "")
     if name in NO_EXAMPLE or name in ALIASES:
-        if (EXAMPLES / slug / f"{name}.py").exists():
+        if slug:
             raise SystemExit(f"{name} has an example, so remove it from NO_EXAMPLE.")
-        return "", "", ""
+        return "", "", "", ""
+    if not slug:
+        raise SystemExit(
+            f"{name} has no example. Add it to one of {', '.join(SYMBOL_DIRS)} in "
+            f"{EXAMPLES.relative_to(ROOT)}."
+        )
     async_code, output = read_example(slug, name, name)
-    return to_sync(async_code), async_code, output
+    return to_sync(async_code), async_code, output, slug
 
 
-def read_symbol(page: SymbolPage, name: str) -> Symbol:
+def read_symbol(name: str) -> Symbol:
     item: Any = getattr(pyquickbase, name)
-    sync_code, async_code, output = _symbol_example(page.slug, name)
+    sync_code, async_code, output, slug = _symbol_example(name)
     if name in ALIASES:
         doc = Docstring(ALIASES[name], [], {}, {}, "", [])
         definition = format_code(f"{name} = {build_llms.clean_types(repr(item))}")
-        return Symbol(name, doc, definition, "", "", [], [], [], [], "", "", "")
+        return Symbol(name, doc, definition, "", "", [], [], [], [], "", "", "", "")
     doc = parse_docstring(inspect.getdoc(item), name)
     if not inspect.isclass(item) and not inspect.isfunction(item):
         # A namespace of functions, such as `allow`, shown by its methods under its own name.
         return Symbol(
             name, doc, "", "", "", [], [], [], _namespace_methods(name, _type_of(item)),
-            sync_code, async_code, output,
+            sync_code, async_code, output, slug,
         )  # fmt: skip
     if inspect.isfunction(item):
         returns = _return_type(item, name)
@@ -1676,36 +1880,59 @@ def read_symbol(page: SymbolPage, name: str) -> Symbol:
         sync_code,
         async_code,
         output,
+        slug,
     )
 
 
-def read_symbols(page: SymbolPage) -> dict[str, Symbol]:
-    listed = [name for group in page.groups for name in group.members]
-    symbols = {name: read_symbol(page, name) for name in listed}
-    _check_examples_belong(page.slug, set(listed))
+def read_symbols() -> dict[str, Symbol]:
+    """Read every public name that the pages list, other than the classes with methods."""
+    names = [member for _, member in _members() if member in NAME_LINKS]
+    symbols = {name: read_symbol(name) for name in names if name not in CLASS_BY_NAME}
+    for slug in SYMBOL_DIRS:
+        _check_examples_belong(slug, {name for name, s in symbols.items() if s.slug == slug})
     return symbols
+
+
+class Reference(NamedTuple):
+    """Everything the pages show, read once: each class's methods, and every other name."""
+
+    methods: dict[str, dict[str, Method]]
+    symbols: dict[str, Symbol]
+
+
+@functools.cache
+def read_reference() -> Reference:
+    check_every_name_is_covered()
+    return Reference(
+        {source.name: read_methods(source) for source in CLASSES},
+        read_symbols(),
+    )
 
 
 def _public_link(name: str) -> str:
     return f"[`{name}`]({NAME_LINKS[name]})"
 
 
-def _add_links(text: str, methods: dict[str, Method]) -> str:
-    """Link what a sentence names. A bare method name may just be a word, so it needs `()`."""
+def _add_links(text: str, methods: dict[str, str]) -> str:
+    """Link what a sentence names. A bare method name may just be a word, so it needs `()`.
+
+    `methods` says where each method of the class the text is about is, so that `count()` in a
+    table method's docstring links to `Table.count()`.
+    """
 
     def qualified(found: re.Match[str]) -> str:
         cls = getattr(pyquickbase, found[1])
         if found[2] not in vars(cls):
             raise SystemExit(f"This text names a method that doesn't exist: {found[0]}")
-        return f"[`{found[1]}.{found[2]}()`]({CLASS_PAGES[found[1]]}#{found[2]})"
+        return f"[`{found[1]}.{found[2]}()`]({METHOD_LINKS[(found[1], found[2])]})"
 
     def call(found: re.Match[str]) -> str:
         if found[1] in methods:
-            return f"[`{found[1]}()`](#{found[1]})"
+            return f"[`{found[1]}()`]({methods[found[1]]})"
         return _public_link(found[1]) if found[1] in NAME_LINKS else found[0]
 
     def see(found: re.Match[str]) -> str:
-        return f"See [`{found[1]}()`](#{found[1]})" if found[1] in methods else found[0]
+        return f"See [`{found[1]}()`]({methods[found[1]]})" if found[1] in methods else found[0]
 
     def public(found: re.Match[str]) -> str:
         return _public_link(found[1]) if found[1] in NAME_LINKS else found[0]
@@ -1743,7 +1970,7 @@ def _parameter_note(parameter: Parameter) -> str:
     return "optional" if parameter.default == "None" else f"default `{parameter.default}`"
 
 
-def _parameter_lines(parameters: list[Parameter], methods: dict[str, Method]) -> list[str]:
+def _parameter_lines(parameters: list[Parameter], methods: dict[str, str]) -> list[str]:
     lines: list[str] = []
     for parameter in parameters:
         note = _parameter_note(parameter)
@@ -1754,7 +1981,7 @@ def _parameter_lines(parameters: list[Parameter], methods: dict[str, Method]) ->
     return [*lines, ""]
 
 
-def _attribute_lines(attributes: list[Parameter], methods: dict[str, Method]) -> list[str]:
+def _attribute_lines(attributes: list[Parameter], methods: dict[str, str]) -> list[str]:
     lines: list[str] = []
     for attribute in attributes:
         kind = f" `{attribute.annotation}`" if attribute.annotation else ""
@@ -1763,14 +1990,14 @@ def _attribute_lines(attributes: list[Parameter], methods: dict[str, Method]) ->
     return [*lines, ""]
 
 
-def _return_lines(returns: str, doc: Docstring, methods: dict[str, Method]) -> list[str]:
+def _return_lines(returns: str, doc: Docstring, methods: dict[str, str]) -> list[str]:
     if returns in ("None", "") and not doc.returns:
         return []
     lines = [f"**Returns** {_linked_type(returns)}", ""] if returns else ["**Returns**", ""]
     return lines + ([_add_links(doc.returns, methods), ""] if doc.returns else [])
 
 
-def _raises_lines(doc: Docstring, methods: dict[str, Method]) -> list[str]:
+def _raises_lines(doc: Docstring, methods: dict[str, str]) -> list[str]:
     if not doc.raises:
         return []
     lines = ["**Raises**", ""]
@@ -1780,14 +2007,14 @@ def _raises_lines(doc: Docstring, methods: dict[str, Method]) -> list[str]:
     return [*lines, ""]
 
 
-def _prose_lines(doc: Docstring, methods: dict[str, Method]) -> list[str]:
+def _prose_lines(doc: Docstring, methods: dict[str, str]) -> list[str]:
     lines = [_add_links(doc.summary, methods), ""]
     for paragraph in doc.prose:
         lines += [_add_links(paragraph, methods), ""]
     return lines
 
 
-def _shown_parameters(parameters: list[Parameter], methods: dict[str, Method]) -> list[str]:
+def _shown_parameters(parameters: list[Parameter], methods: dict[str, str]) -> list[str]:
     """Write the first few parameters, and fold the rest away when there are many."""
     if len(parameters) <= MAX_SHOWN_PARAMETERS + 1:
         return _parameter_lines(parameters, methods)
@@ -1804,9 +2031,7 @@ def _shown_parameters(parameters: list[Parameter], methods: dict[str, Method]) -
     ]
 
 
-def _describe(
-    method: Method, methods: dict[str, Method], *, two_columns: bool = False
-) -> list[str]:
+def _describe(method: Method, methods: dict[str, str], *, two_columns: bool = False) -> list[str]:
     """Write a method's description, parameters, return value, and errors as Markdown.
 
     With `two_columns`, the signature is left out, as it goes beside the description with the
@@ -1816,6 +2041,14 @@ def _describe(
     lines = _prose_lines(doc, methods)
     if method.name in ASYNC_NAMES:
         lines += [f"The async client calls this `{ASYNC_NAMES[method.name]}()`.", ""]
+    elif not method.awaited:
+        lines += ["The async client calls this without `await`.", ""]
+    stem = "constructor" if method.anchor.endswith("-constructor") else method.name
+    if f"{method.slug}/{stem}" in NOT_RUN_LIVE:
+        lines += [
+            f"The live tests don't run this example. {NOT_RUN_LIVE[f'{method.slug}/{stem}']}",
+            "",
+        ]
     if not two_columns:
         lines += [f"```python\n{method.signature}\n```", ""]
     if method.parameters:
@@ -1833,7 +2066,7 @@ def _describe_symbol(
 ) -> list[str]:
     """Write a public name's description as Markdown, with any example before its methods."""
     doc = symbol.doc
-    none: dict[str, Method] = {}
+    none: dict[str, str] = {}
     lines = _prose_lines(doc, none)
     if symbol.bases:
         linked = ", ".join(_public_link(base) for base in symbol.bases)
@@ -1871,6 +2104,14 @@ def _tabs(sync_code: str, async_code: str) -> list[str]:
     ]
 
 
+def _code_block(async_code: str) -> list[str]:
+    """Write code for both clients: in tabs if they differ, or once if they don't."""
+    sync_code = to_sync(async_code)
+    if sync_code == async_code:
+        return [f"```python\n{async_code}\n```", ""]
+    return _tabs(sync_code, async_code)
+
+
 def _output_lines(output: str) -> list[str]:
     if not output:
         return []
@@ -1885,61 +2126,38 @@ def _example_lines(sync_code: str, async_code: str, output: str) -> list[str]:
     return label + _tabs(sync_code, async_code) + _output_lines(output)
 
 
-def _returned_types(methods: dict[str, Method]) -> dict[str, list[str]]:
-    returned: dict[str, list[str]] = {}
-    for method in methods.values():
-        if method.anchor == "constructor":
+def _returned_types(methods: list[Method]) -> dict[str, list[Method]]:
+    returned: dict[str, list[Method]] = {}
+    for method in methods:
+        if method.anchor.endswith("-constructor"):
             continue
         for name in _NAME.findall(method.returns):
             if name in NAME_LINKS:
-                returned.setdefault(name, []).append(method.heading)
+                returned.setdefault(name, []).append(method)
     return returned
 
 
-def _return_table(methods: dict[str, Method]) -> list[str]:
-    """Write a table of what the methods return, with each type's own first line."""
+def _return_table(methods: list[Method]) -> list[str]:
+    """Write a table of what a page's methods return, with each type's own first line."""
+    returned = _returned_types(methods)
+    if not returned:
+        return []
     rows = ["| Type | What it is | Returned by |", "|---|---|---|"]
-    by_heading = {method.heading: method.anchor for method in methods.values()}
-    for name, callers in sorted(_returned_types(methods).items()):
+    for name, callers in sorted(returned.items()):
         summary = (inspect.getdoc(getattr(pyquickbase, name)) or "").split("\n\n")[0]
         summary = " ".join(summary.split()).replace("|", "\\|")
-        linked = ", ".join(f"[`{caller}`](#{by_heading[caller]})" for caller in callers)
+        linked = ", ".join(
+            f"[`{caller.owner}.{caller.heading}`]({METHOD_LINKS[(caller.owner, caller.name)]})"
+            for caller in callers
+        )
         rows.append(f"| {_public_link(name)} | {summary} | {linked} |")
-    return [*rows, ""]
+    return ["## What the methods return", "", *rows, ""]
 
 
 def _guide_line(group: Group) -> list[str]:
     if group.guide is None:
         return []
     return [f"For the full picture, see [{group.guide[0]}]({group.guide[1]}).", ""]
-
-
-def _page_header(page: Resource | SymbolPage, methods: dict[str, Method]) -> list[str]:
-    """Write the title, with links to the page as Markdown, and the introduction."""
-    lines = [
-        '<p class="ref-actions">'
-        f'<a class="ref-markdown" href="../{page.slug}.txt" '
-        'title="Open this page as plain Markdown">Markdown</a>'
-        '<button class="ref-copy" type="button" '
-        'title="Copy this page as Markdown, to give to an LLM" hidden>Copy for LLM</button>'
-        "</p>",
-        "",
-        f"# {page.name}",
-        "",
-        _add_links(page.intro, methods),
-        "",
-        _add_links(page.note, methods),
-        "",
-    ]
-    return lines + (_tabs(page.setup, page.async_setup) if page.setup else [])
-
-
-def _two_column_method(method: Method, methods: dict[str, Method], title: str) -> list[str]:
-    """Write a method as two columns: what it does on the left, and its code on the right."""
-    code = [f"```python\n{method.signature}\n```", ""]
-    code += _example_lines(method.sync_code, method.async_code, method.output)
-    text = [f"### {title} {{#{method.anchor}}}", "", *_describe(method, methods, two_columns=True)]
-    return _row(text, code)
 
 
 def _row(text: list[str], code: list[str]) -> list[str]:
@@ -1959,46 +2177,149 @@ def _row(text: list[str], code: list[str]) -> list[str]:
     ]
 
 
-def _two_column_header(page: Resource | SymbolPage, methods: dict[str, Method]) -> list[str]:
+def _uses(code: str) -> set[str]:
+    """Return the names from the setup that an example uses, rather than makes itself."""
+    tree = ast.parse(code)
+    loaded = {
+        node.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+    }
+    stored = {
+        node.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
+    }
+    return (loaded - stored) & set(SETUP_LINES)
+
+
+class Setup(NamedTuple):
+    """What a page's examples share: the setup code for each client, and a note on it."""
+
+    sync_code: str
+    async_code: str
+    note: str
+
+
+def _example_codes(page: Page, reference: Reference) -> tuple[list[str], list[str]]:
+    """Return the page's examples that use its setup, and those that make their own client."""
+    shared: list[str] = []
+    own: list[str] = []
+    for member in (member for group in page.groups for member in group.members):
+        split = _split(member)
+        if split is not None:
+            shared.append(reference.methods[split[0]][split[1]].async_code)
+        elif member in reference.symbols and reference.symbols[member].async_code:
+            symbol = reference.symbols[member]
+            (own if symbol.slug in OWN_CLIENT_DIRS else shared).append(symbol.async_code)
+    return shared, own
+
+
+def _listed(names: list[str]) -> str:
+    quoted = [f"`{name}`" for name in names]
+    if len(quoted) < 3:
+        return " and ".join(quoted)
+    return f"{', '.join(quoted[:-1])}, and {quoted[-1]}"
+
+
+def page_setup(page: Page, reference: Reference) -> Setup:
+    """Return the setup for a page's examples, making only what they use, and a note on them."""
+    shared, own = _example_codes(page, reference)
+    used: set[str] = set()
+    for code in shared:
+        used |= _uses(code)
+    for name in list(used):
+        while name in SETUP_NEEDS:
+            name = SETUP_NEEDS[name]
+            used.add(name)
+    names = [name for name in SETUP_LINES if name in used]
+    parts: list[str] = []
+    async_code = ""
+    if shared:
+        body = [SETUP_LINES[name] for name in names] or ["print(qb.realm)"]
+        lines = "\n".join(body).replace("\n", "\n    ")
+        async_code = (
+            'async with AsyncQuickbase(\n    realm="acme", token="your_user_token"\n) as qb:\n'
+            f"    {lines}"
+        )
+        async_code = f"from pyquickbase import AsyncQuickbase\n\n{async_code}"
+        parts.append(f"The examples below use {_listed(names or ['qb'])}, made as shown here.")
+    if "tasks" in used or any("bqtasks123" in code for code in own):
+        parts.append(_JOB_TASKS)
+    if "projects" in used:
+        parts.append("`projects` is a table named `Job Projects`, with a `Name` field.")
+    if own:
+        whose = "An example that makes its own client reads it" if shared else "Each example makes"
+        parts.append(
+            f"{whose} {'' if shared else 'its own client '}from the environment, with "
+            "`bqtasks123` standing for the ID of the `Job Tasks` table."
+        )
+    if page.note:
+        parts.append(page.note)
+    parts.append(_LIVE_TEST)
+    sync_code = to_sync(async_code) if async_code else ""
+    return Setup(sync_code, async_code, " ".join(parts))
+
+
+def _page_actions(page: Page) -> str:
+    return (
+        '<p class="ref-actions">'
+        f'<a class="ref-markdown" href="../{page.slug}.txt" '
+        'title="Open this page as plain Markdown">Markdown</a>'
+        '<button class="ref-copy" type="button" '
+        'title="Copy this page as Markdown, to give to an LLM" hidden>Copy for LLM</button>'
+        "</p>"
+    )
+
+
+def _front_matter(page: Page) -> list[str]:
+    about = next(
+        about for section in SECTIONS for slug, about in section.pages if slug == page.slug
+    )
+    description = about.replace("`", "").replace('"', "'")
+    return [
+        "---",
+        f'description: "{description}."',
+        "toc_in_nav: true",
+        "hide:",
+        "  - toc",
+        "---",
+        "",
+    ]
+
+
+def _two_column_header(page: Page, setup: Setup) -> list[str]:
     """Write the front matter, title, and introduction, with the setup code beside it."""
-    header = _page_header(page, methods)
-    split = header.index(f"# {page.name}") + 2
-    intro = [line for line in header[split:] if not line.startswith(("===", "    "))]
-    front = ["---", "toc_in_nav: true", "hide:", "  - toc", "---", ""]
-    if not page.setup:
-        return [*front, *header[:split], *intro]
-    row = _row(intro, _tabs(page.setup, page.async_setup))
+    none: dict[str, str] = {}
+    lines = [*_front_matter(page), _page_actions(page), "", f"# {page.name}", ""]
+    intro = [_add_links(page.intro, none), "", _add_links(setup.note, none), ""]
+    if not setup.async_code:
+        return [*lines, *intro]
+    row = _row(intro, _tabs(setup.sync_code, setup.async_code))
     row[0] = '<div class="ref-method ref-intro" markdown>'
-    return [*front, *header[:split], *row]
+    return [*lines, *row]
 
 
-def _check_titles(slug: str, called: list[str]) -> dict[str, str]:
-    """Return a page's titles, stopping the build if what's called and what's titled differ."""
-    titles = TITLES.get(slug, {})
-    untitled = [name for name in called if name not in titles]
-    unknown = sorted(set(titles) - set(called))
+def _called_names(reference: Reference) -> list[str]:
+    """Return everything that's titled by what it does: methods and functions."""
+    called = [f"{owner}.{name}" for owner, methods in reference.methods.items() for name in methods]
+    for name, symbol in reference.symbols.items():
+        if _is_called(name, symbol):
+            called.append(name)
+        called += [method.heading.removesuffix("()") for method in symbol.methods]
+    return called
+
+
+def check_titles(reference: Reference) -> None:
+    """Stop the build if what's called and what's titled differ."""
+    called = _called_names(reference)
+    untitled = [name for name in called if name not in TITLES]
+    unknown = sorted(set(TITLES) - set(called))
     if untitled or unknown:
         raise SystemExit(
-            f"TITLES[{slug!r}] needs a title for {untitled or 'nothing'}, "
-            f"and has titles for names not called on the page: {unknown or 'none'}"
+            f"TITLES needs a title for {untitled or 'nothing'}, "
+            f"and has titles for names that aren't called: {unknown or 'none'}"
         )
-    return titles
-
-
-def build_page(resource: Resource, methods: dict[str, Method]) -> str:
-    """Return a class's page for the site, in two columns, with its contents in the left sidebar.
-
-    Each method's heading is its title from `TITLES`, and each method's "Returns" links to what it
-    returns, so there's no table of return types.
-    """
-    members = [name for group in resource.groups for name in group.members]
-    titles = _check_titles(resource.slug, members)
-    lines = _two_column_header(resource, methods)
-    for group in resource.groups:
-        lines += [f"## {group.title} {{#{group.anchor}}}", "", *_guide_line(group)]
-        for name in group.members:
-            lines += _two_column_method(methods[name], methods, titles[name])
-    return "\n".join(lines)
 
 
 def _is_called(name: str, symbol: Symbol) -> bool:
@@ -2006,10 +2327,62 @@ def _is_called(name: str, symbol: Symbol) -> bool:
     return bool(symbol.signature) and not name[0].isupper()
 
 
+def _is_namespace(symbol: Symbol) -> bool:
+    """Whether a public name is a namespace of functions, such as `allow`."""
+    return not inspect.isclass(getattr(pyquickbase, symbol.name)) and bool(symbol.methods)
+
+
+def method_labels(page: Page, reference: Reference) -> dict[str, str]:
+    """Return how each method on a page is named beside its title, such as `upsert()`.
+
+    Where two classes' methods share a name on the page, such as `url()`, each is named with its
+    class, as `Table.url()`.
+    """
+    labels: dict[str, str] = {}
+    for member in (member for group in page.groups for member in group.members):
+        split = _split(member)
+        if split is not None:
+            labels[member] = reference.methods[split[0]][split[1]].heading
+    taken = list(labels.values())
+    return {
+        member: f"{member.partition('.')[0]}.{label}" if taken.count(label) > 1 else label
+        for member, label in labels.items()
+    }
+
+
+def _heading(level: str, title: str, label: str, anchor: str) -> str:
+    """Write a heading: the title in plain words, then the name it's called by, for scanning."""
+    return f'{level} {title} <code class="ref-call">{label}</code> {{#{anchor}}}'
+
+
+def _two_column_method(method: Method, title: str, label: str) -> list[str]:
+    """Write a method as two columns: what it does on the left, and its code on the right."""
+    code = [f"```python\n{method.signature}\n```", ""]
+    code += _example_lines(method.sync_code, method.async_code, method.output)
+    scope = scope_of(method.owner)
+    text = [
+        _heading("###", title, label, method.anchor),
+        "",
+        *_describe(method, scope, two_columns=True),
+    ]
+    return _row(text, code)
+
+
+def _class_row(source: ClassSource) -> list[str]:
+    """Write a class's own entry: what it is, and how to get one."""
+    text = [
+        f"### `{source.name}` {{#{source.name}}}",
+        "",
+        _add_links(source.about, scope_of(source.name)),
+        "",
+    ]
+    return _row(text, _code_block(source.get))
+
+
 def _symbol_text(symbol: Symbol) -> list[str]:
     """Write what a public name is, for the left column: everything but its code."""
     doc = symbol.doc
-    none: dict[str, Method] = {}
+    none: dict[str, str] = {}
     lines = _prose_lines(doc, none)
     if symbol.bases:
         linked = ", ".join(_public_link(base) for base in symbol.bases)
@@ -2021,47 +2394,128 @@ def _symbol_text(symbol: Symbol) -> list[str]:
     return lines + _return_lines(symbol.returns, doc, none) + _raises_lines(doc, none)
 
 
-def build_symbol_page(page: SymbolPage, symbols: dict[str, Symbol]) -> str:
-    """Return a page of several public names for the site, laid out like a class's page.
+def _symbol_rows(symbol: Symbol) -> list[str]:
+    """Write a public name as a row, with its signature and example beside it, then its methods."""
+    code = [f"```python\n{symbol.signature}\n```", ""] if symbol.signature else []
+    if symbol.sync_code:
+        code += _example_lines(symbol.sync_code, symbol.async_code, symbol.output)
+    elif symbol.definition:
+        code += [f"```python\n{symbol.definition}\n```", ""]
+    name = symbol.name
+    heading = (
+        _heading("###", TITLES[name], f"{name}()", name)
+        if _is_called(name, symbol)
+        else f"### `{name}` {{#{name}}}"
+    )
+    lines = _row([heading, "", *_symbol_text(symbol)], code)
+    namespace = _is_namespace(symbol)
+    for method in symbol.methods:
+        title = TITLES[method.heading.removesuffix("()")]
+        label = method.heading if namespace else f"{method.name}()"
+        text = [_heading("####", title, label, method.anchor), ""]
+        text += _describe(method, {}, two_columns=True)
+        lines += _row(text, [f"```python\n{method.signature}\n```", ""])
+    return lines
 
-    Each name is a row, with its signature and example beside it, and each of its methods is a row
-    below it. A function or method is headed by its title, and anything else by its name.
-    """
-    called = [
-        *(name for name, symbol in symbols.items() if _is_called(name, symbol)),
-        *(method.heading.removesuffix("()") for s in symbols.values() for method in s.methods),
+
+def _error_codes() -> dict[str, tuple[str, bool]]:
+    """Return each error's `tool_error()` code, and whether it says to try again."""
+    codes: dict[str, tuple[str, bool]] = {}
+    for item in vars(pyquickbase.errors).values():
+        if not (isinstance(item, type) and issubclass(item, pyquickbase.QuickbaseError)):
+            continue
+        if issubclass(item, pyquickbase.PolicyRefusedError):
+            codes[item.__name__] = ("read_refused` or `write_refused", False)
+            continue
+        code = next(code for cls, code in _output._CODES if issubclass(item, cls))  # pyright: ignore[reportPrivateUsage]
+        codes[item.__name__] = (code, code in _output._RETRYABLE)  # pyright: ignore[reportPrivateUsage]
+    return codes
+
+
+def _error_tree(order: list[str]) -> str:
+    """Draw the errors as a tree, under the first base of each, naming its other bases."""
+    errors = {name: getattr(pyquickbase.errors, name) for name in order}
+    children: dict[str, list[str]] = {}
+    for name in order[1:]:
+        children.setdefault(errors[name].__bases__[0].__name__, []).append(name)
+
+    def draw(name: str, prefix: str, last: bool, top: bool) -> list[str]:
+        others = [base.__name__ for base in errors[name].__bases__[1:]]
+        also = f"  (also {', '.join(others)})" if others else ""
+        branch = "" if top else ("└─ " if last else "├─ ")
+        lines = [f"{prefix}{branch}{name}{also}"]
+        below = children.get(name, [])
+        inner = prefix if top else prefix + ("   " if last else "│  ")
+        for index, child in enumerate(below):
+            lines += draw(child, inner, index == len(below) - 1, False)
+        return lines
+
+    return "\n".join(draw(order[0], "", True, True))
+
+
+def error_overview(page: Page) -> list[str]:
+    """Write the errors page's overview: every error as a tree, and what `tool_error()` says."""
+    order = [member for group in page.groups for member in group.members]
+    codes = _error_codes()
+    rows = ["| Error | `tool_error()` code | Worth retrying |", "|---|---|---|"]
+    for name in order:
+        code, retry = codes[name]
+        rows.append(f"| [`{name}`](#{name}) | `{code}` | {'Yes' if retry else 'No'} |")
+    text = [
+        "Catching a class catches everything below it in the tree. For a model, `tool_error()` "
+        "turns each error into the code shown here, and also says whether anything changed, which "
+        "depends on how far the call got.",
+        "",
+        *rows,
+        "",
     ]
-    titles = _check_titles(page.slug, called)
-    lines = _two_column_header(page, {})
+    tree = [f"```text\n{_error_tree(order)}\n```", ""]
+    return ["## Every error {#every-error}", "", *_row(text, tree)]
+
+
+# Written after a page's introduction, before its first section.
+OVERVIEWS = {"errors": error_overview}
+
+
+def build_page(page: Page, reference: Reference) -> str:
+    """Return a page for the site, in two columns, with its contents in the left sidebar.
+
+    A method is headed by its title from `TITLES` and its name, an object by its name, and each
+    "Returns" links to what's returned, so there's no table of return types.
+    """
+    setup = page_setup(page, reference)
+    labels = method_labels(page, reference)
+    lines = _two_column_header(page, setup)
+    if page.slug in OVERVIEWS:
+        lines += OVERVIEWS[page.slug](page)
     for group in page.groups:
         lines += [f"## {group.title} {{#{group.anchor}}}", "", *_guide_line(group)]
-        for name in group.members:
-            symbol = symbols[name]
-            code = [f"```python\n{symbol.signature}\n```", ""] if symbol.signature else []
-            if symbol.sync_code:
-                code += _example_lines(symbol.sync_code, symbol.async_code, symbol.output)
-            elif symbol.definition:
-                code += [f"```python\n{symbol.definition}\n```", ""]
-            heading = titles[name] if _is_called(name, symbol) else f"`{name}`"
-            lines += _row([f"### {heading} {{#{name}}}", "", *_symbol_text(symbol)], code)
-            for method in symbol.methods:
-                title = titles[method.heading.removesuffix("()")]
-                text = [f"#### {title} {{#{method.anchor}}}", ""]
-                text += _describe(method, {}, two_columns=True)
-                lines += _row(text, [f"```python\n{method.signature}\n```", ""])
+        for member in group.members:
+            split = _split(member)
+            if split is not None:
+                method = reference.methods[split[0]][split[1]]
+                lines += _two_column_method(method, TITLES[member], labels[member])
+            elif member in CLASS_BY_NAME:
+                lines += _class_row(CLASS_BY_NAME[member])
+            else:
+                lines += _symbol_rows(reference.symbols[member])
     return "\n".join(lines)
 
 
 def build_overview() -> str:
-    """Return the reference's overview: a card for each section, then every public name."""
+    """Return the reference's overview: a card for each section, then every name and method."""
     lines = [
+        "---",
+        'description: "Every public class, function, type, and method of pyquickbase, by subject."',
+        "---",
+        "",
         "# API reference",
         "",
-        "Every public class, function, and type, with a tested example for both clients. Each "
-        "page also has a plain Markdown copy for AI tools. Everything here is public, as "
-        "[Stability and versioning](../stability.md) describes, and modules starting with `_` "
-        "are private. The async classes have the same methods as the sync ones, which you "
-        "`await`, so they're described together.",
+        "Every public class, function, and type, with a tested example for both clients, arranged "
+        "by subject. Each page also has a plain Markdown copy for AI tools. Everything here is "
+        "public, as [Stability and versioning](../stability.md) describes, and modules starting "
+        "with `_` are private. The async classes have the same methods as the sync ones, which "
+        "you `await`, so they're described together.",
         "",
         '<div class="grid cards ref-cards" markdown>',
         "",
@@ -2077,13 +2531,16 @@ def build_overview() -> str:
     lines += ['<div class="ref-names" markdown>', ""]
     for name in sorted(NAME_LINKS, key=str.casefold):
         lines.append(f"- [`{name}`]({NAME_LINKS[name]})")
+    lines += ["", "</div>", "", "## Every method {#methods}", ""]
+    lines += ["By name, each followed by the class it belongs to.", ""]
+    lines += ['<div class="ref-names" markdown>', ""]
+    methods = sorted(
+        ((name, owner) for owner, name in METHOD_LINKS if name != CONSTRUCTOR),
+        key=lambda item: (item[0].casefold(), item[1]),
+    )
+    for name, owner in methods:
+        lines.append(f"- [`{name}`]({METHOD_LINKS[(owner, name)]}) {owner}")
     return "\n".join([*lines, "", "</div>", ""])
-
-
-def _qualified_heading(resource: Resource, method: Method) -> str:
-    if method.anchor == "constructor":
-        return method.heading
-    return f"{resource.name}.{method.heading}"
 
 
 def _plain_examples(sync_code: str, async_code: str, output: str, *, both: bool) -> list[str]:
@@ -2098,12 +2555,10 @@ def _plain_examples(sync_code: str, async_code: str, output: str, *, both: bool)
     return lines
 
 
-def _plain_intro(page: Resource | SymbolPage, site_url: str, *, both: bool) -> list[str]:
-    none: dict[str, Method] = {}
+def _plain_intro(page: Page, setup: Setup, site_url: str, *, both: bool) -> list[str]:
+    none: dict[str, str] = {}
     others = ", ".join(
-        f"[{item.name}]({site_url}reference/{item.slug}.txt)"
-        for item in ALL_PAGES
-        if item is not page
+        f"[{item.name}]({site_url}reference/{item.slug}.txt)" for item in PAGES if item is not page
     )
     lines: list[str] = []
     if both:
@@ -2113,16 +2568,16 @@ def _plain_intro(page: Resource | SymbolPage, site_url: str, *, both: bool) -> l
             f"This describes version {pyquickbase.__version__}. Other pages: {others}.",
             "",
         ]
-    lines += [_add_links(page.intro, none), "", _add_links(page.note, none), ""]
-    if page.setup and both:
+    lines += [_add_links(page.intro, none), "", _add_links(setup.note, none), ""]
+    if setup.async_code and both:
         lines += [
-            f"Sync:\n\n```python\n{page.setup}\n```",
+            f"Sync:\n\n```python\n{setup.sync_code}\n```",
             "",
-            f"Async:\n\n```python\n{page.async_setup}\n```",
+            f"Async:\n\n```python\n{setup.async_code}\n```",
             "",
         ]
-    elif page.setup:
-        lines += [f"```python\n{page.setup}\n```", ""]
+    elif setup.async_code:
+        lines += [f"```python\n{setup.sync_code}\n```", ""]
     return lines
 
 
@@ -2131,81 +2586,86 @@ def _finish_plain(lines: list[str], slug: str, site_url: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text).strip() + "\n"
 
 
+def _plain_overview(page: Page) -> list[str]:
+    """The errors page's overview as plain Markdown, without the two columns."""
+    if page.slug not in OVERVIEWS:
+        return []
+    lines = OVERVIEWS[page.slug](page)
+    kept = [line for line in lines if not line.startswith("<div") and line != "</div>"]
+    return [re.sub(r" \{#[\w-]+\}$", "", line) for line in kept]
+
+
 def build_markdown(
-    resource: Resource, methods: dict[str, Method], site_url: str, *, both_clients: bool = True
+    page: Page, reference: Reference, site_url: str, *, both_clients: bool = True
 ) -> str:
-    """Return a class's page as one plain Markdown file."""
-    lines = _plain_intro(resource, site_url, both=both_clients)
-    lines += ["## What the methods return", "", *_return_table(methods)]
-    for group in resource.groups:
-        lines += [f"## {group.title}", "", *_guide_line(group)]
-        for name in group.members:
-            method = methods[name]
-            lines += [f"### `{_qualified_heading(resource, method)}`", ""]
-            lines += _describe(method, methods)
-            lines += _plain_examples(
-                method.sync_code, method.async_code, method.output, both=both_clients
-            )
-    return _finish_plain(lines, resource.slug, site_url)
-
-
-def build_symbol_markdown(
-    page: SymbolPage, symbols: dict[str, Symbol], site_url: str, *, both_clients: bool = True
-) -> str:
-    """Return a page of several public names as one plain Markdown file."""
-    lines = _plain_intro(page, site_url, both=both_clients)
+    """Return a page as one plain Markdown file."""
+    setup = page_setup(page, reference)
+    lines = _plain_intro(page, setup, site_url, both=both_clients)
+    lines += _plain_overview(page)
+    on_page = [
+        reference.methods[split[0]][split[1]]
+        for group in page.groups
+        for member in group.members
+        if (split := _split(member)) is not None
+    ]
+    lines += _return_table(on_page)
     for group in page.groups:
         lines += [f"## {group.title}", "", *_guide_line(group)]
-        for name in group.members:
-            symbol = symbols[name]
-            lines += [f"### `{name}`", "", *_describe_symbol(symbol, anchors=False)]
-            if symbol.definition and not symbol.sync_code:
-                lines += [f"```python\n{symbol.definition}\n```", ""]
-            lines += _plain_examples(
-                symbol.sync_code, symbol.async_code, symbol.output, both=both_clients
-            )
+        for member in group.members:
+            split = _split(member)
+            if split is not None:
+                method = reference.methods[split[0]][split[1]]
+                heading = (
+                    method.heading if split[1] == CONSTRUCTOR else f"{split[0]}.{method.heading}"
+                )
+                lines += [f"### `{heading}`", "", f"{TITLES[member]}.", ""]
+                lines += _describe(method, scope_of(method.owner))
+                lines += _plain_examples(
+                    method.sync_code, method.async_code, method.output, both=both_clients
+                )
+            elif member in CLASS_BY_NAME:
+                source = CLASS_BY_NAME[member]
+                lines += [f"### `{member}`", "", _add_links(source.about, scope_of(member)), ""]
+                lines += [f"```python\n{to_sync(source.get)}\n```", ""]
+            else:
+                symbol = reference.symbols[member]
+                lines += [f"### `{member}`", "", *_describe_symbol(symbol, anchors=False)]
+                if symbol.definition and not symbol.sync_code:
+                    lines += [f"```python\n{symbol.definition}\n```", ""]
+                lines += _plain_examples(
+                    symbol.sync_code, symbol.async_code, symbol.output, both=both_clients
+                )
     return _finish_plain(lines, page.slug, site_url)
 
 
 def full_text(site_url: str) -> list[tuple[str, str, str]]:
     """Return `(title, slug, Markdown)` for each page, with sync examples, for llms-full.txt."""
-    check_every_name_is_covered()
-    pages: list[tuple[str, str, str]] = []
-    for slug in (slug for section in SECTIONS for slug, _ in section.pages):
-        page = PAGES_BY_SLUG[slug]
-        if isinstance(page, Resource):
-            text = build_markdown(page, read_methods(page), site_url, both_clients=False)
-        else:
-            text = build_symbol_markdown(page, read_symbols(page), site_url, both_clients=False)
-        pages.append((page.name, slug, text))
-    return pages
+    reference = read_reference()
+    return [
+        (
+            PAGES_BY_SLUG[slug].name,
+            slug,
+            build_markdown(PAGES_BY_SLUG[slug], reference, site_url, both_clients=False),
+        )
+        for section in SECTIONS
+        for slug, _ in section.pages
+    ]
 
 
 def main() -> None:
     config = build_llms.read_config()
-    check_every_name_is_covered()
+    reference = read_reference()
+    check_titles(reference)
+    if OUTPUT.exists():
+        for stale in [*OUTPUT.glob("*.md"), *OUTPUT.glob("*.txt")]:
+            stale.unlink()
     OUTPUT.mkdir(exist_ok=True)
-
-    def write(slug: str, page: str, markdown: str) -> None:
-        (OUTPUT / f"{slug}.md").write_text(page, encoding="utf-8")
-        (OUTPUT / f"{slug}.txt").write_text(markdown, encoding="utf-8")
-
-    for resource in RESOURCES:
-        methods = read_methods(resource)
-        write(
-            resource.slug,
-            build_page(resource, methods),
-            build_markdown(resource, methods, config.site_url),
-        )
-    for page in SYMBOL_PAGES:
-        symbols = read_symbols(page)
-        write(
-            page.slug,
-            build_symbol_page(page, symbols),
-            build_symbol_markdown(page, symbols, config.site_url),
-        )
+    for page in PAGES:
+        (OUTPUT / f"{page.slug}.md").write_text(build_page(page, reference), encoding="utf-8")
+        markdown = build_markdown(page, reference, config.site_url)
+        (OUTPUT / f"{page.slug}.txt").write_text(markdown, encoding="utf-8")
     (OUTPUT / "index.md").write_text(build_overview(), encoding="utf-8")
-    print(f"Wrote {len(ALL_PAGES)} pages and the overview to docs/reference/")
+    print(f"Wrote {len(PAGES)} pages and the overview to docs/reference/")
 
 
 if __name__ == "__main__":

@@ -1,3 +1,7 @@
+---
+description: "Reading refusals, and asking a policy what it allows."
+---
+
 # Debugging refusals
 
 ## When something is refused

@@ -1,3 +1,7 @@
+---
+description: "What the SDK is, why to use it, and how to install it."
+---
+
 # pyquickbase
 
 <p class="hero-lede">A typed Python SDK for the <a href="https://www.quickbase.com/">Quickbase</a> API,

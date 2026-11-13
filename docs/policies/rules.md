@@ -1,3 +1,7 @@
+---
+description: "Allowing and refusing reads and writes by table and field."
+---
+
 # Writing rules
 
 A policy is a list of rules over tables and fields, by name and label. Bind it to the app once,

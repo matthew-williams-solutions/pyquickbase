@@ -1,3 +1,7 @@
+---
+description: "Reading, previewing, and replacing code pages, and why a policy doesn't limit what a page does."
+---
+
 # Code pages
 
 A code page is an HTML or JavaScript page stored in a Quickbase app. pyquickbase can read, preview, and replace them.

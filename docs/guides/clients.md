@@ -1,3 +1,7 @@
+---
+description: "Sync or async, tokens, retries, proxies, and other settings."
+---
+
 # Configuring clients
 
 This page covers choosing a client, limiting what it can read and write, retries, and connection

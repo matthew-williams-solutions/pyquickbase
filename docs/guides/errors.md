@@ -1,3 +1,7 @@
+---
+description: "Every exception, and which ones mean a request wasn't sent."
+---
+
 # Handling errors
 
 This page covers what the SDK raises, what each error means for your data, and what's retried for you.

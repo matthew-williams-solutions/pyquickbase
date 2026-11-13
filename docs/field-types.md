@@ -1,3 +1,7 @@
+---
+description: "Every field type, what to write, what it reads as, and field settings."
+---
+
 # Field types
 
 These are the values `create_field()` and `ensure_field()` accept as `type`, and what each type

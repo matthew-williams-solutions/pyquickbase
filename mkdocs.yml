@@ -84,29 +84,29 @@ nav:
       - What a policy doesn't do: policies/limits.md
   - Reference:
       - Overview: reference/index.md
-      - Core:
-          - Quickbase: reference/quickbase.md
-          - App: reference/app.md
-          - Table: reference/table.md
-          - Report: reference/report.md
-          - CodePage: reference/code-page.md
+      - Client and errors:
+          - Client: reference/client.md
+          - Errors: reference/errors.md
       - Data:
+          - Records: reference/records.md
+          - Writes: reference/writes.md
           - Queries: reference/queries.md
-          - Records and results: reference/records.md
-          - Metadata: reference/metadata.md
+          - Summaries and formulas: reference/summaries.md
+          - Files and spreadsheets: reference/files.md
+          - Reports: reference/reports.md
+      - Apps and schema:
+          - Apps: reference/apps.md
+          - Tables: reference/tables.md
+          - Fields and relationships: reference/fields.md
+          - Schema plans: reference/schema-plans.md
+          - Code pages: reference/code-pages.md
+          - Links: reference/links.md
           - Field types: field-types.md
-      - Schema:
-          - Schema changes: reference/schema-changes.md
-          - AppOperation: reference/app-operation.md
       - Policies:
           - Policies: reference/policies.md
           - Rules: reference/rules.md
       - AI agents:
-          - TableOperation: reference/table-operation.md
-          - Tools for models: reference/tools.md
-      - Errors and retries:
-          - Errors: reference/errors.md
-          - Retries: reference/retries.md
+          - Operations for models: reference/operations.md
   - Playground: playground.md
   - Project:
       - Stability and versioning: stability.md
@@ -122,6 +122,19 @@ extra_javascript:
 
 plugins:
   - search
+  - redirects:
+      redirect_maps:
+        reference/quickbase.md: reference/client.md
+        reference/app.md: reference/apps.md
+        reference/table.md: reference/records.md
+        reference/report.md: reference/reports.md
+        reference/code-page.md: reference/code-pages.md
+        reference/metadata.md: reference/apps.md
+        reference/schema-changes.md: reference/schema-plans.md
+        reference/app-operation.md: reference/operations.md
+        reference/table-operation.md: reference/operations.md
+        reference/tools.md: reference/operations.md
+        reference/retries.md: reference/client.md
 
 markdown_extensions:
   - admonition

@@ -1,3 +1,7 @@
+---
+description: "Previews before writes, and schema changes from an agent."
+---
+
 # Previews, writes, and schema changes
 
 ## Checking a change before making it

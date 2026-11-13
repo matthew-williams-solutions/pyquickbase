@@ -1,3 +1,7 @@
+---
+description: "Allowing schema changes table by table."
+---
+
 # Schema changes
 
 `allow.schema(tables, *verbs)` grants schema changes on the table where each change lands:

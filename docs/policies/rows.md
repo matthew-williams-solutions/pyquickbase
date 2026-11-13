@@ -1,3 +1,7 @@
+---
+description: "Keeping a client to some records."
+---
+
 # Limiting rows
 
 `limit.rows(tables, where)` keeps a client to the records of those tables that match a condition:

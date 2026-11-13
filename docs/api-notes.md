@@ -1,3 +1,7 @@
+---
+description: "How Quickbase's REST API behaves, as confirmed against a live app."
+---
+
 # Quickbase API notes
 
 What this SDK relies on, and how far each point has been confirmed. Much of the developer portal

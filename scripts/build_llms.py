@@ -22,48 +22,6 @@ CONFIG = ROOT / "mkdocs.yml"
 # out too, except its overview, as build_reference.py writes their plain Markdown.
 LEFT_OUT = {"playground.md"}
 OVERVIEW = "reference/index.md"
-# What each page is for, shown in llms.txt. A page missing from here stops the build.
-DESCRIPTIONS = {
-    "index.md": "What the SDK is, why to use it, and how to install it",
-    "getting-started.md": "Install it, read some records, and write one",
-    "guides/reading.md": "Tables, fields, queries with `F`, paging, record values, reports, "
-    "DataFrames, and what each refusal raises",
-    "guides/writing.md": "Inserts, updates, upserts, deletes, DataFrames, previews, rows that "
-    "fail, and what each refusal leaves behind",
-    "guides/files.md": "Uploading, downloading, and deleting file attachments",
-    "guides/spreadsheets.md": "Exporting records to CSV and Excel, and importing a file's rows "
-    "with each value checked",
-    "guides/formulas.md": "Running formulas and creating formula fields, and why not to run "
-    "formula text you don't control",
-    "guides/schema.md": "Creating and changing tables, fields, relationships, lookups, and "
-    "summaries, where fields are used, and what each refusal leaves behind",
-    "guides/apps.md": "Creating, copying, and deleting apps, and the webhooks and automations "
-    "that run in one",
-    "guides/code-pages.md": "Reading, previewing, and replacing code pages, and why a policy "
-    "doesn't limit what a page does",
-    "guides/errors.md": "Every exception, and which ones mean a request wasn't sent",
-    "guides/clients.md": "Sync or async, tokens, retries, proxies, and other settings",
-    "agents/index.md": "Limiting what an agent can do, and why the token is the real boundary",
-    "agents/untrusted-input.md": "Values and filters that come from a model",
-    "agents/operations.md": "Giving a model typed operations on tables, reports, and schemas",
-    "agents/results.md": "Returning results and errors to a model, links, and counts",
-    "agents/changes.md": "Previews before writes, and schema changes from an agent",
-    "policies/index.md": "What a policy is, how it decides, and read-only clients",
-    "policies/tutorial.md": "Building a policy for an agent step by step",
-    "policies/rules.md": "Allowing and refusing reads and writes by table and field",
-    "policies/tags.md": "Named groups of fields, formulas that read them, and new fields",
-    "policies/rows.md": "Keeping a client to some records",
-    "policies/schema.md": "Allowing schema changes table by table",
-    "policies/custom-rules.md": "Refusing requests with logic of your own",
-    "policies/debugging.md": "Reading refusals, and asking a policy what it allows",
-    "policies/recipes.md": "Complete policies for common jobs",
-    "policies/limits.md": "What a policy can't protect against",
-    OVERVIEW: "An overview of the API reference, with where to find every public name",
-    "field-types.md": "Every field type, what to write, what it reads as, and field settings",
-    "stability.md": "What 1.x promises, and what it doesn't",
-    "api-notes.md": "How Quickbase's REST API behaves, as confirmed against a live app",
-    "changelog.md": "What changed in each release",
-}
 # Text that means a page wasn't fully converted.
 UNCONVERTED = (":::", "--8<--", "!!!")
 
@@ -78,6 +36,7 @@ _HEADING = re.compile(r"^(#{1,5}) ")
 _MODULE_PREFIX = re.compile(r"\b(?:collections\.abc|typing|pyquickbase(?:\.\w+)*)\.")
 _QUOTED_TYPE = re.compile(r"'([A-Z][\w\[\], ]*)'")
 _UNION = re.compile(r"\bUnion\[")
+_FRONT_MATTER = re.compile(r"\A---\n(.*?)\n---\n+", re.DOTALL)
 
 
 class RecordPage(NamedTuple):
@@ -259,9 +218,30 @@ def _page_source(path: str) -> str:
     return (DOCS / path).read_text(encoding="utf-8")
 
 
+def split_front_matter(text: str) -> tuple[dict[str, str], str]:
+    """Return a page's top-level front matter values, and the page without them."""
+    found = _FRONT_MATTER.match(text)
+    if found is None:
+        return {}, text
+    values: dict[str, str] = {}
+    for line in found[1].splitlines():
+        key, colon, value = line.partition(":")
+        if colon and not line.startswith(" "):
+            values[key.strip()] = value.strip().strip('"')
+    return values, text[found.end() :]
+
+
+def description(path: str) -> str:
+    """Return what a page is for, from its front matter, which search engines show too."""
+    values, _ = split_front_matter(_page_source(path))
+    if not values.get("description"):
+        raise SystemExit(f"{path} needs a description in its front matter.")
+    return values["description"]
+
+
 def convert_page(page: RecordPage, site_url: str) -> str:
     """Return one nav page as plain Markdown."""
-    text = _resolve_snippets(_page_source(page.path))
+    text = _resolve_snippets(split_front_matter(_page_source(page.path))[1])
     text = _without_title(text, page.path)
     text = convert_blocks(text)
     text = demote_headings(rewrite_links(text, page.path, site_url)).strip()
@@ -293,14 +273,7 @@ def is_covered(path: str) -> bool:
 
 
 def _covered_pages(config: Config) -> list[RecordPage]:
-    pages = [page for page in config.pages if is_covered(page.path)]
-    paths = {page.path for page in pages}
-    if paths != set(DESCRIPTIONS):
-        raise SystemExit(
-            "DESCRIPTIONS doesn't match the nav in mkdocs.yml: "
-            f"{sorted(paths.symmetric_difference(DESCRIPTIONS))}"
-        )
-    return pages
+    return [page for page in config.pages if is_covered(page.path)]
 
 
 def reference_pages() -> list[tuple[str, str, str]]:
@@ -330,7 +303,7 @@ def build_index(config: Config) -> str:
         ]
     }
     for page in _covered_pages(config):
-        entry = f"- [{page.title}]({page_url(site_url, page.path)}): {DESCRIPTIONS[page.path]}"
+        entry = f"- [{page.title}]({page_url(site_url, page.path)}): {description(page.path)}"
         sections.setdefault(page.section or "Docs", []).append(entry)
     about = f"{_NOT_AFFILIATED} This describes version {pyquickbase.__version__}."
     parts = [f"# {pyquickbase.__name__}", f"> {config.summary}", about]

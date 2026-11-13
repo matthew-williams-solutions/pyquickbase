@@ -1,3 +1,7 @@
+---
+description: "Creating and changing tables, fields, relationships, lookups, and summaries, where fields are used, and what each refusal leaves behind."
+---
+
 # Changing the schema
 
 This page covers creating and changing tables, fields, and relationships. Every method here is also

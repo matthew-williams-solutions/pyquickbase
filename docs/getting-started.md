@@ -1,3 +1,7 @@
+---
+description: "Install it, read some records, and write one."
+---
+
 # Getting started
 
 ## Before you start

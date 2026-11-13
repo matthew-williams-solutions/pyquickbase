@@ -1,3 +1,7 @@
+---
+description: "Running formulas and creating formula fields, and why not to run formula text you don't control."
+---
+
 # Formulas
 
 This page covers running a formula without saving it, and creating formula fields. Every method here is

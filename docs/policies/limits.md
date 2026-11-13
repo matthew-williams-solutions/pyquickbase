@@ -1,3 +1,7 @@
+---
+description: "What a policy can't protect against."
+---
+
 # What a policy doesn't do
 
 - **It can't see copies of a value.** An address field shows its subfields, and a value pasted into

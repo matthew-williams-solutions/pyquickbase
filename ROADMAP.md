@@ -24,6 +24,27 @@ Nothing here should break anyone.
 - `llms.txt` is at `/pyquickbase/llms.txt`, not the domain root where some tools look, because the
   site is served from a subpath. Only a custom domain would change that.
 
+## Docs
+
+The API reference is arranged by subject. What's left from the docs review:
+
+- Under each method's **Returns**, a collapsible list of the returned object's attributes, as
+  Stripe shows them, so a reader needn't jump to `WriteResult`. It adds weight to each page.
+- Generate `docs/field-types.md` from the SDK, as the reference is, and test or remove its eight
+  "Not tested" cells. It's hand-written, so it has no Markdown copy for AI tools.
+- Link names in the guides to the reference at build time, from `NAME_LINKS`, with a test. Only
+  two lines in the guides, agents, and policies pages link to it now, while every reference
+  section links to a guide.
+- Group the eleven guides, such as into working with data, apps and schema, and running in
+  production, and the ten policy pages into learning, writing, and running a policy. `rows.md` and
+  `policies/schema.md` are short enough to join `tags.md`. Move summaries and reports out of
+  `guides/reading.md` into guides of their own.
+- New pages: how pyquickbase works (looking up labels, the metadata cache, lazy objects, batching,
+  and paging), a map from each REST endpoint to its method, troubleshooting by symptom from what
+  `docs/api-notes.md` has confirmed, and recipes for the core SDK like the policy recipes.
+- `docs/api-notes.md` is a record of what was tested, so send readers to the troubleshooting page
+  first once it exists.
+
 ## Apps, events, and DataFrames
 
 - `AppTrigger` parsing is only tested against the published example. The test apps have no webhooks,

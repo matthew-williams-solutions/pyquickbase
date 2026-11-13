@@ -1,3 +1,7 @@
+---
+description: "What 1.x promises, and what it doesn't."
+---
+
 # Stability and versioning
 
 This policy applies from version 1.0. Until then, anything may change in any release.
@@ -10,7 +14,6 @@ minor release.
 
 - Every name in `pyquickbase.__all__` and `pyquickbase.errors`, with its documented methods,
   signatures, return types, and defaults.
-- The `pyquickbase` command and its options.
 - The promise that a client with `Policy.read_only()` changes no records. It can still run reports,
   which adds to their usage count in Quickbase, and formulas. It doesn't cover every read: a client with any policy
   is refused `apps()`, `current_user()`, `find_user()`, `members()`, and `member_roles()`.

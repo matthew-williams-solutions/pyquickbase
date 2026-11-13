@@ -1,3 +1,7 @@
+---
+description: "Building a policy for an agent step by step."
+---
+
 # Your first policy
 
 This builds a policy for an agent that helps a crew keep their tasks up to date, one step at a

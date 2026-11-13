@@ -1,3 +1,7 @@
+---
+description: "Creating, copying, and deleting apps, and the webhooks and automations that run in one."
+---
+
 # Working with apps
 
 This page covers finding the apps a token can reach, seeing who has access to one, creating, copying, and

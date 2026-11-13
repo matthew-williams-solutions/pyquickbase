@@ -1,3 +1,7 @@
+---
+description: "Exporting records to CSV and Excel, and importing a file's rows with each value checked."
+---
+
 # CSV and Excel files
 
 This page covers exporting records to CSV and Excel files, and importing a file's rows into a table,

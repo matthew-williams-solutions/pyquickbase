@@ -132,6 +132,22 @@ body:has(.ref-method) .md-grid {
   padding-top: 0.6rem;
 }
 
+/* A method's name, after its title in plain words, there and in the sidebar, so a reader who
+   knows the name can find it. */
+.md-typeset .ref-method .ref-call {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.8em;
+  font-weight: 400;
+  margin-left: 0.25em;
+}
+
+.md-nav .ref-call {
+  background: none;
+  color: var(--md-default-fg-color--light);
+  font-size: 0.9em;
+  padding: 0;
+}
+
 /* A group's heading already has a line above it, so its first method doesn't need another. */
 .md-typeset h2 + .ref-method,
 .md-typeset h2 + p + .ref-method {
@@ -234,4 +250,14 @@ body:has(.ref-method) .md-grid {
 .md-typeset .ref-label + .highlight pre > code {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+/* Every method: its class, after its name, is quieter than the link. */
+.md-typeset .ref-names li {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.7rem;
+}
+
+.md-typeset .ref-names li a {
+  font-size: 0.8rem;
 }

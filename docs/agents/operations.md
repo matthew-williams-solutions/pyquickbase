@@ -1,3 +1,7 @@
+---
+description: "Giving a model typed operations on tables, reports, and schemas."
+---
+
 # Giving a model operations
 
 ## Giving a model operations

@@ -1,3 +1,7 @@
+---
+description: "Complete policies for common jobs."
+---
+
 # Recipes
 
 Complete policies for common jobs. Each one starts from nothing allowed and adds only what the job

@@ -1,3 +1,7 @@
+---
+description: "Inserts, updates, upserts, deletes, DataFrames, previews, rows that fail, and what each refusal leaves behind."
+---
+
 # Writing records
 
 This page covers creating, updating, and deleting records, and what to do when rows fail.
@@ -62,7 +66,7 @@ that sets `Record ID#` raises
 ### Tables with a custom key field
 
 A table's key field is `Record ID#` unless someone has changed it, in the Quickbase UI or with a
-[`SetKeyField`](../reference/schema-changes.md#SetKeyField) change in a [schema plan](schema.md#planning-changes-before-making-them). If they have,
+[`SetKeyField`](../reference/schema-plans.md#SetKeyField) change in a [schema plan](schema.md#planning-changes-before-making-them). If they have,
 Quickbase [changes the record](../api-notes.md#writes) when a row has an existing value in that field,
 rather than creating one, and there's no way to ask it to only create. So `insert()` raises
 `InvalidValueError` on those tables, and sends nothing. Use `upsert()` instead, which updates a matching

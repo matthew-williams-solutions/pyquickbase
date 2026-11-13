@@ -1,3 +1,7 @@
+---
+description: "Returning results and errors to a model, links, and counts."
+---
+
 # Results and errors for a model
 
 ## Reading results
@@ -208,7 +212,7 @@ async def list_open_tasks(tasks: AsyncTable) -> dict:
 ```
 
 Send the pattern once, rather than a link for each record, and say in the tool's description that
-`{record_id}` is replaced by a record's `Record ID#`. [`record_url()`](../reference/table.md#links)
+`{record_id}` is replaced by a record's `Record ID#`. [`record_url()`](../reference/links.md#Table-record_url)
 builds one record's link, and `url()` a table's, app's, or report's. Others link to the pages a
 change to the schema sends a person to, such as `field_url()` and `fields_url()` for a table's
 fields, `relationships_url()`, and `Report.url(edit=True)` for a report's settings. To show which records a query asked for, `compile_where()` returns a condition as

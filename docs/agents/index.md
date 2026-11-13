@@ -1,3 +1,7 @@
+---
+description: "Limiting what an agent can do, and why the token is the real boundary."
+---
+
 # Using pyquickbase from an AI agent
 
 This guide is for developers who let an AI agent use the SDK, and for agents reading these docs.

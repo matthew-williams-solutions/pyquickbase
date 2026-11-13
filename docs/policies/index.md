@@ -1,3 +1,7 @@
+---
+description: "What a policy is, how it decides, and read-only clients."
+---
+
 # Policies
 
 A client takes one `policy`, which says what it may read and change.

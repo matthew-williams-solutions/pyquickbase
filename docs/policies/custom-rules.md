@@ -1,3 +1,7 @@
+---
+description: "Refusing requests with logic of your own."
+---
+
 # Rules of your own
 
 For logic the rules can't express, add an object with a `decide(request)` method to `rules`. It sees
