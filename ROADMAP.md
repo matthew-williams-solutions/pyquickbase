@@ -28,8 +28,6 @@ Nothing here should break anyone.
 
 The API reference is arranged by subject. What's left from the docs review:
 
-- Generate `docs/field-types.md` from the SDK, as the reference is, and test or remove its eight
-  "Not tested" cells. It's hand-written, so it has no Markdown copy for AI tools.
 - New pages: how pyquickbase works (looking up labels, the metadata cache, lazy objects, batching,
   and paging), a map from each REST endpoint to its method, troubleshooting by symptom from what
   `docs/api-notes.md` has confirmed, and recipes for the core SDK like the policy recipes.

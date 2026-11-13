@@ -266,7 +266,8 @@ many other mistakes, these are checked:
 | **Deleting a field a formula uses** | **Allowed. The formula keeps its text, such as `[Hours] * 2`, and its values become empty.** Any update to that formula is then refused with 400 until it stops using the deleted field. Live API, 2026-11-06 |
 | Writing to a formula field | Row error |
 | Field types that took a formula | `text`, `numeric`, `date`, `checkbox`, `duration`, `timeofday`, `currency`, `percent`, `rating`, `url`, `email`, and `datetime`, and on 2026-11-04 `phone`, `user`, `multitext`, and `rich-text` |
-| Field types the API refuses a formula on | `text-multi-line` and `multiuser`, with `[formula] property is not supported`. **The UI can make a `multiuser` formula**, such as `ToUserList(User())`, which reads as a list of users |
+| Field types the API refuses a formula on | `text-multi-line` and `multiuser`, and on 2026-11-13 `text-multiple-choice`, `file`, and `address`, with `[formula] property is not supported`. **The UI can make a `multiuser` formula**, such as `ToUserList(User())`, which reads as a list of users |
+| A `multitext` formula | Must return a text list, such as `Split("a;b", ";")`. Text alone returns 400, `The field is textlist but the formula returns a text result`. Live API, 2026-11-13 |
 | **A timestamp formula** | **`timestamp` returns 400, `[formula] property is not supported`. `datetime` works, and the field then reports its type as `timestamp`** |
 | `text-multi-line` | 400, `[formula] property is not supported` |
 | Reading formula fields in a query | Full precision, unlike a formula run: `1/3` returns `0.3333333333333333`. A duration returns milliseconds, and a time of day `11:34:49.896` |

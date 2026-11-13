@@ -20,13 +20,13 @@ tasks.create_field("Priority", "text-multiple-choice", choices=["Low", "High"])
 | `type` | Holds | Write | Reads as | Empty reads as | Takes a formula |
 |---|---|---|---|---|---|
 | `text` | One line of text | `str` | `str` | `""` | Yes |
-| `text-multiple-choice` | One choice | `str` | `str` | `""` | Not tested |
+| `text-multiple-choice` | One choice | `str` | `str` | `""` | No |
 | `text-multi-line` | Several lines of text | `str` | `str` | `""` | No |
-| `rich-text` | Text containing HTML | `str` | `str` | `""` | Not tested |
-| `multitext` | Several choices | `list[str]` | `list[str]` | `[]` | Not tested |
+| `rich-text` | Text containing HTML | `str` | `str` | `""` | Yes, though a [policy](policies/rules.md#schema-changes) refuses it, as the result acts as whoever opens it |
+| `multitext` | Several choices | `list[str]` | `list[str]` | `[]` | Yes, if it returns a text list, such as `Split("a;b", ";")` |
 | `email` | An email address | `str` | `str` | `""` | Yes |
-| `url` | A link | `str` | `str` | `""` | Yes |
-| `phone` | A phone number | `str` | `str`, formatted by Quickbase: `5551234567` reads as `(555) 123-4567` | `""` | Not tested |
+| `url` | A link | `str` | `str` | `""` | Yes, though a [policy](policies/rules.md#schema-changes) refuses it, as the result acts as whoever opens it |
+| `phone` | A phone number | `str` | `str`, formatted by Quickbase: `5551234567` reads as `(555) 123-4567` | `""` | Yes |
 
 **An empty text field reads as `""`, not `None`**, so check for it with `if not value`.
 
@@ -62,10 +62,10 @@ field made through the API. See [API notes](api-notes.md#formulas).
 | `type` | Holds | Write | Reads as | Empty reads as | Takes a formula |
 |---|---|---|---|---|---|
 | `checkbox` | True or false | `bool` | `bool` | `False`, so empty and unchecked look the same | Yes |
-| `user` | One Quickbase user | A [`User`](reference/records.md#User), or `{"id": ...}` | `User` | `None` | Not tested |
-| `multiuser` | Several users | A list of `User`, or of `{"id": ...}` | A list of `User` | `[]` | Not tested |
-| `file` | An attachment | [`FileUpload`](guides/files.md) | [`FileAttachment`](reference/files.md#FileAttachment) | `None` | Not tested |
-| `address` | An address, as display text | Read-only: write its subfields | `str` | `""` | Not tested |
+| `user` | One Quickbase user | A [`User`](reference/records.md#User), or `{"id": ...}` | `User` | `None` | Yes, such as `User()` |
+| `multiuser` | Several users | A list of `User`, or of `{"id": ...}` | A list of `User` | `[]` | No, though the Quickbase interface can make one |
+| `file` | An attachment | [`FileUpload`](guides/files.md) | [`FileAttachment`](reference/files.md#FileAttachment) | `None` | No |
+| `address` | An address, as display text | Read-only: write its subfields | `str` | `""` | No |
 
 A query only returns a table's default fields unless you pass `select`, and built-in fields such as
 `Record Owner` may not be among them.
