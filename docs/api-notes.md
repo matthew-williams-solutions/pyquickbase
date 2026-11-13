@@ -682,6 +682,13 @@ app settings, report settings, new record, field list, relationships, table sett
 links each opened the right page (browser, 2026-11-05). The API can't list forms, so a form's ID
 comes from its address in the interface.
 
-A link to the records that match a filter isn't built, because no form has been confirmed. The
-classic interface took `/db/<table ID>?a=q&query=<filter>`, and it isn't known whether that still
-works.
+Both forms of a link to the records that match a filter work (browser, 2026-11-12), with the filter
+URL-encoded, such as `%7B3.LT.3%7D` for `{3.LT.3}`:
+
+| Link | What opens |
+|---|---|
+| `/db/<table ID>?a=q&query=<filter>` | Redirects to `/nav/app/<app ID>/table/<table ID>/action/q?qid=-1000000&dr=1`, a temporary report named after the filter, such as "Record ID# is less than 3", showing only the matching records |
+| `/nav/app/<app ID>/table/<table ID>/action/q?qid=1&query=<filter>` | Redirects to `...action/q?qid=-1000001&bq=1`, the report `qid` names, as a temporary report with the filter added, showing only the matching records |
+
+The SDK doesn't build either, because a link holds IDs only, never a field's value, and a filter puts
+values in the address, where browser history and logs keep them.

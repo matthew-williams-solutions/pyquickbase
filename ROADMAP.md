@@ -65,10 +65,6 @@ the result to `docs/api-notes.md`.
 
 **Realms and apps**
 
-- Does the new interface have a link to the records that match a filter, or does the classic
-  `/db/<table ID>?a=q&query=<filter>` still redirect to one? If so, add a filtered link built from
-  `compile_where()`.
-
 - Is `api.quickbase.eu` the API host for EU realms? It answers without a token just as `api.quickbase.com`
   does, and the help only says EU realms use `.quickbase.eu`. Confirming it needs a real EU realm, as does
   confirming that XML calls go to `<realm>.quickbase.eu`.
