@@ -586,15 +586,20 @@ def test_the_error_overview_says_what_tool_error_reports() -> None:
     assert "## Every error" in MARKDOWN["errors"]
 
 
-def test_a_trial_page_shows_what_each_returned_object_holds() -> None:
-    page = PAGES["reports"]
-    assert "<summary>What a <code>RecordIterator</code> can do</summary>" in page
-    assert "<summary>What a <code>ReportInfo</code> holds</summary>" in page
+def test_a_method_shows_what_each_returned_object_holds() -> None:
+    assert "<summary>What a <code>RecordIterator</code> can do</summary>" in PAGES["reports"]
+    assert "<summary>What a <code>WriteResult</code> holds</summary>" in PAGES["writes"]
     assert (
-        "- [`to_pandas()`](records.md#RecordIterator-to_pandas): Fetch records into pandas" in page
+        "- [`to_pandas()`](records.md#RecordIterator-to_pandas): Fetch records into pandas"
+        in (PAGES["reports"])
     )
-    assert "ref-returned" not in PAGES["writes"]
     assert "ref-returned" not in MARKDOWN["reports"]
+
+
+def test_an_object_whose_entry_comes_next_is_not_repeated() -> None:
+    method = METHODS["Report"]["info"]
+    assert build_reference.returned_lines(method, REFERENCE, "ReportInfo") == []
+    assert build_reference.returned_lines(method, REFERENCE, "Report.run") != []
 
 
 def test_a_returned_list_or_namespace_is_shown_by_what_it_holds() -> None:

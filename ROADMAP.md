@@ -28,8 +28,6 @@ Nothing here should break anyone.
 
 The API reference is arranged by subject. What's left from the docs review:
 
-- Decide whether every reference page should show, under a method's **Returns**, what the returned
-  object holds. The Reports page tries it, from `INLINE_RETURNS` in `scripts/build_reference.py`.
 - Generate `docs/field-types.md` from the SDK, as the reference is, and test or remove its eight
   "Not tested" cells. It's hand-written, so it has no Markdown copy for AI tools.
 - New pages: how pyquickbase works (looking up labels, the metadata cache, lazy objects, batching,

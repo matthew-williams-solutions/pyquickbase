@@ -66,6 +66,8 @@ All notable changes to this project are documented here. The format follows
   it, and the overview lists every method. The Errors page starts with every error as a tree, with the code
   `tool_error()` gives each. Old pages redirect to the page that holds most of what they had, but a link to a
   method needs its new anchor, such as `reference/writes/#Table-upsert`. Each error's `doc_url` is unchanged.
+- Under a method's return value, the API reference has a folded list of what the returned object holds, such as
+  `WriteResult`'s attributes, linked to its own entry, unless that entry comes straight after the method.
 - The guides and policy pages are grouped in the menu, and the guides link the first mention of each public name
   or method in a section to the API reference. Summarizing records and running reports have guides of their
   own, out of Reading records, and Limiting rows and Schema changes are now sections of

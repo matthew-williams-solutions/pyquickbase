@@ -2363,23 +2363,25 @@ def _heading(level: str, title: str, label: str, anchor: str) -> str:
     return f'{level} {title} <code class="ref-call">{label}</code> {{#{anchor}}}'
 
 
-# Pages that show, under a method's return value, what the returned object holds, so a reader
-# needn't leave the page. A trial on one page, as it makes each method's entry longer.
-INLINE_RETURNS = {"reports"}
-
-
 def _holds(symbol: Symbol) -> str:
     if symbol.attributes and symbol.methods:
         return "holds, and what it can do"
     return "holds" if symbol.attributes else "can do"
 
 
-def returned_lines(method: Method, reference: Reference) -> list[str]:
-    """Write a folded list of what each object a method returns holds, linked to its own entry."""
+def returned_lines(method: Method, reference: Reference, after: str = "") -> list[str]:
+    """Write a folded list of what each object a method returns holds, linked to its own entry.
+
+    The list goes under the method's return value, so a reader needn't leave the method to see what
+    comes back. It's left out for an object whose own entry is `after`, the next entry on the page,
+    as it's already in view.
+    """
     lines: list[str] = []
     for name in dict.fromkeys(_NAME.findall(method.returns)):
         symbol = reference.symbols.get(name)
         if symbol is None or is_namespace(symbol) or not (symbol.attributes or symbol.methods):
+            continue
+        if name == after:
             continue
         page = NAME_LINKS[name].partition("#")[0]
         lines += [
@@ -2535,13 +2537,12 @@ def build_page(page: Page, reference: Reference) -> str:
         lines += OVERVIEWS[page.slug](page)
     for group in page.groups:
         lines += [f"## {group.title} {{#{group.anchor}}}", "", *_guide_line(group)]
-        for member in group.members:
+        for index, member in enumerate(group.members):
             split = _split(member)
             if split is not None:
                 method = reference.methods[split[0]][split[1]]
-                returned = (
-                    returned_lines(method, reference) if page.slug in INLINE_RETURNS else None
-                )
+                after = group.members[index + 1] if index + 1 < len(group.members) else ""
+                returned = returned_lines(method, reference, after)
                 lines += _two_column_method(method, TITLES[member], labels[member], returned)
             elif member in CLASS_BY_NAME:
                 lines += _class_row(CLASS_BY_NAME[member])

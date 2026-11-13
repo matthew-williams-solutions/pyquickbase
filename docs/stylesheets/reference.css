@@ -261,3 +261,14 @@ body:has(.ref-method) .md-grid {
 .md-typeset .ref-names li a {
   font-size: 0.8rem;
 }
+
+/* What a returned object holds, opened under a method's return value: indented under a rule, so it
+   reads as part of the return value rather than more parameters. */
+.md-typeset details.ref-returned[open] {
+  border-left: 0.1rem solid var(--md-default-fg-color--lightest);
+  padding-left: 0.8rem;
+}
+
+.md-typeset details.ref-returned[open] > summary {
+  margin-left: -0.8rem;
+}
