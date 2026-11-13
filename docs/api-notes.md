@@ -4,6 +4,9 @@ description: "How Quickbase's REST API behaves, as confirmed against a live app.
 
 # Quickbase API notes
 
+If something isn't working as you expect, start with [Troubleshooting](guides/troubleshooting.md), which
+links here where it needs to. This page is the record behind it.
+
 What this SDK relies on, and how far each point has been confirmed. Much of the developer portal
 renders in the browser and has no published spec that we've found, so check anything not listed here
 against a real app before depending on it. Questions we haven't answered yet are in the

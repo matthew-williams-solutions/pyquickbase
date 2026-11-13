@@ -58,3 +58,33 @@ def test_field_types_lists_every_type_create_field_takes() -> None:
         types += re.findall(r"^\| `([a-z-]+)` \|", table, re.MULTILINE)[1:]  # After the header.
     assert sorted(types) == sorted(FIELD_TYPES)
     assert "Not tested" not in page
+
+
+def _sdk_calls() -> tuple[set[str], set[str]]:
+    """Every endpoint path, with `{}` for each part filled in, and XML action the SDK sends."""
+    paths: set[str] = set()
+    actions: set[str] = set()
+    for path in (ROOT / "src/pyquickbase/_sync").glob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.JoinedStr):
+                parts = node.values
+                text = "".join(v.value if isinstance(v, ast.Constant) else "{}" for v in parts)
+            elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+                text = node.value
+            else:
+                continue
+            if re.fullmatch(r"/[a-z]+(/[a-z{}]+)*", text):
+                paths.add(text)
+    for path in (ROOT / "src/pyquickbase").glob("*.py"):
+        actions |= set(re.findall(r'"(API_\w+)"', path.read_text(encoding="utf-8")))
+    return paths, actions
+
+
+def test_the_api_calls_page_has_every_call_the_sdk_makes() -> None:
+    """Some paths are built in pieces, so each piece must be part of a path on the page."""
+    page = re.sub(r"\{\w+\}", "{}", (ROOT / "docs/api-calls.md").read_text(encoding="utf-8"))
+    paths, actions = _sdk_calls()
+    assert paths
+    assert actions
+    assert [path for path in sorted(paths) if path not in page] == []
+    assert [action for action in sorted(actions) if f"`{action}`" not in page] == []

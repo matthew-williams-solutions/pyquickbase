@@ -24,16 +24,6 @@ Nothing here should break anyone.
 - `llms.txt` is at `/pyquickbase/llms.txt`, not the domain root where some tools look, because the
   site is served from a subpath. Only a custom domain would change that.
 
-## Docs
-
-The API reference is arranged by subject. What's left from the docs review:
-
-- New pages: how pyquickbase works (looking up labels, the metadata cache, lazy objects, batching,
-  and paging), a map from each REST endpoint to its method, troubleshooting by symptom from what
-  `docs/api-notes.md` has confirmed, and recipes for the core SDK like the policy recipes.
-- `docs/api-notes.md` is a record of what was tested, so send readers to the troubleshooting page
-  first once it exists.
-
 ## Apps, events, and DataFrames
 
 - `AppTrigger` parsing is only tested against the published example. The test apps have no webhooks,

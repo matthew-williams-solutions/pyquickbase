@@ -55,6 +55,7 @@ nav:
   - Home: index.md
   - Guides:
       - Getting started: getting-started.md
+      - How pyquickbase works: guides/how-it-works.md
       - Working with data:
           - Reading records: guides/reading.md
           - Summarizing records: guides/summaries.md
@@ -70,6 +71,8 @@ nav:
       - Running in production:
           - Handling errors: guides/errors.md
           - Configuring clients: guides/clients.md
+          - Troubleshooting: guides/troubleshooting.md
+      - Recipes: guides/recipes.md
   - AI agents:
       - Using pyquickbase from an AI agent: agents/index.md
       - Untrusted input: agents/untrusted-input.md
@@ -93,6 +96,7 @@ nav:
       - Client and errors:
           - Client: reference/client.md
           - Errors: reference/errors.md
+          - Quickbase API calls: api-calls.md
       - Data:
           - Records: reference/records.md
           - Writes: reference/writes.md

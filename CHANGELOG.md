@@ -68,6 +68,11 @@ All notable changes to this project are documented here. The format follows
   method needs its new anchor, such as `reference/writes/#Table-upsert`. Each error's `doc_url` is unchanged.
 - Under a method's return value, the API reference has a folded list of what the returned object holds, such as
   `WriteResult`'s attributes, linked to its own entry, unless that entry comes straight after the method.
+- New pages: [How pyquickbase works](https://matthew-williams-solutions.github.io/pyquickbase/guides/how-it-works/),
+  [Troubleshooting](https://matthew-williams-solutions.github.io/pyquickbase/guides/troubleshooting/),
+  [Recipes](https://matthew-williams-solutions.github.io/pyquickbase/guides/recipes/), and
+  [Quickbase API calls](https://matthew-williams-solutions.github.io/pyquickbase/api-calls/), which names the method
+  behind each endpoint. Field types now says which types take a formula for all of them, from live tests.
 - The guides and policy pages are grouped in the menu, and the guides link the first mention of each public name
   or method in a section to the API reference. Summarizing records and running reports have guides of their
   own, out of Reading records, and Limiting rows and Schema changes are now sections of

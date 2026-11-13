@@ -79,6 +79,8 @@ flowchart TD
 
 ## Next steps
 
+- [How pyquickbase works](guides/how-it-works.md) explains what the SDK does between your code and
+  Quickbase.
 - [Reading records](guides/reading.md) covers queries, paging, and record values.
 - [Writing records](guides/writing.md) covers inserts, updates, upserts, and deletes.
 - [Handling errors](guides/errors.md) lists what can go wrong.

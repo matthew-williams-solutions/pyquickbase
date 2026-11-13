@@ -1096,6 +1096,13 @@ SECTIONS = (
             ("client", "Create and close a client, retry requests, and call any endpoint"),
             ("errors", "Everything the SDK raises, what causes it, and how to fix it"),
         ),
+        (
+            (
+                "Quickbase API calls",
+                "api-calls.md",
+                "Each Quickbase API call the SDK makes, and the methods that make it",
+            ),
+        ),
     ),
     Section(
         "Data",
