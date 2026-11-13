@@ -36,6 +36,10 @@ bound.offers("Tasks").updatable  # What an operation would offer
 ```
 
 Each returns or explains a `PolicyDecision`, with `allowed`, the `layer` that decided, the `rule` as
-written, a `reason`, and a `hint` saying what would allow it. `decide()` is the only code that
-decides anything, and what operations offer comes from asking it about each field and verb, so a
-model is never offered what the policy refuses.
+written, a `reason`, and a `hint` saying what would allow it. A decision is true when it allows, so
+`if bound.allows(...):` works without `.allowed`. With no field, `allows()` and `explain()` ask about
+every field in the table, and allow only if each one is allowed. A refusal names the first field
+refused.
+
+`decide()` is the only code that decides anything, and what operations offer comes from asking it
+about each field and verb, so a model is never offered what the policy refuses.

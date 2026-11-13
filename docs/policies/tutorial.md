@@ -40,6 +40,9 @@ print(bound.allows("update", "Tasks", field="Status").allowed)  # True
 print(bound.allows("update", "Tasks", field="Due Date").allowed)  # False
 ```
 
+A decision is also true or false by itself, so `if bound.allows("update", "Tasks", field="Status"):`
+means what it says.
+
 `max_paging_depth=50` means one query can reach at most 50 records, so a mistake can't page through the
 whole table.
 
@@ -64,8 +67,12 @@ with Quickbase.from_env() as setup:
     bound = policy.bind(setup.app("bq1234567"))
 
 print(bound.allows("read", "Tasks", field="Amount").allowed)  # False
+print(bound.allows("read", "Tasks").allowed)  # False, since it covers every field
 print(bound.explain("read", "Tasks", field="Amount"))
 ```
+
+With no field, `allows()` and `explain()` ask about every field in the table, so the whole table is
+no longer readable once any field is denied.
 
 To a client with this policy, `Amount` and `Code` look as if they don't exist.
 
