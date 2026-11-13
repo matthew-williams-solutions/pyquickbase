@@ -32,7 +32,7 @@ jobs:
       - name: Prepare the docs playground
         run: uv run --locked scripts/build_playground.py
       - name: Build the docs, failing on broken links
-        run: uv run --locked --group docs mkdocs build
+        run: uv run --locked --group docs zensical build --strict
 
   test:
     runs-on: ubuntu-latest

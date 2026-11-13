@@ -1,4 +1,4 @@
-"""Put what the docs playground needs into docs/playground-app, ready for `mkdocs build`.
+"""Put what the docs playground needs into docs/playground-app, ready for `zensical build`.
 
 uv run scripts/build_playground.py
 

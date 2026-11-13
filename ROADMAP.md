@@ -26,10 +26,6 @@ to keep are explained in the guides, not here.
 
 Nothing here should break anyone.
 
-- Switch the docs from Material to Zensical, **by 2027-05-05**, when Material's maintenance ends. A
-  trial build of 0.0.74 worked, and its strict mode also catches broken anchors, which MkDocs doesn't.
-  Wait for 0.1.0, announced for 2026-11-05. `scripts/build_llms.py` reads the nav from
-  `mkdocs.yml`, so update it if the config moves.
 - `llms.txt` is at `/pyquickbase/llms.txt`, not the domain root where some tools look, because the
   site is served from a subpath. Only a custom domain would change that.
 

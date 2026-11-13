@@ -1,4 +1,4 @@
-"""Write the API reference pages, ready for `mkdocs build`.
+"""Write the API reference pages, ready for `zensical build`.
 
 uv run scripts/build_reference.py
 

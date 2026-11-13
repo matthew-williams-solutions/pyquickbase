@@ -56,6 +56,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The docs are built with Zensical instead of MkDocs and Material for MkDocs, whose maintenance ends in 2027.
 - A client with a policy can use `Sum()`, `Median()`, `ToBoolean()`, `ToUnixTime()`, and `ToWorkDate()` in formulas.
 - `BoundPolicy` has only the methods meant for you: `decide()`, `allows()`, `explain()`, `offers()`, `tags_of()`,
   `max_records()`, `row_limit()`, `to_json()`, and `from_json()`. The ones only the SDK used, such as `trim()` and

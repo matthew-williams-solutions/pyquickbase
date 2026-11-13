@@ -88,7 +88,7 @@ and the average of that field. The chart is a bar chart of the same total.
 
 ## Docs
 
-Preview the docs site with `uv run --group docs mkdocs serve`. Every public name needs a place on a
+Preview the docs site with `uv run --group docs zensical serve`. Every public name needs a place on a
 page in `scripts/build_reference.py`, and in the table in `docs/reference.md`, and tests check both.
 
 The playground in `docs/playground-app/` needs `uv run scripts/build_playground.py` once before
