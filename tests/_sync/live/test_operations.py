@@ -50,7 +50,13 @@ def test_an_update_outside_its_scope_changes_nothing(
     with pytest.raises(InvalidQueryError, match="aren't ones this tool may use"):
         update.run({"records": [{"Record ID#": 3, "Hours": 99}]}, scope=F("Project") == "Alpha")
     assert (tasks.get(3, select=["Hours"]) or {})["Hours"] == 4
-    result = update.run({"records": [{"Record ID#": 1, "Hours": 9}]}, scope=F("Project") == "Alpha")
+    # The asyncio and Trio runs share the table, so write a value record 1 doesn't hold yet.
+    record = tasks.get(1, select=["Hours"])
+    assert record is not None
+    hours = float(record["Hours"]) + 1
+    result = update.run(
+        {"records": [{"Record ID#": 1, "Hours": hours}]}, scope=F("Project") == "Alpha"
+    )
     assert result.updated_ids == (1,)
 
 
