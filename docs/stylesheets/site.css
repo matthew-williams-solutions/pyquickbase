@@ -81,3 +81,9 @@
   line-height: 1.5;
   max-width: 34rem;
 }
+
+/* Quickbase API calls: keep each endpoint on one line, as a path broken mid-word is hard to read.
+   A table too wide for a phone scrolls inside its own box. */
+.md-content:has(#quickbase-api-calls) .md-typeset td:first-child code {
+  white-space: nowrap;
+}

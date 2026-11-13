@@ -88,8 +88,12 @@ and the average of that field. The chart is a bar chart of the same total.
 
 ## Docs
 
-Preview the docs site with `uv run --group docs zensical serve`. Every public name needs a place on a
-page in `scripts/build_reference.py`, and in the table in `docs/reference.md`, and tests check both.
+Preview the docs site with `uv run --group docs zensical serve`. Every page needs a `description` in
+its front matter, which search engines show and `llms.txt` lists.
+
+After writing a page, run `uv run scripts/link_names.py`, which links the first mention of each
+public name or method in each section to the API reference, such as `` `upsert()` `` or
+`` `WriteResult` ``. A test fails until it's been run.
 
 The playground in `docs/playground-app/` needs `uv run scripts/build_playground.py` once before
 previewing it, and again after changing the SDK or an example. It downloads pinned copies of Pyodide
@@ -98,15 +102,20 @@ and CodeMirror and builds the SDK's wheel, none of which is committed. Its simul
 
 `uv run scripts/build_llms.py` writes `docs/llms.txt` and `docs/llms-full.txt`, which aren't
 committed. Run it once before previewing or building the docs, because the home page links to them,
-and again to see a change in them. It reads the pages from the `nav` in `mkdocs.yml`, so a new page
-needs a description in the script. It deliberately uses no docs plugin or anything from the `docs`
+and again to see a change in them. It reads the pages from the `nav` in `mkdocs.yml`, and each page's
+description from its front matter. It deliberately uses no docs plugin or anything from the `docs`
 dependency group.
 
 `uv run scripts/build_reference.py` writes the API reference in `docs/reference/`, which also isn't
-committed, so run it once before previewing or building the docs. Its examples are in
-`docs_src/reference/`, written for the async client, with the sync version derived from them. A new
-public name stops the build until it has a place on a page and an example, and it and its arguments
-and attributes have descriptions. The live tests run every example with both clients and compare
+committed, so run it once before previewing or building the docs. Its pages are arranged by subject
+in `PAGES`, where a member is a method such as `Table.upsert`, a class such as `Table`, or any other
+public name, and `SECTIONS` groups them into the menu, which must match the `nav` in `mkdocs.yml`. A
+method or function also needs a title in `TITLES`, saying in plain words what it does. Moving a page
+means adding its old address to the redirects in `mkdocs.yml` and to `OLD_PAGES`. Its examples are
+in `docs_src/reference/`, by class or by kind of name rather than by page, written for the async
+client, with the sync version derived from them, and held to 62 characters a line to fit the code
+column. A new public name stops the build until it has a place on a page and an example, and it and
+its arguments and attributes have descriptions. The live tests run every example with both clients and compare
 what it prints to the `.out` file beside it, which `QB_UPDATE_REFERENCE_OUTPUT=1` records.
 
 ## Sync and async code

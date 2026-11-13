@@ -1,3 +1,7 @@
+---
+description: "Values and filters that come from a model."
+---
+
 # Untrusted input
 
 ## Untrusted values
@@ -13,9 +17,9 @@ tasks.delete(F("Code") == code)  # Raises InvalidQueryError for that value
 tasks.delete(f"{{6.EX.'{code}'}}")  # Don't do this
 ```
 
-`F` escapes quotes and backslashes, and handles the text that Quickbase would read as query syntax:
+[`F`](../reference/queries.md#F) escapes quotes and backslashes, and handles the text that Quickbase would read as query syntax:
 
-- A value containing `{` or `}` raises `InvalidQueryError`.
+- A value containing `{` or `}` raises [`InvalidQueryError`](../reference/errors.md#InvalidQueryError).
 - A value like `_FID_6` raises `InvalidQueryError`.
 - A standalone uppercase `OR` or `AND` is sent in lowercase, so `a OR b` finds that text rather than
   matching `a` and `b`. Comparisons ignore case, so it still finds a stored `a OR b`.
@@ -28,7 +32,7 @@ That protects the shape of a query, not its meaning:
   with no code, so check that a value isn't empty first, especially before a delete.
 - **A model that chooses the field or operator chooses the result.** `F("Status") != "x"` is a valid
   query that matches almost everything. Fix these in your code.
-- **`delete()` requires `where`,** so leaving it out can't delete everything, but a broad condition
+- **[`delete()`](../reference/writes.md#Table-delete) requires `where`,** so leaving it out can't delete everything, but a broad condition
   still can. Call [`preview_delete()`](changes.md#checking-a-change-before-making-it) with the same condition first,
   and compare its `total` with what you expect.
 
@@ -50,7 +54,7 @@ For a tool that runs one table operation, [`table.operation()`](operations.md#gi
 you, with the schema and the check built together. Use these two directly for anything else, such as a
 web form's filters.
 This works the same with MCP and any other LLM tool system, because they all describe a tool's input
-with JSON Schema. `where_schema()` provides that description, and `where_from_dict()` checks what
+with JSON Schema. [`where_schema()`](../reference/queries.md#where_schema) provides that description, and [`where_from_dict()`](../reference/queries.md#where_from_dict) checks what
 comes back.
 
 ```python
@@ -83,7 +87,7 @@ flowchart TD
     AND --> Q["The query sent<br/>to Quickbase"]
 ```
 
-Return a `InvalidQueryError` or `UnknownFieldError` to the model as the tool's result, with
+Return a [`InvalidQueryError`](../reference/errors.md#InvalidQueryError) or [`UnknownFieldError`](../reference/errors.md#UnknownFieldError) to the model as the tool's result, with
 [`tool_error()`](results.md#errors). Their messages say where the mistake is and what's allowed, so it can correct
 itself, and they don't repeat the values it sent. Nothing has been sent to Quickbase at that point.
 
@@ -98,7 +102,7 @@ itself, and they don't repeat the values it sent. Nothing has been sent to Quick
 | Anything but a number on a number, and anything but true or false on a checkbox | The query would run, and mean something else |
 | `IR` and `XIR` | They take date ranges as text. Compare with dates instead |
 | Over 100 conditions, counting each value of `in` and `not_in`, or groups over 20 levels deep | A filter shouldn't need them, and they cost memory and time |
-| Whatever `F` refuses, such as `_FID_6`, braces, and `_curuser_` on a user field | Quickbase reads these as query syntax |
+| Whatever [`F`](../reference/queries.md#F) refuses, such as `_FID_6`, braces, and `_curuser_` on a user field | Quickbase reads these as query syntax |
 
 What it can't do is decide whether a filter is the right one:
 

@@ -1,3 +1,7 @@
+---
+description: "Install it, read some records, and write one."
+---
+
 # Getting started
 
 ## Before you start
@@ -46,7 +50,7 @@ in applications that already use asyncio or Trio.
     ```
 
 To keep the token out of your code, set `QB_REALM` and `QB_USER_TOKEN` in the environment and use
-`Quickbase.from_env()`.
+[`Quickbase.from_env()`](reference/client.md#Quickbase-from_env).
 
 ```python
 from pyquickbase import Quickbase
@@ -75,6 +79,8 @@ flowchart TD
 
 ## Next steps
 
+- [How pyquickbase works](guides/how-it-works.md) explains what the SDK does between your code and
+  Quickbase.
 - [Reading records](guides/reading.md) covers queries, paging, and record values.
 - [Writing records](guides/writing.md) covers inserts, updates, upserts, and deletes.
 - [Handling errors](guides/errors.md) lists what can go wrong.

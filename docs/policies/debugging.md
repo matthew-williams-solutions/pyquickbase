@@ -1,3 +1,7 @@
+---
+description: "Reading refusals, and asking a policy what it allows."
+---
+
 # Debugging refusals
 
 ## When something is refused
@@ -11,13 +15,13 @@ Nothing was sent. To allow it: add "Labor Cost" to an allow.update("Job Tasks", 
 
 | What happened | Exception | What's left behind |
 |---|---|---|
-| A request the policy doesn't allow | `PolicyRefusedError`, whose `decision` says why | Nothing was sent |
-| A table or field the policy hides is named | `UnknownTableError` or `UnknownFieldError` | Nothing was sent |
-| A later batch of a write was refused | `WriteError` | **Earlier batches were written**, and are in `error.result` |
-| A policy that names a table, field, or tag that doesn't exist | `ConfigurationError`, listing every one | It wasn't bound |
-| A `Policy` that names tables passed to a client without binding | `ConfigurationError` | The client wasn't created |
+| A request the policy doesn't allow | [`PolicyRefusedError`](../reference/errors.md#PolicyRefusedError), whose `decision` says why | Nothing was sent |
+| A table or field the policy hides is named | [`UnknownTableError`](../reference/errors.md#UnknownTableError) or [`UnknownFieldError`](../reference/errors.md#UnknownFieldError) | Nothing was sent |
+| A later batch of a write was refused | [`WriteError`](../reference/errors.md#WriteError) | **Earlier batches were written**, and are in `error.result` |
+| A policy that names a table, field, or tag that doesn't exist | [`ConfigurationError`](../reference/errors.md#ConfigurationError), listing every one | It wasn't bound |
+| A [`Policy`](../reference/policies.md#Policy) that names tables passed to a client without binding | `ConfigurationError` | The client wasn't created |
 | A realm, token, or `base_url` that can't be used, such as `http://` to another host | `ConfigurationError` | The client wasn't created |
-| `from_env()` with a variable missing or empty | `ConfigurationError` | The client wasn't created |
+| [`from_env()`](../reference/client.md#Quickbase-from_env) with a variable missing or empty | `ConfigurationError` | The client wasn't created |
 
 ## Asking the policy
 
@@ -35,9 +39,9 @@ print(bound.explain("lookup", "Tasks", source=("Tasks", "Amount")))
 bound.offers("Tasks").updatable  # What an operation would offer
 ```
 
-Each returns or explains a `PolicyDecision`, with `allowed`, the `layer` that decided, the `rule` as
+Each returns or explains a [`PolicyDecision`](../reference/policies.md#PolicyDecision), with `allowed`, the `layer` that decided, the `rule` as
 written, a `reason`, and a `hint` saying what would allow it. A decision is true when it allows, so
-`if bound.allows(...):` works without `.allowed`. With no field, `allows()` and `explain()` ask about
+`if bound.allows(...):` works without `.allowed`. With no field, [`allows()`](../reference/policies.md#BoundPolicy-allows) and [`explain()`](../reference/policies.md#BoundPolicy-explain) ask about
 every field in the table, and allow only if each one is allowed. A refusal names the first field
 refused.
 

@@ -1,3 +1,7 @@
+---
+description: "Uploading, downloading, and deleting file attachments."
+---
+
 # File attachments
 
 This page covers uploading, downloading, listing, and deleting the files in file attachment fields. Every
@@ -5,7 +9,7 @@ method here is also on the async client, where you `await` it.
 
 ## Uploading
 
-Set a file attachment field to a `FileUpload` in `insert()`, `update()`, or `upsert()`.
+Set a file attachment field to a [`FileUpload`](../reference/files.md#FileUpload) in [`insert()`](../reference/writes.md#Table-insert), [`update()`](../reference/writes.md#Table-update), or [`upsert()`](../reference/writes.md#Table-upsert).
 
 ```python
 from pathlib import Path
@@ -22,7 +26,7 @@ with Quickbase(realm="acme", token="your_user_token") as qb:
 
 The other examples on this page use `tasks`, a table from a client made in the same way.
 
-- **A file field takes only a `FileUpload`.** Anything else raises `InvalidValueError`, including
+- **A file field takes only a `FileUpload`.** Anything else raises [`InvalidValueError`](../reference/errors.md#InvalidValueError), including
   `None`, so leave the field out to keep it empty. Quickbase would otherwise accept these mistakes
   without an error: `None` or `""` changes nothing, and a value without a file name creates a record
   with no file.
@@ -38,7 +42,7 @@ The other examples on this page use `tasks`, a table from a client made in the s
 limit.** A new field keeps 3 versions, set by `maxVersions` in the field's properties. Uploading identical
 contents still adds a version, so repeating an upload can push out a version you wanted.
 
-| To keep | Pass to `create_field()` or `update_field()` |
+| To keep | Pass to [`create_field()`](../reference/fields.md#Table-create_field) or [`update_field()`](../reference/fields.md#Table-update_field) |
 |---|---|
 | A different number | `properties={"maxVersions": 10}`, from 1 to 1,000 |
 | Every version | `properties={"versionMode": "keepallversions"}`, which ignores `maxVersions` |
@@ -48,16 +52,16 @@ limit. Raising it doesn't bring back versions already removed.
 
 ### Size limits
 
-Quickbase refuses any request body over 40 MiB, with a 413 that raises `APIError`. Base64 adds a third,
+Quickbase refuses any request body over 40 MiB, with a 413 that raises [`APIError`](../reference/errors.md#APIError). Base64 adds a third,
 so **the largest file you can upload is about 31.4 MB**. Writes are split into several requests to stay
 under this limit, whatever the `batch_size`, and a file too large to fit is left for Quickbase to refuse.
-If a later request fails, `WriteError` reports the rows already written.
+If a later request fails, [`WriteError`](../reference/errors.md#WriteError) reports the rows already written.
 
 Files are held in memory, as bytes and as base64, while they're sent.
 
 ## Downloading
 
-`download_file()` returns the latest version, or the one you ask for. It works on a read-only client.
+[`download_file()`](../reference/files.md#Table-download_file) returns the latest version, or the one you ask for. It works on a read-only client.
 
 ```python
 file = tasks.download_file(7, "Attachment")
@@ -66,7 +70,7 @@ older = tasks.download_file(7, "Attachment", version=2, timeout=120)
 print(file.file_name, len(file.data), file.content_type)
 ```
 
-`qb.request()` can't read these responses, because they aren't JSON.
+[`qb.request()`](../reference/client.md#Quickbase-request) can't read these responses, because they aren't JSON.
 
 **Don't use `file.file_name` as a path.** Quickbase returns names exactly as they were uploaded, by anyone with
 access and through any tool, so a name can be `../../.bashrc`. Keep only the last part, and decide where
@@ -86,8 +90,8 @@ whatever was uploaded. Treat both as untrusted, especially before opening or ser
 
 ## Listing versions
 
-Reading a file field gives a `FileAttachment`, or None when the field has no file. Its `versions` are
-`FileVersion` objects, oldest first, and `latest` is the newest.
+Reading a file field gives a [`FileAttachment`](../reference/files.md#FileAttachment), or None when the field has no file. Its `versions` are
+[`FileVersion`](../reference/files.md#FileVersion) objects, oldest first, and `latest` is the newest.
 
 ```python
 task = tasks.get(7, select=["Attachment"])
@@ -97,7 +101,7 @@ if task["Attachment"] is not None:
         print(version.number, version.file_name, version.uploaded_at)
 ```
 
-Each version names its uploader in `creator`, a `User` with their email address, so take care when
+Each version names its uploader in `creator`, a [`User`](../reference/records.md#User) with their email address, so take care when
 logging these values or passing them on. A `User`'s `repr` leaves the email out, and a client's
 [policy](../policies/index.md) leaves `creator` out unless a rule passes
 `user_emails=True`.
@@ -118,12 +122,12 @@ reused or renumbered.
 
 | What happened | Exception | What's left behind |
 |---|---|---|
-| A file field set to anything but a `FileUpload`, or a `FileUpload` sent to another field | `InvalidValueError` | Nothing was sent |
+| A file field set to anything but a [`FileUpload`](../reference/files.md#FileUpload), or a `FileUpload` sent to another field | [`InvalidValueError`](../reference/errors.md#InvalidValueError) | Nothing was sent |
 | A file name with a path or control characters | `InvalidValueError` | The `FileUpload` wasn't created |
 | A record ID or version that isn't a positive integer, a `timeout` that isn't a positive number, or a field that isn't a file field | `InvalidValueError` | Nothing was sent |
-| A field label or ID that doesn't exist | `UnknownFieldError` | Nothing was sent |
-| A request over 40 MiB | `APIError`, status 413 | Nothing in that request was written. Earlier batches were, and a `WriteError` says so |
-| A record, version, or file that doesn't exist | `NotFoundError` | Nothing was changed |
+| A field label or ID that doesn't exist | [`UnknownFieldError`](../reference/errors.md#UnknownFieldError) | Nothing was sent |
+| A request over 40 MiB | [`APIError`](../reference/errors.md#APIError), status 413 | Nothing in that request was written. Earlier batches were, and a [`WriteError`](../reference/errors.md#WriteError) says so |
+| A record, version, or file that doesn't exist | [`NotFoundError`](../reference/errors.md#NotFoundError) | Nothing was changed |
 | A download from a field the role can't see | `NotFoundError` | Nothing was changed |
-| An upload the role can't do | `WritePermissionDeniedError` | Nothing in the refused rows changed |
-| Deleting a version the role can't delete | `PermissionDeniedError` | Nothing was changed |
+| An upload the role can't do | [`WritePermissionDeniedError`](../reference/errors.md#WritePermissionDeniedError) | Nothing in the refused rows changed |
+| Deleting a version the role can't delete | [`PermissionDeniedError`](../reference/errors.md#PermissionDeniedError) | Nothing was changed |

@@ -1,8 +1,12 @@
+---
+description: "Giving a model typed operations on tables, reports, and schemas."
+---
+
 # Giving a model operations
 
 ## Giving a model operations
 
-`table.operation()` turns one table operation into a tool for a model: a JSON Schema of the arguments it
+[`table.operation()`](../reference/operations.md#Table-operation) turns one table operation into a tool for a model: a JSON Schema of the arguments it
 may send, and `run()`, which checks them against the same lists before calling the table. They're built
 together, so the model is offered exactly what `run()` accepts. Give each tool its own operation, and the
 model can search, count, change, and read records without you writing each call by hand.
@@ -55,21 +59,21 @@ Only the last step changes anything:
 
 | Operation | The model sends | Runs | Returns |
 |---|---|---|---|
-| `query` | `where`, `select`, `order_by`, `limit`, `skip`. Without `select`, the table's default fields, or only the first `max_default_fields` of them | `query_page()` | `RecordPage`, which `tool_result()` shows with `fields_left_out` when it left some out |
-| `count` | `where` | `count()` | An `int`, which `tool_result()` shows as `count` |
-| `summarize` | `where`, `group_by`, `sum`, `avg`, `min`, `max`. `total`, `average`, `minimum`, and `maximum` are read too. `order_by` sorts the groups, by `count`, a `group` field, or a calculated value, and `limit` and `skip` page through them | `summarize()`, then sorts and pages its groups | The page of `SummaryRow`, which reads as a list, and which `tool_result()` shows with `page` |
-| `insert` | `records` | `insert()` | `WriteResult` |
-| `update` | `records`, each with `Record ID#` | `update()` | `WriteResult` |
-| `delete` | `where`, which is required. It's refused if it matches more than `max_records_per_call` | `delete()` | An `int`, which `tool_result()` shows as `deleted_count` |
-| `preview_update` | As `update` | `preview_update()` | `UpdatePreview` |
-| `preview_delete` | `where`, `select`, `limit`. Give it the same `max_records_per_call` as `delete`, and `tool_result()` lists a blocker when a delete would be refused | `preview_delete()` | `RecordPage` |
-| `run_report` | `report`, as its ID, its ID as a number, or its name, and `limit`, `skip` | `Report.run_page()` | `RecordPage` |
-| `run_summary_report` | `report`, as for `run_report`, and `limit` | `Report.run_summary()` | A list of rows |
-| `run_formula` | `record_id` | `run_formula()`, with the formula your code gives | `FormulaResult` |
-| `download_file` | `record_id`, `field`, `version` | `download_file()` | `FileDownload` |
-| `delete_file_version` | `record_id`, `field`, `version` | `delete_file_version()` | None |
+| `query` | `where`, `select`, `order_by`, `limit`, `skip`. Without `select`, the table's default fields, or only the first `max_default_fields` of them | [`query_page()`](../reference/records.md#Table-query_page) | [`RecordPage`](../reference/records.md#RecordPage), which [`tool_result()`](../reference/operations.md#tool_result) shows with `fields_left_out` when it left some out |
+| `count` | `where` | [`count()`](../reference/records.md#Table-count) | An `int`, which `tool_result()` shows as `count` |
+| `summarize` | `where`, `group_by`, `sum`, `avg`, `min`, `max`. `total`, `average`, `minimum`, and `maximum` are read too. `order_by` sorts the groups, by `count`, a `group` field, or a calculated value, and `limit` and `skip` page through them | [`summarize()`](../reference/summaries.md#Table-summarize), then sorts and pages its groups | The page of [`SummaryRow`](../reference/summaries.md#SummaryRow), which reads as a list, and which `tool_result()` shows with `page` |
+| `insert` | `records` | [`insert()`](../reference/writes.md#Table-insert) | [`WriteResult`](../reference/writes.md#WriteResult) |
+| `update` | `records`, each with `Record ID#` | [`update()`](../reference/writes.md#Table-update) | `WriteResult` |
+| `delete` | `where`, which is required. It's refused if it matches more than `max_records_per_call` | [`delete()`](../reference/writes.md#Table-delete) | An `int`, which `tool_result()` shows as `deleted_count` |
+| `preview_update` | As `update` | [`preview_update()`](../reference/writes.md#Table-preview_update) | [`UpdatePreview`](../reference/writes.md#UpdatePreview) |
+| `preview_delete` | `where`, `select`, `limit`. Give it the same `max_records_per_call` as `delete`, and `tool_result()` lists a blocker when a delete would be refused | [`preview_delete()`](../reference/writes.md#Table-preview_delete) | `RecordPage` |
+| `run_report` | `report`, as its ID, its ID as a number, or its name, and `limit`, `skip` | [`Report.run_page()`](../reference/reports.md#Report-run_page) | `RecordPage` |
+| `run_summary_report` | `report`, as for `run_report`, and `limit` | [`Report.run_summary()`](../reference/reports.md#Report-run_summary) | A list of rows |
+| `run_formula` | `record_id` | [`run_formula()`](../reference/summaries.md#Table-run_formula), with the formula your code gives | [`FormulaResult`](../reference/summaries.md#FormulaResult) |
+| `download_file` | `record_id`, `field`, `version` | [`download_file()`](../reference/files.md#Table-download_file) | [`FileDownload`](../reference/files.md#FileDownload) |
+| `delete_file_version` | `record_id`, `field`, `version` | [`delete_file_version()`](../reference/files.md#Table-delete_file_version) | None |
 
-`app.operation()` also offers `list_code_pages`, `read_code_page`, `preview_code_page_change`, and
+[`app.operation()`](../reference/operations.md#App-operation) also offers `list_code_pages`, `read_code_page`, `preview_code_page_change`, and
 `apply_code_page_change`, as [Previews and schema changes](changes.md#code-pages-from-an-agent) explains.
 
 `where` is the format of [`where_from_dict()`](untrusted-input.md#filters-from-a-model). `order_by` is a list of
@@ -88,17 +92,17 @@ The schema lists only what the client may do, so a model isn't offered a field t
 
 | Part | Offers | Limited by |
 |---|---|---|
-| `where` | Fields it may filter on | `allow.read()` or `allow.filter()` |
+| `where` | Fields it may filter on | [`allow.read()`](../reference/rules.md#allow-read) or [`allow.filter()`](../reference/rules.md#allow-filter) |
 | `select`, `group_by`, totals | Fields it may return | `allow.read()` |
-| `order_by` | Fields it may sort by | `allow.read()` or `allow.sort()` |
+| `order_by` | Fields it may sort by | `allow.read()` or [`allow.sort()`](../reference/rules.md#allow-sort) |
 | `limit` | Up to `max_records_per_call`, 100 by default | The policy's `max_paging_depth`, if lower |
-| `records` | Fields the SDK can write, other than formula, lookup, summary, built-in, and user fields | `allow.insert()` or `allow.update()` |
-| `report` | Table reports, or summary and chart reports, that can run through the API, by ID. `run()` also takes an ID as a number or a report's exact name, ignoring case, and says which operation runs a report of the other kind | `allow.report()`, and `reports=` |
-| `field`, for files | File fields | `allow.download()` or `allow.delete_file()` |
+| `records` | Fields the SDK can write, other than formula, lookup, summary, built-in, and user fields | [`allow.insert()`](../reference/rules.md#allow-insert) or [`allow.update()`](../reference/rules.md#allow-update) |
+| `report` | Table reports, or summary and chart reports, that can run through the API, by ID. `run()` also takes an ID as a number or a report's exact name, ignoring case, and says which operation runs a report of the other kind | [`allow.report()`](../reference/rules.md#allow-report), and `reports=` |
+| `field`, for files | File fields | [`allow.download()`](../reference/rules.md#allow-download) or [`allow.delete_file()`](../reference/rules.md#allow-delete_file) |
 
 `fields=` narrows all of these to the fields you list. An operation that the client can't run at all,
-such as `insert` on a read-only client, raises `PolicyRefusedError` when you make it, rather than
-giving the model a tool that always fails. Each list comes from `BoundPolicy.offers()`, which asks the
+such as `insert` on a read-only client, raises [`PolicyRefusedError`](../reference/errors.md#PolicyRefusedError) when you make it, rather than
+giving the model a tool that always fails. Each list comes from [`BoundPolicy.offers()`](../reference/policies.md#BoundPolicy-offers), which asks the
 policy about one field and verb at a time, so what's offered is exactly what's allowed. A rule of your
 own is asked too, so one that decides each field on its own is offered exactly what it allows.
 
@@ -142,7 +146,7 @@ many of them match the scope, with one query, and refuses the whole call if any 
 change between that check and the call.
 
 A write can't set a field the scope uses, so `update` can't move a record out of it, and `run()` raises
-`InvalidQueryError` for a row that tries. `insert` fills those fields in from the scope, so with
+[`InvalidQueryError`](../reference/errors.md#InvalidQueryError) for a row that tries. `insert` fills those fields in from the scope, so with
 `scope=F("Project") == project`, every new record gets that project. That needs a scope of only `==`
 conditions joined with `&`, and `insert` refuses any other scope, as a new record couldn't be made to
 match it. With a scope passed only to `run()`, pass `fields=` without the scope's fields, so the model
@@ -158,7 +162,7 @@ may filter on.
   sort are its own, so check what it shows before offering it.
 - **A formula's text is fixed by your code,** with `formula=`, and the model only chooses the record. A
   formula can read any table and field, and return the token owner's email, so a model never writes one.
-  A client with a policy refuses formulas, unless it's `Policy.read_only()`.
+  A client with a policy refuses formulas, unless it's [`Policy.read_only()`](../reference/policies.md#Policy-read_only).
 - **A downloaded file** comes back as a `FileDownload`, and `tool_result()` gives the model its text if
   it's UTF-8 text. Its contents are untrusted, like any record data.
 
@@ -166,8 +170,8 @@ may filter on.
 
 `field_descriptions` takes `{label or ID: text}`, and the schema shows each one where the model reads it: on
 each field of a record, and as a list after the description of `where`, `select`, and `order_by`. Each must
-be for a field the operation offers, so a field that's renamed or hidden raises `UnknownFieldError`
-instead of losing its description silently. `where_schema()` takes the same argument.
+be for a field the operation offers, so a field that's renamed or hidden raises [`UnknownFieldError`](../reference/errors.md#UnknownFieldError)
+instead of losing its description silently. [`where_schema()`](../reference/queries.md#where_schema) takes the same argument.
 
 For a tool that lists what's there, `tool_result()` takes table, field, and report metadata, without
 `raw`:
@@ -182,16 +186,16 @@ async def list_fields(table_id: str) -> dict:
 | What happened | Exception | What's left behind |
 |---|---|---|
 | The client can't run the operation at all, such as `insert` when read-only | `PolicyRefusedError`, from `operation()` | Nothing was sent |
-| The table has nothing for it, such as no file fields, or `formula` is missing | `ConfigurationError`, from `operation()` | Nothing was sent |
+| The table has nothing for it, such as no file fields, or `formula` is missing | [`ConfigurationError`](../reference/errors.md#ConfigurationError), from `operation()` | Nothing was sent |
 | `fields` or `field_descriptions` names a field the client can't see, or that the operation doesn't offer | `UnknownFieldError`, from `operation()` | Nothing was sent |
 | An argument the schema doesn't allow, such as an unknown key or field, or a `limit` too high | `InvalidQueryError`, from `run()` | Nothing was sent |
-| A value that can't be written, such as `today` for a date | `InvalidValueError`, from `run()` | Nothing was sent |
+| A value that can't be written, such as `today` for a date | [`InvalidValueError`](../reference/errors.md#InvalidValueError), from `run()` | Nothing was sent |
 | A record named isn't in the scope, or doesn't exist | `InvalidQueryError`, from `run()` | Only the query that checks the scope |
 | A write sets a field the scope uses, or `insert` has a scope it can't fill in | `InvalidQueryError`, from `run()` | Nothing was sent |
 | A delete matches more than `max_records_per_call` | `InvalidQueryError`, from `run()` | Only the query that counts it |
 | Anything the table method raises | The same exception | As that method says |
 
-Return each one with `tool_error()`. Its message says where the mistake is, and doesn't repeat the values
+Return each one with [`tool_error()`](../reference/operations.md#tool_error). Its message says where the mistake is, and doesn't repeat the values
 sent.
 
 ### What operations don't do

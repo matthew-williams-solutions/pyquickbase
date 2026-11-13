@@ -689,6 +689,10 @@ def create(api: Api, table: str, label: str, kind: str, text: str | None = None)
         "url",
         "email",
         "datetime",
+        "rich-text",
+        "phone",
+        "user",
+        "multitext",
     ],
 )
 def test_field_types_that_take_a_formula(api: Api, scratch: Any, kind: str) -> None:
@@ -696,9 +700,28 @@ def test_field_types_that_take_a_formula(api: Api, scratch: Any, kind: str) -> N
     sources = {
         "text": '"a"', "url": '"a"', "email": '"a"', "date": "Today()", "datetime": "Now()",
         "checkbox": "true", "duration": "Days(1)", "timeofday": "ToTimeOfDay(Now())",
+        "rich-text": '"<b>a</b>"', "phone": '"5551234567"', "user": "User()",
+        # A multitext formula must return a text list: text alone is refused.
+        "multitext": 'Split("a;b", ";")',
     }  # fmt: skip
     response = create(api, table, "F", kind, sources.get(kind, "1"))
     assert response.status_code == 200, response.text
+
+
+@pytest.mark.parametrize(
+    ("kind", "source"),
+    [
+        ("text-multiple-choice", '"a"'),
+        ("multiuser", "User()"),
+        ("file", '"a"'),
+        ("address", '"a"'),
+    ],
+)
+def test_field_types_that_refuse_a_formula(api: Api, scratch: Any, kind: str, source: str) -> None:
+    table = scratch.table(("A", "text")).info().id
+    response = create(api, table, "F", kind, source)
+    assert response.status_code == 400
+    assert "[formula] property is not supported" in response.text
 
 
 def test_timestamp_formulas_need_datetime(api: Api, scratch: Any) -> None:

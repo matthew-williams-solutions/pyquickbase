@@ -38,10 +38,10 @@ sys.path.insert(0, str(ROOT / "scripts"))
 build_reference = importlib.import_module("build_reference")
 
 EXAMPLES = [
-    (page.slug, path)
-    for page in build_reference.ALL_PAGES
-    for path in sorted((build_reference.EXAMPLES / page.slug).glob("*.py"))
-    if f"{page.slug}/{path.stem}" not in build_reference.NOT_RUN_LIVE
+    (slug, path)
+    for slug in build_reference.EXAMPLE_DIRS
+    for path in sorted((build_reference.EXAMPLES / slug).glob("*.py"))
+    if f"{slug}/{path.stem}" not in build_reference.NOT_RUN_LIVE
 ]
 EXAMPLE_IDS = [f"{slug}.{path.stem}" for slug, path in EXAMPLES]
 PLACEHOLDER_APP = "bq1234567"

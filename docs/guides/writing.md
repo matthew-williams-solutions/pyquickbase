@@ -1,3 +1,7 @@
+---
+description: "Inserts, updates, upserts, deletes, DataFrames, previews, rows that fail, and what each refusal leaves behind."
+---
+
 # Writing records
 
 This page covers creating, updating, and deleting records, and what to do when rows fail.
@@ -21,8 +25,8 @@ client, use `await` on each call.
 | `table.upsert(records, merge_on="Code")` | Updates the record whose unique field matches, or creates one |
 | `table.delete(where)` | Deletes matching records and returns the count |
 
-To choose between the three that write: use `update()` to change records you know by Record ID#,
-`upsert()` to update or create by a unique field, and `insert()` to only create. `insert()` refuses a
+To choose between the three that write: use [`update()`](../reference/writes.md#Table-update) to change records you know by Record ID#,
+[`upsert()`](../reference/writes.md#Table-upsert) to update or create by a unique field, and [`insert()`](../reference/writes.md#Table-insert) to only create. `insert()` refuses a
 table whose key field isn't Record ID#, so use `upsert()` with `merge_on` set to the key field there.
 
 ## Writing values
@@ -33,11 +37,11 @@ for each type.
 | Python value | What happens |
 |---|---|
 | `date` | Written as a date |
-| `datetime` with a timezone | Written as a date and time, and reads back to the second. Without a timezone, it raises `InvalidValueError` |
+| `datetime` with a timezone | Written as a date and time, and reads back to the second. Without a timezone, it raises [`InvalidValueError`](../reference/errors.md#InvalidValueError) |
 | `Decimal` | Written exactly, so money doesn't pick up rounding errors |
 | `str`, `int`, `float`, `bool`, `list`, or `dict` | Written as it is |
 | `None` | Clears the field |
-| `FileUpload` | Attaches a file. See [File attachments](files.md) |
+| [`FileUpload`](../reference/files.md#FileUpload) | Attaches a file. See [File attachments](files.md) |
 | Anything else | Raises `InvalidValueError` |
 
 ## Creating records
@@ -57,15 +61,15 @@ print(result.created_ids)
 `result.row_ids` holds each row's new Record ID#, in the order of your rows, with None for a row that
 failed. `created_ids` leaves failed rows out, so it lines up with your rows only when none failed. A row
 that sets `Record ID#` raises
-`InvalidValueError`, because that would update a record.
+[`InvalidValueError`](../reference/errors.md#InvalidValueError), because that would update a record.
 
 ### Tables with a custom key field
 
 A table's key field is `Record ID#` unless someone has changed it, in the Quickbase UI or with a
-[`SetKeyField`](../reference/schema-changes.md#SetKeyField) change in a [schema plan](schema.md#planning-changes-before-making-them). If they have,
+[`SetKeyField`](../reference/schema-plans.md#SetKeyField) change in a [schema plan](schema.md#planning-changes-before-making-them). If they have,
 Quickbase [changes the record](../api-notes.md#writes) when a row has an existing value in that field,
-rather than creating one, and there's no way to ask it to only create. So `insert()` raises
-`InvalidValueError` on those tables, and sends nothing. Use `upsert()` instead, which updates a matching
+rather than creating one, and there's no way to ask it to only create. So [`insert()`](../reference/writes.md#Table-insert) raises
+`InvalidValueError` on those tables, and sends nothing. Use [`upsert()`](../reference/writes.md#Table-upsert) instead, which updates a matching
 record or creates one, and tells you which it did.
 
 ```python
@@ -91,7 +95,7 @@ print(result.updated_ids, result.unchanged_ids)
 ## Upserting records
 
 `merge_on` must name a field marked as unique, and every row must set it. A row whose value doesn't
-match any record **creates a new record**, so use `update()` if that isn't what you want. Repeating the
+match any record **creates a new record**, so use [`update()`](../reference/writes.md#Table-update) if that isn't what you want. Repeating the
 same write changes nothing, and lists the record in `unchanged_ids`.
 
 ```python
@@ -101,7 +105,7 @@ print(result.created_ids, result.updated_ids)
 
 ## Writing a DataFrame
 
-`insert()`, `update()`, `upsert()`, and `preview_update()` also take a pandas or polars DataFrame, with a
+[`insert()`](../reference/writes.md#Table-insert), [`update()`](../reference/writes.md#Table-update), [`upsert()`](../reference/writes.md#Table-upsert), and [`preview_update()`](../reference/writes.md#Table-preview_update) also take a pandas or polars DataFrame, with a
 column named after each field, by label or ID. Each row is one record.
 
 ```python
@@ -117,7 +121,7 @@ print(result.created_ids)
 - The index isn't written. Use `reset_index()` to make it a column.
 - A timestamp needs a timezone, as any `datetime` does, so convert a naive column with
   `tz_localize()` first.
-- Rows are checked as dictionaries are, so a column that isn't a field raises `UnknownFieldError` and
+- Rows are checked as dictionaries are, so a column that isn't a field raises [`UnknownFieldError`](../reference/errors.md#UnknownFieldError) and
   nothing is written.
 
 ## Deleting records
@@ -137,10 +141,10 @@ print(deleted)
 
 ## Previewing a write
 
-`preview_update()` and `preview_delete()` show what a write would do, and change nothing. They only read,
+[`preview_update()`](../reference/writes.md#Table-preview_update) and [`preview_delete()`](../reference/writes.md#Table-preview_delete) show what a write would do, and change nothing. They only read,
 so they work on a [read-only client](../policies/index.md#making-a-client-read-only).
 
-`preview_update()` takes the same rows as `update()`:
+`preview_update()` takes the same rows as [`update()`](../reference/writes.md#Table-update):
 
 ```python
 created = tasks.insert([{"Title": "Pour slab", "Status": "Open"}]).created_ids[0]
@@ -164,7 +168,7 @@ out its contents and who uploaded it. If a record is in several rows, a later ro
 `update()`. A value counts as a change whenever the comparison isn't certain, so `update()` could still
 report a listed record as unchanged, but a preview doesn't leave out a change it can detect.
 
-`preview_delete()` takes the same `where` as `delete()`, checked the same way, and returns a page, so
+`preview_delete()` takes the same `where` as [`delete()`](../reference/writes.md#Table-delete), checked the same way, and returns a page, so
 `total` is how many records would be deleted, however many it returns:
 
 ```python
@@ -190,7 +194,7 @@ for trigger in preview.triggers or ():
 A preview can't promise what the write will do:
 
 - **It's a snapshot.** A record can change between the preview and the write, as Quickbase has no
-  transactions. Check `WriteResult` afterward.
+  transactions. Check [`WriteResult`](../reference/writes.md#WriteResult) afterward.
 - **It doesn't check whether Quickbase will accept the write.** A formula field, a value outside a field's
   choices, one of the table's data rules, or a role that can't edit a field all look like a normal change.
 - **It doesn't check a client's policy.** A [policy](../policies/index.md) can still
@@ -198,7 +202,7 @@ A preview can't promise what the write will do:
 
 ## What a write returns
 
-`insert()`, `update()`, and `upsert()` return a `WriteResult`:
+[`insert()`](../reference/writes.md#Table-insert), [`update()`](../reference/writes.md#Table-update), and [`upsert()`](../reference/writes.md#Table-upsert) return a [`WriteResult`](../reference/writes.md#WriteResult):
 
 | Attribute | Meaning |
 |---|---|
@@ -210,10 +214,10 @@ A preview can't promise what the write will do:
 
 ## When rows fail
 
-Quickbase writes the rows it can and reports the rest, so a `WriteError` doesn't mean nothing
+Quickbase writes the rows it can and reports the rest, so a [`WriteError`](../reference/errors.md#WriteError) doesn't mean nothing
 changed. Its `result` lists both what was written and what failed, and `row_index` is the row's position
 in the list you passed. When a later batch of a large write fails, the error's `__cause__` is that
-batch's own error, such as a `RateLimitError`.
+batch's own error, such as a [`RateLimitError`](../reference/errors.md#RateLimitError).
 
 ```python
 from pyquickbase import WriteError
@@ -248,7 +252,7 @@ except WriteError as error:
         raise
 ```
 
-A write refused by the role raises `WritePermissionDeniedError`, whichever way Quickbase reported it. See
+A write refused by the role raises [`WritePermissionDeniedError`](../reference/errors.md#WritePermissionDeniedError), whichever way Quickbase reported it. See
 [Errors](errors.md#refused-writes). **An upsert that matches an existing record needs permission to
 modify**, so a role that can only add gets a refusal when a write is repeated.
 
@@ -256,14 +260,14 @@ modify**, so a role that can only add gets a refusal when a write is repeated.
 
 ## Rows Quickbase could skip
 
-A row needs at least one real value, so `insert()` and `upsert()` raise `InvalidValueError` for a row
+A row needs at least one real value, so [`insert()`](../reference/writes.md#Table-insert) and [`upsert()`](../reference/writes.md#Table-upsert) raise [`InvalidValueError`](../reference/errors.md#InvalidValueError) for a row
 where every value is empty. Quickbase can skip such a row without saying so, which also shifts
 `created_ids` against your rows.
 
 ## Large writes
 
 Large writes are split into batches of 1,000 rows, which you can change with `batch_size`. If a later
-batch fails outright, `WriteError` is raised with the results so far. Check `error.result` before
+batch fails outright, [`WriteError`](../reference/errors.md#WriteError) is raised with the results so far. Check `error.result` before
 trying again, so you don't write the same rows twice.
 
 ```mermaid
@@ -275,28 +279,28 @@ flowchart TD
 ```
 
 A write that times out, or gets a 502, 503, or 504, isn't retried, because Quickbase may already have
-applied it. If batch 1 fails, its own error is raised, such as `RateLimitError`, except a 403, which is
-still a `WritePermissionDeniedError`.
+applied it. If batch 1 fails, its own error is raised, such as [`RateLimitError`](../reference/errors.md#RateLimitError), except a 403, which is
+still a [`WritePermissionDeniedError`](../reference/errors.md#WritePermissionDeniedError).
 
 ## When something is refused
 
 | What happened | Exception | What's left behind |
 |---|---|---|
-| A row sets `Record ID#` in `insert()`, or leaves it out of `update()` | `InvalidValueError` | Nothing was sent |
-| A row leaves out the `merge_on` field in `upsert()` | `InvalidValueError` | Nothing was sent |
-| A row can't be sent in `preview_update()`, for the same reasons as `update()` | `InvalidValueError` | Nothing was read |
+| A row sets `Record ID#` in [`insert()`](../reference/writes.md#Table-insert), or leaves it out of [`update()`](../reference/writes.md#Table-update) | [`InvalidValueError`](../reference/errors.md#InvalidValueError) | Nothing was sent |
+| A row leaves out the `merge_on` field in [`upsert()`](../reference/writes.md#Table-upsert) | `InvalidValueError` | Nothing was sent |
+| A row can't be sent in [`preview_update()`](../reference/writes.md#Table-preview_update), for the same reasons as `update()` | `InvalidValueError` | Nothing was read |
 | `Record ID#` in `preview_update()` isn't a positive integer | `InvalidValueError` | Nothing was read |
-| `preview_delete()` with a `where` that's None or can't be sent as written | `InvalidQueryError` | Nothing was read |
+| [`preview_delete()`](../reference/writes.md#Table-preview_delete) with a `where` that's None or can't be sent as written | [`InvalidQueryError`](../reference/errors.md#InvalidQueryError) | Nothing was read |
 | A row has no real values in `insert()` or `upsert()` | `InvalidValueError` | Nothing was sent |
 | `insert()` on a table whose key field isn't `Record ID#` | `InvalidValueError` | Nothing was sent |
 | A value that can't be written, such as a `datetime` without a timezone | `InvalidValueError` | Nothing was sent |
-| A row names a field the table doesn't have, or the token can't see | `UnknownFieldError` | Nothing was sent |
-| `batch_size` below 1, or a `delete()` condition that can't be sent as written | `InvalidQueryError` | Nothing was sent |
-| The client is read-only, or its [policy](../policies/index.md) doesn't allow this write | `PolicyRefusedError` | Nothing was sent, unless it's a later batch, below |
-| `merge_on` isn't a unique field | `BadRequestError` | Nothing was written |
-| Some rows failed, such as a duplicate or a formula field | `WriteError` | **The other rows were written** |
+| A row names a field the table doesn't have, or the token can't see | [`UnknownFieldError`](../reference/errors.md#UnknownFieldError) | Nothing was sent |
+| `batch_size` below 1, or a [`delete()`](../reference/writes.md#Table-delete) condition that can't be sent as written | `InvalidQueryError` | Nothing was sent |
+| The client is read-only, or its [policy](../policies/index.md) doesn't allow this write | [`PolicyRefusedError`](../reference/errors.md#PolicyRefusedError) | Nothing was sent, unless it's a later batch, below |
+| `merge_on` isn't a unique field | [`BadRequestError`](../reference/errors.md#BadRequestError) | Nothing was written |
+| Some rows failed, such as a duplicate or a formula field | [`WriteError`](../reference/errors.md#WriteError) | **The other rows were written** |
 | A later batch failed outright, or a [rule of your own](../policies/custom-rules.md) refused it | `WriteError` | **Earlier batches were written** |
-| The role refused the write | `WritePermissionDeniedError` | Check `error.result` for earlier rows |
-| The request timed out | `RequestTimeoutError` | **It may have been applied.** It isn't retried |
+| The role refused the write | [`WritePermissionDeniedError`](../reference/errors.md#WritePermissionDeniedError) | Check `error.result` for earlier rows |
+| The request timed out | [`RequestTimeoutError`](../reference/errors.md#RequestTimeoutError) | **It may have been applied.** It isn't retried |
 
 See [Handling errors](errors.md) for how these exceptions relate.

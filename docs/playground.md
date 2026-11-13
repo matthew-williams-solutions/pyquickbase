@@ -1,3 +1,7 @@
+---
+description: "Try pyquickbase in your browser against a simulated Quickbase app, with nothing to install."
+---
+
 # Playground
 
 Try pyquickbase in your browser, with nothing to install. No account or token is needed.

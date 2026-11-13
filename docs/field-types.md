@@ -1,7 +1,11 @@
+---
+description: "Every field type, what to write, what it reads as, and field settings."
+---
+
 # Field types
 
-These are the values `create_field()` and `ensure_field()` accept as `type`, and what each type
-takes and returns. Quickbase refuses any other type with `BadRequestError`. To create fields, see
+These are the values [`create_field()`](reference/fields.md#Table-create_field) and [`ensure_field()`](reference/fields.md#Table-ensure_field) accept as `type`, and what each type
+takes and returns. Quickbase refuses any other type with [`BadRequestError`](reference/errors.md#BadRequestError). To create fields, see
 [Changing the schema](guides/schema.md).
 
 ```python
@@ -16,13 +20,13 @@ tasks.create_field("Priority", "text-multiple-choice", choices=["Low", "High"])
 | `type` | Holds | Write | Reads as | Empty reads as | Takes a formula |
 |---|---|---|---|---|---|
 | `text` | One line of text | `str` | `str` | `""` | Yes |
-| `text-multiple-choice` | One choice | `str` | `str` | `""` | Not tested |
+| `text-multiple-choice` | One choice | `str` | `str` | `""` | No |
 | `text-multi-line` | Several lines of text | `str` | `str` | `""` | No |
-| `rich-text` | Text containing HTML | `str` | `str` | `""` | Not tested |
-| `multitext` | Several choices | `list[str]` | `list[str]` | `[]` | Not tested |
+| `rich-text` | Text containing HTML | `str` | `str` | `""` | Yes, though a [policy](policies/rules.md#schema-changes) refuses it, as the result acts as whoever opens it |
+| `multitext` | Several choices | `list[str]` | `list[str]` | `[]` | Yes, if it returns a text list, such as `Split("a;b", ";")` |
 | `email` | An email address | `str` | `str` | `""` | Yes |
-| `url` | A link | `str` | `str` | `""` | Yes |
-| `phone` | A phone number | `str` | `str`, formatted by Quickbase: `5551234567` reads as `(555) 123-4567` | `""` | Not tested |
+| `url` | A link | `str` | `str` | `""` | Yes, though a [policy](policies/rules.md#schema-changes) refuses it, as the result acts as whoever opens it |
+| `phone` | A phone number | `str` | `str`, formatted by Quickbase: `5551234567` reads as `(555) 123-4567` | `""` | Yes |
 
 **An empty text field reads as `""`, not `None`**, so check for it with `if not value`.
 
@@ -34,10 +38,10 @@ tasks.create_field("Priority", "text-multiple-choice", choices=["Low", "High"])
 | `currency` | An amount of money | `float` or `int` | `float` | `None` | Yes |
 | `percent` | A percentage: write `0.5` and it reads as `0.5` | `float` or `int` | `float` | `None` | Yes |
 | `rating` | A rating | `float` or `int` | `float` | `None` | Yes |
-| `duration` | A length of time, in milliseconds | Whole milliseconds as an `int`, or a `timedelta`. A fraction raises `InvalidValueError`, as Quickbase would drop it | `int` | `None` | Yes |
+| `duration` | A length of time, in milliseconds | Whole milliseconds as an `int`, or a `timedelta`. A fraction raises [`InvalidValueError`](reference/errors.md#InvalidValueError), as Quickbase would drop it | `int` | `None` | Yes |
 
 **In a query, numbers mean the same as when writing**, though Quickbase reads them differently, so
-`F` converts them: `F("Done") >= 0.5` is 50%, and `F("Budget") > timedelta(hours=8)` or
+[`F`](reference/queries.md#F) converts them: `F("Done") >= 0.5` is 50%, and `F("Budget") > timedelta(hours=8)` or
 `> 28_800_000` is 8 hours. A hand-written string is sent as written, where Quickbase compares a percent
 in whole percent, `{f.GTE.'50'}`, and needs a duration as text, `{f.GT.'8 hours'}`.
 
@@ -58,17 +62,17 @@ field made through the API. See [API notes](api-notes.md#formulas).
 | `type` | Holds | Write | Reads as | Empty reads as | Takes a formula |
 |---|---|---|---|---|---|
 | `checkbox` | True or false | `bool` | `bool` | `False`, so empty and unchecked look the same | Yes |
-| `user` | One Quickbase user | A `User`, or `{"id": ...}` | `User` | `None` | Not tested |
-| `multiuser` | Several users | A list of `User`, or of `{"id": ...}` | A list of `User` | `[]` | Not tested |
-| `file` | An attachment | [`FileUpload`](guides/files.md) | `FileAttachment` | `None` | Not tested |
-| `address` | An address, as display text | Read-only: write its subfields | `str` | `""` | Not tested |
+| `user` | One Quickbase user | A [`User`](reference/records.md#User), or `{"id": ...}` | `User` | `None` | Yes, such as `User()` |
+| `multiuser` | Several users | A list of `User`, or of `{"id": ...}` | A list of `User` | `[]` | No, though the Quickbase interface can make one |
+| `file` | An attachment | [`FileUpload`](guides/files.md) | [`FileAttachment`](reference/files.md#FileAttachment) | `None` | No |
+| `address` | An address, as display text | Read-only: write its subfields | `str` | `""` | No |
 
 A query only returns a table's default fields unless you pass `select`, and built-in fields such as
 `Record Owner` may not be among them.
 
 ## Types you can't create
 
-Fields of these types exist, but `create_field()` refuses them:
+Fields of these types exist, but [`create_field()`](reference/fields.md#Table-create_field) refuses them:
 
 - `recordid` is the built-in `Record ID#` field.
 - `dblink` is the list of child records that a [relationship](guides/schema.md#linking-tables-with-a-relationship)
@@ -77,7 +81,7 @@ Fields of these types exist, but `create_field()` refuses them:
 ## Field settings
 
 `properties` holds any other settings, and is sent as it is. Quickbase refuses a key it doesn't know
-with `BadRequestError`, rather than ignoring it. These were accepted and kept, and Quickbase has more:
+with [`BadRequestError`](reference/errors.md#BadRequestError), rather than ignoring it. These were accepted and kept, and Quickbase has more:
 
 | Key | Tested on | Example |
 |---|---|---|
@@ -104,7 +108,7 @@ print(budget.decimal_places, budget.raw["properties"])
 no attribute for.
 
 A few settings go beside `properties` rather than inside it, and Quickbase refuses them inside it.
-`create_field()`, `update_field()`, and `ensure_field()` take them as arguments:
+[`create_field()`](reference/fields.md#Table-create_field), [`update_field()`](reference/fields.md#Table-update_field), and [`ensure_field()`](reference/fields.md#Table-ensure_field) take them as arguments:
 
 | Argument | Quickbase's name | What it does |
 |---|---|---|

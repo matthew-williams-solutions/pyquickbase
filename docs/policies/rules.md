@@ -1,3 +1,7 @@
+---
+description: "Allowing and refusing reads and writes by table and field, limiting rows, and allowing schema changes."
+---
+
 # Writing rules
 
 A policy is a list of rules over tables and fields, by name and label. Bind it to the app once,
@@ -35,9 +39,9 @@ With the async client, it's `await policy.bind(app)`. Bind with a client that ha
 can see every table and field.
 
 **Anything no rule allows is refused, and a deny always wins.** Each rule names its tables first:
-a table's name or ID, a list of them, `tables.all()` for every table in the app and any the client
-creates, or `tables.created()` for only those the client creates. Most then name fields: labels or
-IDs, `fields.all()`, `fields.new()` for fields added after binding, `fields.tagged(...)`, or
+a table's name or ID, a list of them, [`tables.all()`](../reference/rules.md#tables-all) for every table in the app and any the client
+creates, or [`tables.created()`](../reference/rules.md#tables-created) for only those the client creates. Most then name fields: labels or
+IDs, [`fields.all()`](../reference/rules.md#fields-all), [`fields.new()`](../reference/rules.md#fields-new) for fields added after binding, `fields.tagged(...)`, or
 `fields.labeled_like(...)`, which matches labels such as `_*`, ignoring case.
 
 | Rule | What it allows |
@@ -48,11 +52,11 @@ IDs, `fields.all()`, `fields.new()` for fields added after binding, `fields.tagg
 | `allow.delete(tables, max_records_per_delete=None)` | Deleting records. With `max_records_per_delete`, the client counts what matches first |
 | `allow.download(...)`, `allow.delete_file(...)` | Downloading files, or deleting their versions |
 | `allow.report(table, reports)` | Running these reports, by name or ID, or every report with `None` |
-| `allow.schema(tables, *verbs, ...)` | Changing the schema, as [below](schema.md) |
-| `allow.create_tables()` | Creating tables in the bound app |
+| `allow.schema(tables, *verbs, ...)` | Changing the schema, as [below](#schema-changes) |
+| [`allow.create_tables()`](../reference/rules.md#allow-create_tables) | Creating tables in the bound app |
 | `allow.code_pages(write=False)` | Reading the app's code pages, and with `write=True`, creating and replacing them. See [below](#code-pages) |
 | `deny.all(selector)`, `deny.read(...)`, `deny.update(...)`, and the rest | Refusing what they name, whatever allows it |
-| `limit.rows(tables, where)` | Reaching only the records that match, as [below](rows.md) |
+| `limit.rows(tables, where)` | Reaching only the records that match, as [below](#limiting-rows) |
 
 Things to know:
 
@@ -68,7 +72,7 @@ Things to know:
 - **A report's own filter and sort can use any field,** and someone can change them in the Quickbase
   interface, so list only reports you've checked. A summary report's columns can't be matched to
   fields, so allowing one shows all of them.
-- **Some things are refused unless the policy is `Policy.read_only()`:** running a formula, which can
+- **Some things are refused unless the policy is [`Policy.read_only()`](../reference/policies.md#Policy-read_only):** running a formula, which can
   read any table, an app's details and roles, and any request it doesn't recognize. Use a separate
   client for those.
 - **A delete needs `filter` on the fields its filter uses,** because the number deleted shows how
@@ -77,14 +81,69 @@ Things to know:
   roles could give itself anything the policy withholds. Use a client without a policy.
 - **`insert` alone can't be limited to creating records on a table with a custom key field.** If
   someone has changed a table's key field, a row with an existing value in that
-  field [changes that record](../api-notes.md#writes). `table.insert()` refuses those tables, so use
-  `upsert()`, which needs both `insert` and `update`. `qb.request()` can't look up a table's key
+  field [changes that record](../api-notes.md#writes). [`table.insert()`](../reference/writes.md#Table-insert) refuses those tables, so use
+  [`upsert()`](../reference/writes.md#Table-upsert), which needs both `insert` and `update`. [`qb.request()`](../reference/client.md#Quickbase-request) can't look up a table's key
   field, so any write through it without a merge field needs both.
+
+## Limiting rows
+
+`limit.rows(tables, where)` keeps a client to the records of those tables that match a condition:
+
+| Request | What [`limit.rows()`](../reference/rules.md#limit-rows) does |
+|---|---|
+| Queries, summaries, and deletes, including through [`qb.request()`](../reference/client.md#Quickbase-request) | ANDs the condition onto them |
+| A filter on a field the condition uses | Allows it, unless a deny rule covers the field |
+| A new summary or count field, from an `ensure_` method or a plan | Gets the limit in its filter |
+| An existing summary whose filter doesn't hold the limit | Hidden |
+| A lookup from a row-limited table | Hidden, and a new one is refused |
+| A lookup onto a row-limited table | Allowed |
+| Reports, file downloads, deleting file versions, and formulas | Refused |
+| Updates by `Record ID#`, including through `qb.request()` | Checks first that every record matches, with one query per 100 records, and refuses the batch if any doesn't |
+| Upserts | Refused, since they can change any record their key matches |
+| Inserts | Not checked |
+
+The check before an update can't stop a record that someone else changes between the check and the write,
+and an update may change a field the condition uses, which moves the record outside the limit.
+
+It's defense in depth. Quickbase's [record-level rules](../api-notes.md#record-level-rules) for the
+token's role are the real boundary, so set those as well.
+
+## Schema changes
+
+`allow.schema(tables, *verbs)` grants schema changes on the table where each change lands:
+
+| Verb | What it allows | Granted on |
+|---|---|---|
+| `create_field` | Adding fields, of `field_types=[...]` if given | The table |
+| `update_field`, `delete_field` | Changing or deleting the fields in `fields=`, or every field | The table |
+| `formula` | Making or changing a formula, with `create_field` or `update_field` | The table |
+| `lookup` | Adding a lookup, which also needs `read` on the parent's field | The child |
+| `summary` | Adding a summary, which also needs `read` on the child's field, and `filter` on every field its filter uses | The parent |
+| `link`, `unlink` | Making or deleting a relationship | **Both tables**, as Quickbase adds a link field and an "Add" record formula to the parent. `unlink` also needs `delete_field` wherever its lookups and summaries are |
+| `update_table`, `delete_table` | Renaming the table, or deleting it and its records | The table |
+| `set_key_field` | Changing which field is the table's key, with a [`SetKeyField`](../reference/schema-plans.md#SetKeyField) change | The table |
+
+For a relationship, the grant goes where the new field appears:
+
+```mermaid
+flowchart TD
+    P["<b>Projects</b>, the parent<br/>Grant <code>summary</code> here, and<br/>read on the child's field"]
+    C["<b>Tasks</b>, the child<br/>Grant <code>lookup</code> here, and<br/>read on the parent's field"]
+    P -- "<code>link</code> and <code>unlink</code><br/>are granted on both" --- C
+```
+
+A formula can't make a link or rich text (`url` or `rich-text`), as that acts as whoever clicks it. For the
+same reason, no rule lets a client turn on a field's `allowHTML` property, which shows its values as markup.
+
+**Creating a table gives the client a new policy,** with the table in its `created` list, so that
+[`tables.created()`](../reference/rules.md#tables-created) covers it. [`qb.policy`](../reference/client.md#Quickbase-policy) is always the current one, and nothing is changed in place.
+Save it with `qb.policy.to_json()` to use in another process, and load it with
+[`BoundPolicy.from_json()`](../reference/policies.md#BoundPolicy-from_json).
 
 ## Code pages
 
-`allow.code_pages()` lets a client list and read an app's code pages, and `allow.code_pages(write=True)` lets it
-create and replace them too. A client with any other policy, including `Policy.read_only()`, is refused.
+[`allow.code_pages()`](../reference/rules.md#allow-code_pages) lets a client list and read an app's code pages, and `allow.code_pages(write=True)` lets it
+create and replace them too. A client with any other policy, including [`Policy.read_only()`](../reference/policies.md#Policy-read_only), is refused.
 
 !!! danger "A policy doesn't limit what a page does"
     A code page runs in the viewer's browser, with the viewer's permissions. A policy controls what this client may

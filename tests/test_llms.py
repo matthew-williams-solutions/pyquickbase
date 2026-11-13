@@ -44,7 +44,7 @@ def test_the_nav_lists_every_page() -> None:
         for path in docs.rglob("*.md")
         if path.parent != docs / "reference"
     }
-    generated = {f"reference/{page.slug}.md" for page in build_reference.ALL_PAGES}
+    generated = {f"reference/{page.slug}.md" for page in build_reference.PAGES}
     generated.add(build_llms.OVERVIEW)
     assert {page.path for page in CONFIG.pages} == written | generated
     assert "playground.md" in written
@@ -54,7 +54,7 @@ def test_the_nav_keeps_its_sections() -> None:
     assert {page.path: page.section for page in CONFIG.pages}["agents/index.md"] == "AI agents"
     sections = {page.path: page.section for page in CONFIG.pages}
     assert sections["reference/index.md"] == "Reference"
-    assert sections["reference/table.md"] == "Reference"
+    assert sections["reference/records.md"] == "Reference"
     assert sections["field-types.md"] == "Reference"
     assert {page.path: page.section for page in CONFIG.pages}["index.md"] is None
 
@@ -237,13 +237,6 @@ def test_an_unreadable_nav_stops_the_build() -> None:
         build_llms.read_config(config)
 
 
-def test_a_page_without_a_description_stops_the_build() -> None:
-    page = build_llms.RecordPage("New", "guides/new.md", "Guides")
-    config = CONFIG._replace(pages=[*CONFIG.pages, page])
-    with pytest.raises(SystemExit, match=r"guides/new\.md"):
-        build_llms.build_index(config)
-
-
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
@@ -263,3 +256,29 @@ def test_the_overview_needs_no_generated_files(
     monkeypatch.setattr(build_llms, "DOCS", tmp_path)
     page = build_llms.RecordPage("Overview", build_llms.OVERVIEW, "Reference")
     assert "Every public name" in build_llms.convert_page(page, SITE)
+
+
+@pytest.mark.parametrize("page", CONFIG.pages, ids=[page.path for page in CONFIG.pages])
+def test_every_page_has_a_description_for_search_engines(page: "build_llms.RecordPage") -> None:
+    """Zensical writes it as the page's meta description, and llms.txt lists it."""
+    if page.path.startswith("reference/") and page.path != build_llms.OVERVIEW:
+        return  # test_reference.py checks the generated pages.
+    assert build_llms.description(page.path).endswith(".")
+
+
+def test_front_matter_stays_out_of_the_combined_file() -> None:
+    assert "\ndescription: " not in FULL
+    assert "exclude: true" not in FULL
+
+
+def test_the_changelog_is_left_out_of_search() -> None:
+    """Its release notes name every method, so they'd crowd out the reference."""
+    values, _ = build_llms.split_front_matter((ROOT / "docs/changelog.md").read_text())
+    assert "search" in values
+    assert "  exclude: true" in (ROOT / "docs/changelog.md").read_text()
+
+
+def test_a_page_without_a_description_stops_the_build(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(build_llms, "_page_source", lambda _path: "# Title\n\nText.\n")
+    with pytest.raises(SystemExit, match=r"guides/reading\.md needs a description"):
+        build_llms.description("guides/reading.md")

@@ -1,3 +1,7 @@
+---
+description: "Complete policies for common jobs."
+---
+
 # Recipes
 
 Complete policies for common jobs. Each one starts from nothing allowed and adds only what the job
@@ -59,7 +63,7 @@ policy = Policy(
 )
 ```
 
-`limit.rows()` checks each update's records with a query first, and refuses upserts. For a firm
+[`limit.rows()`](../reference/rules.md#limit-rows) checks each update's records with a query first, and refuses upserts. For a firm
 boundary, pair it with a role whose [record-level rules](../api-notes.md#record-level-rules) do the same.
 
 ## A schema assistant
@@ -77,7 +81,7 @@ policy = Policy(
 )
 ```
 
-See [Schema changes](schema.md) for every verb, and which table each one is granted on.
+See [Schema changes](rules.md#schema-changes) for every verb, and which table each one is granted on.
 
 ## A code page builder
 

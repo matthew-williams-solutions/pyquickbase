@@ -1,3 +1,7 @@
+---
+description: "Creating, copying, and deleting apps, and the webhooks and automations that run in one."
+---
+
 # Working with apps
 
 This page covers finding the apps a token can reach, seeing who has access to one, creating, copying, and
@@ -6,7 +10,7 @@ here is also on the async client, where you `await` it.
 
 ## Listing apps
 
-`apps()` lists the apps in the realm that the token can reach, with each one's name, even for a role that can't
+[`apps()`](../reference/apps.md#Quickbase-apps) lists the apps in the realm that the token can reach, with each one's name, even for a role that can't
 read the app's details.
 
 ```python
@@ -23,7 +27,7 @@ say which. `admin_only=True` lists only the apps the token's user administers.
 
 ## Who the token belongs to
 
-`current_user()` returns the token's user, for any role. `find_user()` looks someone up by email address, which
+[`current_user()`](../reference/apps.md#Quickbase-current_user) returns the token's user, for any role. [`find_user()`](../reference/apps.md#Quickbase-find_user) looks someone up by email address, which
 is how you get the ID that [role changes](#changing-who-has-a-role) take.
 
 ```python
@@ -33,11 +37,11 @@ print(me.id, me.email)
 colleague = qb.find_user("jordan@example.com")
 ```
 
-`find_user()` raises `NotFoundError` if nobody has that address.
+`find_user()` raises [`NotFoundError`](../reference/errors.md#NotFoundError) if nobody has that address.
 
 ## Who has access to an app
 
-`members()` lists the users and groups with a role in the app, with their names and when they last used it. Only
+[`members()`](../reference/apps.md#App-members) lists the users and groups with a role in the app, with their names and when they last used it. Only
 an administrator's token can read this.
 
 ```python
@@ -45,11 +49,11 @@ for member in qb.app("bq1234567").members():
     print(member.name, member.last_accessed_at, [role.name for role in member.roles])
 ```
 
-`member_roles()` lists one user's roles, the token's own by default, which works for any role. Only an
+[`member_roles()`](../reference/apps.md#App-member_roles) lists one user's roles, the token's own by default, which works for any role. Only an
 administrator can ask about someone else. With `include_groups`, on by default, it also says whether each role
 was given directly or through a group.
 
-`roles()` and `info()` work for any role. Quickbase refuses both for a role that can't edit the app's structure, so
+[`roles()`](../reference/apps.md#App-roles) and `info()` work for any role. Quickbase refuses both for a role that can't edit the app's structure, so
 the SDK asks its older API instead, which costs one extra request and returns the same details. None of this
 needs anything from you.
 
@@ -72,8 +76,8 @@ app.update_role_assignments([RoleAssignmentUpdate(user.id, from_role_id=11, to_r
 app.delete_role_assignments([RoleAssignment(user.id, 12)])
 ```
 
-Each takes a list, and Quickbase reports each item on its own. If any fail, the method raises `WriteError`, whose
-`result` is a `RoleAssignmentResult` listing what changed and what didn't, with Quickbase's reason for each failure. Don't
+Each takes a list, and Quickbase reports each item on its own. If any fail, the method raises [`WriteError`](../reference/errors.md#WriteError), whose
+`result` is a [`RoleAssignmentResult`](../reference/apps.md#RoleAssignmentResult) listing what changed and what didn't, with Quickbase's reason for each failure. Don't
 retry these automatically: Quickbase reports a role someone already has as a failure.
 
 A client with a policy can't change roles, at any setting. An agent that could change roles could give itself
@@ -85,7 +89,7 @@ See [Code pages](code-pages.md) for reading and writing an app's pages.
 
 ## Creating an app
 
-`create_app()` makes an empty app and returns it, ready for
+[`create_app()`](../reference/apps.md#Quickbase-create_app) makes an empty app and returns it, ready for
 [tables and fields](schema.md#creating-a-table-and-its-fields).
 
 ```python
@@ -104,7 +108,7 @@ can't otherwise reach it, so leave it on unless the token can reach every app.
 
 ## Copying an app
 
-`copy()` makes a new app with the same tables, fields, reports, and forms, such as a staging copy to try
+[`copy()`](../reference/apps.md#App-copy) makes a new app with the same tables, fields, reports, and forms, such as a staging copy to try
 changes on.
 
 ```python
@@ -116,7 +120,7 @@ staging = qb.app("bq1234567").copy("Jobs (staging)", keep_data=True)
 | `keep_data` | Copy the records too. Off by default |
 | `keep_files` | With `keep_data`, copy file attachments too |
 | `keep_users` | Give the copy's users the roles they have in the original. Otherwise the roles are copied with no one in them |
-| `assign_token` | Let the client's token reach the copy, as for `create_app()` |
+| `assign_token` | Let the client's token reach the copy, as for [`create_app()`](../reference/apps.md#Quickbase-create_app) |
 
 ## Deleting an app
 

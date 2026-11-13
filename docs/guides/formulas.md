@@ -1,3 +1,7 @@
+---
+description: "Running formulas and creating formula fields, and why not to run formula text you don't control."
+---
+
 # Formulas
 
 This page covers running a formula without saving it, and creating formula fields. Every method here is
@@ -5,7 +9,7 @@ also on the async client, where you `await` it.
 
 ## Running a formula
 
-`run_formula()` runs a formula against a table without saving anything. Pass `record_id` if the formula
+[`run_formula()`](../reference/summaries.md#Table-run_formula) runs a formula against a table without saving anything. Pass `record_id` if the formula
 uses fields, and leave it out if it doesn't. It works on a read-only client.
 
 ```python
@@ -37,7 +41,7 @@ Quickbase always returns the result as a string, so `"0"` would count as true in
 
 - **Dates and timestamps stay as text**, because they use the app's display format, and timestamps have
   no time zone: `2026-03-04T05:06:07Z` can come back as `03-03-2026 09:06 PM`. To get real dates, create a
-  [formula field](#formula-fields) and read it with `query()`, which returns `date` and `datetime`
+  [formula field](#formula-fields) and read it with [`query()`](../reference/records.md#Table-query), which returns `date` and `datetime`
   objects.
 - **Numbers are rounded for display**, so `1/3` returns `0.3333333`. A formula field keeps its full
   precision when you query it.
@@ -49,7 +53,7 @@ Quickbase always returns the result as a string, so `"0"` would count as true in
     `GetFieldValues()`, and `SumValues()`, whichever table you run it on, and can return the realm with
     `URLRoot()` and the token owner's email with `UserToEmail(User())`. Treat formula text from users or other systems
     like code. A client with a [policy](../policies/index.md) refuses
-    formulas, unless it's `Policy.read_only()`.
+    formulas, unless it's [`Policy.read_only()`](../reference/policies.md#Policy-read_only).
 
     It can't read a table in another app, even with a token that can reach both, or a table the token's
     role has no access to. **That isn't an error:** the result is empty, as it is for a table that doesn't
@@ -57,7 +61,7 @@ Quickbase always returns the result as a string, so `"0"` would count as true in
 
 ## Formula fields
 
-Pass `formula` to `create_field()`. The field's type must match what the formula returns.
+Pass `formula` to [`create_field()`](../reference/fields.md#Table-create_field). The field's type must match what the formula returns.
 
 ```python
 total = tasks.create_field("Total", "numeric", formula="[Amount] * 2")
@@ -88,14 +92,14 @@ tasks.create_field("Next Day", "date", formula="[Due] + Days(1)")
 
 | What happened | Exception | What's left behind |
 |---|---|---|
-| A blank formula, to run or to save | `InvalidValueError` | Nothing was sent. Quickbase would otherwise empty a field's values |
-| A syntax error, unknown field or function, wrong result type, or `1/0` | `BadRequestError`, with Quickbase's explanation | Nothing was run, and a field keeps its old formula |
+| A blank formula, to run or to save | [`InvalidValueError`](../reference/errors.md#InvalidValueError) | Nothing was sent. Quickbase would otherwise empty a field's values |
+| A syntax error, unknown field or function, wrong result type, or `1/0` | [`BadRequestError`](../reference/errors.md#BadRequestError), with Quickbase's explanation | Nothing was run, and a field keeps its old formula |
 | A formula that uses fields, run without `record_id` | `BadRequestError` | Nothing was run |
-| A `record_id` that doesn't exist | `NotFoundError` | Nothing was run |
+| A `record_id` that doesn't exist | [`NotFoundError`](../reference/errors.md#NotFoundError) | Nothing was run |
 | A formula on a plain field, or on a type that doesn't take one | `BadRequestError` | The field is unchanged |
-| A formula using a field the role can't see | `PermissionDeniedError` | Nothing was run |
-| A client with a policy other than `Policy.read_only()` | `PolicyRefusedError` | Nothing was sent |
-| Writing to a formula field | `WriteError`, as a row error | The other rows were written |
+| A formula using a field the role can't see | [`PermissionDeniedError`](../reference/errors.md#PermissionDeniedError) | Nothing was run |
+| A client with a policy other than [`Policy.read_only()`](../reference/policies.md#Policy-read_only) | [`PolicyRefusedError`](../reference/errors.md#PolicyRefusedError) | Nothing was sent |
+| Writing to a formula field | [`WriteError`](../reference/errors.md#WriteError), as a row error | The other rows were written |
 
 Quickbase's formula error messages can include HTML, such as a `javascript:` link, so escape them before
 showing them in a web page.
