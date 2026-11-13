@@ -16,9 +16,8 @@ to keep are explained in the guides, not here.
 - `policy_effects` works from the bound policy, not by binding the original `Policy` against the
   schema the plan leaves, so it doesn't see a class losing its only named field. A deny rule left
   matching nothing that way isn't a blocker yet.
-- Run the live tests against the new `Policy`, and add the ones the design asks for: a hidden label
-  collision, a summary over a row-limited table, a lookup with only read access on the parent, and a
-  created table after `from_json()`.
+- Run the full live suite against the new `Policy`. The four live tests its design asked for are in
+  `tests/_async/live/test_policy_design.py`.
 - In the 1.0 release commit:
   - Change the classifier in `pyproject.toml` from Beta to Production/Stable.
   - Remove the release candidate warnings from `README.md` and `docs/index.md`, and the advice to pin
