@@ -21,6 +21,14 @@ Nothing here should break anyone.
 
 - `llms.txt` is at `/pyquickbase/llms.txt`, not the domain root where some tools look, because the
   site is served from a subpath. Only a custom domain would change that.
+- Let one read of an app's schema bind several policies. `Policy.bind()` reads every table's fields
+  and relationships one table after another, and binding a second policy to the same app reads it
+  all again. Add a public way to read it once, such as `AsyncApp.snapshot()`, a few tables at a time,
+  and let `Policy.bind()` take that as well as an app. `Policy.bind(app)` should read a few tables at
+  a time too. quickbase-mcp binds a records policy and a schema policy to each app, and until this
+  ships it imports `Snapshot` and `bind_snapshot` from `pyquickbase._bound` and copies which tables'
+  reports binding reads (`read_schema` in `server/src/quickbase_mcp/runtime.py`). Remove that copy
+  once it does.
 
 ## Apps, events, and DataFrames
 
